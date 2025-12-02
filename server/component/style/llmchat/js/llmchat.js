@@ -12,7 +12,7 @@
             this.container = $(container);
             this.userId = this.container.data('user-id');
             this.noConversationsMessage = this.container.data('no-conversations-message');
-            this.currentConversationId = null;
+            this.currentConversationId = this.container.data('current-conversation-id') || null;
             this.eventSource = null;
             this.isStreaming = false;
             this.attachmentFileMap = {}; // Map attachmentId to file index
@@ -206,6 +206,20 @@
                 `;
                 conversationsContainer.append(conversationHtml);
             });
+
+            // Automatically select the current conversation if one is set and conversations exist
+            if (this.currentConversationId && conversations.length > 0) {
+                const currentConversationExists = conversations.some(conv => conv.id == this.currentConversationId);
+                if (currentConversationExists) {
+                    this.selectConversation(this.currentConversationId);
+                } else {
+                    // If the current conversation doesn't exist, select the first (most recent) one
+                    this.selectConversation(conversations[0].id);
+                }
+            } else if (!this.currentConversationId && conversations.length > 0) {
+                // If no conversation is selected but conversations exist, select the first (most recent) one
+                this.selectConversation(conversations[0].id);
+            }
         }
 
         renderConversation(conversation, messages) {
@@ -302,7 +316,7 @@
                     }
 
                     // Update current conversation if new
-                    if (response.conversation_id && !self.currentConversationId) {
+                    if (response.conversation_id && (!self.currentConversationId || response.is_new_conversation)) {
                         self.currentConversationId = response.conversation_id;
                         $('#current-conversation-id').val(response.conversation_id);
                     }
@@ -495,8 +509,10 @@
                         return;
                     }
                     if (response.conversation_id) {
-                        // Refresh the entire page to load latest data
-                        window.location.reload();
+                        // Navigate to the new conversation
+                        const url = new URL(window.location);
+                        url.searchParams.set('conversation', response.conversation_id);
+                        window.location.href = url.toString();
                     }
                 },
                 error: function(xhr) {

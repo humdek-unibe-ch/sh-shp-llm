@@ -66,6 +66,18 @@ class LlmchatModel extends StyleModel
         $this->user_id = $_SESSION['id_user'] ?? null;
         $this->conversation_id = $_GET['conversation'] ?? null;
 
+        // If no conversation is specified, automatically select the last (most recent) conversation
+        if (!$this->conversation_id && $this->user_id) {
+            $conversations = $this->llm_service->getUserConversations(
+                $this->user_id,
+                1, // Get only the most recent conversation
+                $this->getConfiguredModel()
+            );
+            if (!empty($conversations)) {
+                $this->conversation_id = $conversations[0]['id'];
+            }
+        }
+
         // Initialize configuration properties
         $this->conversation_limit = $this->get_db_field('conversation_limit', LLM_DEFAULT_CONVERSATION_LIMIT);
         $this->message_limit = $this->get_db_field('message_limit', LLM_DEFAULT_MESSAGE_LIMIT);

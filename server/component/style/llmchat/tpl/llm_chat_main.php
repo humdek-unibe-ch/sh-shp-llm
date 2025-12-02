@@ -2,6 +2,7 @@
      data-user-id="<?php echo $user_id; ?>"
      data-no-conversations-message="<?php echo htmlspecialchars($no_conversations_message); ?>"
      data-configured-model="<?php echo htmlspecialchars($configured_model); ?>"
+     data-current-conversation-id="<?php echo htmlspecialchars($current_conversation_id ?? ''); ?>"
      data-new-conversation-title-label="<?php echo htmlspecialchars($new_conversation_title_label); ?>"
      data-conversation-title-label="<?php echo htmlspecialchars($conversation_title_label); ?>"
      data-cancel-button-label="<?php echo htmlspecialchars($cancel_button_label); ?>"

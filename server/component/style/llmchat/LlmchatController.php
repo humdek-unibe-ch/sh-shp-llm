@@ -114,6 +114,12 @@ class LlmchatController extends BaseController
                 $is_new_conversation = true;
             }
 
+            // Generate title for new conversations based on the first message
+            if ($is_new_conversation) {
+                $generated_title = $this->generateConversationTitle($message);
+                $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $generated_title]);
+            }
+
             // Save user message
             $this->llm_service->addMessage($conversation_id, 'user', $message, null, $model);
 
@@ -129,7 +135,8 @@ class LlmchatController extends BaseController
                 // Start streaming response
                 $this->sendJsonResponse([
                     'conversation_id' => $conversation_id,
-                    'streaming' => true
+                    'streaming' => true,
+                    'is_new_conversation' => $is_new_conversation
                 ]);
             } else {
                 // Get complete response
@@ -145,7 +152,8 @@ class LlmchatController extends BaseController
                     $this->sendJsonResponse([
                         'conversation_id' => $conversation_id,
                         'message' => $assistant_message,
-                        'streaming' => false
+                        'streaming' => false,
+                        'is_new_conversation' => $is_new_conversation
                     ]);
                 } else {
                     throw new Exception('Invalid response from LLM API');
@@ -235,6 +243,45 @@ class LlmchatController extends BaseController
         }
 
         return $api_messages;
+    }
+
+    /**
+     * Generate a conversation title based on the first message
+     */
+    private function generateConversationTitle($message)
+    {
+        // Clean the message and extract the first meaningful part
+        $clean_message = trim($message);
+
+        // Remove trailing punctuation
+        $clean_message = preg_replace('/[?!.,;:]+$/', '', $clean_message);
+
+        // Get first 8 words
+        $words = explode(' ', $clean_message);
+        $title_words = array_slice($words, 0, 8);
+        $title = implode(' ', $title_words);
+
+        // Capitalize first letter
+        $title = ucfirst($title);
+
+        // If title is too long, try to find a natural break point
+        if (strlen($title) > 50) {
+            // Try to cut at word boundaries, preferring to keep complete thoughts
+            $shortened = substr($title, 0, 47);
+            $last_space = strrpos($shortened, ' ');
+            if ($last_space !== false) {
+                $title = substr($shortened, 0, $last_space) . '...';
+            } else {
+                $title = substr($title, 0, 47) . '...';
+            }
+        }
+
+        // Fallback if title is too short or empty
+        if (strlen($title) < 3) {
+            $title = 'New Conversation';
+        }
+
+        return $title;
     }
 
     /**
