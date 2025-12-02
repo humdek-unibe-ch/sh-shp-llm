@@ -51,6 +51,12 @@ class LlmchatView extends StyleView
         // Get conversation and message data
         $conversation = $this->model->getCurrentConversation();
         $messages = $this->model->getConversationMessages();
+
+        // Format message content with markdown parsing
+        foreach ($messages as &$message) {
+            $message['formatted_content'] = $this->model->formatMessageContent($message['content']);
+        }
+
         $conversations = $this->model->getUserConversations();
         $configured_model = $this->model->getConfiguredModel();
         $llm_temperature = $this->model->getLlmTemperature();

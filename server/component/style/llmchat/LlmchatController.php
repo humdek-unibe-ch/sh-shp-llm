@@ -350,6 +350,11 @@ class LlmchatController extends BaseController
 
             $messages = $this->llm_service->getConversationMessages($conversation_id);
 
+            // Format message content with markdown parsing
+            foreach ($messages as &$message) {
+                $message['formatted_content'] = $this->model->formatMessageContent($message['content']);
+            }
+
             $this->sendJsonResponse([
                 'conversation' => $conversation,
                 'messages' => $messages

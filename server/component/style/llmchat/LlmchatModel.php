@@ -352,6 +352,22 @@ class LlmchatModel extends StyleModel
         return $this->cancel_delete_button_label;
     }
 
+    /**
+     * Format message content with markdown parsing
+     * Uses Parsedown to convert markdown to HTML with safe mode enabled
+     */
+    public function formatMessageContent($content)
+    {
+        if (empty($content)) {
+            return '';
+        }
+
+        // Use Parsedown to parse markdown to HTML
+        $parsedown = $this->parsedown;
+        $parsedown->setSafeMode(true); // Enable safe mode for security
+        return $parsedown->text($content);
+    }
+
     public function return_data($key)
     {
         $result = array();

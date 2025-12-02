@@ -30,7 +30,7 @@
                         </div>
                         <div class="message-content">
                             <div class="message-text">
-                                <?php echo nl2br(htmlspecialchars($message['content'])); ?>
+                                <?php echo $message['formatted_content']; ?>
                             </div>
                             <?php if (!empty($message['image_path'])): ?>
                                 <div class="message-image">

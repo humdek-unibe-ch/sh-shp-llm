@@ -274,7 +274,7 @@
                         <i class="fas ${avatarIcon}"></i>
                     </div>
                     <div class="message-content">
-                        <div class="message-text">${this.formatMessage(message.content)}</div>
+                        <div class="message-text">${this.formatMessage(message.content, message.formatted_content)}</div>
                         ${imageHtml}
                         ${metaHtml}
                     </div>
@@ -788,8 +788,16 @@
             container.scrollTop(container[0].scrollHeight);
         }
 
-        formatMessage(text) {
-            return text.replace(/\n/g, '<br>');
+        formatMessage(text, formattedContent) {
+            // If we have pre-formatted content from the backend (AJAX responses),
+            // use it directly since it's already parsed HTML
+            if (formattedContent !== undefined && formattedContent !== null) {
+                return formattedContent;
+            }
+
+            // For initial page load, content is already parsed in PHP template
+            // Just return as-is since it's already formatted HTML
+            return text;
         }
 
         formatTime(timestamp) {
