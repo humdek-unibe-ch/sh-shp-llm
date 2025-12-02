@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `image_path` varchar(500) DEFAULT NULL,
     `model` varchar(100) DEFAULT NULL,
     `tokens_used` int DEFAULT NULL,
+    `raw_response` longtext DEFAULT NULL,
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

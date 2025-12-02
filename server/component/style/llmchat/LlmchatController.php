@@ -139,8 +139,8 @@ class LlmchatController extends BaseController
                     $assistant_message = $response['choices'][0]['message']['content'];
                     $tokens_used = $response['usage']['total_tokens'] ?? null;
 
-                    // Save assistant message
-                    $this->llm_service->addMessage($conversation_id, 'assistant', $assistant_message, null, $model, $tokens_used);
+                    // Save assistant message with full response for debugging
+                    $this->llm_service->addMessage($conversation_id, 'assistant', $assistant_message, null, $model, $tokens_used, json_encode($response));
 
                     $this->sendJsonResponse([
                         'conversation_id' => $conversation_id,

@@ -324,7 +324,7 @@ class LlmService
     /**
      * Add a message to conversation
      */
-    public function addMessage($conversation_id, $role, $content, $image_path = null, $model = null, $tokens_used = null)
+    public function addMessage($conversation_id, $role, $content, $image_path = null, $model = null, $tokens_used = null, $raw_response = null)
     {
         // Verify conversation exists and get user_id
         $conversation = $this->db->query_db_first(
@@ -342,7 +342,8 @@ class LlmService
             'content' => $content,
             'image_path' => $image_path,
             'model' => $model,
-            'tokens_used' => $tokens_used
+            'tokens_used' => $tokens_used,
+            'raw_response' => $raw_response
         ];
 
         $message_id = $this->db->insert('llmMessages', $data);

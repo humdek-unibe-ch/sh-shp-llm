@@ -1,6 +1,6 @@
 # Changelog - LLM Plugin
 
-## [1.0.0] - 2025-12-02
+## [1.0.0] - 2025-12-02 (Not released yet)
 
 ### Added
 - Complete LLM chat plugin implementation
