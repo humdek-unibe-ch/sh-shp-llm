@@ -40,6 +40,14 @@ class LlmchatModel extends StyleModel
     private $upload_help_text;
     private $message_placeholder;
     private $clear_button_label;
+    private $new_conversation_title_label;
+    private $conversation_title_label;
+    private $cancel_button_label;
+    private $create_button_label;
+    private $delete_confirmation_title;
+    private $delete_confirmation_message;
+    private $confirm_delete_button_label;
+    private $cancel_delete_button_label;
 
     /* Constructors ***********************************************************/
 
@@ -81,6 +89,14 @@ class LlmchatModel extends StyleModel
         $this->upload_help_text = $this->get_db_field('upload_help_text', 'Supported formats: JPG, PNG, GIF, WebP (max 10MB)');
         $this->message_placeholder = $this->get_db_field('message_placeholder', 'Type your message here...');
         $this->clear_button_label = $this->get_db_field('clear_button_label', 'Clear');
+        $this->new_conversation_title_label = $this->get_db_field('new_conversation_title_label', 'New Conversation');
+        $this->conversation_title_label = $this->get_db_field('conversation_title_label', 'Conversation Title (optional)');
+        $this->cancel_button_label = $this->get_db_field('cancel_button_label', 'Cancel');
+        $this->create_button_label = $this->get_db_field('create_button_label', 'Create Conversation');
+        $this->delete_confirmation_title = $this->get_db_field('delete_confirmation_title', 'Delete Conversation');
+        $this->delete_confirmation_message = $this->get_db_field('delete_confirmation_message', 'Are you sure you want to delete this conversation? This action cannot be undone.');
+        $this->confirm_delete_button_label = $this->get_db_field('confirm_delete_button_label', 'Delete');
+        $this->cancel_delete_button_label = $this->get_db_field('cancel_delete_button_label', 'Cancel');
     }
 
     /* Private Methods *********************************************************/
@@ -88,7 +104,7 @@ class LlmchatModel extends StyleModel
     /* Public Methods *********************************************************/
 
     /**
-     * Get user conversations
+     * Get user conversations filtered by the configured model
      */
     public function getUserConversations()
     {
@@ -96,9 +112,12 @@ class LlmchatModel extends StyleModel
             return [];
         }
 
+        $configured_model = $this->getConfiguredModel();
+
         return $this->llm_service->getUserConversations(
             $this->user_id,
-            (int)$this->getConversationLimit()
+            (int)$this->getConversationLimit(),
+            $configured_model
         );
     }
 
@@ -279,6 +298,46 @@ class LlmchatModel extends StyleModel
     public function getClearButtonLabel()
     {
         return $this->clear_button_label;
+    }
+
+    public function getNewConversationTitleLabel()
+    {
+        return $this->new_conversation_title_label;
+    }
+
+    public function getConversationTitleLabel()
+    {
+        return $this->conversation_title_label;
+    }
+
+    public function getCancelButtonLabel()
+    {
+        return $this->cancel_button_label;
+    }
+
+    public function getCreateButtonLabel()
+    {
+        return $this->create_button_label;
+    }
+
+    public function getDeleteConfirmationTitle()
+    {
+        return $this->delete_confirmation_title;
+    }
+
+    public function getDeleteConfirmationMessage()
+    {
+        return $this->delete_confirmation_message;
+    }
+
+    public function getConfirmDeleteButtonLabel()
+    {
+        return $this->confirm_delete_button_label;
+    }
+
+    public function getCancelDeleteButtonLabel()
+    {
+        return $this->cancel_delete_button_label;
     }
 
     public function return_data($key)

@@ -215,23 +215,32 @@ class LlmService
     /**
      * Get user conversations
      */
-    public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT)
+    public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null)
     {
-        $cache_key = $this->cache->generate_key(LLM_CACHE_USER_CONVERSATIONS, $user_id, ['limit' => $limit]);
+        $cache_params = ['limit' => $limit];
+        if ($model) {
+            $cache_params['model'] = $model;
+        }
+        $cache_key = $this->cache->generate_key(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
         $cached = $this->cache->get($cache_key);
 
         if ($cached !== false) {
             return $cached;
         }
 
-        $conversations = $this->db->query_db(
-            "SELECT id, title, model, created_at, updated_at
-             FROM llmConversations
-             WHERE id_users = :id_user
-             ORDER BY updated_at DESC
-             LIMIT " . $limit . ";",
-            array(':id_user' => $user_id)
-        );
+        $sql = "SELECT id, title, model, created_at, updated_at
+                FROM llmConversations
+                WHERE id_users = :id_user AND deleted = 0";
+        $params = array(':id_user' => $user_id);
+
+        if ($model) {
+            $sql .= " AND model = :model";
+            $params[':model'] = $model;
+        }
+
+        $sql .= " ORDER BY updated_at DESC LIMIT " . $limit . ";";
+
+        $conversations = $this->db->query_db($sql, $params);
 
         $this->cache->set($cache_key, $conversations, 300); // Cache for 5 minutes
         return $conversations;
@@ -295,8 +304,11 @@ class LlmService
             throw new Exception('Conversation not found or access denied');
         }
 
-        // Delete conversation (messages will be deleted via CASCADE)
-        $this->db->delete_by_ids('llmConversations', ['id' => $conversation_id]);
+        // Soft delete conversation (mark as deleted)
+        $this->db->update_by_ids('llmConversations', ['deleted' => 1], ['id' => $conversation_id]);
+
+        // Also soft delete all messages in this conversation
+        $this->db->update_by_ids('llmMessages', ['deleted' => 1], ['id_llmConversations' => $conversation_id]);
 
         // Clear cache
         $this->clearUserCache($user_id);
@@ -365,7 +377,7 @@ class LlmService
         $messages = $this->db->query_db(
             "SELECT id, `role`, `content`, `image_path`, `model`, `tokens_used`, `timestamp`
              FROM llmMessages
-             WHERE id_llmConversations = :conversation_id
+             WHERE id_llmConversations = :conversation_id AND deleted = 0
              ORDER BY timestamp ASC
              LIMIT " . $limit . ";",
             [':conversation_id' => $conversation_id]

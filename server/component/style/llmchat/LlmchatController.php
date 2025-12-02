@@ -92,7 +92,7 @@ class LlmchatController extends BaseController
         $user_id = $this->model->getUserId();
         $conversation_id = $_POST['conversation_id'] ?? null;
         $message = trim($_POST['message'] ?? '');
-        $model = $_POST['model'] ?? $this->model->getDefaultModel();
+        $model = $_POST['model'] ?? $this->model->getConfiguredModel();
 
         if (empty($message)) {
             $this->sendJsonResponse(['error' => 'Message cannot be empty'], 400);
@@ -164,7 +164,7 @@ class LlmchatController extends BaseController
     {
         $user_id = $this->model->getUserId();
         $title = trim($_POST['title'] ?? 'New Conversation');
-        $model = $_POST['model'] ?? $this->model->getDefaultModel();
+        $model = $_POST['model'] ?? $this->model->getConfiguredModel();
 
         try {
             // Check rate limiting before creating new conversation

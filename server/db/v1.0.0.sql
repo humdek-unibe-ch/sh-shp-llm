@@ -90,7 +90,15 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'upload_image_label', get_field_type_id('text'), '1'),
 (NULL, 'upload_help_text', get_field_type_id('text'), '1'),
 (NULL, 'message_placeholder', get_field_type_id('text'), '1'),
-(NULL, 'clear_button_label', get_field_type_id('text'), '1');
+(NULL, 'clear_button_label', get_field_type_id('text'), '1'),
+(NULL, 'new_conversation_title_label', get_field_type_id('text'), '1'),
+(NULL, 'conversation_title_label', get_field_type_id('text'), '1'),
+(NULL, 'cancel_button_label', get_field_type_id('text'), '1'),
+(NULL, 'create_button_label', get_field_type_id('text'), '1'),
+(NULL, 'delete_confirmation_title', get_field_type_id('text'), '1'),
+(NULL, 'delete_confirmation_message', get_field_type_id('text'), '1'),
+(NULL, 'confirm_delete_button_label', get_field_type_id('text'), '1'),
+(NULL, 'cancel_delete_button_label', get_field_type_id('text'), '1');
 
 -- link fields to llmchat style
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
@@ -118,7 +126,15 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('upload_image_label'), 'Upload Image (Vision Models)', 'Label for image upload field'),
 (get_style_id('llmChat'), get_field_id('upload_help_text'), 'Supported formats: JPG, PNG, GIF, WebP (max 10MB)', 'Help text for image upload'),
 (get_style_id('llmChat'), get_field_id('message_placeholder'), 'Type your message here...', 'Placeholder text for message input'),
-(get_style_id('llmChat'), get_field_id('clear_button_label'), 'Clear', 'Text for the clear message button');
+(get_style_id('llmChat'), get_field_id('clear_button_label'), 'Clear', 'Text for the clear message button'),
+(get_style_id('llmChat'), get_field_id('new_conversation_title_label'), 'New Conversation', 'Title for the new conversation modal'),
+(get_style_id('llmChat'), get_field_id('conversation_title_label'), 'Conversation Title (optional)', 'Label for the conversation title input field'),
+(get_style_id('llmChat'), get_field_id('cancel_button_label'), 'Cancel', 'Text for the cancel button in modals'),
+(get_style_id('llmChat'), get_field_id('create_button_label'), 'Create Conversation', 'Text for the create conversation button'),
+(get_style_id('llmChat'), get_field_id('delete_confirmation_title'), 'Delete Conversation', 'Title for the delete confirmation modal'),
+(get_style_id('llmChat'), get_field_id('delete_confirmation_message'), 'Are you sure you want to delete this conversation? This action cannot be undone.', 'Message shown in the delete confirmation modal'),
+(get_style_id('llmChat'), get_field_id('confirm_delete_button_label'), 'Delete', 'Text for the confirm delete button'),
+(get_style_id('llmChat'), get_field_id('cancel_delete_button_label'), 'Cancel', 'Text for the cancel delete button');
 
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
@@ -128,11 +144,13 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     `model` varchar(100) NOT NULL,
     `temperature` decimal(3,2) DEFAULT 0.7,
     `max_tokens` int DEFAULT 2048,
+    `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_user_created` (`id_users`, `created_at`),
     KEY `idx_user_updated` (`id_users`, `updated_at`),
+    KEY `idx_deleted` (`deleted`),
     CONSTRAINT `fk_llmConversations_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
@@ -145,9 +163,11 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `image_path` varchar(500) DEFAULT NULL,
     `model` varchar(100) DEFAULT NULL,
     `tokens_used` int DEFAULT NULL,
+    `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_conversation_time` (`id_llmConversations`, `timestamp`),
+    KEY `idx_deleted` (`deleted`),
     CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 

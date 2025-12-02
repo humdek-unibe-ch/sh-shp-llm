@@ -72,9 +72,38 @@ class LlmchatView extends StyleView
         $upload_help_text = $this->model->getUploadHelpText();
         $message_placeholder = $this->model->getMessagePlaceholder();
         $clear_button_label = $this->model->getClearButtonLabel();
+        $new_conversation_title_label = $this->model->getNewConversationTitleLabel();
+        $conversation_title_label = $this->model->getConversationTitleLabel();
+        $cancel_button_label = $this->model->getCancelButtonLabel();
+        $create_button_label = $this->model->getCreateButtonLabel();
+        $delete_confirmation_title = $this->model->getDeleteConfirmationTitle();
+        $delete_confirmation_message = $this->model->getDeleteConfirmationMessage();
+        $confirm_delete_button_label = $this->model->getConfirmDeleteButtonLabel();
+        $cancel_delete_button_label = $this->model->getCancelDeleteButtonLabel();
         $submit_button_label = $this->model->getSubmitButtonLabel();
 
         include __DIR__ . '/tpl/llm_chat_main.php';
+
+        // Add data attributes for JavaScript to access field labels and configured model
+        ?>
+        <script>
+        // Make field labels and configured model available to JavaScript
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.querySelector('.llm-chat-container');
+            if (container) {
+                container.setAttribute('data-configured-model', '<?php echo htmlspecialchars($configured_model); ?>');
+                container.setAttribute('data-new-conversation-title-label', '<?php echo htmlspecialchars($new_conversation_title_label); ?>');
+                container.setAttribute('data-conversation-title-label', '<?php echo htmlspecialchars($conversation_title_label); ?>');
+                container.setAttribute('data-cancel-button-label', '<?php echo htmlspecialchars($cancel_button_label); ?>');
+                container.setAttribute('data-create-button-label', '<?php echo htmlspecialchars($create_button_label); ?>');
+                container.setAttribute('data-delete-confirmation-title', '<?php echo htmlspecialchars($delete_confirmation_title); ?>');
+                container.setAttribute('data-delete-confirmation-message', '<?php echo htmlspecialchars($delete_confirmation_message); ?>');
+                container.setAttribute('data-confirm-delete-button-label', '<?php echo htmlspecialchars($confirm_delete_button_label); ?>');
+                container.setAttribute('data-cancel-delete-button-label', '<?php echo htmlspecialchars($cancel_delete_button_label); ?>');
+            }
+        });
+        </script>
+        <?php
     }
 
     /**

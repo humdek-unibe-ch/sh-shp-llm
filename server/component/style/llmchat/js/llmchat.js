@@ -54,10 +54,6 @@
                 self.sendMessage();
             });
 
-            // Model selection change
-            this.container.on('change', '#model-select', function() {
-                self.updateFileUploadVisibility();
-            });
 
             // File upload drag and drop
             this.container.on('dragover', '#file-upload-container', function(e) {
@@ -289,14 +285,16 @@
                     if (response.conversation_id && !self.currentConversationId) {
                         self.currentConversationId = response.conversation_id;
                         $('#current-conversation-id').val(response.conversation_id);
-                        self.loadConversations(); // Refresh sidebar
-                        self.selectConversation(response.conversation_id);
                     }
 
                     // Handle response - direct response only (no streaming for now)
                     if (response.message) {
                         self.addAssistantMessage(response.message);
                         self.clearMessageForm();
+                        // Refresh the entire page to load latest data
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000); // Small delay to show the message briefly
                     }
                 },
                 error: function(xhr) {
@@ -397,31 +395,31 @@
         }
 
         showNewConversationModal() {
+            // Get field labels from data attributes
+            const newConversationTitle = this.container.data('new-conversation-title-label') || 'New Conversation';
+            const conversationTitleLabel = this.container.data('conversation-title-label') || 'Conversation Title (optional)';
+            const cancelButtonLabel = this.container.data('cancel-button-label') || 'Cancel';
+            const createButtonLabel = this.container.data('create-button-label') || 'Create Conversation';
+
             const modalHtml = `
-                <div class="modal fade" id="newConversationModal" tabindex="-1">
+                <div class="modal fade" id="newConversationModal" tabindex="-1" aria-labelledby="newConversationModalLabel" aria-hidden="true">
                     <div class="modal-dialog">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">New Conversation</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                <h5 class="modal-title" id="newConversationModalLabel">${this.escapeHtml(newConversationTitle)}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
                             <div class="modal-body">
                                 <form id="new-conversation-form">
                                     <div class="mb-3">
-                                        <label for="conversation-title" class="form-label">Title (optional)</label>
-                                        <input type="text" class="form-control" id="conversation-title" name="title" placeholder="Enter conversation title">
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="conversation-model" class="form-label">AI Model</label>
-                                        <select class="form-select" id="conversation-model" name="model">
-                                            <!-- Models will be populated by JavaScript -->
-                                        </select>
+                                        <label for="conversation-title" class="form-label">${this.escapeHtml(conversationTitleLabel)}</label>
+                                        <input type="text" class="form-control" id="conversation-title" name="title" placeholder="Enter conversation title (optional)">
                                     </div>
                                 </form>
                             </div>
                             <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="button" class="btn btn-primary" id="create-conversation-btn">Create</button>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${this.escapeHtml(cancelButtonLabel)}</button>
+                                <button type="button" class="btn btn-primary" id="create-conversation-btn">${this.escapeHtml(createButtonLabel)}</button>
                             </div>
                         </div>
                     </div>
@@ -430,9 +428,6 @@
 
             $('body').append(modalHtml);
             const modal = new bootstrap.Modal(document.getElementById('newConversationModal'));
-
-            // Populate models
-            this.populateModelSelect('#conversation-model');
 
             // Bind create button
             $('#create-conversation-btn').on('click', () => {
@@ -450,7 +445,14 @@
 
         createNewConversation() {
             const title = $('#conversation-title').val().trim();
-            const model = $('#conversation-model').val();
+            const model = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
+
+            // Generate better title if not provided
+            let finalTitle = title;
+            if (!finalTitle.trim()) {
+                const now = new Date();
+                finalTitle = 'Conversation ' + now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            }
 
             const self = this;
 
@@ -459,7 +461,7 @@
                 method: 'POST',
                 data: {
                     action: 'new_conversation',
-                    title: title || 'New Conversation',
+                    title: finalTitle,
                     model: model
                 },
                 success: function(response) {
@@ -468,8 +470,8 @@
                         return;
                     }
                     if (response.conversation_id) {
-                        self.loadConversations(); // Refresh sidebar
-                        self.selectConversation(response.conversation_id);
+                        // Refresh the entire page to load latest data
+                        window.location.reload();
                     }
                 },
                 error: function(xhr) {
@@ -479,9 +481,24 @@
         }
 
         confirmDeleteConversation(conversationId) {
-            if (confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
-                this.deleteConversation(conversationId);
-            }
+            // Get field labels from data attributes
+            const deleteConfirmationTitle = this.container.data('delete-confirmation-title') || 'Delete Conversation';
+            const deleteConfirmationMessage = this.container.data('delete-confirmation-message') || 'Are you sure you want to delete this conversation? This action cannot be undone.';
+
+            // Use the existing CMS confirmation modal directly
+            $.confirm({
+                title: deleteConfirmationTitle,
+                content: deleteConfirmationMessage,
+                type: 'red',
+                buttons: {
+                    confirm: () => {
+                        this.deleteConversation(conversationId);
+                    },
+                    cancel: function () {
+
+                    }
+                }
+            });
         }
 
         deleteConversation(conversationId) {
@@ -499,15 +516,9 @@
                         self.showError(response.error);
                         return;
                     }
-                    self.loadConversations(); // Refresh sidebar
 
-                    // If current conversation was deleted, clear it
-                    if (self.currentConversationId === conversationId) {
-                        self.currentConversationId = null;
-                        $('#current-conversation-id').val('');
-                        $('#messages-container').html('<div class="no-conversation-selected"><div class="text-center text-muted"><i class="fas fa-comments fa-3x mb-3"></i><h5>Select a conversation or start a new one</h5></div></div>');
-                        $('.conversation-header').html('');
-                    }
+                    // Refresh the entire page to load latest data
+                    window.location.reload();
                 },
                 error: function(xhr) {
                     self.showError('Failed to delete conversation: ' + (xhr.responseJSON?.error || 'Unknown error'));
@@ -515,32 +526,14 @@
             });
         }
 
-        populateModelSelect(selector) {
-            // This would be populated from the available models
-            // For now, using static list
-            const models = [
-                'qwen3-vl-8b-instruct',
-                'apertus-8b-instruct-2509',
-                'deepseek-r1-0528-qwen3-8b',
-                'qwen3-coder-30b-a3b-instruct',
-                'internvl3-8b-instruct'
-            ];
-
-            const select = $(selector);
-            select.empty();
-
-            models.forEach(model => {
-                select.append(`<option value="${model}">${model}</option>`);
-            });
-        }
 
         updateFileUploadVisibility() {
-            const selectedModel = $('#model-select').val();
+            const configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
             const fileContainer = $('#file-upload-container');
 
             // Show file upload for vision models
             const visionModels = ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct'];
-            if (visionModels.includes(selectedModel)) {
+            if (visionModels.includes(configuredModel)) {
                 fileContainer.show();
             } else {
                 fileContainer.hide();
