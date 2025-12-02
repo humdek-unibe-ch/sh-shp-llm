@@ -15,6 +15,7 @@
             this.currentConversationId = null;
             this.eventSource = null;
             this.isStreaming = false;
+            this.attachmentFileMap = {}; // Map attachmentId to file index
 
             this.init();
         }
@@ -55,24 +56,43 @@
             });
 
 
-            // File upload drag and drop
-            this.container.on('dragover', '#file-upload-container', function(e) {
+            // File upload button
+            this.container.on('click', '#attachment-btn', function(e) {
+                e.preventDefault();
+                $('#file-upload').click();
+            });
+
+            // File input change
+            this.container.on('change', '#file-upload', function(e) {
+                const files = e.target.files;
+                self.handleFileSelection(files);
+            });
+
+            // Drag and drop on message input wrapper
+            this.container.on('dragover', '#message-input-wrapper', function(e) {
                 e.preventDefault();
                 $(this).addClass('dragover');
             });
 
-            this.container.on('dragleave', '#file-upload-container', function(e) {
+            this.container.on('dragleave', '#message-input-wrapper', function(e) {
                 e.preventDefault();
                 $(this).removeClass('dragover');
             });
 
-            this.container.on('drop', '#file-upload-container', function(e) {
+            this.container.on('drop', '#message-input-wrapper', function(e) {
                 e.preventDefault();
                 $(this).removeClass('dragover');
                 const files = e.originalEvent.dataTransfer.files;
                 if (files.length > 0) {
-                    $('#file-upload').prop('files', files);
+                    self.handleFileSelection(files);
                 }
+            });
+
+            // Remove attachment
+            this.container.on('click', '.remove-attachment', function(e) {
+                e.preventDefault();
+                const attachmentId = $(this).data('attachment-id');
+                self.removeAttachment(attachmentId);
             });
 
             // Character count
@@ -291,10 +311,15 @@
                     if (response.message) {
                         self.addAssistantMessage(response.message);
                         self.clearMessageForm();
-                        // Refresh the entire page to load latest data
-                        setTimeout(() => {
+                        // Refresh the entire page immediately to load latest data
+                        // If we have a conversation_id (especially for new conversations), include it in the URL
+                        if (response.conversation_id) {
+                            const url = new URL(window.location);
+                            url.searchParams.set('conversation', response.conversation_id);
+                            window.location.href = url.toString();
+                        } else {
                             window.location.reload();
-                        }, 1000); // Small delay to show the message briefly
+                        }
                     }
                 },
                 error: function(xhr) {
@@ -529,15 +554,16 @@
 
         updateFileUploadVisibility() {
             const configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
-            const fileContainer = $('#file-upload-container');
+            const attachmentBtn = $('#attachment-btn');
 
-            // Show file upload for vision models
+            // Show attachment button for vision models
             const visionModels = ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct'];
             if (visionModels.includes(configuredModel)) {
-                fileContainer.show();
+                attachmentBtn.show();
             } else {
-                fileContainer.hide();
+                attachmentBtn.hide();
                 $('#file-upload').val(''); // Clear file selection
+                this.clearAttachments(); // Clear any existing attachments
             }
         }
 
@@ -559,8 +585,173 @@
         clearMessageForm() {
             $('#message-input').val('');
             $('#file-upload').val('');
+            this.clearAttachments();
             this.updateCharCount();
             this.updateFileUploadVisibility();
+        }
+
+        handleFileSelection(files) {
+            const maxFiles = 5; // Maximum number of files
+
+            if (files.length > maxFiles) {
+                this.showError(`Maximum ${maxFiles} files allowed`);
+                return;
+            }
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+
+                if (file.size > 10 * 1024 * 1024) { // 10MB limit
+                    this.showError(`File ${file.name} is too large. Maximum size is 10MB.`);
+                    continue;
+                }
+
+                this.addAttachment(file, i);
+            }
+
+            // Update the actual file input with the selected files
+            const fileInput = document.getElementById('file-upload');
+            const dt = new DataTransfer();
+            for (let i = 0; i < files.length; i++) {
+                dt.items.add(files[i]);
+            }
+            fileInput.files = dt.files;
+        }
+
+        addAttachment(file, fileIndex) {
+            const attachmentId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const attachmentsList = $('#attachments-list');
+            const attachmentsContainer = $('#file-attachments');
+
+            // Store mapping between attachmentId and file index
+            this.attachmentFileMap[attachmentId] = fileIndex;
+
+            // Check if file is an image
+            const isImage = file.type.startsWith('image/');
+
+            if (isImage) {
+                // Create file reader for image preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const attachmentHtml = `
+                        <div class="attachment-item" data-attachment-id="${attachmentId}">
+                            <div class="attachment-preview">
+                                <img src="${e.target.result}" alt="${file.name}" class="img-thumbnail" style="max-width: 60px; max-height: 60px;">
+                            </div>
+                            <div class="attachment-info">
+                                <small class="text-muted">${file.name}</small>
+                                <br>
+                                <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger remove-attachment" data-attachment-id="${attachmentId}" title="Remove">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                    attachmentsList.append(attachmentHtml);
+                    attachmentsContainer.show();
+                };
+                reader.readAsDataURL(file);
+            } else {
+                // Show file icon for non-image files
+                const fileIcon = this.getFileIcon(file.type);
+                const attachmentHtml = `
+                    <div class="attachment-item" data-attachment-id="${attachmentId}">
+                        <div class="attachment-preview">
+                            <div class="file-icon-preview">
+                                <i class="${fileIcon} fa-2x text-muted"></i>
+                            </div>
+                        </div>
+                        <div class="attachment-info">
+                            <small class="text-muted">${file.name}</small>
+                            <br>
+                            <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger remove-attachment" data-attachment-id="${attachmentId}" title="Remove">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+                attachmentsList.append(attachmentHtml);
+                attachmentsContainer.show();
+            }
+        }
+
+        removeAttachment(attachmentId) {
+            $(`.attachment-item[data-attachment-id="${attachmentId}"]`).remove();
+
+            // Hide container if no attachments left
+            if ($('#attachments-list').children().length === 0) {
+                $('#file-attachments').hide();
+            }
+
+            // Update the file input to remove the file
+            const fileInput = document.getElementById('file-upload');
+            const fileIndexToRemove = this.attachmentFileMap[attachmentId];
+
+            if (fileIndexToRemove !== undefined) {
+                const dt = new DataTransfer();
+                const files = Array.from(fileInput.files);
+                const remainingFiles = files.filter((file, index) => index !== fileIndexToRemove);
+
+                remainingFiles.forEach(file => dt.items.add(file));
+                fileInput.files = dt.files;
+
+                // Remove the mapping
+                delete this.attachmentFileMap[attachmentId];
+            }
+        }
+
+        clearAttachments() {
+            $('#attachments-list').empty();
+            $('#file-attachments').hide();
+            this.attachmentFileMap = {}; // Clear the mapping
+        }
+
+        getFileIcon(mimeType) {
+            const iconMap = {
+                // Documents
+                'application/pdf': 'fas fa-file-pdf',
+                'application/msword': 'fas fa-file-word',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'fas fa-file-word',
+                'application/vnd.ms-excel': 'fas fa-file-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'fas fa-file-excel',
+                'application/vnd.ms-powerpoint': 'fas fa-file-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'fas fa-file-powerpoint',
+
+                // Text files
+                'text/plain': 'fas fa-file-alt',
+                'text/csv': 'fas fa-file-csv',
+                'application/json': 'fas fa-file-code',
+                'application/xml': 'fas fa-file-code',
+                'text/html': 'fas fa-file-code',
+
+                // Archives
+                'application/zip': 'fas fa-file-archive',
+                'application/x-rar-compressed': 'fas fa-file-archive',
+                'application/x-7z-compressed': 'fas fa-file-archive',
+
+                // Audio/Video
+                'audio/': 'fas fa-file-audio',
+                'video/': 'fas fa-file-video',
+
+                // Default
+                'default': 'fas fa-file'
+            };
+
+            // Check for exact match first
+            if (iconMap[mimeType]) {
+                return iconMap[mimeType];
+            }
+
+            // Check for partial match (like audio/*, video/*)
+            for (const [key, value] of Object.entries(iconMap)) {
+                if (key.endsWith('/') && mimeType.startsWith(key)) {
+                    return value;
+                }
+            }
+
+            return iconMap.default;
         }
 
         setLoadingState(loading) {
