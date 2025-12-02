@@ -410,11 +410,108 @@ class LlmService
 
         $response = BaseModel::execute_curl_call($data);
 
-        if (!$response) {
-            throw new Exception('Failed to fetch models from LLM API');
+        // If API call fails or returns no data, return default model list
+        if (!$response || !is_array($response) || empty($response['data'])) {
+            return $this->getDefaultModelList()['data'];
         }
 
-        return $response['data'] ?? [];
+        return $response['data'];
+    }
+
+    /**
+     * Get default model list when API is unavailable
+     */
+    private function getDefaultModelList()
+    {
+        return [
+            "data" => [
+                [
+                    "id" => "bge-m3",
+                    "created" => 1764224112,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "granite-embedding-107m-multilingual",
+                    "created" => 1763991120,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "qwen3-coder-30b-a3b-instruct",
+                    "created" => 1764016765,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "jina-reranker-v2-base-multilingual",
+                    "created" => 1763991238,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "gpt-oss-120b",
+                    "created" => 1763993286,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "qwen3-embedding-0.6b",
+                    "created" => 1764224003,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "apertus-8b-instruct-2509",
+                    "created" => 1764237775,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "deepseek-r1-0528-qwen3-8b",
+                    "created" => 1764223774,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "minimax-m2",
+                    "created" => 1764020415,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "internvl3-8b-instruct",
+                    "created" => 1764016711,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "faster-whisper-large-v3",
+                    "created" => 1763990327,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ],
+                [
+                    "id" => "qwen3-vl-8b-instruct",
+                    "created" => 1764572225,
+                    "object" => "model",
+                    "owned_by" => "gpustack",
+                    "meta" => null
+                ]
+            ],
+            "object" => "list"
+        ];
     }
 
     /**

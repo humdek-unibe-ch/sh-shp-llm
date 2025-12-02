@@ -9,7 +9,7 @@ INSERT IGNORE INTO `pageType` (`name`) VALUES ('sh_module_llm');
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_base_url', get_field_type_id('text'), '0'),
 (NULL, 'llm_api_key', get_field_type_id('password'), '0'),
-(NULL, 'llm_default_model', get_field_type_id('text'), '0'),
+(NULL, 'llm_default_model', get_field_type_id('select-llm-model'), '0'),
 (NULL, 'llm_timeout', get_field_type_id('number'), '0'),
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
 (NULL, 'llm_temperature', get_field_type_id('number'), '0'),
@@ -18,7 +18,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 -- link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('title'), '', 'Page title'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_base_url'), 'http://localhost:8080', 'gpustack API endpoint URL'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_base_url'), 'https://gpustack.unibe.ch/v1', 'gpustack API endpoint URL'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_api_key'), '', 'API key for LLM service authentication'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
@@ -39,7 +39,7 @@ SET @id_page_llm_config = (SELECT id FROM pages WHERE keyword = 'sh_module_llm')
 
 -- set default values for LLM configuration fields
 INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
-(@id_page_llm_config, get_field_id('llm_base_url'), 'http://localhost:8080', 'gpustack API endpoint URL'),
+(@id_page_llm_config, get_field_id('llm_base_url'), 'https://gpustack.unibe.ch/v1', 'gpustack API endpoint URL'),
 (@id_page_llm_config, get_field_id('llm_api_key'), '', 'API key for LLM service authentication'),
 (@id_page_llm_config, get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 (@id_page_llm_config, get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
@@ -202,7 +202,7 @@ VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), @id_page_llm_conversat
 
 -- add page translations
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
-VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'http://localhost:8080'),
+VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https://gpustack.unibe.ch/v1'),
        (@id_page_llm_config, get_field_id('llm_api_key'), '0000000001', ''),
        (@id_page_llm_config, get_field_id('llm_default_model'), '0000000001', 'qwen3-vl-8b-instruct'),
        (@id_page_llm_config, get_field_id('llm_timeout'), '0000000001', '30'),

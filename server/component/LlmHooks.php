@@ -55,13 +55,6 @@ class LlmHooks extends BaseHooks
                 );
             }
             
-            // If no models available, provide default option
-            if (empty($items)) {
-                $items = array(
-                    array('value' => '', 'text' => 'No models available - check LLM configuration')
-                );
-            }
-            
             return new BaseStyleComponent("select", array(
                 "value" => $value,
                 "name" => $name,
@@ -101,7 +94,7 @@ class LlmHooks extends BaseHooks
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
         
-        if ($field['name'] == 'llm_model') {
+        if ($field['name'] == 'llm_model' || $field['name'] == 'llm_default_model') {
             $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
             $selectField = $this->outputSelectLlmModelField($field['content'], $field_name_prefix . "[content]", $disabled);
             
