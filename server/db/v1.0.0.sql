@@ -181,7 +181,14 @@ VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), @id_page_llm_conversat
 
 -- add page translations
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
-VALUES (@id_page_llm_conversations, get_field_id('title'), '0000000001', 'LLM Conversations'),
+VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'http://localhost:8080'),
+       (@id_page_llm_config, get_field_id('llm_api_key'), '0000000001', ''),
+       (@id_page_llm_config, get_field_id('llm_default_model'), '0000000001', 'qwen3-vl-8b-instruct'),
+       (@id_page_llm_config, get_field_id('llm_timeout'), '0000000001', '30'),
+       (@id_page_llm_config, get_field_id('llm_max_tokens'), '0000000001', '2048'),
+       (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '0.7'),
+       (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '1'),
+       (@id_page_llm_conversations, get_field_id('title'), '0000000001', 'LLM Conversations'),
        (@id_page_llm_conversations, get_field_id('title'), '0000000002', 'LLM Konversationen'),
        (@id_page_llm_conversation, get_field_id('title'), '0000000001', 'LLM Conversation Details'),
        (@id_page_llm_conversation, get_field_id('title'), '0000000002', 'LLM Konversation Details');

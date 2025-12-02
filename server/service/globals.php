@@ -24,8 +24,8 @@ define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
 
 // API endpoints
-define('LLM_API_CHAT_COMPLETIONS', '/v1/chat/completions');
-define('LLM_API_MODELS', '/v1/models');
+define('LLM_API_CHAT_COMPLETIONS', '/chat/completions');
+define('LLM_API_MODELS', '/models');
 
 // SSE streaming
 define('LLM_SSE_RETRY_MS', 3000);

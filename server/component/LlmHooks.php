@@ -51,7 +51,7 @@ class LlmHooks extends BaseHooks
             foreach ($models as $model) {
                 $items[] = array(
                     'value' => $model['id'],
-                    'text' => $model['id'] . ' (' . $model['object'] . ')'
+                    'text' => $model['id']
                 );
             }
             

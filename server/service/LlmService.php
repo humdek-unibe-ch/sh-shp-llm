@@ -358,29 +358,22 @@ class LlmService
             $config = $this->getLlmConfig();
         }
 
-        $url = rtrim($config['llm_base_url'], '/') . LLM_API_MODELS;
+        $data = [
+            'URL' => rtrim($config['llm_base_url'], '/') . LLM_API_MODELS,
+            'request_type' => 'GET',
+            'header' => [
+                'Authorization: Bearer ' . $config['llm_api_key']
+            ],
+            'timeout' => $config['llm_timeout']
+        ];
 
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => $config['llm_timeout'],
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $config['llm_api_key'],
-                'Content-Type: application/json'
-            ]
-        ]);
+        $response = BaseModel::execute_curl_call($data);
 
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($http_code !== 200) {
+        if (!$response) {
             throw new Exception('Failed to fetch models from LLM API');
         }
 
-        $data = json_decode($response, true);
-        return $data['data'] ?? [];
+        return $response['data'] ?? [];
     }
 
     /**
