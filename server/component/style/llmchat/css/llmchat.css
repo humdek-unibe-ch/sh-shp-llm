@@ -1,7 +1,6 @@
 /* LLM Chat Component Styles */
 
 .llm-chat-container {
-    max-width: 1200px;
     margin: 0 auto;
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;

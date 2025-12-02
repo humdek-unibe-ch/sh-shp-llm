@@ -1,4 +1,4 @@
-<div class="llm-chat-container" data-user-id="<?php echo $user_id; ?>">
+<div class="llm-chat-container" data-user-id="<?php echo $user_id; ?>" data-no-conversations-message="<?php echo htmlspecialchars($no_conversations_message); ?>">
     <div class="llm-chat-description"><?php echo htmlspecialchars($chat_description); ?></div>
 
     <div class="llm-chat-layout">

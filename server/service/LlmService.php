@@ -119,10 +119,36 @@ class LlmService
     /**
      * Update rate limiting data
      */
-    public function updateRateLimit($user_id, $rate_data, $conversation_id = null)
+    public function updateRateLimit($user_id, $rate_data = null, $conversation_id = null)
     {
+        // If rate_data is not provided, get it from cache
+        if ($rate_data === null) {
+            $cache_key = LLM_CACHE_RATE_LIMIT . '_' . $user_id;
+            $rate_data = $this->cache->get($cache_key);
+
+            // If no cached data exists, initialize it
+            if (!$rate_data) {
+                $current_minute = date('Y-m-d H:i');
+                $rate_data = [
+                    'minute' => $current_minute,
+                    'requests' => 0,
+                    'conversations' => []
+                ];
+            }
+        }
+
+        // Increment request count
+        if (!isset($rate_data['requests'])) {
+            $rate_data['requests'] = 0;
+        }
         $rate_data['requests']++;
 
+        // Initialize conversations array if it doesn't exist
+        if (!isset($rate_data['conversations'])) {
+            $rate_data['conversations'] = [];
+        }
+
+        // Add conversation if provided and not already in the list
         if ($conversation_id && !in_array($conversation_id, $rate_data['conversations'])) {
             $rate_data['conversations'][] = $conversation_id;
         }
@@ -141,16 +167,18 @@ class LlmService
     }
 
     /**
-     * Log transaction
+     * Log transaction using the proper Transaction service
      */
     private function logTransaction($operation, $table, $record_id, $user_id, $details = '')
     {
-        $this->services->get_transaction_service()->log_operation(
-            $operation,
-            $table,
-            $record_id,
-            $user_id,
-            $details
+        $this->services->get_transaction()->add_transaction(
+            $operation,                    // tran_type
+            TRANSACTION_BY_LLM_PLUGIN,     // tran_by
+            $user_id,                      // user_id
+            $table,                        // table_name
+            $record_id,                    // entry_id
+            false,                         // log_row (don't log full row data)
+            $details                       // verbal_log
         );
     }
 
@@ -297,7 +325,7 @@ class LlmService
         }
 
         $data = [
-            'id_conversation' => $conversation_id,
+            'id_llmConversations' => $conversation_id,
             'role' => $role,
             'content' => $content,
             'image_path' => $image_path,
@@ -335,12 +363,12 @@ class LlmService
         }
 
         $messages = $this->db->query_db(
-            "SELECT id, role, content, image_path, model, tokens_used, timestamp
+            "SELECT id, `role`, `content`, `image_path`, `model`, `tokens_used`, `timestamp`
              FROM llmMessages
-             WHERE id_llmConversations = ?
+             WHERE id_llmConversations = :conversation_id
              ORDER BY timestamp ASC
-             LIMIT ?",
-            [$conversation_id, $limit]
+             LIMIT " . $limit . ";",
+            [':conversation_id' => $conversation_id]
         );
 
         $this->cache->set($cache_key, $messages, 300); // Cache for 5 minutes
@@ -393,32 +421,29 @@ class LlmService
             'stream' => $stream
         ];
 
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => $config['llm_timeout'],
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => [
+        $data = [
+            'URL' => $url,
+            'request_type' => 'POST',
+            'header' => [
                 'Authorization: Bearer ' . $config['llm_api_key'],
                 'Content-Type: application/json'
-            ]
-        ]);
+            ],
+            'post_params' => json_encode($payload),
+            'timeout' => $config['llm_timeout']
+        ];
 
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $response = BaseModel::execute_curl_call($data);
 
-        if ($http_code !== 200) {
-            throw new Exception('LLM API request failed with code: ' . $http_code);
+        if (!$response) {
+            throw new Exception('LLM API request failed');
         }
 
-        return json_decode($response, true);
+        return $response;
     }
 
     /**
      * Stream LLM response
+     * Note: Uses direct curl calls as BaseModel::execute_curl_call doesn't support streaming with callbacks
      */
     public function streamLlmResponse($messages, $model, $temperature = null, $max_tokens = null, $callback = null)
     {

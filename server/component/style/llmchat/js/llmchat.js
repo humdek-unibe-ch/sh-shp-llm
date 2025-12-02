@@ -6,10 +6,12 @@
 (function($) {
     'use strict';
 
+
     class LlmChat {
         constructor(container) {
             this.container = $(container);
             this.userId = this.container.data('user-id');
+            this.noConversationsMessage = this.container.data('no-conversations-message');
             this.currentConversationId = null;
             this.eventSource = null;
             this.isStreaming = false;
@@ -89,8 +91,27 @@
         }
 
         loadConversations() {
-            // Conversations are already loaded in the template
-            // This method could be used for AJAX reloading if needed
+            const self = this;
+            const conversationsContainer = $('#conversations-list');
+
+            // Make direct GET request to current page with action parameter
+            const url = new URL(window.location);
+            url.searchParams.set('action', 'get_conversations');
+
+            $.ajax({
+                url: url.toString(),
+                method: 'GET',
+                success: function(response) {
+                    if (response.error) {
+                        console.error('Failed to load conversations:', response.error);
+                        return;
+                    }
+                    self.renderConversations(response.conversations || []);
+                },
+                error: function(xhr) {
+                    console.error('Failed to load conversations:', xhr.responseJSON?.error);
+                }
+            });
         }
 
         selectConversation(conversationId) {
@@ -114,28 +135,60 @@
             const self = this;
             const messagesContainer = $('#messages-container');
 
+            // Make direct GET request to current page with action and conversation_id parameters
+            const url = new URL(window.location);
+            url.searchParams.set('action', 'get_conversation');
+            url.searchParams.set('conversation_id', conversationId);
+
             $.ajax({
-                url: window.location.pathname,
+                url: url.toString(),
                 method: 'GET',
-                data: {
-                    ajax: 1,
-                    action: 'get_conversation',
-                    conversation_id: conversationId
-                },
                 beforeSend: function() {
                     messagesContainer.addClass('loading');
                 },
                 success: function(response) {
+                    if (response.error) {
+                        self.showError(response.error);
+                        return;
+                    }
                     if (response.conversation && response.messages) {
                         self.renderConversation(response.conversation, response.messages);
                     }
                 },
                 error: function(xhr) {
-                    self.showError('Failed to load conversation: ' + xhr.responseJSON?.error);
+                    self.showError('Failed to load conversation: ' + (xhr.responseJSON?.error || 'Unknown error'));
                 },
                 complete: function() {
                     messagesContainer.removeClass('loading');
                 }
+            });
+        }
+
+        renderConversations(conversations) {
+            const conversationsContainer = $('#conversations-list');
+            conversationsContainer.empty();
+
+            if (conversations.length === 0) {
+                conversationsContainer.html('<div class="no-conversations text-center text-muted py-3"><small>' + this.escapeHtml(this.noConversationsMessage) + '</small></div>');
+                return;
+            }
+
+            conversations.forEach(conversation => {
+                const isActive = this.currentConversationId == conversation.id;
+                const conversationHtml = `
+                    <div class="conversation-item ${isActive ? 'active' : ''}" data-conversation-id="${conversation.id}">
+                        <div class="conversation-title">${this.escapeHtml(conversation.title)}</div>
+                        <div class="conversation-meta">
+                            <small class="text-muted">${this.formatDate(conversation.updated_at)}</small>
+                        </div>
+                        <div class="conversation-actions">
+                            <button class="btn btn-sm btn-outline-danger delete-conversation-btn" data-conversation-id="${conversation.id}" title="Delete conversation">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                conversationsContainer.append(conversationHtml);
             });
         }
 
@@ -210,8 +263,13 @@
                 return;
             }
 
+            // Add action parameter for controller
+            formData.append('action', 'send_message');
+
             const self = this;
 
+
+            // Submit form data directly to current page
             $.ajax({
                 url: window.location.pathname,
                 method: 'POST',
@@ -235,10 +293,8 @@
                         self.selectConversation(response.conversation_id);
                     }
 
-                    // Handle streaming or direct response
-                    if (response.streaming) {
-                        self.startStreaming(response.conversation_id);
-                    } else if (response.message) {
+                    // Handle response - direct response only (no streaming for now)
+                    if (response.message) {
                         self.addAssistantMessage(response.message);
                         self.clearMessageForm();
                     }
@@ -407,6 +463,10 @@
                     model: model
                 },
                 success: function(response) {
+                    if (response.error) {
+                        self.showError(response.error);
+                        return;
+                    }
                     if (response.conversation_id) {
                         self.loadConversations(); // Refresh sidebar
                         self.selectConversation(response.conversation_id);
@@ -435,6 +495,10 @@
                     conversation_id: conversationId
                 },
                 success: function(response) {
+                    if (response.error) {
+                        self.showError(response.error);
+                        return;
+                    }
                     self.loadConversations(); // Refresh sidebar
 
                     // If current conversation was deleted, clear it
@@ -545,6 +609,29 @@
             setTimeout(() => {
                 $('.alert-danger').alert('close');
             }, 5000);
+        }
+
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        formatDate(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 0) {
+                return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            } else if (diffDays === 1) {
+                return 'Yesterday';
+            } else if (diffDays < 7) {
+                return `${diffDays} days ago`;
+            } else {
+                return date.toLocaleDateString();
+            }
         }
     }
 

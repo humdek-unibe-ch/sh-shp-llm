@@ -26,6 +26,60 @@ class LlmchatController extends BaseController
     {
         parent::__construct($model);
         $this->llm_service = new LlmService($this->model->get_services());
+
+        $router = $model->get_services()->get_router();
+        if(is_array($router->route['params']) && isset($router->route['params']['data'])){
+            // Handle data requests immediately without normal initialization
+            $model->return_data($router->route['params']['data']);
+            return; // Exit constructor cleanly
+        }
+
+        // Handle different request types based on parameters
+        $this->handleRequest();
+    }
+
+    /**
+     * Handle incoming requests based on POST/GET parameters
+     */
+    private function handleRequest()
+    {
+        // Check for AJAX-like parameters that were previously handled by AjaxLlmChat
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $action = $_POST['action'] ?? '';
+
+            switch ($action) {
+                case 'send_message':
+                    $this->handleMessageSubmission();
+                    break;
+                case 'new_conversation':
+                    $this->handleNewConversation();
+                    break;
+                case 'delete_conversation':
+                    $this->handleDeleteConversation();
+                    break;
+                default:
+                    // Regular form submission for message sending
+                    if (isset($_POST['message'])) {
+                        $this->handleMessageSubmission();
+                    }
+                    break;
+            }
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            // Handle GET requests for conversation data
+            $action = $_GET['action'] ?? '';
+
+            switch ($action) {
+                case 'get_conversation':
+                    $this->getConversationData();
+                    break;
+                case 'get_conversations':
+                    $this->getConversationsData();
+                    break;
+                default:
+                    // Regular page load - continue with normal rendering
+                    break;
+            }
+        }
     }
 
     /* Private Methods *********************************************************/
@@ -46,19 +100,25 @@ class LlmchatController extends BaseController
         }
 
         try {
-            // Check rate limiting
-            $this->llm_service->checkRateLimit($user_id);
+            // Check rate limiting and get current rate data
+            $rate_data = $this->llm_service->checkRateLimit($user_id);
 
             // Create conversation if needed
+            $is_new_conversation = false;
             if (!$conversation_id) {
+                // For new conversations, check if we can add one more concurrent conversation
+                if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
+                    throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
+                }
                 $conversation_id = $this->llm_service->createConversation($user_id, null, $model);
+                $is_new_conversation = true;
             }
 
             // Save user message
             $this->llm_service->addMessage($conversation_id, 'user', $message, null, $model);
 
-            // Update rate limiting
-            $this->llm_service->updateRateLimit($user_id, null, $conversation_id);
+            // Update rate limiting with the current rate data
+            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
             // Get conversation messages for LLM
             $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
@@ -107,7 +167,14 @@ class LlmchatController extends BaseController
         $model = $_POST['model'] ?? $this->model->getDefaultModel();
 
         try {
+            // Check rate limiting before creating new conversation
+            $rate_data = $this->llm_service->checkRateLimit($user_id);
+
             $conversation_id = $this->llm_service->createConversation($user_id, $title, $model);
+
+            // Update rate limiting to include the new conversation
+            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
             $this->sendJsonResponse(['conversation_id' => $conversation_id]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -178,6 +245,9 @@ class LlmchatController extends BaseController
         http_response_code($status_code);
         header('Content-Type: application/json');
         echo json_encode($data);
+        if (function_exists('uopz_allow_exit')) {
+            uopz_allow_exit(true);
+        }
         exit;
     }
 
@@ -238,6 +308,19 @@ class LlmchatController extends BaseController
                 'messages' => $messages
             ]);
 
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get conversations list data
+     */
+    public function getConversationsData()
+    {
+        try {
+            $conversations = $this->llm_service->getUserConversations($this->model->getUserId(), 50);
+            $this->sendJsonResponse(['conversations' => $conversations]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

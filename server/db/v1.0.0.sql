@@ -193,5 +193,6 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'http:/
        (@id_page_llm_conversation, get_field_id('title'), '0000000001', 'LLM Conversation Details'),
        (@id_page_llm_conversation, get_field_id('title'), '0000000002', 'LLM Konversation Details');
 
+
 -- Note: Field translations for style fields are handled per-instance when the style is added to sections
 -- No global translations needed for style field defaults

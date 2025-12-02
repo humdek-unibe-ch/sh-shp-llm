@@ -84,9 +84,13 @@ class LlmchatView extends StyleView
     {
         if (empty($local)) {
             if (DEBUG) {
-                $local = array('/css/ext/bootstrap.min.css');
+                $local = array(
+                    __DIR__ . "/css/llmchat.css",
+                );
             } else {
-                $local = array('/css/ext/bootstrap.min.css?v=' . rtrim(shell_exec("git describe --tags")));
+                $local = array(
+                    __DIR__ . "/../../../../css/ext/llm.min.css?v=" . rtrim(shell_exec("git describe --tags")),
+                );
             }
         }
         return parent::get_css_includes($local);
@@ -99,10 +103,13 @@ class LlmchatView extends StyleView
     {
         if (empty($local)) {
             if (DEBUG) {
-                $local = array('/js/ext/jquery.min.js', '/js/ext/bootstrap.bundle.min.js');
+                $local = array(
+                    __DIR__ . "/js/llmchat.js",
+                );
             } else {
-                $local = array('/js/ext/jquery.min.js?v=' . rtrim(shell_exec("git describe --tags")),
-                              '/js/ext/bootstrap.bundle.min.js?v=' . rtrim(shell_exec("git describe --tags")));
+                $local = array(
+                    __DIR__ . "/../../../js/ext/llm.min.js?v=" . rtrim(shell_exec("git describe --tags")),
+                );
             }
         }
         return parent::get_js_includes($local);
