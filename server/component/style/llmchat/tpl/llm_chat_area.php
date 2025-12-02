@@ -55,9 +55,7 @@
         <!-- Streaming indicator -->
         <div class="streaming-indicator" id="streaming-indicator" style="display: none;">
             <div class="d-flex align-items-center">
-                <div class="spinner-border spinner-border-sm me-2" role="status">
-                    <span class="visually-hidden"><?php echo htmlspecialchars($loading_text); ?></span>
-                </div>
+                <i class="fas fa-spinner fa-spin me-2 text-primary" role="status" aria-hidden="true"></i>
                 <small class="text-muted"><?php echo htmlspecialchars($ai_thinking_text); ?></small>
             </div>
         </div>

@@ -43,6 +43,12 @@ class LlmchatController extends BaseController
      */
     private function handleRequest()
     {
+        // Check for streaming request first
+        if (isset($_GET['streaming']) && $_GET['streaming'] === '1') {
+            $this->handleStreamingRequest();
+            return;
+        }
+
         // Check for AJAX-like parameters that were previously handled by AjaxLlmChat
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $action = $_POST['action'] ?? '';
@@ -82,6 +88,113 @@ class LlmchatController extends BaseController
         }
     }
 
+    /**
+     * Handle streaming request
+     * Optimized for smooth, fluid streaming delivery
+     */
+    private function handleStreamingRequest()
+    {
+        // Set SSE headers for optimal streaming
+        header('Content-Type: text/event-stream; charset=utf-8');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no'); // Disable nginx buffering
+
+        // Clear any output buffers for immediate delivery
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        // Disable output buffering at PHP level
+        @ini_set('output_buffering', 'Off');
+        @ini_set('zlib.output_compression', 'Off');
+        ob_implicit_flush(true);
+
+        // Get conversation ID from URL parameter
+        $conversation_id = $_GET['conversation'] ?? null;
+
+        if (!$conversation_id) {
+            $this->sendSSE(['type' => 'error', 'message' => 'Conversation ID required']);
+            exit;
+        }
+
+        $user_id = $this->model->getUserId();
+        if (!$user_id) {
+            echo "data: " . json_encode(['type' => 'error', 'message' => 'Authentication required']) . "\n\n";
+            flush();
+            exit;
+        }
+
+        // Verify conversation exists and belongs to user
+        $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
+        if (!$conversation) {
+            echo "data: " . json_encode(['type' => 'error', 'message' => 'Conversation not found']) . "\n\n";
+            flush();
+            exit;
+        }
+
+
+        // Get conversation messages for LLM
+        $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+        $api_messages = $this->convertToApiFormat($messages);
+
+        // Send connected event immediately
+        $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
+
+        $full_response = '';
+        $tokens_used = 0;
+
+        try {
+            // Start real streaming with callback
+            $this->llm_service->streamLlmResponse(
+                $api_messages,
+                $conversation['model'],
+                $conversation['temperature'],
+                $conversation['max_tokens'],
+                function($chunk) use (&$full_response, &$tokens_used, $conversation_id, $conversation) {
+                    if ($chunk === '[DONE]') {
+                        // Streaming completed
+                        $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
+
+                        // Save the complete assistant message
+                        try {
+                            $this->llm_service->addMessage(
+                                $conversation_id,
+                                'assistant',
+                                $full_response,
+                                null,
+                                $conversation['model'],
+                                $tokens_used
+                            );
+                        } catch (Exception $e) {
+                            $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message']);
+                        }
+
+                        return;
+                    }
+
+                    // Check for usage data
+                    if (strpos($chunk, '[USAGE:') === 0) {
+                        $usage_str = substr($chunk, 7, -1); // Remove '[USAGE:' and ']'
+                        $tokens_used = intval($usage_str);
+                        return;
+                    }
+
+                    // Accumulate the response
+                    $full_response .= $chunk;
+
+                    // Send chunk to client
+                    $this->sendSSE(['type' => 'chunk', 'content' => $chunk]);
+                }
+            );
+        } catch (Exception $e) {
+            error_log('Streaming failed: ' . $e->getMessage());
+            $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
+        }
+
+        exit;
+    }
+
     /* Private Methods *********************************************************/
 
     /**
@@ -100,6 +213,52 @@ class LlmchatController extends BaseController
         }
 
         try {
+            // Check if this is a streaming preparation request
+            $is_streaming_prep = isset($_POST['prepare_streaming']) && $_POST['prepare_streaming'] === '1';
+
+            if ($is_streaming_prep) {
+                // For streaming preparation, we still need to save the user message
+                // and perform all the same setup as regular message submission
+
+                // Check rate limiting and get current rate data
+                $rate_data = $this->llm_service->checkRateLimit($user_id);
+
+                // Create conversation if needed
+                $is_new_conversation = false;
+                if (!$conversation_id) {
+                    // For new conversations, check if we can add one more concurrent conversation
+                    if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
+                        throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
+                    }
+                    $conversation_id = $this->llm_service->createConversation($user_id, null, $model);
+                    $is_new_conversation = true;
+                }
+
+                // Generate title for new conversations based on the first message
+                if ($is_new_conversation) {
+                    $generated_title = $this->generateConversationTitle($message);
+                    $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $generated_title]);
+                }
+
+                // Save user message - THIS IS THE CRITICAL PART THAT WAS MISSING
+                $this->llm_service->addMessage($conversation_id, 'user', $message, null, $model);
+
+                // Update rate limiting with the current rate data
+                $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
+                // Store message data in session for streaming (optional, but keep for compatibility)
+                $_SESSION['streaming_conversation_id'] = $conversation_id;
+                $_SESSION['streaming_message'] = $message;
+                $_SESSION['streaming_model'] = $model;
+
+                $this->sendJsonResponse([
+                    'status' => 'prepared',
+                    'conversation_id' => $conversation_id,
+                    'is_new_conversation' => $is_new_conversation
+                ]);
+                return;
+            }
+
             // Check rate limiting and get current rate data
             $rate_data = $this->llm_service->checkRateLimit($user_id);
 
@@ -130,19 +289,20 @@ class LlmchatController extends BaseController
             $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
             $api_messages = $this->convertToApiFormat($messages);
 
-            // Call LLM API
-            if ($this->model->isStreamingEnabled()) {
+            // Call LLM API - check if streaming is requested (via GET param or config)
+            $streaming_requested = isset($_GET['streaming']) && $_GET['streaming'] === '1';
+            $streaming_enabled = $this->model->isStreamingEnabled();
+
+            if ($streaming_requested || $streaming_enabled) {
                 // Start streaming response
-                $this->sendJsonResponse([
-                    'conversation_id' => $conversation_id,
-                    'streaming' => true,
-                    'is_new_conversation' => $is_new_conversation
-                ]);
+                $this->startStreamingResponse($conversation_id, $api_messages, $model, $is_new_conversation);
+                // This should exit, so no more code should run
+                return;
             } else {
                 // Get complete response
                 $response = $this->llm_service->callLlmApi($api_messages, $model);
 
-                if (isset($response['choices'][0]['message']['content'])) {
+                if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
                     $assistant_message = $response['choices'][0]['message']['content'];
                     $tokens_used = $response['usage']['total_tokens'] ?? null;
 
@@ -285,12 +445,136 @@ class LlmchatController extends BaseController
     }
 
     /**
+     * Start streaming response using Server-Sent Events
+     * Optimized for smooth, fluid streaming delivery
+     */
+    private function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation)
+    {
+        // Check if any content has already been sent
+        if (headers_sent()) {
+            error_log('Headers already sent, cannot start streaming');
+            return;
+        }
+
+        // Set SSE headers for optimal streaming
+        header('Content-Type: text/event-stream; charset=utf-8');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no'); // Disable nginx buffering
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Headers: Cache-Control');
+
+        // Disable all output buffering for immediate delivery
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        // Disable output buffering and compression at PHP level
+        @ini_set('output_buffering', 'Off');
+        @ini_set('zlib.output_compression', 'Off');
+        @ini_set('implicit_flush', 1);
+        ob_implicit_flush(true);
+
+        // Send initial connection event
+        $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
+
+        $full_response = '';
+        $tokens_used = 0;
+
+        try {
+            // Start streaming with callback
+            $this->llm_service->streamLlmResponse(
+                $messages,
+                $model,
+                $this->model->getLlmTemperature(),
+                $this->model->getLlmMaxTokens(),
+                function($chunk) use (&$full_response, &$tokens_used, $conversation_id, $model) {
+                    if ($chunk === '[DONE]') {
+                        // Streaming completed
+                        $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
+
+                        // Save the complete assistant message
+                        try {
+                            $message_id = $this->llm_service->addMessage(
+                                $conversation_id,
+                                'assistant',
+                                $full_response,
+                                null,
+                                $model,
+                                $tokens_used
+                            );
+                            error_log("Streaming completed. Saved message ID: $message_id for conversation: $conversation_id");
+                        } catch (Exception $e) {
+                            error_log('Failed to save streamed message: ' . $e->getMessage());
+                            $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);
+                        }
+
+                        // Close the connection
+                        $this->sendSSE(['type' => 'close']);
+                        return;
+                    }
+
+                    // Check for usage data
+                    if (strpos($chunk, '[USAGE:') === 0) {
+                        $usage_str = substr($chunk, 7, -1); // Remove '[USAGE:' and ']'
+                        $tokens_used = intval($usage_str);
+                        return;
+                    }
+
+                    // Accumulate the response
+                    $full_response .= $chunk;
+
+                    // Send chunk to client
+                    $this->sendSSE([
+                        'type' => 'chunk',
+                        'content' => $chunk
+                    ]);
+                }
+            );
+        } catch (Exception $e) {
+            error_log('Streaming failed: ' . $e->getMessage());
+            $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
+        }
+
+        // Ensure connection is closed
+        if (function_exists('uopz_allow_exit')) {
+            uopz_allow_exit(true);
+        }
+        exit;
+    }
+
+    /**
+     * Send Server-Sent Event
+     * Optimized for smooth, low-latency delivery
+     */
+    private function sendSSE($data)
+    {
+        // Use JSON encoding with minimal whitespace for faster transmission
+        echo "data: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
+
+        // Flush immediately for real-time delivery
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
+
+        // Small delay to prevent overwhelming the client on rapid chunks
+        // This helps with smooth rendering on the frontend
+        if (isset($data['type']) && $data['type'] === 'chunk') {
+            usleep(5000); // 5ms delay between chunks for smoother rendering
+        }
+    }
+
+    /**
      * Send JSON response
      */
     private function sendJsonResponse($data, $status_code = 200)
     {
-        http_response_code($status_code);
-        header('Content-Type: application/json');
+        // If headers have already been sent (e.g., for streaming), just send JSON
+        if (!headers_sent()) {
+            http_response_code($status_code);
+            header('Content-Type: application/json');
+        }
         echo json_encode($data);
         if (function_exists('uopz_allow_exit')) {
             uopz_allow_exit(true);
@@ -348,7 +632,7 @@ class LlmchatController extends BaseController
                 return;
             }
 
-            $messages = $this->llm_service->getConversationMessages($conversation_id);
+            $messages = $this->llm_service->getConversationMessages($conversation_id) ?: [];
 
             // Format message content with markdown parsing
             foreach ($messages as &$message) {

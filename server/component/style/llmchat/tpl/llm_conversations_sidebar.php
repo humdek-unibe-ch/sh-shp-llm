@@ -5,7 +5,7 @@
     </button>
 </div>
 
-<div class="conversations-list">
+<div class="conversations-list" id="conversations-list">
     <?php if (empty($conversations)): ?>
         <div class="no-conversations">
             <p><?php echo htmlspecialchars($no_conversations_message); ?></p>

@@ -3,6 +3,7 @@
      data-no-conversations-message="<?php echo htmlspecialchars($no_conversations_message); ?>"
      data-configured-model="<?php echo htmlspecialchars($configured_model); ?>"
      data-current-conversation-id="<?php echo htmlspecialchars($current_conversation_id ?? ''); ?>"
+     data-streaming-enabled="<?php echo $this->model->isStreamingEnabled() ? '1' : '0'; ?>"
      data-new-conversation-title-label="<?php echo htmlspecialchars($new_conversation_title_label); ?>"
      data-conversation-title-label="<?php echo htmlspecialchars($conversation_title_label); ?>"
      data-cancel-button-label="<?php echo htmlspecialchars($cancel_button_label); ?>"

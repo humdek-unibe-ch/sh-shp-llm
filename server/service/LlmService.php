@@ -569,6 +569,8 @@ class LlmService
             'stream' => true
         ];
 
+
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
@@ -580,23 +582,49 @@ class LlmService
                 'Authorization: Bearer ' . $config['llm_api_key'],
                 'Content-Type: application/json'
             ],
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback) {
-                // Parse SSE data
+                // Parse streaming data
                 $lines = explode("\n", $data);
                 foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (empty($line)) continue;
+
                     if (strpos($line, 'data: ') === 0) {
                         $json_data = substr($line, 6);
-                        if ($json_data === '[DONE]') {
-                            if ($callback) $callback('[DONE]');
-                            return strlen($data);
-                        }
+                    } else {
+                        // Assume direct JSON format
+                        $json_data = $line;
+                    }
 
-                        $parsed = json_decode($json_data, true);
-                        if ($parsed && isset($parsed['choices'][0]['delta']['content'])) {
+                    if ($json_data === '[DONE]') {
+                        if ($callback) $callback('[DONE]');
+                        return strlen($data);
+                    }
+
+                    $parsed = json_decode($json_data, true);
+                    if ($parsed) {
+                        // Check for content chunk
+                        if (isset($parsed['choices'][0]['delta']['content'])) {
                             $content = $parsed['choices'][0]['delta']['content'];
                             if ($callback && !empty($content)) {
                                 $callback($content);
                             }
+                        }
+
+                        // Check for final usage data
+                        if (isset($parsed['usage']) && isset($parsed['usage']['total_tokens'])) {
+                            $tokens = $parsed['usage']['total_tokens'];
+                            if ($callback) {
+                                $callback('[USAGE:' . $tokens . ']');
+                            }
+                        }
+
+                        // Check for finish_reason (end of stream)
+                        if (isset($parsed['choices'][0]['finish_reason']) && $parsed['choices'][0]['finish_reason']) {
+                            if ($callback) $callback('[DONE]');
+                            return strlen($data);
                         }
                     }
                 }

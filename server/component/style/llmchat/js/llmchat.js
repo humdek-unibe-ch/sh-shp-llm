@@ -1,11 +1,11 @@
 /**
  * LLM Chat Component JavaScript
  * Handles real-time chat functionality, file uploads, and UI interactions
+ * With smooth streaming and fluid UI updates
  */
 
 (function($) {
     'use strict';
-
 
     class LlmChat {
         constructor(container) {
@@ -16,6 +16,9 @@
             this.eventSource = null;
             this.isStreaming = false;
             this.attachmentFileMap = {}; // Map attachmentId to file index
+            this.streamBuffer = ''; // Buffer for accumulating streamed text
+            this.renderTimeout = null; // Debounce timeout for rendering
+            this.scrollRAF = null; // RequestAnimationFrame for smooth scrolling
 
             this.init();
         }
@@ -54,7 +57,6 @@
                 e.preventDefault();
                 self.sendMessage();
             });
-
 
             // File upload button
             this.container.on('click', '#attachment-btn', function(e) {
@@ -134,9 +136,10 @@
             this.currentConversationId = conversationId;
             $('#current-conversation-id').val(conversationId);
 
-            // Update UI
+            // Update UI with smooth transition
             $('.conversation-item').removeClass('active');
-            $(`.conversation-item[data-conversation-id="${conversationId}"]`).addClass('active');
+            const selectedItem = $(`.conversation-item[data-conversation-id="${conversationId}"]`);
+            selectedItem.addClass('active');
 
             // Load conversation messages
             this.loadConversationMessages(conversationId);
@@ -160,7 +163,7 @@
                 url: url.toString(),
                 method: 'GET',
                 beforeSend: function() {
-                    messagesContainer.addClass('loading');
+                    messagesContainer.addClass('loading').css('opacity', '0.6');
                 },
                 success: function(response) {
                     if (response.error) {
@@ -175,7 +178,7 @@
                     self.showError('Failed to load conversation: ' + (xhr.responseJSON?.error || 'Unknown error'));
                 },
                 complete: function() {
-                    messagesContainer.removeClass('loading');
+                    messagesContainer.removeClass('loading').css('opacity', '1');
                 }
             });
         }
@@ -236,13 +239,16 @@
                 return;
             }
 
-            messages.forEach(message => {
+            messages.forEach((message, index) => {
                 const messageHtml = this.renderMessage(message);
-                messagesContainer.append(messageHtml);
+                const $message = $(messageHtml);
+                // Add staggered animation delay
+                $message.css('animation-delay', (index * 0.05) + 's');
+                messagesContainer.append($message);
             });
 
-            // Scroll to bottom
-            this.scrollToBottom();
+            // Smooth scroll to bottom
+            this.smoothScrollToBottom();
         }
 
         renderMessage(message) {
@@ -298,8 +304,52 @@
 
             const self = this;
 
+            // Check if streaming is enabled
+            const streamingData = this.container.data('streaming-enabled');
+            const streamingEnabled = streamingData == '1' || streamingData == 1 || streamingData === true;
 
-            // Submit form data directly to current page
+            // Add user message to UI immediately for better UX
+            this.addUserMessage(message);
+
+            // Check if streaming is enabled
+            if (streamingEnabled) {
+                // Use streaming approach
+                this.sendStreamingMessage(formData);
+            } else {
+                // Use regular AJAX approach
+                this.sendRegularMessage(formData);
+            }
+        }
+
+        addUserMessage(message) {
+            const messagesContainer = $('#messages-container');
+
+            // Remove "no messages" placeholder if present
+            messagesContainer.find('.no-messages').remove();
+
+            const messageHtml = `
+                <div class="message message-user message-new">
+                    <div class="message-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">${this.escapeHtml(message)}</div>
+                        <div class="message-meta">
+                            <small class="text-muted">${this.formatTime(new Date())}</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+            messagesContainer.append(messageHtml);
+            this.smoothScrollToBottom();
+
+            // Clear form immediately after showing user message
+            this.clearMessageForm();
+        }
+
+        sendRegularMessage(formData) {
+            const self = this;
+
             $.ajax({
                 url: window.location.pathname,
                 method: 'POST',
@@ -308,9 +358,11 @@
                 contentType: false,
                 beforeSend: function() {
                     self.setLoadingState(true);
+                    self.showAiThinking();
                 },
                 success: function(response) {
                     if (response.error) {
+                        self.removeThinkingIndicator();
                         self.showError(response.error);
                         return;
                     }
@@ -321,22 +373,22 @@
                         $('#current-conversation-id').val(response.conversation_id);
                     }
 
-                    // Handle response - direct response only (no streaming for now)
+                    // Handle direct response
                     if (response.message) {
+                        self.removeThinkingIndicator();
                         self.addAssistantMessage(response.message);
-                        self.clearMessageForm();
-                        // Refresh the entire page immediately to load latest data
-                        // If we have a conversation_id (especially for new conversations), include it in the URL
+
+                        // Refresh conversations sidebar and update URL
+                        self.loadConversations();
                         if (response.conversation_id) {
                             const url = new URL(window.location);
                             url.searchParams.set('conversation', response.conversation_id);
-                            window.location.href = url.toString();
-                        } else {
-                            window.location.reload();
+                            window.history.pushState({}, '', url);
                         }
                     }
                 },
                 error: function(xhr) {
+                    self.removeThinkingIndicator();
                     const error = xhr.responseJSON?.error || 'Failed to send message';
                     self.showError(error);
                 },
@@ -346,50 +398,152 @@
             });
         }
 
-        startStreaming(conversationId) {
-            this.isStreaming = true;
-            const streamingIndicator = $('#streaming-indicator');
-            streamingIndicator.show();
+        sendStreamingMessage(formData) {
+            const self = this;
 
-            // Clear message input
-            this.clearMessageForm();
+            // First, send preparation request to store message data
+            formData.append('prepare_streaming', '1');
+
+            // Check if test mode should be used
+            var isTestMode = window.location.search.includes('test=1');
+
+            $.ajax({
+                url: window.location.pathname + (isTestMode ? '?test=1' : ''),
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.error) {
+                        self.showError(response.error);
+                        return;
+                    }
+
+                    // Now start the streaming EventSource
+                    const streamingUrl = new URL(window.location.href);
+                    streamingUrl.searchParams.set('streaming', '1');
+                    streamingUrl.searchParams.set('conversation', self.currentConversationId);
+
+                    self.startStreaming(streamingUrl.toString());
+                },
+                error: function(xhr) {
+                    self.showError('Failed to prepare streaming: ' + (xhr.responseJSON?.error || 'Unknown error'));
+                }
+            });
+        }
+
+        startStreaming(streamingUrl) {
+            this.isStreaming = true;
+            this.streamBuffer = '';
+            const streamingIndicator = $('#streaming-indicator');
+            streamingIndicator.fadeIn(200);
+
+            // Show thinking indicator
+            this.showAiThinking();
 
             // Start SSE
-            this.eventSource = new EventSource(`/llm/stream/${conversationId}`);
+            this.eventSource = new EventSource(streamingUrl);
 
             const self = this;
 
             this.eventSource.onmessage = function(event) {
-                const data = JSON.parse(event.data);
+                try {
+                    const data = JSON.parse(event.data);
 
-                if (data.chunk) {
-                    self.appendToLastMessage(data.chunk);
-                } else if (data.done) {
-                    self.finishStreaming();
-                } else if (data.error) {
-                    self.showError(data.error);
-                    self.finishStreaming();
+                    switch (data.type) {
+                        case 'connected':
+                            // Connection established - thinking indicator already shown
+                            break;
+
+                        case 'chunk':
+                            if (data.content) {
+                                self.appendStreamChunk(data.content);
+                            }
+                            break;
+
+                        case 'done':
+                            self.finishStreaming();
+                            // Refresh conversation to get updated data with proper formatting
+                            if (self.currentConversationId) {
+                                // Small delay to ensure server has saved the message
+                                setTimeout(() => {
+                                    self.loadConversationMessages(self.currentConversationId);
+                                    self.loadConversations();
+                                }, 300);
+                            }
+                            break;
+
+                        case 'error':
+                            self.showError(data.message || 'Streaming error occurred');
+                            self.finishStreaming();
+                            break;
+
+                        case 'close':
+                            self.finishStreaming();
+                            break;
+                    }
+                } catch (e) {
+                    console.error('Error parsing SSE data:', e);
                 }
             };
 
-            this.eventSource.onerror = function() {
-                self.showError('Streaming connection lost');
-                self.finishStreaming();
+            this.eventSource.onerror = function(event) {
+                if (self.isStreaming) {
+                    self.showError('Streaming connection lost');
+                    self.finishStreaming();
+                }
             };
         }
 
-        appendToLastMessage(chunk) {
-            let lastMessage = $('#messages-container .message-assistant').last();
+        showAiThinking() {
+            const messagesContainer = $('#messages-container');
+
+            // Remove any existing thinking indicator first
+            this.removeThinkingIndicator();
+
+            // Add a temporary assistant message with thinking indicator
+            const thinkingHtml = `
+                <div class="message message-assistant message-thinking">
+                    <div class="message-avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">
+                            <span class="thinking-dots">
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                                <span class="dot"></span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            messagesContainer.append(thinkingHtml);
+            this.smoothScrollToBottom();
+        }
+
+        removeThinkingIndicator() {
+            $('#messages-container .message-thinking').remove();
+        }
+
+        appendStreamChunk(chunk) {
+            // Accumulate the chunk in the buffer
+            this.streamBuffer += chunk;
+
+            // Find or create the streaming message element
+            let lastMessage = $('#messages-container .message-assistant.streaming').last();
 
             if (lastMessage.length === 0) {
-                // Create new assistant message
+                // Remove thinking indicator and create new streaming message
+                this.removeThinkingIndicator();
+
                 const messageHtml = `
-                    <div class="message message-assistant">
+                    <div class="message message-assistant streaming">
                         <div class="message-avatar">
                             <i class="fas fa-robot"></i>
                         </div>
                         <div class="message-content">
-                            <div class="message-text">${chunk}</div>
+                            <div class="message-text"></div>
                             <div class="message-meta">
                                 <small class="text-muted">${this.formatTime(new Date())}</small>
                             </div>
@@ -397,40 +551,162 @@
                     </div>
                 `;
                 $('#messages-container').append(messageHtml);
-                lastMessage = $('#messages-container .message-assistant').last();
-            } else {
-                // Append to existing message
-                const textDiv = lastMessage.find('.message-text');
-                textDiv.text(textDiv.text() + chunk);
+                lastMessage = $('#messages-container .message-assistant.streaming').last();
             }
 
-            this.scrollToBottom();
+            // Update the message text with accumulated buffer
+            // Use debounced rendering for better performance
+            this.debouncedRenderStream(lastMessage);
+        }
+
+        debouncedRenderStream(messageElement) {
+            const self = this;
+
+            // Cancel any pending render
+            if (this.renderTimeout) {
+                cancelAnimationFrame(this.renderTimeout);
+            }
+
+            // Use requestAnimationFrame for smooth rendering
+            this.renderTimeout = requestAnimationFrame(() => {
+                const textDiv = messageElement.find('.message-text');
+
+                // Parse markdown to HTML
+                const formattedContent = self.parseMarkdown(self.streamBuffer);
+
+                // Add typing cursor
+                const contentWithCursor = formattedContent + '<span class="typing-cursor"></span>';
+
+                // Update content
+                textDiv.html(contentWithCursor);
+
+                // Smooth scroll to keep message in view
+                self.smoothScrollToBottom();
+            });
+        }
+
+        parseMarkdown(text) {
+            if (!text) return '';
+
+            let html = text;
+
+            // Escape HTML first for security
+            html = html
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            // Code blocks (triple backticks) - must be before inline code
+            html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(match, lang, code) {
+                return '<pre class="code-block"><code class="language-' + (lang || 'plaintext') + '">' + code.trim() + '</code></pre>';
+            });
+
+            // Inline code (single backticks)
+            html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+            // Bold text
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+            // Italic text
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+
+            // Headers
+            html = html.replace(/^### (.*$)/gm, '<h5>$1</h5>');
+            html = html.replace(/^## (.*$)/gm, '<h4>$1</h4>');
+            html = html.replace(/^# (.*$)/gm, '<h3>$1</h3>');
+
+            // Unordered lists
+            html = html.replace(/^\s*[-*+]\s+(.+)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+            // Ordered lists
+            html = html.replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>');
+
+            // Links
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+            // Line breaks (double newline = paragraph)
+            html = html.replace(/\n\n/g, '</p><p>');
+
+            // Single line breaks
+            html = html.replace(/\n/g, '<br>');
+
+            // Wrap in paragraph
+            if (!html.startsWith('<')) {
+                html = '<p>' + html + '</p>';
+            }
+
+            return html;
         }
 
         finishStreaming() {
             this.isStreaming = false;
-            $('#streaming-indicator').hide();
+            this.streamBuffer = '';
+
+            // Clear any pending renders
+            if (this.renderTimeout) {
+                cancelAnimationFrame(this.renderTimeout);
+                this.renderTimeout = null;
+            }
+
+            $('#streaming-indicator').fadeOut(200);
 
             if (this.eventSource) {
                 this.eventSource.close();
                 this.eventSource = null;
             }
 
-            // Refresh conversation to get updated data
-            if (this.currentConversationId) {
-                this.loadConversationMessages(this.currentConversationId);
-            }
+            // Remove streaming class and typing cursor from messages
+            const streamingMessage = $('#messages-container .message-assistant.streaming');
+            streamingMessage.removeClass('streaming');
+            streamingMessage.find('.typing-cursor').remove();
+
+            // Remove any thinking indicators that might be left
+            this.removeThinkingIndicator();
         }
 
         addAssistantMessage(message) {
-            const messageHtml = this.renderMessage({
-                role: 'assistant',
-                content: message,
-                timestamp: new Date().toISOString()
-            });
+            const messagesContainer = $('#messages-container');
 
-            $('#messages-container').append(messageHtml);
-            this.scrollToBottom();
+            const messageHtml = `
+                <div class="message message-assistant message-new">
+                    <div class="message-avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="message-content">
+                        <div class="message-text">${this.parseMarkdown(message)}</div>
+                        <div class="message-meta">
+                            <small class="text-muted">${this.formatTime(new Date())}</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            messagesContainer.append(messageHtml);
+            this.smoothScrollToBottom();
+        }
+
+        smoothScrollToBottom() {
+            const self = this;
+
+            // Cancel any pending scroll
+            if (this.scrollRAF) {
+                cancelAnimationFrame(this.scrollRAF);
+            }
+
+            this.scrollRAF = requestAnimationFrame(() => {
+                const container = $('#messages-container');
+                if (container.length) {
+                    container.stop().animate({
+                        scrollTop: container[0].scrollHeight
+                    }, {
+                        duration: 150,
+                        easing: 'swing'
+                    });
+                }
+            });
         }
 
         showNewConversationModal() {
@@ -665,7 +941,7 @@
                         </div>
                     `;
                     attachmentsList.append(attachmentHtml);
-                    attachmentsContainer.show();
+                    attachmentsContainer.fadeIn(200);
                 };
                 reader.readAsDataURL(file);
             } else {
@@ -689,17 +965,19 @@
                     </div>
                 `;
                 attachmentsList.append(attachmentHtml);
-                attachmentsContainer.show();
+                attachmentsContainer.fadeIn(200);
             }
         }
 
         removeAttachment(attachmentId) {
-            $(`.attachment-item[data-attachment-id="${attachmentId}"]`).remove();
+            $(`.attachment-item[data-attachment-id="${attachmentId}"]`).fadeOut(200, function() {
+                $(this).remove();
 
-            // Hide container if no attachments left
-            if ($('#attachments-list').children().length === 0) {
-                $('#file-attachments').hide();
-            }
+                // Hide container if no attachments left
+                if ($('#attachments-list').children().length === 0) {
+                    $('#file-attachments').fadeOut(200);
+                }
+            });
 
             // Update the file input to remove the file
             const fileInput = document.getElementById('file-upload');
@@ -776,7 +1054,7 @@
 
             if (loading) {
                 form.addClass('loading');
-                submitBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>Sending...');
+                submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>Sending...');
             } else {
                 form.removeClass('loading');
                 submitBtn.prop('disabled', false).html('<i class="fas fa-paper-plane"></i> Send Message');
@@ -806,16 +1084,19 @@
         }
 
         showError(message) {
+            // Remove any existing error alerts
+            this.container.find('.alert-danger').remove();
+
             const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
-                ${message}
+                <i class="fas fa-exclamation-circle me-2"></i>${this.escapeHtml(message)}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>`;
 
-            $('.llm-chat-description').after(errorHtml);
+            this.container.find('.llm-chat-description').after(errorHtml);
 
             // Auto-remove after 5 seconds
             setTimeout(() => {
-                $('.alert-danger').alert('close');
+                this.container.find('.alert-danger').alert('close');
             }, 5000);
         }
 
