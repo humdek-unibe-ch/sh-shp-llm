@@ -135,8 +135,8 @@
             this.noConversationsMessage = this.container.data('no-conversations-message');
             this.currentConversationId = this.container.data('current-conversation-id') || null;
             this.configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
-            this.enableConversationsList = this.container.data('enable-conversations-list') === '1';
-            this.enableFileUploads = this.container.attr('data-enable-file-uploads') === '1';
+            this.enableConversationsList = this.container.data('enable-conversations-list') == '1';
+            this.enableFileUploads = this.container.attr('data-enable-file-uploads') == '1';
             this.acceptedFileTypes = this.container.data('accepted-file-types') || '';
 
             // Initialize file config from container data attributes
