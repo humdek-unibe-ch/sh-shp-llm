@@ -155,12 +155,14 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- create LLM messages table
+-- NOTE: image_path and file_path columns were removed in favor of attachments field
+-- which stores full attachment metadata as JSON for better file handling
 CREATE TABLE IF NOT EXISTS `llmMessages` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
     `id_llmConversations` int(10) UNSIGNED ZEROFILL NOT NULL,
     `role` enum('user','assistant','system') NOT NULL,
     `content` longtext NOT NULL,
-    `image_path` varchar(500) DEFAULT NULL,
+    `attachments` longtext DEFAULT NULL, -- JSON array of attachment metadata
     `model` varchar(100) DEFAULT NULL,
     `tokens_used` int DEFAULT NULL,
     `raw_response` longtext DEFAULT NULL,
@@ -215,5 +217,3 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_conversation, get_field_id('title'), '0000000002', 'LLM Konversation Details');
 
 
--- Note: Field translations for style fields are handled per-instance when the style is added to sections
--- No global translations needed for style field defaults

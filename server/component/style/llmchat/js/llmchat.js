@@ -629,79 +629,27 @@
          * @returns {string} HTML for attachments
          */
         renderAttachments(message) {
-            if (!message.image_path) {
+            // Get file count from attachments field only
+            let fileCount = 0;
+
+            if (message.attachments) {
+                try {
+                    const parsed = JSON.parse(message.attachments);
+                    fileCount = Array.isArray(parsed) ? parsed.length : (parsed ? 1 : 0);
+                } catch (e) {
+                    // If parsing fails, no attachments
+                    fileCount = 0;
+                }
+            }
+
+            // Don't display anything if no files
+            if (fileCount === 0) {
                 return '';
             }
 
-            let attachments = [];
-
-            // Check if image_path is a JSON array (multiple files) or single path
-            try {
-                const parsed = JSON.parse(message.image_path);
-                if (Array.isArray(parsed)) {
-                    attachments = parsed;
-                } else {
-                    // Single file stored as object
-                    attachments = [parsed];
-                }
-            } catch (e) {
-                // Single file stored as string path
-                const extension = message.image_path.split('.').pop().toLowerCase();
-                const isImage = FILE_CONFIG.allowedImageExtensions.includes(extension);
-                attachments = [{
-                    path: message.image_path,
-                    url: `?file_path=${message.image_path}`,
-                    is_image: isImage,
-                    original_name: message.image_path.split('/').pop()
-                }];
-            }
-
-            if (attachments.length === 0) {
-                return '';
-            }
-
-            let html = '<div class="message-attachments">';
-
-            attachments.forEach(attachment => {
-                const path = attachment.path || '';
-                const extension = path.split('.').pop().toLowerCase();
-                const isImage = attachment.is_image !== undefined ? attachment.is_image :
-                    (attachment.type && attachment.type.startsWith('image/')) ||
-                    FILE_CONFIG.allowedImageExtensions.includes(extension);
-                const url = attachment.url || `?file_path=${path}`;
-                const fileName = attachment.original_name || attachment.filename || path.split('/').pop() || 'File';
-                const fileSize = attachment.size ? formatBytes(attachment.size) : '';
-
-                if (isImage) {
-                    html += `
-                        <div class="attachment-display-image mb-2">
-                            <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener">
-                                <img src="${this.escapeHtml(url)}"
-                                     alt="${this.escapeHtml(fileName)}"
-                                     class="img-fluid rounded"
-                                     style="max-width: 300px; max-height: 200px;">
-                            </a>
-                        </div>
-                    `;
-                } else {
-                    // File attachment with icon
-                    const fileIcon = this.getFileIconByExtension(extension);
-                    html += `
-                        <div class="attachment-display-file mb-2 p-2 border rounded bg-white">
-                            <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" class="d-flex align-items-center text-decoration-none">
-                                <i class="${fileIcon} mr-2"></i>
-                                <span class="text-dark">
-                                    ${this.escapeHtml(fileName)}
-                                    ${fileSize ? `<small class="text-muted">(${fileSize})</small>` : ''}
-                                </span>
-                            </a>
-                        </div>
-                    `;
-                }
-            });
-
-            html += '</div>';
-            return html;
+            // Just show file count, don't try to load or display files
+            const fileText = fileCount === 1 ? '1 file' : `${fileCount} files`;
+            return `<div class="message-attachments-count">${fileText} attached</div>`;
         }
 
         renderMessage(message) {

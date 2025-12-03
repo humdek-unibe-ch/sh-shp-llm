@@ -401,32 +401,37 @@ class LlmchatController extends BaseController
             ];
 
             // Handle attachments for multimodal content
-            if (!empty($message['image_path'])) {
-                $attachments = $this->parseAttachments($message['image_path']);
+            $attachments = null;
+            if (!empty($message['attachments'])) {
+                // Attachments stored as JSON
+                $decoded = json_decode($message['attachments'], true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $attachments = $decoded;
+                }
+            }
 
-                if (!empty($attachments)) {
-                    $contentParts = [];
+            if (!empty($attachments)) {
+                $contentParts = [];
 
-                    // Add text content first
-                    if (!empty($message['content'])) {
-                        $contentParts[] = [
-                            'type' => 'text',
-                            'text' => $message['content']
-                        ];
+                // Add text content first
+                if (!empty($message['content'])) {
+                    $contentParts[] = [
+                        'type' => 'text',
+                        'text' => $message['content']
+                    ];
+                }
+
+                // Add each attachment based on type
+                foreach ($attachments as $attachment) {
+                    $attachmentContent = $this->formatAttachmentForApi($attachment, $isVisionModel);
+                    if ($attachmentContent) {
+                        $contentParts[] = $attachmentContent;
                     }
+                }
 
-                    // Add each attachment based on type
-                    foreach ($attachments as $attachment) {
-                        $attachmentContent = $this->formatAttachmentForApi($attachment, $isVisionModel);
-                        if ($attachmentContent) {
-                            $contentParts[] = $attachmentContent;
-                        }
-                    }
-
-                    // Only use multimodal format if we have attachments
-                    if (count($contentParts) > 1 || (count($contentParts) === 1 && $contentParts[0]['type'] !== 'text')) {
-                        $api_message['content'] = $contentParts;
-                    }
+                // Only use multimodal format if we have attachments
+                if (count($contentParts) > 1 || (count($contentParts) === 1 && $contentParts[0]['type'] !== 'text')) {
+                    $api_message['content'] = $contentParts;
                 }
             }
 
@@ -436,32 +441,6 @@ class LlmchatController extends BaseController
         return $api_messages;
     }
 
-    /**
-     * Parse attachments from image_path field
-     * Handles both JSON array and single path string formats
-     *
-     * @param string $imagePath The image_path field value
-     * @return array Array of attachment objects
-     */
-    private function parseAttachments($imagePath)
-    {
-        if (empty($imagePath)) {
-            return [];
-        }
-
-        // Try to parse as JSON first
-        $decoded = json_decode($imagePath, true);
-        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            return $decoded;
-        }
-
-        // Single path string - convert to array format
-        return [[
-            'path' => $imagePath,
-            'url' => "?file_path={$imagePath}",
-            'is_image' => $this->isImagePath($imagePath)
-        ]];
-    }
 
     /**
      * Check if a path is an image based on extension
@@ -1110,9 +1089,9 @@ class LlmchatController extends BaseController
             }
         }
 
-        // Update the message in database with corrected file paths
-        $attachmentsJson = count($uploadedFiles) > 1 ? json_encode($uploadedFiles) : $uploadedFiles[0]['path'];
-        $this->llm_service->updateMessage($messageId, ['image_path' => $attachmentsJson]);
+        // Update the message in database with corrected file attachments
+        $attachmentsJson = json_encode($uploadedFiles);
+        $this->llm_service->updateMessage($messageId, ['attachments' => $attachmentsJson]);
     }
 
     /**

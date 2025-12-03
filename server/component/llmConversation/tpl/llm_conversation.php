@@ -93,13 +93,22 @@
                                                         <?php echo nl2br(htmlspecialchars($message['content'])); ?>
                                                     </div>
 
-                                                    <!-- Image attachment -->
-                                                    <?php if (!empty($message['image_path'])): ?>
-                                                        <div class="mt-3">
-                                                            <small class="text-muted">Image: </small>
-                                                            <a href="?file_path=<?php echo htmlspecialchars($message['image_path']); ?>" target="_blank" class="btn btn-sm btn-outline-primary ml-2">
-                                                                <i class="fas fa-image"></i> View Image
-                                                            </a>
+                                                    <!-- Attachment count display -->
+                                                    <?php
+                                                    $attachmentCount = 0;
+                                                    if (!empty($message['attachments'])) {
+                                                        $decoded = json_decode($message['attachments'], true);
+                                                        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                                                            $attachmentCount = count($decoded);
+                                                        }
+                                                    }
+                                                    if ($attachmentCount > 0):
+                                                    ?>
+                                                        <div class="mt-2">
+                                                            <small class="text-muted">
+                                                                <i class="fas fa-paperclip"></i>
+                                                                <?php echo $attachmentCount === 1 ? '1 file attached' : $attachmentCount . ' files attached'; ?>
+                                                            </small>
                                                         </div>
                                                     <?php endif; ?>
                                                 </div>

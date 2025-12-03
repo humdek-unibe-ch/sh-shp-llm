@@ -282,7 +282,7 @@ The LLM plugin creates and manages several database tables to store conversation
 - `id_llmConversations` (int 10 unsigned zerofill): Parent conversation (references `llmConversations.id`)
 - `role` (enum): Message role - 'user', 'assistant', or 'system'
 - `content` (longtext): Message content (text or markdown)
-- `image_path` (varchar 500): Path to uploaded image file (vision models only)
+- `attachments` (longtext): JSON array of attachment metadata (files, images, documents)
 - `model` (varchar 100): Model used for this specific message
 - `tokens_used` (int): Token count for assistant responses
 - `raw_response` (longtext): Full JSON response from LLM API (debugging)
@@ -389,7 +389,7 @@ upload/llm/
 
 **File Metadata Storage:**
 - Files stored in `upload/llm/{user_id}/{conversation_id}/`
-- Paths stored in `llmMessages.image_path` column
+- Metadata stored in `llmMessages.attachments` column as JSON
 - Base64 encoded for API transmission to vision models
 
 ### Data Relationships

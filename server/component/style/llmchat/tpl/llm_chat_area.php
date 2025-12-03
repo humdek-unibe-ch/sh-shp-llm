@@ -21,22 +21,16 @@
             <?php else: ?>
                 <?php foreach ($messages as $message): ?>
                     <?php
-                    // Parse attachments from image_path field
+                    // Parse attachments from attachments field (contains full metadata as JSON)
                     $attachments = [];
-                    if (!empty($message['image_path'])) {
-                        $decoded = json_decode($message['image_path'], true);
+                    if (!empty($message['attachments'])) {
+                        $decoded = json_decode($message['attachments'], true);
                         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                             $attachments = $decoded;
-                        } else {
-                            // Single file path
-                            $attachments = [[
-                                'path' => $message['image_path'],
-                                'url' => '?file_path=' . $message['image_path'],
-                                'is_image' => preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $message['image_path'])
-                            ]];
                         }
                     }
                     $hasAttachments = !empty($attachments);
+                    $attachmentCount = count($attachments);
                     $isUser = $message['role'] === 'user';
                     ?>
                     <div class="d-flex mb-3 <?php echo $isUser ? 'justify-content-end' : 'justify-content-start'; ?>">

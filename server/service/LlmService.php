@@ -163,7 +163,26 @@ class LlmService
     private function clearUserCache($user_id)
     {
         $this->cache->clear_cache(LLM_CACHE_USER_CONVERSATIONS, $user_id);
-        $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $user_id);
+        // Clear all conversation message caches for this user
+        $this->clearConversationMessagesCache($user_id);
+    }
+
+    /**
+     * Clear conversation messages cache for a specific user
+     * Since conversation message caches use conversation_id as key, we need to find all user's conversations
+     */
+    private function clearConversationMessagesCache($user_id)
+    {
+        // Get all conversation IDs for this user
+        $conversations = $this->db->query_db(
+            "SELECT id FROM llmConversations WHERE id_users = ? AND deleted = 0",
+            [$user_id]
+        );
+
+        // Clear message cache for each conversation
+        foreach ($conversations as $conversation) {
+            $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation['id']);
+        }
     }
 
     /**
@@ -284,7 +303,7 @@ class LlmService
             $this->db->update_by_ids('llmConversations', $update_data, ['id' => $conversation_id]);
 
             // Clear cache
-            $this->clearUserCache($user_id);
+            $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id);
 
         // Log transaction
         $this->logTransaction('UPDATE', 'llmConversations', $conversation_id, $user_id, 'Conversation updated: ' . json_encode($update_data));
@@ -336,18 +355,18 @@ class LlmService
             throw new Exception('Conversation not found');
         }
 
-        // Handle attachments - store as JSON if multiple files, or single path for backward compatibility
+        // Handle attachments - store full metadata in attachments field
         $attachmentsData = null;
         if ($attachments) {
-            if (is_array($attachments) && count($attachments) > 1) {
-                // Multiple files - store as JSON
+            if (is_array($attachments)) {
+                // Store full metadata in attachments field
                 $attachmentsData = json_encode($attachments);
-            } elseif (is_array($attachments) && count($attachments) === 1) {
-                // Single file - store the path directly for backward compatibility
-                $attachmentsData = $attachments[0]['path'];
             } elseif (is_string($attachments)) {
-                // Backward compatibility - direct path string
-                $attachmentsData = $attachments;
+                // Backward compatibility - single path string
+                $attachmentsData = json_encode([[
+                    'path' => $attachments,
+                    'original_name' => basename($attachments)
+                ]]);
             }
         }
 
@@ -355,7 +374,7 @@ class LlmService
             'id_llmConversations' => $conversation_id,
             'role' => $role,
             'content' => $content,
-            'image_path' => $attachmentsData,
+            'attachments' => $attachmentsData,
             'model' => $model,
             'tokens_used' => $tokens_used,
             'raw_response' => $raw_response
@@ -370,7 +389,7 @@ class LlmService
         );
 
         // Clear cache
-        $this->clearUserCache($conversation['id_users']);
+        $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id);
 
         // Log transaction
         $this->logTransaction('CREATE', 'llmMessages', $message_id, $conversation['id_users'], "Message added to conversation $conversation_id");
@@ -403,7 +422,7 @@ class LlmService
         }
 
         $messages = $this->db->query_db(
-            "SELECT id, `role`, `content`, `image_path`, `model`, `tokens_used`, `timestamp`
+            "SELECT id, `role`, `content`, `attachments`, `model`, `tokens_used`, `timestamp`
              FROM llmMessages
              WHERE id_llmConversations = :conversation_id AND deleted = 0
              ORDER BY timestamp ASC
