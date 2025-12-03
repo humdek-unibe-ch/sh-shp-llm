@@ -832,6 +832,11 @@
                     if (response.conversation_id && (!self.currentConversationId || response.is_new_conversation)) {
                         self.currentConversationId = response.conversation_id;
                         $('#current-conversation-id').val(response.conversation_id);
+
+                        // Update URL for new conversations to ensure bookmarkable links
+                        const url = new URL(window.location);
+                        url.searchParams.set('conversation', response.conversation_id);
+                        window.history.pushState({}, '', url);
                     }
 
                     // Handle direct response
@@ -839,14 +844,9 @@
                         self.removeThinkingIndicator();
                         self.addAssistantMessage(response.message);
 
-                        // Refresh conversations sidebar and update URL (only if conversations list is enabled)
+                        // Refresh conversations sidebar (only if conversations list is enabled)
                         if (self.enableConversationsList) {
                             self.loadConversations();
-                        }
-                        if (response.conversation_id) {
-                            const url = new URL(window.location);
-                            url.searchParams.set('conversation', response.conversation_id);
-                            window.history.pushState({}, '', url);
                         }
                     }
                 },
@@ -950,10 +950,14 @@
                             self.convertStreamingToFinalMessage();
                             // Re-enable input controls
                             self.setStreamingState(false);
-                            // Refresh conversations sidebar and page to show updates (only if conversations list is enabled)
+                            // Refresh conversations sidebar (only if conversations list is enabled)
                             if (self.enableConversationsList) {
                                 self.loadConversations();
                             }
+                            // Update URL with current conversation ID before page refresh
+                            const url = new URL(window.location);
+                            url.searchParams.set('conversation', self.currentConversationId);
+                            window.history.pushState({}, '', url);
                             // Small delay before page refresh to allow UI updates to complete
                             setTimeout(() => {
                                 window.location.reload();

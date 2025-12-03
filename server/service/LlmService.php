@@ -233,6 +233,24 @@ class LlmService
     }
 
     /**
+     * Get or create a conversation for a specific model
+     * Returns the most recent conversation for the model, or creates a new one if none exists
+     */
+    public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null)
+    {
+        // First, try to find an existing conversation for this model
+        $existing_conversations = $this->getUserConversations($user_id, 1, $model);
+
+        if (!empty($existing_conversations)) {
+            // Return the most recent conversation for this model
+            return $existing_conversations[0]['id'];
+        }
+
+        // No existing conversation found, create a new one
+        return $this->createConversation($user_id, null, $model, $temperature, $max_tokens, $section_id);
+    }
+
+    /**
      * Get user conversations
      */
     public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null)
@@ -457,12 +475,35 @@ class LlmService
 
         $response = BaseModel::execute_curl_call($data);
 
-        // If API call fails or returns no data, return default model list
+        // If API call fails or returns no data, return filtered default model list
         if (!$response || !is_array($response) || empty($response['data'])) {
-            return $this->getDefaultModelList()['data'];
+            $default_models = $this->getDefaultModelList()['data'];
+            return $this->filterTextGenerationModels($default_models);
         }
 
-        return $response['data'];
+        // Filter API response to only include text generation models
+        return $this->filterTextGenerationModels($response['data']);
+    }
+
+    /**
+     * Filter models to only include text generation models
+     */
+    private function filterTextGenerationModels($models)
+    {
+        // List of models that support text generation/chat
+        $text_generation_models = [
+            'qwen3-coder-30b-a3b-instruct',
+            'apertus-8b-instruct-2509',
+            'deepseek-r1-0528-qwen3-8b',
+            'internvl3-8b-instruct',
+            'qwen3-vl-8b-instruct',
+            'gpt-oss-120b',
+            'minimax-m2'
+        ];
+
+        return array_filter($models, function($model) use ($text_generation_models) {
+            return in_array($model['id'], $text_generation_models);
+        });
     }
 
     /**
@@ -470,22 +511,9 @@ class LlmService
      */
     private function getDefaultModelList()
     {
+        // Only include text generation models in the default list
         return [
             "data" => [
-                [
-                    "id" => "bge-m3",
-                    "created" => 1764224112,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "granite-embedding-107m-multilingual",
-                    "created" => 1763991120,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
                 [
                     "id" => "qwen3-coder-30b-a3b-instruct",
                     "created" => 1764016765,
@@ -494,22 +522,8 @@ class LlmService
                     "meta" => null
                 ],
                 [
-                    "id" => "jina-reranker-v2-base-multilingual",
-                    "created" => 1763991238,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
                     "id" => "gpt-oss-120b",
                     "created" => 1763993286,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "qwen3-embedding-0.6b",
-                    "created" => 1764224003,
                     "object" => "model",
                     "owned_by" => "gpustack",
                     "meta" => null
@@ -538,13 +552,6 @@ class LlmService
                 [
                     "id" => "internvl3-8b-instruct",
                     "created" => 1764016711,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "faster-whisper-large-v3",
-                    "created" => 1763990327,
                     "object" => "model",
                     "owned_by" => "gpustack",
                     "meta" => null
