@@ -62,6 +62,7 @@ class LlmchatView extends StyleView
         $llm_temperature = $this->model->getLlmTemperature();
         $llm_max_tokens = $this->model->getLlmMaxTokens();
         $current_conversation_id = $this->model->getConversationId();
+        $conversation_name = $this->model->getConversationName();
 
         // Get UI labels
         $conversations_heading = $this->model->getConversationsHeading();

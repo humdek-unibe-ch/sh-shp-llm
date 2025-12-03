@@ -208,12 +208,13 @@ class LlmService
     /**
      * Create a new conversation
      */
-    public function createConversation($user_id, $title = null, $model = null, $temperature = null, $max_tokens = null)
+    public function createConversation($user_id, $title = null, $model = null, $temperature = null, $max_tokens = null, $section_id = null)
     {
         $config = $this->getLlmConfig();
 
         $data = [
             'id_users' => $user_id,
+            'id_sections' => $section_id,
             'title' => $title ?: 'New Conversation',
             'model' => $model ?: $config['llm_default_model'],
             'temperature' => $temperature ?: $config['llm_temperature'],

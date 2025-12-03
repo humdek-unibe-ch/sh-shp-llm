@@ -135,6 +135,7 @@
             this.noConversationsMessage = this.container.data('no-conversations-message');
             this.currentConversationId = this.container.data('current-conversation-id') || null;
             this.configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
+            this.enableConversationsList = this.container.data('enable-conversations-list') === '1';
 
             // Initialize file config from container data attributes
             initFileConfigFromContainer(this.container);
@@ -371,7 +372,11 @@
          */
         init() {
             this.bindEvents();                    // Set up all event listeners
-            this.loadConversations();            // Load user's conversations
+            if (this.enableConversationsList) {
+                this.loadConversations();        // Load user's conversations only if enabled
+            } else {
+                this.loadCurrentConversation();  // Load current/last conversation for single mode
+            }
             this.updateFileUploadVisibility();   // Show/hide file upload based on model
         }
 
@@ -384,28 +389,30 @@
             const self = this;
 
             // ===== Conversation Management Events =====
-            // Handle creating and selecting conversations
+            // Handle creating and selecting conversations (only if conversations list is enabled)
 
-            // New conversation button - opens modal to create new conversation
-            this.container.on('click', '#new-conversation-btn', function(e) {
-                self.showNewConversationModal();
-            });
+            if (this.enableConversationsList) {
+                // New conversation button - opens modal to create new conversation
+                this.container.on('click', '#new-conversation-btn', function(e) {
+                    self.showNewConversationModal();
+                });
 
-            // Conversation selection - switches to selected conversation
-            // Ignores clicks on delete buttons within conversation cards
-            this.container.on('click', '.card[data-conversation-id]', function(e) {
-                if (!$(e.target).closest('button').length) {
+                // Conversation selection - switches to selected conversation
+                // Ignores clicks on delete buttons within conversation cards
+                this.container.on('click', '.card[data-conversation-id]', function(e) {
+                    if (!$(e.target).closest('button').length) {
+                        const conversationId = $(this).data('conversation-id');
+                        self.selectConversation(conversationId);
+                    }
+                });
+
+                // Delete conversation
+                this.container.on('click', '.card[data-conversation-id] .btn-outline-danger', function(e) {
+                    e.stopPropagation();
                     const conversationId = $(this).data('conversation-id');
-                    self.selectConversation(conversationId);
-                }
-            });
-
-            // Delete conversation
-            this.container.on('click', '.card[data-conversation-id] .btn-outline-danger', function(e) {
-                e.stopPropagation();
-                const conversationId = $(this).data('conversation-id');
-                self.confirmDeleteConversation(conversationId);
-            });
+                    self.confirmDeleteConversation(conversationId);
+                });
+            }
 
             // ===== Message Input Events =====
             // Handle message sending and file attachments
@@ -489,6 +496,44 @@
                 .catch(error => {
                     console.error('Failed to load conversations:', error.message);
                 });
+        }
+
+        /**
+         * Load current conversation for single conversation mode
+         * When conversations list is disabled, load the current/last conversation
+         */
+        loadCurrentConversation() {
+            if (this.currentConversationId) {
+                // Load the specific conversation
+                this.loadConversationMessages(this.currentConversationId);
+            } else {
+                // Try to load the last conversation
+                this.loadConversationsApi()
+                    .then(conversations => {
+                        if (conversations.length > 0) {
+                            // Load the most recent conversation
+                            const lastConversation = conversations[0];
+                            this.currentConversationId = lastConversation.id;
+                            $('#current-conversation-id').val(lastConversation.id);
+                            this.loadConversationMessages(lastConversation.id);
+                        } else {
+                            // No conversations exist, show empty state
+                            this.renderEmptyChat();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Failed to load conversations:', error.message);
+                        this.renderEmptyChat();
+                    });
+            }
+        }
+
+        /**
+         * Render empty chat state when no conversations exist
+         */
+        renderEmptyChat() {
+            const messagesContainer = $('#messages-container');
+            messagesContainer.html('<div class="d-flex align-items-center justify-content-center h-100"><p class="text-center text-muted">No messages yet. Send your first message!</p></div>');
         }
 
         /**
@@ -788,8 +833,10 @@
                         self.removeThinkingIndicator();
                         self.addAssistantMessage(response.message);
 
-                        // Refresh conversations sidebar and update URL
-                        self.loadConversations();
+                        // Refresh conversations sidebar and update URL (only if conversations list is enabled)
+                        if (self.enableConversationsList) {
+                            self.loadConversations();
+                        }
                         if (response.conversation_id) {
                             const url = new URL(window.location);
                             url.searchParams.set('conversation', response.conversation_id);
@@ -897,8 +944,10 @@
                             self.convertStreamingToFinalMessage();
                             // Re-enable input controls
                             self.setStreamingState(false);
-                            // Refresh conversations sidebar and page to show updates
-                            self.loadConversations();
+                            // Refresh conversations sidebar and page to show updates (only if conversations list is enabled)
+                            if (self.enableConversationsList) {
+                                self.loadConversations();
+                            }
                             // Small delay before page refresh to allow UI updates to complete
                             setTimeout(() => {
                                 window.location.reload();

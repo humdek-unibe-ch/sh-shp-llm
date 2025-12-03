@@ -342,6 +342,13 @@ class LlmchatController extends BaseController
     private function handleNewConversation()
     {
         $user_id = $this->model->getUserId();
+
+        // Check if conversations list is enabled
+        if (!$this->model->isConversationsListEnabled()) {
+            $this->sendJsonResponse(['error' => 'Creating new conversations is not allowed when conversations list is disabled'], 403);
+            return;
+        }
+
         $title = trim($_POST['title'] ?? 'New Conversation');
         $model = $_POST['model'] ?? $this->model->getConfiguredModel();
 
@@ -349,7 +356,7 @@ class LlmchatController extends BaseController
             // Check rate limiting before creating new conversation
             $rate_data = $this->llm_service->checkRateLimit($user_id);
 
-            $conversation_id = $this->llm_service->createConversation($user_id, $title, $model);
+            $conversation_id = $this->llm_service->createConversation($user_id, $title, $model, $this->model->getSectionId());
 
             // Update rate limiting to include the new conversation
             $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);

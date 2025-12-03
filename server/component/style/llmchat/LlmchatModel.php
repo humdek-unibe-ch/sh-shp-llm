@@ -24,6 +24,7 @@ class LlmchatModel extends StyleModel
     private $llm_temperature;
     private $llm_max_tokens;
     private $llm_streaming_enabled;
+    private $enable_conversations_list;
     private $submit_button_label;
     private $new_chat_button_label;
     private $chat_description;
@@ -42,6 +43,7 @@ class LlmchatModel extends StyleModel
     private $clear_button_label;
     private $new_conversation_title_label;
     private $conversation_title_label;
+    private $conversation_name;
     private $cancel_button_label;
     private $create_button_label;
     private $delete_confirmation_title;
@@ -85,6 +87,7 @@ class LlmchatModel extends StyleModel
         $this->llm_temperature = $this->get_db_field('llm_temperature', '0.7');
         $this->llm_max_tokens = $this->get_db_field('llm_max_tokens', '2048');
         $this->llm_streaming_enabled = $this->get_db_field('llm_streaming_enabled', '1');
+        $this->enable_conversations_list = $this->get_db_field('enable_conversations_list', '0');
         $this->submit_button_label = $this->get_db_field('submit_button_label', LLM_DEFAULT_SUBMIT_LABEL);
         $this->new_chat_button_label = $this->get_db_field('new_chat_button_label', LLM_DEFAULT_NEW_CHAT_LABEL);
         $this->chat_description = $this->get_db_field('chat_description', 'Chat with AI assistant');
@@ -103,6 +106,7 @@ class LlmchatModel extends StyleModel
         $this->clear_button_label = $this->get_db_field('clear_button_label', 'Clear');
         $this->new_conversation_title_label = $this->get_db_field('new_conversation_title_label', 'New Conversation');
         $this->conversation_title_label = $this->get_db_field('conversation_title_label', 'Conversation Title (optional)');
+        $this->conversation_name = $this->get_db_field('conversation_name', 'My Chat');
         $this->cancel_button_label = $this->get_db_field('cancel_button_label', 'Cancel');
         $this->create_button_label = $this->get_db_field('create_button_label', 'Create Conversation');
         $this->delete_confirmation_title = $this->get_db_field('delete_confirmation_title', 'Delete Conversation');
@@ -194,6 +198,14 @@ class LlmchatModel extends StyleModel
         return $this->conversation_id;
     }
 
+    /**
+     * Get section ID (for linking conversations to sections)
+     */
+    public function getSectionId()
+    {
+        return $this->id;
+    }
+
     /* Configuration Getters *********************************************************/
 
     public function getConversationLimit()
@@ -224,6 +236,11 @@ class LlmchatModel extends StyleModel
     public function isStreamingEnabled()
     {
         return $this->llm_streaming_enabled === '1';
+    }
+
+    public function isConversationsListEnabled()
+    {
+        return $this->enable_conversations_list === '1';
     }
 
     public function getSubmitButtonLabel()
@@ -346,6 +363,11 @@ class LlmchatModel extends StyleModel
     public function getConversationTitleLabel()
     {
         return $this->conversation_title_label;
+    }
+
+    public function getConversationName()
+    {
+        return $this->conversation_name;
     }
 
     public function getCancelButtonLabel()
