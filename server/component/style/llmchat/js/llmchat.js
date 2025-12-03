@@ -1,36 +1,99 @@
 /**
  * LLM Chat Component JavaScript
- * Handles real-time chat functionality, file uploads, and UI interactions
- * With smooth streaming and fluid UI updates
+ * ===================================================================
+ *
+ * A comprehensive chat interface component for interacting with Large Language Models.
+ * Provides both real-time streaming and traditional AJAX communication modes.
+ *
+ * ARCHITECTURAL OVERVIEW:
+ * =======================
+ * - Real-time streaming via Server-Sent Events (EventSource)
+ * - Progressive message rendering with debounced updates
+ * - File attachment support for vision-enabled models
+ * - Conversation management with persistent state
+ * - Markdown parsing and rich text rendering
+ * - Responsive Bootstrap-based UI
+ *
+ * KEY FEATURES:
+ * =============
+ * - Dual communication modes: Streaming (SSE) and AJAX polling
+ * - File upload with drag-and-drop and preview functionality
+ * - Conversation CRUD operations (Create, Read, Update, Delete)
+ * - Real-time typing indicators and smooth scrolling
+ * - Error handling with user-friendly notifications
+ * - Mobile-responsive design
+ * - Markdown support for rich text formatting
+ *
+ * TECHNICAL IMPLEMENTATION:
+ * ========================
+ * - Class-based architecture with encapsulated state management
+ * - Event-driven UI updates using jQuery event delegation
+ * - Debounced rendering for performance optimization
+ * - Progressive enhancement (works without JavaScript streaming)
+ * - Security-conscious input validation and output escaping
+ *
+ * DATA FLOW:
+ * ==========
+ * 1. User input → Validation → API call (streaming/non-streaming)
+ * 2. Response processing → Progressive UI updates → Final rendering
+ * 3. Error handling → User notification → State cleanup
+ *
+ * DEPENDENCIES:
+ * =============
+ * - jQuery 3.x
+ * - Bootstrap 4/5
+ * - Font Awesome icons
+ * - Server-sent events support (for streaming)
+ *
+ * @class LlmChat
+ * @param {HTMLElement} container - The DOM container element for the chat interface
  */
 
 (function($) {
     'use strict';
 
+    /**
+     * Main LLM Chat Component Class
+     * Manages the entire chat interface lifecycle and interactions
+     */
     class LlmChat {
+        /**
+         * Constructor - Initialize the LLM Chat component
+         * Sets up all necessary properties and event handlers
+         *
+         * @param {HTMLElement} container - The DOM element containing the chat interface
+         */
         constructor(container) {
+            // Core DOM and configuration properties
             this.container = $(container);
             this.userId = this.container.data('user-id');
             this.noConversationsMessage = this.container.data('no-conversations-message');
             this.currentConversationId = this.container.data('current-conversation-id') || null;
-            this.eventSource = null;
-            this.isStreaming = false;
-            this.attachmentFileMap = {}; // Map attachmentId to file index
-            this.streamBuffer = ''; // Buffer for accumulating streamed text
-            this.renderTimeout = null; // Debounce timeout for rendering
-            this.scrollRAF = null; // RequestAnimationFrame for smooth scrolling
+            console.log(this.currentConversationId);
+
+            // Streaming and real-time properties
+            this.eventSource = null;                    // EventSource object for SSE streaming
+            this.isStreaming = false;                   // Flag to track if currently streaming
+            this.attachmentFileMap = {};               // Map attachmentId to file index for file management
+            this.streamBuffer = '';                    // Buffer for accumulating streamed text chunks
+            this.renderTimeout = null;                 // Debounce timeout for smooth rendering
+            this.scrollRAF = null;                     // RequestAnimationFrame ID for smooth scrolling
 
             this.init();
         }
 
         // ===== HTML Generation Helpers =====
+        // These methods generate consistent HTML for different UI elements
+        // Used throughout the component to maintain visual consistency
 
         /**
-         * Generate avatar HTML snippet
-         * @param {string} role - 'user' or 'assistant'
-         * @param {boolean} isRightAligned - Whether avatar should be right-aligned
-         * @param {string} additionalClasses - Additional CSS classes
-         * @returns {string} Avatar HTML
+         * Generate avatar HTML snippet for user/assistant messages
+         * Creates a circular avatar with appropriate icon and styling
+         *
+         * @param {string} role - Message sender role ('user' or 'assistant')
+         * @param {boolean} isRightAligned - Whether avatar should be right-aligned (for user messages)
+         * @param {string} additionalClasses - Additional CSS classes to apply
+         * @returns {string} Complete avatar HTML snippet
          */
         generateAvatar(role, isRightAligned = false, additionalClasses = '') {
             const icon = role === 'user' ? 'fa-user' : 'fa-robot';
@@ -41,11 +104,13 @@
 
         /**
          * Generate message meta information HTML
-         * @param {string} timestamp - Message timestamp
-         * @param {number|null} tokensUsed - Number of tokens used
-         * @param {string} tokensSuffix - Token suffix text
-         * @param {boolean} isUser - Whether message is from user
-         * @returns {string} Meta HTML
+         * Shows timestamp and token usage for messages
+         *
+         * @param {string} timestamp - ISO timestamp string or Date object
+         * @param {number|null} tokensUsed - Number of tokens used (null for user messages)
+         * @param {string} tokensSuffix - Suffix text for token display (e.g., ' tokens')
+         * @param {boolean} isUser - Whether message is from user (affects styling)
+         * @returns {string} Meta information HTML snippet
          */
         generateMessageMeta(timestamp, tokensUsed, tokensSuffix, isUser = false) {
             const timeStr = this.formatTime(timestamp);
@@ -56,10 +121,12 @@
         }
 
         /**
-         * Generate user message HTML
-         * @param {string} content - Message content
-         * @param {string} timestamp - Message timestamp
-         * @returns {string} Complete message HTML
+         * Generate complete user message HTML
+         * Creates a right-aligned message bubble with user avatar and content
+         *
+         * @param {string} content - The text content of the user's message
+         * @param {string} timestamp - Optional timestamp (defaults to current time)
+         * @returns {string} Complete HTML for user message display
          */
         generateUserMessage(content, timestamp = null) {
             const time = timestamp || new Date();
@@ -75,13 +142,15 @@
         }
 
         /**
-         * Generate assistant message HTML
-         * @param {string} content - Message content
-         * @param {string} timestamp - Message timestamp
-         * @param {number|null} tokensUsed - Tokens used
-         * @param {string} tokensSuffix - Token suffix
-         * @param {string|null} imagePath - Path to attached image
-         * @returns {string} Complete message HTML
+         * Generate complete assistant message HTML
+         * Creates a left-aligned message bubble with assistant avatar, content, and optional image
+         *
+         * @param {string} content - The text content of the assistant's message
+         * @param {string} timestamp - Optional timestamp (defaults to current time)
+         * @param {number|null} tokensUsed - Number of tokens used in generation
+         * @param {string} tokensSuffix - Suffix for token display (e.g., ' tokens')
+         * @param {string|null} imagePath - Optional path to attached image for vision responses
+         * @returns {string} Complete HTML for assistant message display
          */
         generateAssistantMessage(content, timestamp = null, tokensUsed = null, tokensSuffix = '', imagePath = null) {
             const time = timestamp || new Date();
@@ -101,7 +170,10 @@
 
         /**
          * Generate thinking indicator HTML
-         * @returns {string} Thinking indicator HTML
+         * Shows a loading animation while the AI is processing the user's message
+         * Displays before streaming begins or for regular AJAX responses
+         *
+         * @returns {string} HTML for the thinking indicator with spinner
          */
         generateThinkingIndicator() {
             return `
@@ -120,8 +192,11 @@
         }
 
         /**
-         * Generate streaming message HTML
-         * @returns {string} Streaming message HTML
+         * Generate streaming message HTML container
+         * Creates the initial message structure for real-time streaming responses
+         * The content gets updated dynamically as chunks arrive via EventSource
+         *
+         * @returns {string} HTML structure for streaming message with typing cursor
          */
         generateStreamingMessage() {
             return `
@@ -136,11 +211,15 @@
         }
 
         // ===== API Call Helpers =====
+        // Centralized methods for backend communication
+        // Handle authentication, error handling, and response processing
 
         /**
          * Make AJAX request with consistent error handling
-         * @param {Object} options - jQuery AJAX options
-         * @returns {jqXHR} jQuery XMLHttpRequest object
+         * Provides standardized error handling and response processing for all API calls
+         *
+         * @param {Object} options - jQuery AJAX options (url, method, data, etc.)
+         * @returns {jqXHR} jQuery XMLHttpRequest object for chaining
          */
         makeApiRequest(options) {
             const defaultOptions = {
@@ -157,8 +236,11 @@
         }
 
         /**
-         * Load conversations via API
-         * @returns {Promise} Promise that resolves with conversations data
+         * Load user conversations via API
+         * Fetches all conversations for the current user from the backend
+         * Used to populate the conversations sidebar
+         *
+         * @returns {Promise<Array>} Promise that resolves with array of conversation objects
          */
         loadConversationsApi() {
             return new Promise((resolve, reject) => {
@@ -181,8 +263,11 @@
 
         /**
          * Load conversation messages via API
-         * @param {string|number} conversationId - Conversation ID
-         * @returns {Promise} Promise that resolves with conversation data
+         * Fetches all messages for a specific conversation including conversation metadata
+         * Used when switching between conversations or loading the current conversation
+         *
+         * @param {string|number} conversationId - Unique identifier of the conversation
+         * @returns {Promise<Object>} Promise that resolves with {conversation, messages} object
          */
         loadConversationMessagesApi(conversationId) {
             return new Promise((resolve, reject) => {
@@ -206,21 +291,35 @@
             });
         }
 
+        /**
+         * Initialize the chat component
+         * Sets up event handlers, loads initial data, and configures UI state
+         * Called automatically in constructor
+         */
         init() {
-            this.bindEvents();
-            this.loadConversations();
-            this.updateFileUploadVisibility();
+            this.bindEvents();                    // Set up all event listeners
+            this.loadConversations();            // Load user's conversations
+            this.updateFileUploadVisibility();   // Show/hide file upload based on model
         }
 
+        /**
+         * Bind all event handlers for user interactions
+         * Sets up click handlers, form submissions, drag-and-drop, and input events
+         * Uses event delegation for dynamic elements
+         */
         bindEvents() {
             const self = this;
 
-            // New conversation button
+            // ===== Conversation Management Events =====
+            // Handle creating and selecting conversations
+
+            // New conversation button - opens modal to create new conversation
             this.container.on('click', '#new-conversation-btn', function(e) {
                 self.showNewConversationModal();
             });
 
-            // Conversation selection
+            // Conversation selection - switches to selected conversation
+            // Ignores clicks on delete buttons within conversation cards
             this.container.on('click', '.card[data-conversation-id]', function(e) {
                 if (!$(e.target).closest('button').length) {
                     const conversationId = $(this).data('conversation-id');
@@ -235,35 +334,43 @@
                 self.confirmDeleteConversation(conversationId);
             });
 
-            // Message form submission
+            // ===== Message Input Events =====
+            // Handle message sending and file attachments
+
+            // Message form submission - sends user message to AI
             this.container.on('submit', '#message-form', function(e) {
                 e.preventDefault();
                 self.sendMessage();
             });
 
-            // File upload button
+            // File upload button - triggers hidden file input
             this.container.on('click', '#attachment-btn', function(e) {
                 e.preventDefault();
                 $('#file-upload').click();
             });
 
-            // File input change
+            // File input change - processes selected files for upload
             this.container.on('change', '#file-upload', function(e) {
                 const files = e.target.files;
                 self.handleFileSelection(files);
             });
 
-            // Drag and drop on message input wrapper
+            // ===== File Drag & Drop Events =====
+            // Handle drag-and-drop file uploads on message input area
+
+            // Drag over - show visual feedback
             this.container.on('dragover', '.message-input-wrapper', function(e) {
                 e.preventDefault();
                 $(this).addClass('border-primary');
             });
 
+            // Drag leave - remove visual feedback
             this.container.on('dragleave', '.message-input-wrapper', function(e) {
                 e.preventDefault();
                 $(this).removeClass('border-primary');
             });
 
+            // File drop - process dropped files
             this.container.on('drop', '.message-input-wrapper', function(e) {
                 e.preventDefault();
                 $(this).removeClass('border-primary');
@@ -273,24 +380,32 @@
                 }
             });
 
-            // Remove attachment
+            // ===== Attachment Management Events =====
+            // Handle removing attachments and input interactions
+
+            // Remove attachment - deletes file from upload list
             this.container.on('click', '.remove-attachment', function(e) {
                 e.preventDefault();
                 const attachmentId = $(this).data('attachment-id');
                 self.removeAttachment(attachmentId);
             });
 
-            // Character count
+            // Character count - updates counter as user types
             this.container.on('input', '#message-input', function() {
                 self.updateCharCount();
             });
 
-            // Clear message button
+            // Clear message button - resets form and clears attachments
             this.container.on('click', '#clear-message-btn', function() {
                 self.clearMessageForm();
             });
         }
 
+        /**
+         * Load and display user conversations
+         * Fetches conversations from API and renders them in the sidebar
+         * Called during initialization and after conversation creation/deletion
+         */
         loadConversations() {
             const conversationsContainer = $('#conversations-list');
 
@@ -303,27 +418,39 @@
                 });
         }
 
+        /**
+         * Select and switch to a conversation
+         * Updates UI state, loads conversation messages, and updates browser URL
+         *
+         * @param {string|number} conversationId - ID of conversation to select
+         */
         selectConversation(conversationId) {
             this.currentConversationId = conversationId;
             $('#current-conversation-id').val(conversationId);
 
-            // Update UI with smooth transition
+            // Update UI with smooth transition - highlight selected conversation
             $('.card[data-conversation-id]').removeClass('border-primary bg-light');
             const selectedItem = $(`.card[data-conversation-id="${conversationId}"]`);
             selectedItem.addClass('border-primary bg-light');
 
-            // Load conversation messages
+            // Load conversation messages and show loading state
             this.loadConversationMessages(conversationId);
 
-            // Update URL without page reload
+            // Update URL without page reload for bookmarkable links
             const url = new URL(window.location);
             url.searchParams.set('conversation', conversationId);
             window.history.pushState({}, '', url);
         }
 
+        /**
+         * Load and display messages for a conversation
+         * Shows loading state, fetches messages from API, and renders them
+         *
+         * @param {string|number} conversationId - ID of conversation to load messages for
+         */
         loadConversationMessages(conversationId) {
             const messagesContainer = $('#messages-container');
-            messagesContainer.css('opacity', '0.6');
+            messagesContainer.css('opacity', '0.6'); // Visual loading indicator
 
             this.loadConversationMessagesApi(conversationId)
                 .then(({ conversation, messages }) => {
@@ -333,15 +460,23 @@
                     this.showError(error.message);
                 })
                 .finally(() => {
-                    messagesContainer.css('opacity', '1');
+                    messagesContainer.css('opacity', '1'); // Remove loading state
                 });
         }
 
+        /**
+         * Render conversations list in sidebar
+         * Creates conversation cards with titles, timestamps, and delete buttons
+         * Handles empty state when no conversations exist
+         *
+         * @param {Array} conversations - Array of conversation objects from API
+         */
         renderConversations(conversations) {
             const conversationsContainer = $('#conversations-list');
             conversationsContainer.empty();
 
             if (conversations.length === 0) {
+                // Show empty state message when no conversations exist
                 conversationsContainer.html('<div class="text-center text-muted py-3"><small>' + this.escapeHtml(this.noConversationsMessage) + '</small></div>');
                 return;
             }
@@ -364,6 +499,8 @@
                 conversationsContainer.append(conversationHtml);
             });
 
+            console.log(this.currentConversationId);
+
             // Automatically select the current conversation if one is set and conversations exist
             if (this.currentConversationId && conversations.length > 0) {
                 const currentConversationExists = conversations.some(conv => conv.id == this.currentConversationId);
@@ -379,12 +516,19 @@
             }
         }
 
+        /**
+         * Render a conversation with all its messages
+         * Updates the conversation header and displays all messages in chronological order
+         *
+         * @param {Object} conversation - Conversation metadata (title, model, etc.)
+         * @param {Array} messages - Array of message objects to display
+         */
         renderConversation(conversation, messages) {
-            // Update conversation header
+            // Update conversation header with title and model information
             $('.card-header h6').text(conversation.title);
             $('.card-header small').text('Model: ' + conversation.model);
 
-            // Render messages
+            // Clear and prepare messages container
             const messagesContainer = $('#messages-container');
             messagesContainer.empty();
 
@@ -421,8 +565,13 @@
             `;
         }
 
+        /**
+         * Send user message to AI
+         * Main entry point for message sending - validates input, determines sending method,
+         * and routes to either streaming or regular AJAX based on configuration
+         */
         sendMessage() {
-            // Don't allow sending while streaming is active
+            // Prevent concurrent messages during streaming
             if (this.isStreaming) {
                 this.showError('Please wait for the current response to complete');
                 return;
@@ -431,31 +580,29 @@
             const form = $('#message-form');
             const formData = new FormData(form[0]);
 
-            // Validate
+            // Validate message content
             const message = formData.get('message').trim();
             if (!message) {
                 this.showError('Please enter a message');
                 return;
             }
 
-            // Add action parameter for controller
+            // Add action parameter for backend controller routing
             formData.append('action', 'send_message');
 
-            const self = this;
-
-            // Check if streaming is enabled
+            // Check if real-time streaming is enabled for this chat instance
             const streamingData = this.container.data('streaming-enabled');
             const streamingEnabled = streamingData == '1' || streamingData == 1 || streamingData === true;
 
-            // Add user message to UI immediately for better UX
+            // Add user message to UI immediately for better UX feedback
             this.addUserMessage(message);
 
-            // Check if streaming is enabled
+            // Route to appropriate sending method based on streaming capability
             if (streamingEnabled) {
-                // Use streaming approach
+                // Use EventSource streaming for real-time responses
                 this.sendStreamingMessage(formData);
             } else {
-                // Use regular AJAX approach
+                // Use traditional AJAX polling for responses
                 this.sendRegularMessage(formData);
             }
         }
@@ -525,13 +672,19 @@
             });
         }
 
+        /**
+         * Send message using streaming approach
+         * Prepares the message data first, then establishes EventSource connection for real-time updates
+         *
+         * @param {FormData} formData - Form data containing message and attachments
+         */
         sendStreamingMessage(formData) {
             const self = this;
 
-            // First, send preparation request to store message data
+            // First, send preparation request to store message data and get conversation ready
             formData.append('prepare_streaming', '1');
 
-            // Check if test mode should be used
+            // Check if test mode should be used (for development/testing)
             var isTestMode = window.location.search.includes('test=1');
 
             $.ajax({
@@ -546,7 +699,7 @@
                         return;
                     }
 
-                    // Now start the streaming EventSource
+                    // Now start the streaming EventSource connection
                     const streamingUrl = new URL(window.location.href);
                     streamingUrl.searchParams.set('streaming', '1');
                     streamingUrl.searchParams.set('conversation', self.currentConversationId);
@@ -559,59 +712,72 @@
             });
         }
 
+        /**
+         * Start real-time streaming using EventSource (Server-Sent Events)
+         * Establishes SSE connection and handles incoming message chunks
+         * Manages UI state during streaming (disabled inputs, indicators)
+         *
+         * @param {string} streamingUrl - URL for the EventSource connection
+         */
         startStreaming(streamingUrl) {
             this.isStreaming = true;
             this.streamBuffer = '';
             const streamingIndicator = $('#streaming-indicator');
             streamingIndicator.fadeIn(200);
 
-            // Disable input while streaming
+            // Disable input controls during streaming to prevent concurrent messages
             this.setStreamingState(true);
 
-            // Show thinking indicator
+            // Show initial thinking indicator before streaming starts
             this.showAiThinking();
 
-            // Start SSE
+            // Establish Server-Sent Events connection
             this.eventSource = new EventSource(streamingUrl);
 
             const self = this;
 
+            // Handle incoming Server-Sent Events messages
             this.eventSource.onmessage = function(event) {
                 try {
                     const data = JSON.parse(event.data);
 
+                    // Process different types of streaming events
                     switch (data.type) {
                         case 'connected':
                             // Connection established - thinking indicator already shown
                             break;
 
                         case 'chunk':
+                            // Receive and display incremental content chunks
                             if (data.content) {
                                 self.appendStreamChunk(data.content);
                             }
                             break;
 
                         case 'done':
+                            // Streaming completed successfully
                             self.finishStreaming();
-                            // Convert streaming message to final assistant message
+                            // Convert temporary streaming message to final message format
                             self.convertStreamingToFinalMessage();
                             // Re-enable input controls
                             self.setStreamingState(false);
-                            // Refresh conversations and page
+                            // Refresh conversations sidebar and page to show updates
                             self.loadConversations();
-                            // Small delay before page refresh to allow UI updates
+                            // Small delay before page refresh to allow UI updates to complete
                             setTimeout(() => {
                                 window.location.reload();
                             }, 500);
                             break;
 
                         case 'error':
+                            // Handle streaming errors
                             self.showError(data.message || 'Streaming error occurred');
                             self.finishStreaming();
                             self.setStreamingState(false);
                             break;
 
                         case 'close':
+                            // Connection closed normally
                             self.finishStreaming();
                             self.setStreamingState(false);
                             break;
@@ -646,15 +812,21 @@
             $('#messages-container .d-flex.mb-3').has('.spinner-border').remove();
         }
 
+        /**
+         * Append a chunk of streamed content to the message
+         * Accumulates chunks in buffer and triggers debounced rendering for smooth updates
+         *
+         * @param {string} chunk - Text chunk received from streaming response
+         */
         appendStreamChunk(chunk) {
-            // Accumulate the chunk in the buffer
+            // Accumulate the chunk in the buffer for complete message processing
             this.streamBuffer += chunk;
 
-            // Find or create the streaming message element
+            // Find or create the streaming message element in DOM
             let streamingMessage = $('#messages-container .streaming');
 
             if (streamingMessage.length === 0) {
-                // Remove thinking indicator and create new streaming message
+                // First chunk - remove thinking indicator and create streaming message container
                 this.removeThinkingIndicator();
 
                 const messageHtml = this.generateStreamingMessage();
@@ -663,21 +835,28 @@
             }
 
             // Update the message text with accumulated buffer
-            // Use debounced rendering for better performance
+            // Use debounced rendering for better performance and smooth visual updates
             this.debouncedRenderStream(streamingMessage);
         }
 
+        /**
+         * Debounced rendering of streaming content
+         * Uses requestAnimationFrame for smooth updates and prevents excessive DOM updates
+         * Processes markdown and adds typing cursor animation
+         *
+         * @param {jQuery} messageElement - The streaming message element to update
+         */
         debouncedRenderStream(messageElement) {
             const self = this;
 
-            // Cancel any pending render
+            // Cancel any pending render to prevent overlapping updates
             if (this.renderTimeout) {
                 cancelAnimationFrame(this.renderTimeout);
             }
 
-            // Use requestAnimationFrame for smooth rendering
+            // Use requestAnimationFrame for smooth, browser-optimized rendering
             this.renderTimeout = requestAnimationFrame(() => {
-                // Double-check that we still have a streaming message
+                // Double-check that streaming message still exists (might have ended)
                 const currentStreamingMessage = $('#messages-container .streaming');
                 if (currentStreamingMessage.length === 0) {
                     return; // Streaming might have ended
@@ -685,69 +864,82 @@
 
                 const textDiv = currentStreamingMessage.find('.mb-2');
 
-                // Parse markdown to HTML
+                // Parse markdown to HTML for rich text formatting
                 const formattedContent = self.parseMarkdown(self.streamBuffer);
 
-                // Add typing cursor using Bootstrap classes
+                // Add animated typing cursor to simulate live typing
                 const contentWithCursor = formattedContent + '<span class="border-left border-primary ml-1" style="height: 1.2em; animation: blink 1s infinite;"></span>';
 
-                // Update content
+                // Update content with smooth visual feedback
                 textDiv.html(contentWithCursor);
 
-                // Smooth scroll to keep message in view
+                // Smooth scroll to keep latest content in view
                 self.smoothScrollToBottom();
             });
         }
 
+        /**
+         * Parse markdown text to HTML
+         * Converts common markdown syntax to HTML for rich text display
+         * Includes security measures and proper ordering of replacements
+         *
+         * @param {string} text - Raw markdown text to parse
+         * @returns {string} HTML formatted text
+         */
         parseMarkdown(text) {
             if (!text) return '';
 
             let html = text;
 
-            // Escape HTML first for security
+            // ===== Security First =====
+            // Escape HTML entities to prevent XSS in user-generated content
             html = html
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;');
 
+            // ===== Block Elements (processed first) =====
             // Code blocks (triple backticks) - must be before inline code
             html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(match, lang, code) {
                 return '<pre class="code-block"><code class="language-' + (lang || 'plaintext') + '">' + code.trim() + '</code></pre>';
             });
 
+            // ===== Inline Elements =====
             // Inline code (single backticks)
             html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
-            // Bold text
+            // Bold text (both ** and __ syntax)
             html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
 
-            // Italic text
+            // Italic text (both * and _ syntax)
             html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
             html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
 
-            // Headers
+            // ===== Headers =====
             html = html.replace(/^### (.*$)/gm, '<h5>$1</h5>');
             html = html.replace(/^## (.*$)/gm, '<h4>$1</h4>');
             html = html.replace(/^# (.*$)/gm, '<h3>$1</h3>');
 
-            // Unordered lists
+            // ===== Lists =====
+            // Unordered lists (-, *, + markers)
             html = html.replace(/^\s*[-*+]\s+(.+)$/gm, '<li>$1</li>');
             html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
 
-            // Ordered lists
+            // Ordered lists (numbered)
             html = html.replace(/^\s*\d+\.\s+(.+)$/gm, '<li>$1</li>');
 
-            // Links
+            // ===== Links =====
             html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-            // Line breaks (double newline = paragraph)
+            // ===== Text Formatting =====
+            // Line breaks (double newline = paragraph break)
             html = html.replace(/\n\n/g, '</p><p>');
 
             // Single line breaks
             html = html.replace(/\n/g, '<br>');
 
-            // Wrap in paragraph
+            // Wrap plain text in paragraph tags
             if (!html.startsWith('<')) {
                 html = '<p>' + html + '</p>';
             }
@@ -962,15 +1154,21 @@
         }
 
 
+        /**
+         * Update file upload visibility based on AI model capabilities
+         * Only shows attachment button for vision-enabled models that can process images
+         * Clears any existing attachments when switching to non-vision models
+         */
         updateFileUploadVisibility() {
             const configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
             const attachmentBtn = $('#attachment-btn');
 
-            // Show attachment button for vision models
+            // Show attachment button only for vision-capable models
             const visionModels = ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct'];
             if (visionModels.includes(configuredModel)) {
                 attachmentBtn.show();
             } else {
+                // Hide and clear attachments for non-vision models
                 attachmentBtn.hide();
                 $('#file-upload').val(''); // Clear file selection
                 this.clearAttachments(); // Clear any existing attachments
@@ -1000,8 +1198,14 @@
             this.updateFileUploadVisibility();
         }
 
+        /**
+         * Handle file selection from drag-and-drop or file input
+         * Validates file count and size, then adds each file as an attachment
+         *
+         * @param {FileList} files - List of selected files
+         */
         handleFileSelection(files) {
-            const maxFiles = 5; // Maximum number of files
+            const maxFiles = 5; // Maximum number of files allowed
 
             if (files.length > maxFiles) {
                 this.showError(`Maximum ${maxFiles} files allowed`);
@@ -1011,6 +1215,7 @@
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
 
+                // Validate file size (10MB limit)
                 if (file.size > 10 * 1024 * 1024) { // 10MB limit
                     this.showError(`File ${file.name} is too large. Maximum size is 10MB.`);
                     continue;
@@ -1020,6 +1225,7 @@
             }
 
             // Update the actual file input with the selected files
+            // This ensures the files are included in form submission
             const fileInput = document.getElementById('file-upload');
             const dt = new DataTransfer();
             for (let i = 0; i < files.length; i++) {
@@ -1028,6 +1234,14 @@
             fileInput.files = dt.files;
         }
 
+        /**
+         * Add a file as an attachment with preview
+         * Creates visual attachment UI with image preview or file icon
+         * Manages file mapping for form submission
+         *
+         * @param {File} file - The file to add as attachment
+         * @param {number} fileIndex - Index in the files array for mapping
+         */
         addAttachment(file, fileIndex) {
             const attachmentId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const attachmentsList = $('#attachments-list');
@@ -1087,6 +1301,12 @@
             }
         }
 
+        /**
+         * Remove an attachment from the UI and file mapping
+         * Updates the file input to exclude the removed file
+         *
+         * @param {string} attachmentId - Unique ID of the attachment to remove
+         */
         removeAttachment(attachmentId) {
             $(`.attachment-item[data-attachment-id="${attachmentId}"]`).fadeOut(200, function() {
                 $(this).remove();
@@ -1166,6 +1386,12 @@
             return iconMap.default;
         }
 
+        /**
+         * Set loading state for message form
+         * Updates UI to show loading spinner and disables form during message sending
+         *
+         * @param {boolean} loading - Whether to show loading state
+         */
         setLoadingState(loading) {
             const form = $('#message-form');
             const submitBtn = $('#send-message-btn');
@@ -1179,16 +1405,24 @@
             }
         }
 
+        /**
+         * Set streaming state for UI controls
+         * Disables/enables input controls during real-time streaming to prevent user confusion
+         *
+         * @param {boolean} streaming - Whether streaming is active
+         */
         setStreamingState(streaming) {
             const messageInput = $('#message-input');
             const submitBtn = $('#send-message-btn');
             const attachmentBtn = $('#attachment-btn');
 
             if (streaming) {
+                // Disable all input controls during streaming
                 messageInput.prop('disabled', true).attr('placeholder', 'Streaming in progress...');
                 submitBtn.prop('disabled', true).html('<i class="fas fa-circle-notch fa-spin me-2"></i>Streaming...');
                 attachmentBtn.prop('disabled', true);
             } else {
+                // Re-enable controls when streaming completes
                 messageInput.prop('disabled', false).attr('placeholder', this.container.data('message-placeholder') || 'Type your message...');
                 submitBtn.prop('disabled', false).html('<i class="fas fa-paper-plane"></i> Send Message');
                 attachmentBtn.prop('disabled', false);
@@ -1200,6 +1434,14 @@
             container.scrollTop(container[0].scrollHeight);
         }
 
+        /**
+         * Format message content for display
+         * Handles both pre-formatted HTML from AJAX responses and raw text from initial load
+         *
+         * @param {string} text - Raw message text
+         * @param {string} formattedContent - Pre-formatted HTML content (from AJAX responses)
+         * @returns {string} Formatted message content
+         */
         formatMessage(text, formattedContent) {
             // If we have pre-formatted content from the backend (AJAX responses),
             // use it directly since it's already parsed HTML
@@ -1217,6 +1459,12 @@
             return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         }
 
+        /**
+         * Display error message to user
+         * Shows dismissible Bootstrap alert with error icon and auto-hide after 5 seconds
+         *
+         * @param {string} message - Error message to display
+         */
         showError(message) {
             // Remove any existing error alerts
             this.container.find('.alert-danger').remove();
@@ -1240,6 +1488,13 @@
             return div.innerHTML;
         }
 
+        /**
+         * Format date for human-readable display
+         * Returns relative time for recent dates, absolute date for older ones
+         *
+         * @param {string} dateString - ISO date string to format
+         * @returns {string} Human-readable date/time string
+         */
         formatDate(dateString) {
             const date = new Date(dateString);
             const now = new Date();
@@ -1247,18 +1502,30 @@
             const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
             if (diffDays === 0) {
+                // Today - show just time
                 return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
             } else if (diffDays === 1) {
+                // Yesterday
                 return 'Yesterday';
             } else if (diffDays < 7) {
+                // Within last week - show relative days
                 return `${diffDays} days ago`;
             } else {
+                // Older - show full date
                 return date.toLocaleDateString();
             }
         }
     }
 
-    // Initialize on document ready
+    // ===== Component Initialization =====
+    // Automatically initialize all LLM chat components on page load
+    // Uses jQuery ready event to ensure DOM is loaded before initialization
+
+    /**
+     * Document ready initialization
+     * Finds all elements with class 'llm-chat-container' and initializes LlmChat instances
+     * This allows multiple chat components on the same page
+     */
     $(document).ready(function() {
         $('.llm-chat-container').each(function() {
             new LlmChat(this);

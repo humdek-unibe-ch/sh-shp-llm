@@ -166,13 +166,7 @@ class LlmchatModel extends StyleModel
      */
     public function getConfiguredModel()
     {
-        if (!empty($this->llm_model)) {
-            return $this->llm_model;
-        }
-        
-        // Fallback to global LLM configuration
-        $config = $this->llm_service->getLlmConfig();
-        return $config['llm_default_model'] ?? 'qwen3-vl-8b-instruct';
+        return $this->get_db_field('llm_model', 'qwen3-vl-8b-instruct');
     }
 
     /**

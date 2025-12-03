@@ -655,7 +655,7 @@ class LlmchatController extends BaseController
     public function getConversationsData()
     {
         try {
-            $conversations = $this->llm_service->getUserConversations($this->model->getUserId(), 50);
+            $conversations = $this->llm_service->getUserConversations($this->model->getUserId(), 50, $this->model->get_db_field('llm_default_model'));
             $this->sendJsonResponse(['conversations' => $conversations]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
