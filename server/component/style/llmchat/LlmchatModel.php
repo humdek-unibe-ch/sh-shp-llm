@@ -293,7 +293,39 @@ class LlmchatModel extends StyleModel
 
     public function getUploadHelpText()
     {
-        return $this->upload_help_text;
+        // If custom text is configured, use it; otherwise generate from constants
+        if (!empty($this->upload_help_text) && $this->upload_help_text !== 'Supported formats: JPG, PNG, GIF, WebP (max 10MB)') {
+            return $this->upload_help_text;
+        }
+
+        // Generate help text from constants
+        $extensions = array_map('strtoupper', LLM_ALLOWED_EXTENSIONS);
+        $maxSize = $this->formatFileSizeForDisplay(LLM_MAX_FILE_SIZE);
+        $maxFiles = LLM_MAX_FILES_PER_MESSAGE;
+
+        return "Supported formats: " . implode(', ', array_slice($extensions, 0, 8)) .
+               (count($extensions) > 8 ? ', ...' : '') .
+               " (max {$maxSize}, up to {$maxFiles} files)";
+    }
+
+    /**
+     * Format file size for display in help text
+     *
+     * @param int $bytes File size in bytes
+     * @return string Formatted file size
+     */
+    private function formatFileSizeForDisplay($bytes)
+    {
+        if ($bytes >= 1024 * 1024 * 1024) {
+            return round($bytes / (1024 * 1024 * 1024), 1) . 'GB';
+        }
+        if ($bytes >= 1024 * 1024) {
+            return round($bytes / (1024 * 1024), 0) . 'MB';
+        }
+        if ($bytes >= 1024) {
+            return round($bytes / 1024, 0) . 'KB';
+        }
+        return $bytes . 'B';
     }
 
     public function getMessagePlaceholder()

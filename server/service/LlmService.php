@@ -324,7 +324,7 @@ class LlmService
     /**
      * Add a message to conversation
      */
-    public function addMessage($conversation_id, $role, $content, $image_path = null, $model = null, $tokens_used = null, $raw_response = null)
+    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null)
     {
         // Verify conversation exists and get user_id
         $conversation = $this->db->query_db_first(
@@ -336,11 +336,26 @@ class LlmService
             throw new Exception('Conversation not found');
         }
 
+        // Handle attachments - store as JSON if multiple files, or single path for backward compatibility
+        $attachmentsData = null;
+        if ($attachments) {
+            if (is_array($attachments) && count($attachments) > 1) {
+                // Multiple files - store as JSON
+                $attachmentsData = json_encode($attachments);
+            } elseif (is_array($attachments) && count($attachments) === 1) {
+                // Single file - store the path directly for backward compatibility
+                $attachmentsData = $attachments[0]['path'];
+            } elseif (is_string($attachments)) {
+                // Backward compatibility - direct path string
+                $attachmentsData = $attachments;
+            }
+        }
+
         $data = [
             'id_llmConversations' => $conversation_id,
             'role' => $role,
             'content' => $content,
-            'image_path' => $image_path,
+            'image_path' => $attachmentsData,
             'model' => $model,
             'tokens_used' => $tokens_used,
             'raw_response' => $raw_response
@@ -361,6 +376,18 @@ class LlmService
         $this->logTransaction('CREATE', 'llmMessages', $message_id, $conversation['id_users'], "Message added to conversation $conversation_id");
 
         return $message_id;
+    }
+
+    /**
+     * Update a message
+     *
+     * @param int $message_id The message ID to update
+     * @param array $data The data to update
+     * @return bool True if update was successful
+     */
+    public function updateMessage($message_id, $data)
+    {
+        return $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
     }
 
     /**

@@ -18,6 +18,7 @@
  * =============
  * - Dual communication modes: Streaming (SSE) and AJAX polling
  * - File upload with drag-and-drop and preview functionality
+ * - Comprehensive file validation (type, size, MIME, duplicates)
  * - Conversation CRUD operations (Create, Read, Update, Delete)
  * - Real-time typing indicators and smooth scrolling
  * - Error handling with user-friendly notifications
@@ -52,6 +53,70 @@
 (function($) {
     'use strict';
 
+    // ===== File Upload Configuration - Defaults =====
+    // These can be overridden by data attributes on the container
+    const DEFAULT_FILE_CONFIG = {
+        maxFileSize: 10 * 1024 * 1024, // 10MB
+        maxFilesPerMessage: 5,
+        allowedImageExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+        allowedDocumentExtensions: ['pdf', 'txt', 'md', 'csv', 'json', 'xml'],
+        allowedCodeExtensions: ['py', 'js', 'php', 'html', 'css', 'sql', 'sh', 'yaml', 'yml'],
+        visionModels: ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct']
+    };
+
+    // Working config - will be updated from container data attributes
+    let FILE_CONFIG = { ...DEFAULT_FILE_CONFIG };
+
+    // Combine all allowed extensions
+    FILE_CONFIG.allowedExtensions = [
+        ...FILE_CONFIG.allowedImageExtensions,
+        ...FILE_CONFIG.allowedDocumentExtensions,
+        ...FILE_CONFIG.allowedCodeExtensions
+    ];
+
+    /**
+     * Initialize file config from container data attributes
+     * @param {jQuery} container - The chat container element
+     */
+    function initFileConfigFromContainer(container) {
+        const maxFileSize = container.data('max-file-size');
+        const maxFiles = container.data('max-files');
+        const allowedExtensions = container.data('allowed-extensions');
+
+        if (maxFileSize) {
+            FILE_CONFIG.maxFileSize = parseInt(maxFileSize, 10);
+        }
+        if (maxFiles) {
+            FILE_CONFIG.maxFilesPerMessage = parseInt(maxFiles, 10);
+        }
+        if (allowedExtensions) {
+            FILE_CONFIG.allowedExtensions = allowedExtensions.split(',').map(ext => ext.trim().toLowerCase());
+        }
+    }
+
+    // ===== File Upload Error Messages =====
+    const FILE_ERRORS = {
+        fileTooLarge: (fileName, maxSize) => `File "${fileName}" exceeds maximum size of ${formatBytes(maxSize)}`,
+        invalidType: (fileName, extension) => `File type ".${extension}" is not allowed`,
+        duplicateFile: (fileName) => `File "${fileName}" is already attached`,
+        maxFilesExceeded: (max) => `Maximum ${max} files allowed per message`,
+        emptyFile: (fileName) => `File "${fileName}" is empty`,
+        uploadFailed: (fileName) => `Failed to upload "${fileName}"`
+    };
+
+    /**
+     * Format bytes to human-readable size
+     * @param {number} bytes - Size in bytes
+     * @returns {string} Formatted size string
+     */
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
     /**
      * Main LLM Chat Component Class
      * Manages the entire chat interface lifecycle and interactions
@@ -69,15 +134,23 @@
             this.userId = this.container.data('user-id');
             this.noConversationsMessage = this.container.data('no-conversations-message');
             this.currentConversationId = this.container.data('current-conversation-id') || null;
-            console.log(this.currentConversationId);
+            this.configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
+
+            // Initialize file config from container data attributes
+            initFileConfigFromContainer(this.container);
 
             // Streaming and real-time properties
             this.eventSource = null;                    // EventSource object for SSE streaming
             this.isStreaming = false;                   // Flag to track if currently streaming
-            this.attachmentFileMap = {};               // Map attachmentId to file index for file management
-            this.streamBuffer = '';                    // Buffer for accumulating streamed text chunks
-            this.renderTimeout = null;                 // Debounce timeout for smooth rendering
-            this.scrollRAF = null;                     // RequestAnimationFrame ID for smooth scrolling
+            this.streamBuffer = '';                     // Buffer for accumulating streamed text chunks
+            this.renderTimeout = null;                  // Debounce timeout for smooth rendering
+            this.scrollRAF = null;                      // RequestAnimationFrame ID for smooth scrolling
+
+            // File upload state management
+            this.selectedFiles = [];                    // Array of selected File objects
+            this.fileHashes = new Set();                // Set of file content hashes for duplicate detection
+            this.attachmentIdCounter = 0;               // Counter for unique attachment IDs
+            this.isUploading = false;                   // Flag to prevent concurrent uploads
 
             this.init();
         }
@@ -361,19 +434,19 @@
             // Drag over - show visual feedback
             this.container.on('dragover', '.message-input-wrapper', function(e) {
                 e.preventDefault();
-                $(this).addClass('border-primary');
+                $(this).addClass('drag-over');
             });
 
             // Drag leave - remove visual feedback
             this.container.on('dragleave', '.message-input-wrapper', function(e) {
                 e.preventDefault();
-                $(this).removeClass('border-primary');
+                $(this).removeClass('drag-over');
             });
 
             // File drop - process dropped files
             this.container.on('drop', '.message-input-wrapper', function(e) {
                 e.preventDefault();
-                $(this).removeClass('border-primary');
+                $(this).removeClass('drag-over');
                 const files = e.originalEvent.dataTransfer.files;
                 if (files.length > 0) {
                     self.handleFileSelection(files);
@@ -499,8 +572,6 @@
                 conversationsContainer.append(conversationHtml);
             });
 
-            console.log(this.currentConversationId);
-
             // Automatically select the current conversation if one is set and conversations exist
             if (this.currentConversationId && conversations.length > 0) {
                 const currentConversationExists = conversations.some(conv => conv.id == this.currentConversationId);
@@ -549,16 +620,100 @@
             this.smoothScrollToBottom();
         }
 
+        /**
+         * Render attachments for a message
+         * Handles both single files and multiple file arrays
+         * Matches the PHP template styling for consistency
+         *
+         * @param {Object} message - The message object
+         * @returns {string} HTML for attachments
+         */
+        renderAttachments(message) {
+            if (!message.image_path) {
+                return '';
+            }
+
+            let attachments = [];
+
+            // Check if image_path is a JSON array (multiple files) or single path
+            try {
+                const parsed = JSON.parse(message.image_path);
+                if (Array.isArray(parsed)) {
+                    attachments = parsed;
+                } else {
+                    // Single file stored as object
+                    attachments = [parsed];
+                }
+            } catch (e) {
+                // Single file stored as string path
+                const extension = message.image_path.split('.').pop().toLowerCase();
+                const isImage = FILE_CONFIG.allowedImageExtensions.includes(extension);
+                attachments = [{
+                    path: message.image_path,
+                    url: `?file_path=${message.image_path}`,
+                    is_image: isImage,
+                    original_name: message.image_path.split('/').pop()
+                }];
+            }
+
+            if (attachments.length === 0) {
+                return '';
+            }
+
+            let html = '<div class="message-attachments">';
+
+            attachments.forEach(attachment => {
+                const path = attachment.path || '';
+                const extension = path.split('.').pop().toLowerCase();
+                const isImage = attachment.is_image !== undefined ? attachment.is_image :
+                    (attachment.type && attachment.type.startsWith('image/')) ||
+                    FILE_CONFIG.allowedImageExtensions.includes(extension);
+                const url = attachment.url || `?file_path=${path}`;
+                const fileName = attachment.original_name || attachment.filename || path.split('/').pop() || 'File';
+                const fileSize = attachment.size ? formatBytes(attachment.size) : '';
+
+                if (isImage) {
+                    html += `
+                        <div class="attachment-display-image mb-2">
+                            <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener">
+                                <img src="${this.escapeHtml(url)}"
+                                     alt="${this.escapeHtml(fileName)}"
+                                     class="img-fluid rounded"
+                                     style="max-width: 300px; max-height: 200px;">
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    // File attachment with icon
+                    const fileIcon = this.getFileIconByExtension(extension);
+                    html += `
+                        <div class="attachment-display-file mb-2 p-2 border rounded bg-white">
+                            <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" class="d-flex align-items-center text-decoration-none">
+                                <i class="${fileIcon} mr-2"></i>
+                                <span class="text-dark">
+                                    ${this.escapeHtml(fileName)}
+                                    ${fileSize ? `<small class="text-muted">(${fileSize})</small>` : ''}
+                                </span>
+                            </a>
+                        </div>
+                    `;
+                }
+            });
+
+            html += '</div>';
+            return html;
+        }
+
         renderMessage(message) {
             const isUser = message.role === 'user';
-            const imageHtml = message.image_path ? `<div class="mt-3"><img src="?file_path=${message.image_path}" alt="Uploaded image" class="img-fluid rounded"></div>` : '';
+            const attachmentsHtml = this.renderAttachments(message);
 
             return `
                 <div class="d-flex mb-3 ${isUser ? 'justify-content-end' : 'justify-content-start'}">
                     ${this.generateAvatar(isUser ? 'user' : 'assistant')}
                     <div class="llm-message-content ${isUser ? 'bg-primary text-white' : 'bg-light'} p-3 rounded border">
                         <div class="mb-2">${this.formatMessage(message.content, message.formatted_content)}</div>
-                        ${imageHtml}
+                        ${attachmentsHtml}
                         ${this.generateMessageMeta(message.timestamp, message.tokens_used, ' tokens', isUser)}
                     </div>
                 </div>
@@ -571,21 +726,33 @@
          * and routes to either streaming or regular AJAX based on configuration
          */
         sendMessage() {
-            // Prevent concurrent messages during streaming
+            // Prevent concurrent messages during streaming or uploading
             if (this.isStreaming) {
                 this.showError('Please wait for the current response to complete');
+                return;
+            }
+
+            if (this.isUploading) {
+                this.showError('Please wait for file upload to complete');
                 return;
             }
 
             const form = $('#message-form');
             const formData = new FormData(form[0]);
 
-            // Validate message content
+            // Validate message content - allow empty message only if files are attached
             const message = formData.get('message').trim();
-            if (!message) {
-                this.showError('Please enter a message');
+            const hasFiles = this.selectedFiles.length > 0;
+
+            if (!message && !hasFiles) {
+                this.showError('Please enter a message or attach a file');
                 return;
             }
+
+            // Add selected files to FormData from our tracking array
+            this.selectedFiles.forEach((item, index) => {
+                formData.append('uploaded_files[]', item.file, item.file.name);
+            });
 
             // Add action parameter for backend controller routing
             formData.append('action', 'send_message');
@@ -595,7 +762,7 @@
             const streamingEnabled = streamingData == '1' || streamingData == 1 || streamingData === true;
 
             // Add user message to UI immediately for better UX feedback
-            this.addUserMessage(message);
+            this.addUserMessage(message, this.selectedFiles.length);
 
             // Route to appropriate sending method based on streaming capability
             if (streamingEnabled) {
@@ -607,13 +774,34 @@
             }
         }
 
-        addUserMessage(message) {
+        /**
+         * Add user message to the chat UI
+         * Shows message content and attachment indicators
+         *
+         * @param {string} message - Message text content
+         * @param {number} fileCount - Number of attached files (optional)
+         */
+        addUserMessage(message, fileCount = 0) {
             const messagesContainer = $('#messages-container');
 
             // Remove "no messages" placeholder if present
             messagesContainer.find('.text-center.text-muted').remove();
 
-            const messageHtml = this.generateUserMessage(message);
+            // Generate message HTML with optional file attachment indicator
+            let messageHtml = this.generateUserMessage(message);
+
+            // Add file attachment indicator if files are attached
+            if (fileCount > 0) {
+                const attachmentText = fileCount === 1 ? '1 file attached' : `${fileCount} files attached`;
+                const attachmentIndicator = `<div class="attachment-indicator mt-1"><small class="text-white-50"><i class="fas fa-paperclip mr-1"></i>${attachmentText}</small></div>`;
+
+                // Insert attachment indicator before the timestamp
+                messageHtml = messageHtml.replace(
+                    '</div>\n                        <div class="mt-2"><small',
+                    `${attachmentIndicator}</div>\n                        <div class="mt-2"><small`
+                );
+            }
+
             messagesContainer.append(messageHtml);
             this.smoothScrollToBottom();
 
@@ -1156,23 +1344,36 @@
 
         /**
          * Update file upload visibility based on AI model capabilities
-         * Only shows attachment button for vision-enabled models that can process images
-         * Clears any existing attachments when switching to non-vision models
+         * Shows attachment button for all models - vision models can process images,
+         * while text models will receive document content as text
          */
         updateFileUploadVisibility() {
-            const configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
+            const configuredModel = this.configuredModel;
             const attachmentBtn = $('#attachment-btn');
+            const isVisionModel = FILE_CONFIG.visionModels.includes(configuredModel);
 
-            // Show attachment button only for vision-capable models
-            const visionModels = ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct'];
-            if (visionModels.includes(configuredModel)) {
-                attachmentBtn.show();
+            // Always show attachment button - all models can handle files
+            // Vision models process images directly, text models get file content as text
+            attachmentBtn.show();
+
+            // Update the file input accept attribute based on model type
+            const fileInput = $('#file-upload');
+            if (isVisionModel) {
+                // Vision models: accept all file types
+                fileInput.attr('accept', '*');
             } else {
-                // Hide and clear attachments for non-vision models
-                attachmentBtn.hide();
-                $('#file-upload').val(''); // Clear file selection
-                this.clearAttachments(); // Clear any existing attachments
+                // Text-only models: prefer text-based files
+                const textExtensions = [...FILE_CONFIG.allowedDocumentExtensions, ...FILE_CONFIG.allowedCodeExtensions];
+                fileInput.attr('accept', textExtensions.map(ext => '.' + ext).join(','));
             }
+        }
+
+        /**
+         * Check if current model supports vision/image processing
+         * @returns {boolean} True if model can process images
+         */
+        isVisionModel() {
+            return FILE_CONFIG.visionModels.includes(this.configuredModel);
         }
 
         updateCharCount() {
@@ -1190,9 +1391,19 @@
             }
         }
 
+        /**
+         * Clear the message form and all attachments
+         * Resets the form to initial state
+         */
         clearMessageForm() {
             $('#message-input').val('');
             $('#file-upload').val('');
+
+            // Clear file tracking
+            this.selectedFiles = [];
+            this.fileHashes.clear();
+
+            // Clear UI
             this.clearAttachments();
             this.updateCharCount();
             this.updateFileUploadVisibility();
@@ -1200,175 +1411,388 @@
 
         /**
          * Handle file selection from drag-and-drop or file input
-         * Validates file count and size, then adds each file as an attachment
+         * Performs comprehensive validation including type, size, and duplicate detection
          *
          * @param {FileList} files - List of selected files
          */
         handleFileSelection(files) {
-            const maxFiles = 5; // Maximum number of files allowed
+            const self = this;
+            const filesToAdd = Array.from(files);
+            const errors = [];
+            const validFiles = [];
 
-            if (files.length > maxFiles) {
-                this.showError(`Maximum ${maxFiles} files allowed`);
+            // Check total files limit
+            const currentCount = this.selectedFiles.length;
+            const newCount = filesToAdd.length;
+            const totalCount = currentCount + newCount;
+
+            if (totalCount > FILE_CONFIG.maxFilesPerMessage) {
+                this.showError(FILE_ERRORS.maxFilesExceeded(FILE_CONFIG.maxFilesPerMessage));
                 return;
             }
 
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            // Process each file with validation
+            const validationPromises = filesToAdd.map(file => this.validateFile(file));
 
-                // Validate file size (10MB limit)
-                if (file.size > 10 * 1024 * 1024) { // 10MB limit
-                    this.showError(`File ${file.name} is too large. Maximum size is 10MB.`);
-                    continue;
+            Promise.all(validationPromises).then(results => {
+                results.forEach((result, index) => {
+                    if (result.valid) {
+                        validFiles.push({
+                            file: filesToAdd[index],
+                            hash: result.hash
+                        });
+                    } else {
+                        errors.push(result.error);
+                    }
+                });
+
+                // Show first error if any
+                if (errors.length > 0) {
+                    this.showError(errors[0]);
                 }
 
-                this.addAttachment(file, i);
+                // Add valid files
+                validFiles.forEach(item => {
+                    this.addAttachment(item.file, item.hash);
+                });
+            });
+        }
+
+        /**
+         * Validate a single file before adding
+         * Checks extension, size, and duplicates using content hash
+         *
+         * @param {File} file - File to validate
+         * @returns {Promise<Object>} Validation result with valid flag, hash, and error message
+         */
+        async validateFile(file) {
+            // Check file size
+            if (file.size > FILE_CONFIG.maxFileSize) {
+                return {
+                    valid: false,
+                    error: FILE_ERRORS.fileTooLarge(file.name, FILE_CONFIG.maxFileSize)
+                };
             }
 
-            // Update the actual file input with the selected files
-            // This ensures the files are included in form submission
-            const fileInput = document.getElementById('file-upload');
-            const dt = new DataTransfer();
-            for (let i = 0; i < files.length; i++) {
-                dt.items.add(files[i]);
+            // Check for empty files
+            if (file.size === 0) {
+                return {
+                    valid: false,
+                    error: FILE_ERRORS.emptyFile(file.name)
+                };
             }
-            fileInput.files = dt.files;
+
+            // Check file extension
+            const extension = file.name.split('.').pop().toLowerCase();
+            if (!FILE_CONFIG.allowedExtensions.includes(extension)) {
+                return {
+                    valid: false,
+                    error: FILE_ERRORS.invalidType(file.name, extension)
+                };
+            }
+
+            // Generate file hash for duplicate detection
+            const hash = await this.generateFileHash(file);
+
+            // Check for duplicates
+            if (this.fileHashes.has(hash)) {
+                return {
+                    valid: false,
+                    error: FILE_ERRORS.duplicateFile(file.name)
+                };
+            }
+
+            return { valid: true, hash: hash };
+        }
+
+        /**
+         * Generate a simple hash from file content for duplicate detection
+         * Uses first 1KB + last 1KB + file size for performance
+         *
+         * @param {File} file - File to hash
+         * @returns {Promise<string>} Hash string
+         */
+        async generateFileHash(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                const chunkSize = 1024; // 1KB
+
+                reader.onload = function(e) {
+                    // Simple hash: combine file size, name, and content sample
+                    const content = e.target.result;
+                    let hash = file.size.toString() + '_' + file.name.length;
+
+                    // Add hash from content
+                    if (content.length > 0) {
+                        let sum = 0;
+                        for (let i = 0; i < Math.min(content.length, 100); i++) {
+                            sum += content.charCodeAt(i);
+                        }
+                        hash += '_' + sum.toString(36);
+                    }
+
+                    resolve(hash);
+                };
+
+                reader.onerror = function() {
+                    // Fallback hash if reading fails
+                    resolve(file.size + '_' + file.name + '_' + Date.now());
+                };
+
+                // Read only first chunk for performance
+                const slice = file.slice(0, chunkSize);
+                reader.readAsText(slice);
+            });
         }
 
         /**
          * Add a file as an attachment with preview
-         * Creates visual attachment UI with image preview or file icon
-         * Manages file mapping for form submission
+         * Creates visual attachment UI with image preview or file type icon
+         * Tracks file in selectedFiles array for form submission
          *
          * @param {File} file - The file to add as attachment
-         * @param {number} fileIndex - Index in the files array for mapping
+         * @param {string} hash - File hash for duplicate tracking
          */
-        addAttachment(file, fileIndex) {
-            const attachmentId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        addAttachment(file, hash) {
+            const attachmentId = 'attach_' + (++this.attachmentIdCounter) + '_' + Date.now();
             const attachmentsList = $('#attachments-list');
             const attachmentsContainer = $('#file-attachments');
 
-            // Store mapping between attachmentId and file index
-            this.attachmentFileMap[attachmentId] = fileIndex;
+            // Store file in selectedFiles array
+            this.selectedFiles.push({
+                id: attachmentId,
+                file: file,
+                hash: hash
+            });
 
-            // Check if file is an image
-            const isImage = file.type.startsWith('image/');
+            // Track hash for duplicate detection
+            this.fileHashes.add(hash);
+
+            // Get file extension and type info
+            const extension = file.name.split('.').pop().toLowerCase();
+            const isImage = FILE_CONFIG.allowedImageExtensions.includes(extension);
+            const fileIcon = this.getFileIconByExtension(extension);
+            const fileSizeStr = formatBytes(file.size);
 
             if (isImage) {
                 // Create file reader for image preview
                 const reader = new FileReader();
+                const self = this;
+
                 reader.onload = function(e) {
-                    const attachmentHtml = `
-                        <div class="attachment-item" data-attachment-id="${attachmentId}">
-                            <div class="attachment-preview">
-                                <img src="${e.target.result}" alt="${file.name}" class="img-fluid rounded" style="max-width: 60px; max-height: 60px;">
-                            </div>
-                            <div class="attachment-info">
-                                <small class="text-muted">${file.name}</small>
-                                <br>
-                                <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
-                            </div>
-                            <button type="button" class="btn btn-sm btn-outline-danger remove-attachment" data-attachment-id="${attachmentId}" title="Remove">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                    `;
+                    const attachmentHtml = self.createAttachmentHtml(
+                        attachmentId,
+                        file.name,
+                        fileSizeStr,
+                        e.target.result,
+                        null,
+                        extension
+                    );
                     attachmentsList.append(attachmentHtml);
-                    attachmentsContainer.fadeIn(200);
+                    self.showAttachmentsContainer();
                 };
+
+                reader.onerror = function() {
+                    // Fallback to icon if image read fails
+                    const attachmentHtml = self.createAttachmentHtml(
+                        attachmentId,
+                        file.name,
+                        fileSizeStr,
+                        null,
+                        fileIcon,
+                        extension
+                    );
+                    attachmentsList.append(attachmentHtml);
+                    self.showAttachmentsContainer();
+                };
+
                 reader.readAsDataURL(file);
             } else {
                 // Show file icon for non-image files
-                const fileIcon = this.getFileIcon(file.type);
-                const attachmentHtml = `
-                    <div class="attachment-item" data-attachment-id="${attachmentId}">
-                        <div class="attachment-preview">
-                            <div class="file-icon-preview">
-                                <i class="${fileIcon} fa-2x text-muted"></i>
-                            </div>
-                        </div>
-                        <div class="attachment-info">
-                            <small class="text-muted">${file.name}</small>
-                            <br>
-                            <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-outline-danger remove-attachment" data-attachment-id="${attachmentId}" title="Remove">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                `;
+                const attachmentHtml = this.createAttachmentHtml(
+                    attachmentId,
+                    file.name,
+                    fileSizeStr,
+                    null,
+                    fileIcon,
+                    extension
+                );
                 attachmentsList.append(attachmentHtml);
-                attachmentsContainer.fadeIn(200);
+                this.showAttachmentsContainer();
             }
         }
 
         /**
-         * Remove an attachment from the UI and file mapping
-         * Updates the file input to exclude the removed file
+         * Create HTML for attachment item
+         *
+         * @param {string} attachmentId - Unique attachment ID
+         * @param {string} fileName - Original file name
+         * @param {string} fileSize - Formatted file size
+         * @param {string|null} imageData - Base64 image data for preview
+         * @param {string|null} fileIcon - Font Awesome icon class
+         * @param {string} extension - File extension
+         * @returns {string} HTML string for attachment
+         */
+        createAttachmentHtml(attachmentId, fileName, fileSize, imageData, fileIcon, extension) {
+            const truncatedName = fileName.length > 20 ? fileName.substr(0, 17) + '...' : fileName;
+            const extBadgeClass = this.getExtensionBadgeClass(extension);
+
+            let previewHtml;
+            if (imageData) {
+                previewHtml = `<img src="${imageData}" alt="${this.escapeHtml(fileName)}" class="attachment-thumbnail">`;
+            } else {
+                previewHtml = `<div class="attachment-icon"><i class="${fileIcon}"></i></div>`;
+            }
+
+            return `
+                <div class="attachment-item" data-attachment-id="${attachmentId}">
+                    <div class="attachment-preview">
+                        ${previewHtml}
+                    </div>
+                    <div class="attachment-info">
+                        <span class="attachment-name" title="${this.escapeHtml(fileName)}">${this.escapeHtml(truncatedName)}</span>
+                        <span class="attachment-meta">
+                            <span class="badge ${extBadgeClass}">.${extension}</span>
+                            <span class="attachment-size">${fileSize}</span>
+                        </span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-link remove-attachment text-danger" data-attachment-id="${attachmentId}" title="Remove file">
+                        <i class="fas fa-times-circle"></i>
+                    </button>
+                </div>
+            `;
+        }
+
+        /**
+         * Show the attachments container with animation
+         */
+        showAttachmentsContainer() {
+            const container = $('#file-attachments');
+            if (!container.is(':visible')) {
+                container.removeClass('d-none').hide().fadeIn(200);
+            }
+        }
+
+        /**
+         * Get CSS class for extension badge based on file type
+         *
+         * @param {string} extension - File extension
+         * @returns {string} Badge CSS class
+         */
+        getExtensionBadgeClass(extension) {
+            if (FILE_CONFIG.allowedImageExtensions.includes(extension)) {
+                return 'badge-success';
+            }
+            if (FILE_CONFIG.allowedCodeExtensions.includes(extension)) {
+                return 'badge-primary';
+            }
+            return 'badge-secondary';
+        }
+
+        /**
+         * Remove an attachment from the UI and tracking arrays
          *
          * @param {string} attachmentId - Unique ID of the attachment to remove
          */
         removeAttachment(attachmentId) {
-            $(`.attachment-item[data-attachment-id="${attachmentId}"]`).fadeOut(200, function() {
+            const self = this;
+
+            // Find and remove from selectedFiles array
+            const fileIndex = this.selectedFiles.findIndex(item => item.id === attachmentId);
+            if (fileIndex !== -1) {
+                const removedFile = this.selectedFiles[fileIndex];
+                // Remove hash from tracking
+                this.fileHashes.delete(removedFile.hash);
+                // Remove from array
+                this.selectedFiles.splice(fileIndex, 1);
+            }
+
+            // Remove from UI with animation
+            const $item = $(`.attachment-item[data-attachment-id="${attachmentId}"]`);
+            $item.addClass('attachment-removing').fadeOut(200, function() {
                 $(this).remove();
 
                 // Hide container if no attachments left
                 if ($('#attachments-list').children().length === 0) {
-                    $('#file-attachments').fadeOut(200);
+                    $('#file-attachments').fadeOut(200, function() {
+                        $(this).addClass('d-none');
+                    });
                 }
             });
-
-            // Update the file input to remove the file
-            const fileInput = document.getElementById('file-upload');
-            const fileIndexToRemove = this.attachmentFileMap[attachmentId];
-
-            if (fileIndexToRemove !== undefined) {
-                const dt = new DataTransfer();
-                const files = Array.from(fileInput.files);
-                const remainingFiles = files.filter((file, index) => index !== fileIndexToRemove);
-
-                remainingFiles.forEach(file => dt.items.add(file));
-                fileInput.files = dt.files;
-
-                // Remove the mapping
-                delete this.attachmentFileMap[attachmentId];
-            }
         }
 
+        /**
+         * Clear all attachments from UI and tracking
+         */
         clearAttachments() {
             $('#attachments-list').empty();
-            $('#file-attachments').hide();
-            this.attachmentFileMap = {}; // Clear the mapping
+            $('#file-attachments').hide().addClass('d-none');
+            this.selectedFiles = [];
+            this.fileHashes.clear();
         }
 
+        /**
+         * Get Font Awesome icon class based on file extension
+         *
+         * @param {string} extension - File extension (without dot)
+         * @returns {string} Font Awesome icon class
+         */
+        getFileIconByExtension(extension) {
+            const iconMap = {
+                // Images
+                'jpg': 'fas fa-file-image text-success',
+                'jpeg': 'fas fa-file-image text-success',
+                'png': 'fas fa-file-image text-success',
+                'gif': 'fas fa-file-image text-success',
+                'webp': 'fas fa-file-image text-success',
+
+                // Documents
+                'pdf': 'fas fa-file-pdf text-danger',
+                'txt': 'fas fa-file-alt text-secondary',
+                'md': 'fas fa-file-alt text-info',
+                'csv': 'fas fa-file-csv text-success',
+
+                // Code files
+                'py': 'fab fa-python text-primary',
+                'js': 'fab fa-js-square text-warning',
+                'php': 'fab fa-php text-purple',
+                'html': 'fab fa-html5 text-danger',
+                'css': 'fab fa-css3-alt text-primary',
+                'json': 'fas fa-file-code text-warning',
+                'xml': 'fas fa-file-code text-info',
+                'sql': 'fas fa-database text-primary',
+                'sh': 'fas fa-terminal text-dark',
+                'yaml': 'fas fa-file-code text-purple',
+                'yml': 'fas fa-file-code text-purple'
+            };
+
+            return iconMap[extension.toLowerCase()] || 'fas fa-file text-secondary';
+        }
+
+        /**
+         * Get Font Awesome icon class based on MIME type (legacy support)
+         *
+         * @param {string} mimeType - MIME type string
+         * @returns {string} Font Awesome icon class
+         */
         getFileIcon(mimeType) {
             const iconMap = {
                 // Documents
-                'application/pdf': 'fas fa-file-pdf',
-                'application/msword': 'fas fa-file-word',
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'fas fa-file-word',
-                'application/vnd.ms-excel': 'fas fa-file-excel',
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'fas fa-file-excel',
-                'application/vnd.ms-powerpoint': 'fas fa-file-powerpoint',
-                'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'fas fa-file-powerpoint',
+                'application/pdf': 'fas fa-file-pdf text-danger',
+                'application/msword': 'fas fa-file-word text-primary',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'fas fa-file-word text-primary',
+                'application/vnd.ms-excel': 'fas fa-file-excel text-success',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'fas fa-file-excel text-success',
 
                 // Text files
-                'text/plain': 'fas fa-file-alt',
-                'text/csv': 'fas fa-file-csv',
-                'application/json': 'fas fa-file-code',
-                'application/xml': 'fas fa-file-code',
-                'text/html': 'fas fa-file-code',
-
-                // Archives
-                'application/zip': 'fas fa-file-archive',
-                'application/x-rar-compressed': 'fas fa-file-archive',
-                'application/x-7z-compressed': 'fas fa-file-archive',
-
-                // Audio/Video
-                'audio/': 'fas fa-file-audio',
-                'video/': 'fas fa-file-video',
+                'text/plain': 'fas fa-file-alt text-secondary',
+                'text/csv': 'fas fa-file-csv text-success',
+                'application/json': 'fas fa-file-code text-warning',
+                'application/xml': 'fas fa-file-code text-info',
+                'text/html': 'fab fa-html5 text-danger',
 
                 // Default
-                'default': 'fas fa-file'
+                'default': 'fas fa-file text-secondary'
             };
 
             // Check for exact match first
@@ -1376,12 +1800,11 @@
                 return iconMap[mimeType];
             }
 
-            // Check for partial match (like audio/*, video/*)
-            for (const [key, value] of Object.entries(iconMap)) {
-                if (key.endsWith('/') && mimeType.startsWith(key)) {
-                    return value;
-                }
-            }
+            // Check for partial match (like image/*, audio/*)
+            if (mimeType.startsWith('image/')) return 'fas fa-file-image text-success';
+            if (mimeType.startsWith('audio/')) return 'fas fa-file-audio text-purple';
+            if (mimeType.startsWith('video/')) return 'fas fa-file-video text-danger';
+            if (mimeType.startsWith('text/')) return 'fas fa-file-alt text-secondary';
 
             return iconMap.default;
         }
@@ -1462,24 +1885,83 @@
         /**
          * Display error message to user
          * Shows dismissible Bootstrap alert with error icon and auto-hide after 5 seconds
+         * Positions error near the input area for better visibility
          *
          * @param {string} message - Error message to display
          */
         showError(message) {
             // Remove any existing error alerts
-            this.container.find('.alert-danger').remove();
+            this.container.find('.llm-error-alert').remove();
 
-            const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="fas fa-exclamation-circle me-2"></i>${this.escapeHtml(message)}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>`;
+            const alertId = 'error-' + Date.now();
+            const errorHtml = `
+                <div class="alert alert-danger alert-dismissible fade show llm-error-alert mb-2" role="alert" id="${alertId}">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span>${this.escapeHtml(message)}</span>
+                        <button type="button" class="close ml-auto" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                </div>
+            `;
 
-            this.container.find('.llm-chat-description').after(errorHtml);
+            // Insert error above the message input form for better visibility
+            const messageForm = this.container.find('#message-form');
+            if (messageForm.length) {
+                messageForm.before(errorHtml);
+            } else {
+                // Fallback to after description
+                this.container.find('.bg-primary').after(errorHtml);
+            }
 
-            // Auto-remove after 5 seconds
+            // Scroll error into view
+            const $alert = $('#' + alertId);
+            if ($alert.length) {
+                $alert[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // Auto-remove after 6 seconds with fade animation
             setTimeout(() => {
-                this.container.find('.alert-danger').alert('close');
-            }, 5000);
+                $alert.fadeOut(300, function() {
+                    $(this).remove();
+                });
+            }, 6000);
+        }
+
+        /**
+         * Display success message to user
+         *
+         * @param {string} message - Success message to display
+         */
+        showSuccess(message) {
+            // Remove any existing success alerts
+            this.container.find('.llm-success-alert').remove();
+
+            const alertId = 'success-' + Date.now();
+            const successHtml = `
+                <div class="alert alert-success alert-dismissible fade show llm-success-alert mb-2" role="alert" id="${alertId}">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span>${this.escapeHtml(message)}</span>
+                        <button type="button" class="close ml-auto" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const messageForm = this.container.find('#message-form');
+            if (messageForm.length) {
+                messageForm.before(successHtml);
+            }
+
+            // Auto-remove after 4 seconds
+            setTimeout(() => {
+                $('#' + alertId).fadeOut(300, function() {
+                    $(this).remove();
+                });
+            }, 4000);
         }
 
         escapeHtml(text) {

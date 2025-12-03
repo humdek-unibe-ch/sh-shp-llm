@@ -36,7 +36,52 @@ define('TRANSACTION_BY_LLM_PLUGIN', 'by_llm_plugin');
 
 // File upload limits
 define('LLM_MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
-define('LLM_ALLOWED_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'webp']);
+define('LLM_MAX_FILES_PER_MESSAGE', 5); // Maximum files per message
+
+// Allowed file extensions by category
+define('LLM_ALLOWED_IMAGE_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'webp']);
+define('LLM_ALLOWED_DOCUMENT_EXTENSIONS', ['pdf', 'txt', 'md', 'csv', 'json', 'xml']);
+define('LLM_ALLOWED_CODE_EXTENSIONS', ['py', 'js', 'php', 'html', 'css', 'sql', 'sh', 'yaml', 'yml']);
+define('LLM_ALLOWED_EXTENSIONS', array_merge(
+    LLM_ALLOWED_IMAGE_EXTENSIONS,
+    LLM_ALLOWED_DOCUMENT_EXTENSIONS,
+    LLM_ALLOWED_CODE_EXTENSIONS
+));
+
+// Allowed MIME types mapping (extension => allowed MIME types)
+define('LLM_ALLOWED_MIME_TYPES', [
+    // Images
+    'jpg' => ['image/jpeg'],
+    'jpeg' => ['image/jpeg'],
+    'png' => ['image/png'],
+    'gif' => ['image/gif'],
+    'webp' => ['image/webp'],
+    // Documents
+    'pdf' => ['application/pdf'],
+    'txt' => ['text/plain'],
+    'md' => ['text/plain', 'text/markdown'],
+    'csv' => ['text/csv', 'text/plain', 'application/csv'],
+    'json' => ['application/json', 'text/plain'],
+    'xml' => ['application/xml', 'text/xml', 'text/plain'],
+    // Code files
+    'py' => ['text/x-python', 'text/plain', 'application/x-python-code'],
+    'js' => ['application/javascript', 'text/javascript', 'text/plain'],
+    'php' => ['application/x-php', 'text/x-php', 'text/plain'],
+    'html' => ['text/html', 'text/plain'],
+    'css' => ['text/css', 'text/plain'],
+    'sql' => ['application/sql', 'text/plain', 'text/x-sql'],
+    'sh' => ['application/x-sh', 'text/x-shellscript', 'text/plain'],
+    'yaml' => ['application/x-yaml', 'text/yaml', 'text/plain'],
+    'yml' => ['application/x-yaml', 'text/yaml', 'text/plain'],
+]);
+
+// File type categories for UI display
+define('LLM_FILE_TYPE_IMAGE', 'image');
+define('LLM_FILE_TYPE_DOCUMENT', 'document');
+define('LLM_FILE_TYPE_CODE', 'code');
+
+// Vision-capable models that can process images
+define('LLM_VISION_MODELS', ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct']);
 
 // Cache keys
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
@@ -56,9 +101,63 @@ define('LLM_DEFAULT_NEW_CHAT_LABEL', 'New Conversation');
 define('LLM_DEFAULT_DELETE_LABEL', 'Delete Chat');
 define('LLM_DEFAULT_MODEL_LABEL', 'AI Model');
 
+// File upload error codes
+define('LLM_UPLOAD_ERROR_SIZE', 'file_too_large');
+define('LLM_UPLOAD_ERROR_TYPE', 'invalid_file_type');
+define('LLM_UPLOAD_ERROR_MIME', 'invalid_mime_type');
+define('LLM_UPLOAD_ERROR_DUPLICATE', 'duplicate_file');
+define('LLM_UPLOAD_ERROR_MAX_FILES', 'max_files_exceeded');
+define('LLM_UPLOAD_ERROR_MOVE_FAILED', 'move_failed');
+define('LLM_UPLOAD_ERROR_DIRECTORY', 'directory_creation_failed');
+
 // Admin page keywords
 define('PAGE_LLM_CONFIG', 'sh_module_llm');
 define('PAGE_LLM_ADMIN_CONVERSATIONS', 'admin_llm_conversations');
 define('PAGE_LLM_ADMIN_MESSAGES', 'admin_llm_messages');
+
+/**
+ * Get the file type category based on extension
+ *
+ * @param string $extension File extension (without dot)
+ * @return string File type category constant
+ */
+function llm_get_file_type_category($extension) {
+    $extension = strtolower($extension);
+    if (in_array($extension, LLM_ALLOWED_IMAGE_EXTENSIONS)) {
+        return LLM_FILE_TYPE_IMAGE;
+    }
+    if (in_array($extension, LLM_ALLOWED_DOCUMENT_EXTENSIONS)) {
+        return LLM_FILE_TYPE_DOCUMENT;
+    }
+    if (in_array($extension, LLM_ALLOWED_CODE_EXTENSIONS)) {
+        return LLM_FILE_TYPE_CODE;
+    }
+    return LLM_FILE_TYPE_DOCUMENT; // Default fallback
+}
+
+/**
+ * Check if a model supports vision/image processing
+ *
+ * @param string $model Model identifier
+ * @return bool True if model supports vision
+ */
+function llm_is_vision_model($model) {
+    return in_array($model, LLM_VISION_MODELS);
+}
+
+/**
+ * Validate MIME type against allowed types for extension
+ *
+ * @param string $extension File extension (without dot)
+ * @param string $mimeType Detected MIME type
+ * @return bool True if MIME type is valid for extension
+ */
+function llm_validate_mime_type($extension, $mimeType) {
+    $extension = strtolower($extension);
+    if (!isset(LLM_ALLOWED_MIME_TYPES[$extension])) {
+        return false;
+    }
+    return in_array($mimeType, LLM_ALLOWED_MIME_TYPES[$extension]);
+}
 
 ?>

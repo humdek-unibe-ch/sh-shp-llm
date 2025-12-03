@@ -134,5 +134,28 @@ class LlmchatView extends StyleView
         // not implemented
         return;
     }
+
+    /**
+     * Format file size in human-readable format
+     *
+     * @param int $bytes File size in bytes
+     * @return string Formatted file size
+     */
+    public function formatFileSize($bytes)
+    {
+        if ($bytes === 0) {
+            return '0 B';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $unitIndex = 0;
+
+        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
+            $bytes /= 1024;
+            $unitIndex++;
+        }
+
+        return round($bytes, 1) . ' ' . $units[$unitIndex];
+    }
 }
 ?>

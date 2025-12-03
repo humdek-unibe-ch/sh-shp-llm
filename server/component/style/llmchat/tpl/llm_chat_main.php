@@ -11,7 +11,11 @@
      data-delete-confirmation-title="<?php echo htmlspecialchars($delete_confirmation_title); ?>"
      data-delete-confirmation-message="<?php echo htmlspecialchars($delete_confirmation_message); ?>"
      data-confirm-delete-button-label="<?php echo htmlspecialchars($confirm_delete_button_label); ?>"
-     data-cancel-delete-button-label="<?php echo htmlspecialchars($cancel_delete_button_label); ?>">
+     data-cancel-delete-button-label="<?php echo htmlspecialchars($cancel_delete_button_label); ?>"
+     data-message-placeholder="<?php echo htmlspecialchars($message_placeholder); ?>"
+     data-max-file-size="<?php echo LLM_MAX_FILE_SIZE; ?>"
+     data-max-files="<?php echo LLM_MAX_FILES_PER_MESSAGE; ?>"
+     data-allowed-extensions="<?php echo htmlspecialchars(implode(',', LLM_ALLOWED_EXTENSIONS)); ?>">
     <div class="bg-primary text-white p-3 text-center"><?php echo htmlspecialchars($chat_description); ?></div>
 
     <div class="container-fluid">
