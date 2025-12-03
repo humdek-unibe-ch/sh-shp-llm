@@ -12,18 +12,20 @@
      data-delete-confirmation-message="<?php echo htmlspecialchars($delete_confirmation_message); ?>"
      data-confirm-delete-button-label="<?php echo htmlspecialchars($confirm_delete_button_label); ?>"
      data-cancel-delete-button-label="<?php echo htmlspecialchars($cancel_delete_button_label); ?>">
-    <div class="llm-chat-description"><?php echo htmlspecialchars($chat_description); ?></div>
+    <div class="bg-primary text-white p-3 text-center"><?php echo htmlspecialchars($chat_description); ?></div>
 
-    <div class="llm-chat-layout">
-        <!-- Conversations sidebar -->
-        <div class="llm-conversations-sidebar">
-            <?php include __DIR__ . '/llm_conversations_sidebar.php'; ?>
-        </div>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Conversations sidebar -->
+            <div class="col-md-4 col-lg-3 border-right bg-light d-flex flex-column">
+                <?php include __DIR__ . '/llm_conversations_sidebar.php'; ?>
+            </div>
 
-        <!-- Main chat area -->
-        <div class="llm-chat-main">
-            <?php include __DIR__ . '/llm_chat_area.php'; ?>
-            <?php include __DIR__ . '/llm_message_input.php'; ?>
+            <!-- Main chat area -->
+            <div class="col-md-8 col-lg-9 d-flex flex-column">
+                <?php include __DIR__ . '/llm_chat_area.php'; ?>
+                <?php include __DIR__ . '/llm_message_input.php'; ?>
+            </div>
         </div>
     </div>
 </div>

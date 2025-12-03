@@ -23,6 +23,189 @@
             this.init();
         }
 
+        // ===== HTML Generation Helpers =====
+
+        /**
+         * Generate avatar HTML snippet
+         * @param {string} role - 'user' or 'assistant'
+         * @param {boolean} isRightAligned - Whether avatar should be right-aligned
+         * @param {string} additionalClasses - Additional CSS classes
+         * @returns {string} Avatar HTML
+         */
+        generateAvatar(role, isRightAligned = false, additionalClasses = '') {
+            const icon = role === 'user' ? 'fa-user' : 'fa-robot';
+            const bgClass = role === 'user' ? 'bg-primary' : 'bg-success';
+            const marginClass = isRightAligned ? 'ml-3' : 'mr-3';
+            return `<div class="rounded-circle d-flex align-items-center justify-content-center ${marginClass} flex-shrink-0 ${bgClass} ${additionalClasses}" style="width: 38px; height: 38px;"><i class="fas ${icon}"></i></div>`;
+        }
+
+        /**
+         * Generate message meta information HTML
+         * @param {string} timestamp - Message timestamp
+         * @param {number|null} tokensUsed - Number of tokens used
+         * @param {string} tokensSuffix - Token suffix text
+         * @param {boolean} isUser - Whether message is from user
+         * @returns {string} Meta HTML
+         */
+        generateMessageMeta(timestamp, tokensUsed, tokensSuffix, isUser = false) {
+            const timeStr = this.formatTime(timestamp);
+            const textClass = isUser ? 'text-white-50' : 'text-muted';
+            const tokensStr = tokensUsed ? ` • ${tokensUsed}${tokensSuffix}` : '';
+
+            return `<div class="mt-2"><small class="${textClass}">${timeStr}${tokensStr}</small></div>`;
+        }
+
+        /**
+         * Generate user message HTML
+         * @param {string} content - Message content
+         * @param {string} timestamp - Message timestamp
+         * @returns {string} Complete message HTML
+         */
+        generateUserMessage(content, timestamp = null) {
+            const time = timestamp || new Date();
+            return `
+                <div class="d-flex mb-3 justify-content-end">
+                    ${this.generateAvatar('user', true)}
+                    <div class="llm-message-content bg-primary text-white p-3 rounded border">
+                        <div class="mb-2">${this.escapeHtml(content)}</div>
+                        ${this.generateMessageMeta(time, null, '', true)}
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Generate assistant message HTML
+         * @param {string} content - Message content
+         * @param {string} timestamp - Message timestamp
+         * @param {number|null} tokensUsed - Tokens used
+         * @param {string} tokensSuffix - Token suffix
+         * @param {string|null} imagePath - Path to attached image
+         * @returns {string} Complete message HTML
+         */
+        generateAssistantMessage(content, timestamp = null, tokensUsed = null, tokensSuffix = '', imagePath = null) {
+            const time = timestamp || new Date();
+            const imageHtml = imagePath ? `<div class="mt-3"><img src="?file_path=${imagePath}" alt="Uploaded image" class="img-fluid rounded"></div>` : '';
+
+            return `
+                <div class="d-flex mb-3 justify-content-start">
+                    ${this.generateAvatar('assistant')}
+                    <div class="llm-message-content bg-light p-3 rounded border">
+                        <div class="mb-2">${content}</div>
+                        ${imageHtml}
+                        ${this.generateMessageMeta(time, tokensUsed, tokensSuffix, false)}
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Generate thinking indicator HTML
+         * @returns {string} Thinking indicator HTML
+         */
+        generateThinkingIndicator() {
+            return `
+                <div class="d-flex mb-3 justify-content-start">
+                    ${this.generateAvatar('assistant')}
+                    <div class="llm-message-content bg-light p-3 rounded border">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm text-primary mr-2" role="status">
+                                <span class="sr-only">Loading...</span>
+                            </div>
+                            <small class="text-muted">AI is thinking...</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Generate streaming message HTML
+         * @returns {string} Streaming message HTML
+         */
+        generateStreamingMessage() {
+            return `
+                <div class="d-flex mb-3 justify-content-start streaming">
+                    ${this.generateAvatar('assistant')}
+                    <div class="llm-message-content bg-light p-3 rounded border">
+                        <div class="mb-2"></div>
+                        ${this.generateMessageMeta(new Date(), null, '', false)}
+                    </div>
+                </div>
+            `;
+        }
+
+        // ===== API Call Helpers =====
+
+        /**
+         * Make AJAX request with consistent error handling
+         * @param {Object} options - jQuery AJAX options
+         * @returns {jqXHR} jQuery XMLHttpRequest object
+         */
+        makeApiRequest(options) {
+            const defaultOptions = {
+                method: 'GET',
+                dataType: 'json',
+                error: (xhr) => {
+                    const error = xhr.responseJSON?.error || 'Request failed';
+                    console.error('API Error:', error);
+                    this.showError(error);
+                }
+            };
+
+            return $.ajax(Object.assign(defaultOptions, options));
+        }
+
+        /**
+         * Load conversations via API
+         * @returns {Promise} Promise that resolves with conversations data
+         */
+        loadConversationsApi() {
+            return new Promise((resolve, reject) => {
+                const url = new URL(window.location);
+                url.searchParams.set('action', 'get_conversations');
+
+                this.makeApiRequest({
+                    url: url.toString(),
+                    success: (response) => {
+                        if (response.error) {
+                            reject(new Error(response.error));
+                        } else {
+                            resolve(response.conversations || []);
+                        }
+                    },
+                    error: reject
+                });
+            });
+        }
+
+        /**
+         * Load conversation messages via API
+         * @param {string|number} conversationId - Conversation ID
+         * @returns {Promise} Promise that resolves with conversation data
+         */
+        loadConversationMessagesApi(conversationId) {
+            return new Promise((resolve, reject) => {
+                const url = new URL(window.location);
+                url.searchParams.set('action', 'get_conversation');
+                url.searchParams.set('conversation_id', conversationId);
+
+                this.makeApiRequest({
+                    url: url.toString(),
+                    success: (response) => {
+                        if (response.error) {
+                            reject(new Error(response.error));
+                        } else if (response.conversation && response.messages) {
+                            resolve({ conversation: response.conversation, messages: response.messages });
+                        } else {
+                            reject(new Error('Invalid response format'));
+                        }
+                    },
+                    error: reject
+                });
+            });
+        }
+
         init() {
             this.bindEvents();
             this.loadConversations();
@@ -38,15 +221,15 @@
             });
 
             // Conversation selection
-            this.container.on('click', '.conversation-item', function(e) {
-                if (!$(e.target).closest('.conversation-actions').length) {
+            this.container.on('click', '.card[data-conversation-id]', function(e) {
+                if (!$(e.target).closest('button').length) {
                     const conversationId = $(this).data('conversation-id');
                     self.selectConversation(conversationId);
                 }
             });
 
             // Delete conversation
-            this.container.on('click', '.delete-conversation-btn', function(e) {
+            this.container.on('click', '.card[data-conversation-id] .btn-outline-danger', function(e) {
                 e.stopPropagation();
                 const conversationId = $(this).data('conversation-id');
                 self.confirmDeleteConversation(conversationId);
@@ -71,19 +254,19 @@
             });
 
             // Drag and drop on message input wrapper
-            this.container.on('dragover', '#message-input-wrapper', function(e) {
+            this.container.on('dragover', '.message-input-wrapper', function(e) {
                 e.preventDefault();
-                $(this).addClass('dragover');
+                $(this).addClass('border-primary');
             });
 
-            this.container.on('dragleave', '#message-input-wrapper', function(e) {
+            this.container.on('dragleave', '.message-input-wrapper', function(e) {
                 e.preventDefault();
-                $(this).removeClass('dragover');
+                $(this).removeClass('border-primary');
             });
 
-            this.container.on('drop', '#message-input-wrapper', function(e) {
+            this.container.on('drop', '.message-input-wrapper', function(e) {
                 e.preventDefault();
-                $(this).removeClass('dragover');
+                $(this).removeClass('border-primary');
                 const files = e.originalEvent.dataTransfer.files;
                 if (files.length > 0) {
                     self.handleFileSelection(files);
@@ -109,27 +292,15 @@
         }
 
         loadConversations() {
-            const self = this;
             const conversationsContainer = $('#conversations-list');
 
-            // Make direct GET request to current page with action parameter
-            const url = new URL(window.location);
-            url.searchParams.set('action', 'get_conversations');
-
-            $.ajax({
-                url: url.toString(),
-                method: 'GET',
-                success: function(response) {
-                    if (response.error) {
-                        console.error('Failed to load conversations:', response.error);
-                        return;
-                    }
-                    self.renderConversations(response.conversations || []);
-                },
-                error: function(xhr) {
-                    console.error('Failed to load conversations:', xhr.responseJSON?.error);
-                }
-            });
+            this.loadConversationsApi()
+                .then(conversations => {
+                    this.renderConversations(conversations);
+                })
+                .catch(error => {
+                    console.error('Failed to load conversations:', error.message);
+                });
         }
 
         selectConversation(conversationId) {
@@ -137,9 +308,9 @@
             $('#current-conversation-id').val(conversationId);
 
             // Update UI with smooth transition
-            $('.conversation-item').removeClass('active');
-            const selectedItem = $(`.conversation-item[data-conversation-id="${conversationId}"]`);
-            selectedItem.addClass('active');
+            $('.card[data-conversation-id]').removeClass('border-primary bg-light');
+            const selectedItem = $(`.card[data-conversation-id="${conversationId}"]`);
+            selectedItem.addClass('border-primary bg-light');
 
             // Load conversation messages
             this.loadConversationMessages(conversationId);
@@ -151,36 +322,19 @@
         }
 
         loadConversationMessages(conversationId) {
-            const self = this;
             const messagesContainer = $('#messages-container');
+            messagesContainer.css('opacity', '0.6');
 
-            // Make direct GET request to current page with action and conversation_id parameters
-            const url = new URL(window.location);
-            url.searchParams.set('action', 'get_conversation');
-            url.searchParams.set('conversation_id', conversationId);
-
-            $.ajax({
-                url: url.toString(),
-                method: 'GET',
-                beforeSend: function() {
-                    messagesContainer.addClass('loading').css('opacity', '0.6');
-                },
-                success: function(response) {
-                    if (response.error) {
-                        self.showError(response.error);
-                        return;
-                    }
-                    if (response.conversation && response.messages) {
-                        self.renderConversation(response.conversation, response.messages);
-                    }
-                },
-                error: function(xhr) {
-                    self.showError('Failed to load conversation: ' + (xhr.responseJSON?.error || 'Unknown error'));
-                },
-                complete: function() {
-                    messagesContainer.removeClass('loading').css('opacity', '1');
-                }
-            });
+            this.loadConversationMessagesApi(conversationId)
+                .then(({ conversation, messages }) => {
+                    this.renderConversation(conversation, messages);
+                })
+                .catch(error => {
+                    this.showError(error.message);
+                })
+                .finally(() => {
+                    messagesContainer.css('opacity', '1');
+                });
         }
 
         renderConversations(conversations) {
@@ -188,22 +342,22 @@
             conversationsContainer.empty();
 
             if (conversations.length === 0) {
-                conversationsContainer.html('<div class="no-conversations text-center text-muted py-3"><small>' + this.escapeHtml(this.noConversationsMessage) + '</small></div>');
+                conversationsContainer.html('<div class="text-center text-muted py-3"><small>' + this.escapeHtml(this.noConversationsMessage) + '</small></div>');
                 return;
             }
 
             conversations.forEach(conversation => {
                 const isActive = this.currentConversationId == conversation.id;
                 const conversationHtml = `
-                    <div class="conversation-item ${isActive ? 'active' : ''}" data-conversation-id="${conversation.id}">
-                        <div class="conversation-title">${this.escapeHtml(conversation.title)}</div>
-                        <div class="conversation-meta">
-                            <small class="text-muted">${this.formatDate(conversation.updated_at)}</small>
-                        </div>
-                        <div class="conversation-actions">
-                            <button class="btn btn-sm btn-outline-danger delete-conversation-btn" data-conversation-id="${conversation.id}" title="Delete conversation">
-                                <i class="fas fa-trash"></i>
-                            </button>
+                    <div class="card mb-2 position-relative ${isActive ? 'border-primary bg-light' : ''}" data-conversation-id="${conversation.id}" style="cursor: pointer;">
+                        <div class="card-body py-2 px-3">
+                            <div class="font-weight-bold mb-1">${this.escapeHtml(conversation.title)}</div>
+                            <div class="small text-muted">${this.formatDate(conversation.updated_at)}</div>
+                            <div class="position-absolute opacity-0" style="top: 8px; right: 8px;">
+                                <button class="btn btn-sm btn-outline-danger" data-conversation-id="${conversation.id}" title="Delete conversation">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -227,15 +381,15 @@
 
         renderConversation(conversation, messages) {
             // Update conversation header
-            $('.conversation-header h6').text(conversation.title);
-            $('.conversation-header small').text('Model: ' + conversation.model);
+            $('.card-header h6').text(conversation.title);
+            $('.card-header small').text('Model: ' + conversation.model);
 
             // Render messages
             const messagesContainer = $('#messages-container');
             messagesContainer.empty();
 
             if (messages.length === 0) {
-                messagesContainer.html('<div class="no-messages"><p class="text-center text-muted">No messages yet. Send your first message!</p></div>');
+                messagesContainer.html('<div class="d-flex align-items-center justify-content-center h-100"><p class="text-center text-muted">No messages yet. Send your first message!</p></div>');
                 return;
             }
 
@@ -253,42 +407,27 @@
 
         renderMessage(message) {
             const isUser = message.role === 'user';
-            const avatarIcon = isUser ? 'fa-user' : 'fa-robot';
-            const messageClass = isUser ? 'message-user' : 'message-assistant';
-
-            let imageHtml = '';
-            if (message.image_path) {
-                imageHtml = `
-                    <div class="message-image">
-                        <img src="?file_path=${message.image_path}" alt="Uploaded image" class="img-fluid rounded">
-                    </div>
-                `;
-            }
-
-            const metaHtml = `
-                <div class="message-meta">
-                    <small class="text-muted">
-                        ${this.formatTime(message.timestamp)}
-                        ${message.tokens_used ? ' • ' + message.tokens_used + ' tokens' : ''}
-                    </small>
-                </div>
-            `;
+            const imageHtml = message.image_path ? `<div class="mt-3"><img src="?file_path=${message.image_path}" alt="Uploaded image" class="img-fluid rounded"></div>` : '';
 
             return `
-                <div class="message ${messageClass}">
-                    <div class="message-avatar">
-                        <i class="fas ${avatarIcon}"></i>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">${this.formatMessage(message.content, message.formatted_content)}</div>
+                <div class="d-flex mb-3 ${isUser ? 'justify-content-end' : 'justify-content-start'}">
+                    ${this.generateAvatar(isUser ? 'user' : 'assistant')}
+                    <div class="llm-message-content ${isUser ? 'bg-primary text-white' : 'bg-light'} p-3 rounded border">
+                        <div class="mb-2">${this.formatMessage(message.content, message.formatted_content)}</div>
                         ${imageHtml}
-                        ${metaHtml}
+                        ${this.generateMessageMeta(message.timestamp, message.tokens_used, ' tokens', isUser)}
                     </div>
                 </div>
             `;
         }
 
         sendMessage() {
+            // Don't allow sending while streaming is active
+            if (this.isStreaming) {
+                this.showError('Please wait for the current response to complete');
+                return;
+            }
+
             const form = $('#message-form');
             const formData = new FormData(form[0]);
 
@@ -325,21 +464,9 @@
             const messagesContainer = $('#messages-container');
 
             // Remove "no messages" placeholder if present
-            messagesContainer.find('.no-messages').remove();
+            messagesContainer.find('.text-center.text-muted').remove();
 
-            const messageHtml = `
-                <div class="message message-user message-new">
-                    <div class="message-avatar">
-                        <i class="fas fa-user"></i>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">${this.escapeHtml(message)}</div>
-                        <div class="message-meta">
-                            <small class="text-muted">${this.formatTime(new Date())}</small>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const messageHtml = this.generateUserMessage(message);
             messagesContainer.append(messageHtml);
             this.smoothScrollToBottom();
 
@@ -438,6 +565,9 @@
             const streamingIndicator = $('#streaming-indicator');
             streamingIndicator.fadeIn(200);
 
+            // Disable input while streaming
+            this.setStreamingState(true);
+
             // Show thinking indicator
             this.showAiThinking();
 
@@ -463,23 +593,27 @@
 
                         case 'done':
                             self.finishStreaming();
-                            // Refresh conversation to get updated data with proper formatting
-                            if (self.currentConversationId) {
-                                // Small delay to ensure server has saved the message
-                                setTimeout(() => {
-                                    self.loadConversationMessages(self.currentConversationId);
-                                    self.loadConversations();
-                                }, 300);
-                            }
+                            // Convert streaming message to final assistant message
+                            self.convertStreamingToFinalMessage();
+                            // Re-enable input controls
+                            self.setStreamingState(false);
+                            // Refresh conversations and page
+                            self.loadConversations();
+                            // Small delay before page refresh to allow UI updates
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 500);
                             break;
 
                         case 'error':
                             self.showError(data.message || 'Streaming error occurred');
                             self.finishStreaming();
+                            self.setStreamingState(false);
                             break;
 
                         case 'close':
                             self.finishStreaming();
+                            self.setStreamingState(false);
                             break;
                     }
                 } catch (e) {
@@ -491,6 +625,7 @@
                 if (self.isStreaming) {
                     self.showError('Streaming connection lost');
                     self.finishStreaming();
+                    self.setStreamingState(false);
                 }
             };
         }
@@ -502,28 +637,13 @@
             this.removeThinkingIndicator();
 
             // Add a temporary assistant message with thinking indicator
-            const thinkingHtml = `
-                <div class="message message-assistant message-thinking">
-                    <div class="message-avatar">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">
-                            <span class="thinking-dots">
-                                <span class="dot"></span>
-                                <span class="dot"></span>
-                                <span class="dot"></span>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            `;
+            const thinkingHtml = this.generateThinkingIndicator();
             messagesContainer.append(thinkingHtml);
             this.smoothScrollToBottom();
         }
 
         removeThinkingIndicator() {
-            $('#messages-container .message-thinking').remove();
+            $('#messages-container .d-flex.mb-3').has('.spinner-border').remove();
         }
 
         appendStreamChunk(chunk) {
@@ -531,32 +651,20 @@
             this.streamBuffer += chunk;
 
             // Find or create the streaming message element
-            let lastMessage = $('#messages-container .message-assistant.streaming').last();
+            let streamingMessage = $('#messages-container .streaming');
 
-            if (lastMessage.length === 0) {
+            if (streamingMessage.length === 0) {
                 // Remove thinking indicator and create new streaming message
                 this.removeThinkingIndicator();
 
-                const messageHtml = `
-                    <div class="message message-assistant streaming">
-                        <div class="message-avatar">
-                            <i class="fas fa-robot"></i>
-                        </div>
-                        <div class="message-content">
-                            <div class="message-text"></div>
-                            <div class="message-meta">
-                                <small class="text-muted">${this.formatTime(new Date())}</small>
-                            </div>
-                        </div>
-                    </div>
-                `;
+                const messageHtml = this.generateStreamingMessage();
                 $('#messages-container').append(messageHtml);
-                lastMessage = $('#messages-container .message-assistant.streaming').last();
+                streamingMessage = $('#messages-container .streaming');
             }
 
             // Update the message text with accumulated buffer
             // Use debounced rendering for better performance
-            this.debouncedRenderStream(lastMessage);
+            this.debouncedRenderStream(streamingMessage);
         }
 
         debouncedRenderStream(messageElement) {
@@ -569,13 +677,19 @@
 
             // Use requestAnimationFrame for smooth rendering
             this.renderTimeout = requestAnimationFrame(() => {
-                const textDiv = messageElement.find('.message-text');
+                // Double-check that we still have a streaming message
+                const currentStreamingMessage = $('#messages-container .streaming');
+                if (currentStreamingMessage.length === 0) {
+                    return; // Streaming might have ended
+                }
+
+                const textDiv = currentStreamingMessage.find('.mb-2');
 
                 // Parse markdown to HTML
                 const formattedContent = self.parseMarkdown(self.streamBuffer);
 
-                // Add typing cursor
-                const contentWithCursor = formattedContent + '<span class="typing-cursor"></span>';
+                // Add typing cursor using Bootstrap classes
+                const contentWithCursor = formattedContent + '<span class="border-left border-primary ml-1" style="height: 1.2em; animation: blink 1s infinite;"></span>';
 
                 // Update content
                 textDiv.html(contentWithCursor);
@@ -643,7 +757,6 @@
 
         finishStreaming() {
             this.isStreaming = false;
-            this.streamBuffer = '';
 
             // Clear any pending renders
             if (this.renderTimeout) {
@@ -659,31 +772,36 @@
             }
 
             // Remove streaming class and typing cursor from messages
-            const streamingMessage = $('#messages-container .message-assistant.streaming');
+            const streamingMessage = $('#messages-container .streaming');
             streamingMessage.removeClass('streaming');
-            streamingMessage.find('.typing-cursor').remove();
+            streamingMessage.find('.border-left.border-primary').remove();
 
             // Remove any thinking indicators that might be left
             this.removeThinkingIndicator();
         }
 
+        convertStreamingToFinalMessage() {
+            // Find the streaming message
+            const streamingMessage = $('#messages-container .streaming');
+            if (!streamingMessage.length) return;
+
+            // Get the final content from the stream buffer
+            const finalContent = this.parseMarkdown(this.streamBuffer);
+
+            // Update the message content (remove cursor and add final content)
+            const contentDiv = streamingMessage.find('.mb-2');
+            if (contentDiv.length) {
+                contentDiv.html(finalContent);
+            }
+
+            // Clear the stream buffer
+            this.streamBuffer = '';
+        }
+
         addAssistantMessage(message) {
             const messagesContainer = $('#messages-container');
 
-            const messageHtml = `
-                <div class="message message-assistant message-new">
-                    <div class="message-avatar">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">${this.parseMarkdown(message)}</div>
-                        <div class="message-meta">
-                            <small class="text-muted">${this.formatTime(new Date())}</small>
-                        </div>
-                    </div>
-                </div>
-            `;
-
+            const messageHtml = this.generateAssistantMessage(this.parseMarkdown(message));
             messagesContainer.append(messageHtml);
             this.smoothScrollToBottom();
         }
@@ -928,7 +1046,7 @@
                     const attachmentHtml = `
                         <div class="attachment-item" data-attachment-id="${attachmentId}">
                             <div class="attachment-preview">
-                                <img src="${e.target.result}" alt="${file.name}" class="img-thumbnail" style="max-width: 60px; max-height: 60px;">
+                                <img src="${e.target.result}" alt="${file.name}" class="img-fluid rounded" style="max-width: 60px; max-height: 60px;">
                             </div>
                             <div class="attachment-info">
                                 <small class="text-muted">${file.name}</small>
@@ -1058,6 +1176,22 @@
             } else {
                 form.removeClass('loading');
                 submitBtn.prop('disabled', false).html('<i class="fas fa-paper-plane"></i> Send Message');
+            }
+        }
+
+        setStreamingState(streaming) {
+            const messageInput = $('#message-input');
+            const submitBtn = $('#send-message-btn');
+            const attachmentBtn = $('#attachment-btn');
+
+            if (streaming) {
+                messageInput.prop('disabled', true).attr('placeholder', 'Streaming in progress...');
+                submitBtn.prop('disabled', true).html('<i class="fas fa-circle-notch fa-spin me-2"></i>Streaming...');
+                attachmentBtn.prop('disabled', true);
+            } else {
+                messageInput.prop('disabled', false).attr('placeholder', this.container.data('message-placeholder') || 'Type your message...');
+                submitBtn.prop('disabled', false).html('<i class="fas fa-paper-plane"></i> Send Message');
+                attachmentBtn.prop('disabled', false);
             }
         }
 

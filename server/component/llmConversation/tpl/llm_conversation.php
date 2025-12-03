@@ -69,36 +69,35 @@
                         <?php if (empty($messages)): ?>
                             <div class="alert alert-info">No messages in this conversation yet.</div>
                         <?php else: ?>
-                            <div class="conversation-messages" style="max-height: 600px; overflow-y: auto;">
+                            <div style="max-height: 600px; overflow-y: auto;">
                                 <?php foreach ($messages as $message): ?>
                                     <?php
                                     $is_user = $message['role'] === 'user';
-                                    $message_class = $is_user ? 'message-user' : 'message-assistant';
                                     $avatar_class = $is_user ? 'bg-primary' : 'bg-secondary';
                                     $avatar_icon = $is_user ? 'fa-user' : 'fa-robot';
                                     ?>
-                                    <div class="message mb-4 <?php echo $message_class; ?>">
-                                        <div class="d-flex">
+                                    <div class="mb-4 <?php echo $is_user ? 'text-right' : 'text-left'; ?>">
+                                        <div class="d-flex <?php echo $is_user ? 'flex-row-reverse' : 'flex-row'; ?>">
                                             <!-- Avatar -->
-                                            <div class="flex-shrink-0 me-3">
+                                            <div class="flex-shrink-0 mr-3">
                                                 <div class="rounded-circle d-flex align-items-center justify-content-center <?php echo $avatar_class; ?> text-white" style="width: 40px; height: 40px;">
                                                     <i class="fas <?php echo $avatar_icon; ?>"></i>
                                                 </div>
                                             </div>
 
                                             <!-- Message content -->
-                                            <div class="flex-grow-1">
-                                                <div class="bg-light rounded p-3 mb-2" style="max-width: 80%; <?php echo $is_user ? 'margin-left: auto;' : ''; ?>">
+                                            <div class="flex-grow-1" style="max-width: 80%;">
+                                                <div class="bg-light rounded p-3 mb-2">
                                                     <!-- Message text -->
-                                                    <div class="message-text mb-2">
+                                                    <div class="mb-2">
                                                         <?php echo nl2br(htmlspecialchars($message['content'])); ?>
                                                     </div>
 
                                                     <!-- Image attachment -->
                                                     <?php if (!empty($message['image_path'])): ?>
-                                                        <div class="message-image">
+                                                        <div class="mt-3">
                                                             <small class="text-muted">Image: </small>
-                                                            <a href="?file_path=<?php echo htmlspecialchars($message['image_path']); ?>" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                                                            <a href="?file_path=<?php echo htmlspecialchars($message['image_path']); ?>" target="_blank" class="btn btn-sm btn-outline-primary ml-2">
                                                                 <i class="fas fa-image"></i> View Image
                                                             </a>
                                                         </div>
