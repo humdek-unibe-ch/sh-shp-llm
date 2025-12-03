@@ -7,9 +7,11 @@
         <input type="hidden" name="max_tokens" value="<?php echo htmlspecialchars($llm_max_tokens); ?>">
 
         <!-- File Attachments Preview Container -->
+        <?php if ($this->model->isFileUploadsEnabled()): ?>
         <div class="d-none" id="file-attachments">
             <div id="attachments-list"></div>
         </div>
+        <?php endif; ?>
 
         <!-- Message Input with File Upload -->
         <div class="mb-3">
@@ -19,17 +21,28 @@
                           placeholder="<?php echo htmlspecialchars($message_placeholder); ?>"
                           maxlength="4000"
                           data-placeholder="<?php echo htmlspecialchars($message_placeholder); ?>"></textarea>
+                <?php if ($this->model->isFileUploadsEnabled()): ?>
                 <button type="button" class="btn btn-light btn-sm position-absolute attachment-btn" id="attachment-btn"
                         title="<?php echo htmlspecialchars($upload_image_label); ?>"
                         style="top: 8px; right: 8px;">
                     <i class="fas fa-paperclip"></i>
                 </button>
+                <?php endif; ?>
             </div>
+            <?php if ($this->model->isFileUploadsEnabled()): ?>
             <!-- Hidden file input - accept configured based on model -->
-            <input type="file" id="file-upload" name="uploaded_files[]" accept="*" style="display: none;" multiple>
+            <input type="file" id="file-upload" name="uploaded_files[]"
+                   accept="<?php echo '.' . implode(',.', $this->model->getAcceptedFileTypes()); ?>"
+                   style="display: none;" multiple>
             <small class="text-muted d-block mt-1" id="upload-help-text">
-                <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($upload_help_text); ?>
+                <i class="fas fa-info-circle"></i> <?php echo htmlspecialchars($this->model->getModelSpecificUploadHelpText()); ?>
             </small>
+            <?php if ($warning_message = $this->model->getFileUploadWarningMessage()): ?>
+            <div class="alert alert-warning mt-2 py-2 px-3 small" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> <?php echo htmlspecialchars($warning_message); ?>
+            </div>
+            <?php endif; ?>
+            <?php endif; ?>
         </div>
 
         <!-- Character Counter and Action Buttons Row -->

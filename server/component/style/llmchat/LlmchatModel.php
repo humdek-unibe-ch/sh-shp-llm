@@ -25,6 +25,7 @@ class LlmchatModel extends StyleModel
     private $llm_max_tokens;
     private $llm_streaming_enabled;
     private $enable_conversations_list;
+    private $enable_file_uploads;
     private $submit_button_label;
     private $new_chat_button_label;
     private $chat_description;
@@ -88,6 +89,7 @@ class LlmchatModel extends StyleModel
         $this->llm_max_tokens = $this->get_db_field('llm_max_tokens', '2048');
         $this->llm_streaming_enabled = $this->get_db_field('llm_streaming_enabled', '1');
         $this->enable_conversations_list = $this->get_db_field('enable_conversations_list', '0');
+        $this->enable_file_uploads = $this->get_db_field('enable_file_uploads', '0');
         $this->submit_button_label = $this->get_db_field('submit_button_label', LLM_DEFAULT_SUBMIT_LABEL);
         $this->new_chat_button_label = $this->get_db_field('new_chat_button_label', LLM_DEFAULT_NEW_CHAT_LABEL);
         $this->chat_description = $this->get_db_field('chat_description', 'Chat with AI assistant');
@@ -203,7 +205,7 @@ class LlmchatModel extends StyleModel
      */
     public function getSectionId()
     {
-        return $this->id;
+        return $this->section_id;
     }
 
     /* Configuration Getters *********************************************************/
@@ -241,6 +243,195 @@ class LlmchatModel extends StyleModel
     public function isConversationsListEnabled()
     {
         return $this->enable_conversations_list === '1';
+    }
+
+    public function isFileUploadsEnabled()
+    {
+        return $this->enable_file_uploads == '1';
+    }
+
+    /**
+     * Get accepted file types for the current model
+     * Vision models accept images, text models accept text-based files and images
+     *
+     * @return array Array of accepted file extensions
+     */
+    public function getAcceptedFileTypes()
+    {
+        $model = $this->getConfiguredModel();
+
+        // Vision models can understand images
+        if (llm_is_vision_model($model)) {
+            return LLM_ALLOWED_IMAGE_EXTENSIONS;
+        }
+
+        // Text models can process text-based files and may handle images
+        return array_merge(LLM_ALLOWED_DOCUMENT_EXTENSIONS, LLM_ALLOWED_CODE_EXTENSIONS, LLM_ALLOWED_IMAGE_EXTENSIONS);
+    }
+
+    /**
+     * Check if the current model supports vision/image processing
+     *
+     * @return bool True if model supports vision
+     */
+    public function isVisionModel()
+    {
+        return llm_is_vision_model($this->getConfiguredModel());
+    }
+
+    /**
+     * Get the capabilities of the current model
+     *
+     * @return array Array of capability constants
+     */
+    public function getModelCapabilities()
+    {
+        return llm_get_model_capabilities($this->getConfiguredModel());
+    }
+
+    /**
+     * Check if the current model has a specific capability
+     *
+     * @param string $capability Capability constant
+     * @return bool True if model has the capability
+     */
+    public function modelHasCapability($capability)
+    {
+        return llm_model_has_capability($this->getConfiguredModel(), $capability);
+    }
+
+    /**
+     * Get a human-readable description of the model's capabilities
+     *
+     * @return string Description of model capabilities
+     */
+    public function getModelCapabilityDescription()
+    {
+        $capabilities = $this->getModelCapabilities();
+        $descriptions = [];
+
+        if (in_array(LLM_CAPABILITY_VISION, $capabilities)) {
+            $descriptions[] = 'Vision (image analysis)';
+        }
+        if (in_array(LLM_CAPABILITY_CODE, $capabilities)) {
+            $descriptions[] = 'Code generation';
+        }
+        if (in_array(LLM_CAPABILITY_REASONING, $capabilities)) {
+            $descriptions[] = 'Advanced reasoning';
+        }
+        if (in_array(LLM_CAPABILITY_TEXT, $capabilities)) {
+            $descriptions[] = 'Text processing';
+        }
+
+        return implode(', ', $descriptions);
+    }
+
+    /**
+     * Get model status indicator for UI display
+     *
+     * @return array Array with 'type', 'icon', 'text', and 'class' for UI display
+     */
+    public function getModelStatusIndicator()
+    {
+        $model = $this->getConfiguredModel();
+        $capabilities = $this->getModelCapabilities();
+
+        if (in_array(LLM_CAPABILITY_VISION, $capabilities)) {
+            return [
+                'type' => 'vision',
+                'icon' => 'fas fa-eye',
+                'text' => 'Vision Model',
+                'class' => 'badge-success'
+            ];
+        } elseif (in_array(LLM_CAPABILITY_CODE, $capabilities)) {
+            return [
+                'type' => 'code',
+                'icon' => 'fas fa-code',
+                'text' => 'Code Model',
+                'class' => 'badge-primary'
+            ];
+        } elseif (in_array(LLM_CAPABILITY_REASONING, $capabilities)) {
+            return [
+                'type' => 'reasoning',
+                'icon' => 'fas fa-brain',
+                'text' => 'Reasoning Model',
+                'class' => 'badge-info'
+            ];
+        } else {
+            return [
+                'type' => 'text',
+                'icon' => 'fas fa-file-alt',
+                'text' => 'Text Model',
+                'class' => 'badge-secondary'
+            ];
+        }
+    }
+
+    /**
+     * Get file upload help text based on model capabilities
+     *
+     * @return string Appropriate help text for the current model
+     */
+    public function getModelSpecificUploadHelpText()
+    {
+        $model = $this->getConfiguredModel();
+
+        if (llm_is_vision_model($model)) {
+            // Vision models - focus on image capabilities
+            $extensions = array_map('strtoupper', LLM_ALLOWED_IMAGE_EXTENSIONS);
+            $maxSize = $this->formatFileSizeForDisplay(LLM_MAX_FILE_SIZE);
+            $maxFiles = LLM_MAX_FILES_PER_MESSAGE;
+
+            return "Vision model supports image analysis. Supported formats: " .
+                   implode(', ', array_slice($extensions, 0, 6)) .
+                   " (max {$maxSize}, up to {$maxFiles} files)";
+        } else {
+            // Text models - mention both text and image capabilities
+            $textExtensions = array_merge(LLM_ALLOWED_DOCUMENT_EXTENSIONS, LLM_ALLOWED_CODE_EXTENSIONS);
+            $imageExtensions = LLM_ALLOWED_IMAGE_EXTENSIONS;
+            $allExtensions = array_merge($textExtensions, $imageExtensions);
+
+            $maxSize = $this->formatFileSizeForDisplay(LLM_MAX_FILE_SIZE);
+            $maxFiles = LLM_MAX_FILES_PER_MESSAGE;
+
+            return "Text model can process documents and images. Supported: " .
+                   implode(', ', array_slice(array_map('strtoupper', $allExtensions), 0, 8)) .
+                   "... (max {$maxSize}, up to {$maxFiles} files)";
+        }
+    }
+
+    /**
+     * Get warning message for models with limited file processing capabilities
+     *
+     * @return string|null Warning message or null if no warning needed
+     */
+    public function getFileUploadWarningMessage()
+    {
+        if (!$this->isFileUploadsEnabled()) {
+            return null;
+        }
+
+        $model = $this->getConfiguredModel();
+        $capabilities = $this->getModelCapabilities();
+
+        // If it's a vision model, no warning needed
+        if (in_array(LLM_CAPABILITY_VISION, $capabilities)) {
+            return null;
+        }
+
+        // For non-vision models, provide helpful guidance
+        $warning = "This model has limited image processing capabilities. ";
+
+        // Suggest better alternatives
+        $visionModels = array_intersect(LLM_VISION_MODELS, ['qwen3-vl-8b-instruct', 'internvl3-8b-instruct', 'deepseek-r1-0528-qwen3-8b']);
+        if (!empty($visionModels)) {
+            $suggestions = array_slice($visionModels, 0, 2); // Show max 2 suggestions
+            $warning .= "For better image analysis, consider: " . implode(', ', $suggestions) . ".";
+        } else {
+            $warning .= "Text-based files will work best with this model.";
+        }
+
+        return $warning;
     }
 
     public function getSubmitButtonLabel()

@@ -81,7 +81,7 @@ define('LLM_FILE_TYPE_DOCUMENT', 'document');
 define('LLM_FILE_TYPE_CODE', 'code');
 
 // Vision-capable models that can process images
-define('LLM_VISION_MODELS', ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct']);
+define('LLM_VISION_MODELS', ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct', 'deepseek-r1-0528-qwen3-8b']);
 
 // Cache keys
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
@@ -94,6 +94,13 @@ define('LLM_MODEL_TYPE_VISION', 'vision');
 define('LLM_MODEL_TYPE_EMBEDDING', 'embedding');
 define('LLM_MODEL_TYPE_RERANKER', 'reranker');
 define('LLM_MODEL_TYPE_SPEECH', 'speech');
+define('LLM_MODEL_TYPE_MULTIMODAL', 'multimodal'); // Text + Vision combined
+
+// Model capability flags
+define('LLM_CAPABILITY_VISION', 'vision'); // Can process images
+define('LLM_CAPABILITY_TEXT', 'text'); // Can process text
+define('LLM_CAPABILITY_CODE', 'code'); // Good at code generation
+define('LLM_CAPABILITY_REASONING', 'reasoning'); // Advanced reasoning capabilities
 
 // UI labels
 define('LLM_DEFAULT_SUBMIT_LABEL', 'Send Message');
@@ -143,6 +150,44 @@ function llm_get_file_type_category($extension) {
  */
 function llm_is_vision_model($model) {
     return in_array($model, LLM_VISION_MODELS);
+}
+
+/**
+ * Get model capabilities based on model identifier
+ *
+ * @param string $model Model identifier
+ * @return array Array of capability constants
+ */
+function llm_get_model_capabilities($model) {
+    $capabilities = [LLM_CAPABILITY_TEXT]; // All models can handle text
+
+    if (llm_is_vision_model($model)) {
+        $capabilities[] = LLM_CAPABILITY_VISION;
+    }
+
+    // Add code capability for coding models
+    if (strpos($model, 'coder') !== false || strpos($model, 'code') !== false) {
+        $capabilities[] = LLM_CAPABILITY_CODE;
+    }
+
+    // Add reasoning capability for advanced models
+    if (strpos($model, 'deepseek-r1') !== false || strpos($model, 'reasoning') !== false) {
+        $capabilities[] = LLM_CAPABILITY_REASONING;
+    }
+
+    return $capabilities;
+}
+
+/**
+ * Check if a model has a specific capability
+ *
+ * @param string $model Model identifier
+ * @param string $capability Capability constant
+ * @return bool True if model has the capability
+ */
+function llm_model_has_capability($model, $capability) {
+    $capabilities = llm_get_model_capabilities($model);
+    return in_array($capability, $capabilities);
 }
 
 /**

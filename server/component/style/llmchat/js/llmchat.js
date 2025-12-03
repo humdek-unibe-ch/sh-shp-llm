@@ -136,6 +136,8 @@
             this.currentConversationId = this.container.data('current-conversation-id') || null;
             this.configuredModel = this.container.data('configured-model') || 'qwen3-vl-8b-instruct';
             this.enableConversationsList = this.container.data('enable-conversations-list') === '1';
+            this.enableFileUploads = this.container.attr('data-enable-file-uploads') === '1';
+            this.acceptedFileTypes = this.container.data('accepted-file-types') || '';
 
             // Initialize file config from container data attributes
             initFileConfigFromContainer(this.container);
@@ -423,52 +425,56 @@
                 self.sendMessage();
             });
 
-            // File upload button - triggers hidden file input
-            this.container.on('click', '#attachment-btn', function(e) {
-                e.preventDefault();
-                $('#file-upload').click();
-            });
+            // File upload functionality - only bind if enabled
+            if (this.enableFileUploads) {
 
-            // File input change - processes selected files for upload
-            this.container.on('change', '#file-upload', function(e) {
-                const files = e.target.files;
-                self.handleFileSelection(files);
-            });
+                // File upload button - triggers hidden file input
+                this.container.on('click', '#attachment-btn', function(e) {
+                    e.preventDefault();
+                    self.container.find('#file-upload').click();
+                });
 
-            // ===== File Drag & Drop Events =====
-            // Handle drag-and-drop file uploads on message input area
-
-            // Drag over - show visual feedback
-            this.container.on('dragover', '.message-input-wrapper', function(e) {
-                e.preventDefault();
-                $(this).addClass('drag-over');
-            });
-
-            // Drag leave - remove visual feedback
-            this.container.on('dragleave', '.message-input-wrapper', function(e) {
-                e.preventDefault();
-                $(this).removeClass('drag-over');
-            });
-
-            // File drop - process dropped files
-            this.container.on('drop', '.message-input-wrapper', function(e) {
-                e.preventDefault();
-                $(this).removeClass('drag-over');
-                const files = e.originalEvent.dataTransfer.files;
-                if (files.length > 0) {
+                // File input change - processes selected files for upload
+                this.container.on('change', '#file-upload', function(e) {
+                    const files = e.target.files;
                     self.handleFileSelection(files);
-                }
-            });
+                });
 
-            // ===== Attachment Management Events =====
-            // Handle removing attachments and input interactions
+                // ===== File Drag & Drop Events =====
+                // Handle drag-and-drop file uploads on message input area
 
-            // Remove attachment - deletes file from upload list
-            this.container.on('click', '.remove-attachment', function(e) {
-                e.preventDefault();
-                const attachmentId = $(this).data('attachment-id');
-                self.removeAttachment(attachmentId);
-            });
+                // Drag over - show visual feedback
+                this.container.on('dragover', '.message-input-wrapper', function(e) {
+                    e.preventDefault();
+                    $(this).addClass('drag-over');
+                });
+
+                // Drag leave - remove visual feedback
+                this.container.on('dragleave', '.message-input-wrapper', function(e) {
+                    e.preventDefault();
+                    $(this).removeClass('drag-over');
+                });
+
+                // File drop - process dropped files
+                this.container.on('drop', '.message-input-wrapper', function(e) {
+                    e.preventDefault();
+                    $(this).removeClass('drag-over');
+                    const files = e.originalEvent.dataTransfer.files;
+                    if (files.length > 0) {
+                        self.handleFileSelection(files);
+                    }
+                });
+
+                // ===== Attachment Management Events =====
+                // Handle removing attachments and input interactions
+
+                // Remove attachment - deletes file from upload list
+                this.container.on('click', '.remove-attachment', function(e) {
+                    e.preventDefault();
+                    const attachmentId = $(this).data('attachment-id');
+                    self.removeAttachment(attachmentId);
+                });
+            } // End file uploads conditional block
 
             // Character count - updates counter as user types
             this.container.on('input', '#message-input', function() {
@@ -1346,7 +1352,7 @@
          */
         updateFileUploadVisibility() {
             const configuredModel = this.configuredModel;
-            const attachmentBtn = $('#attachment-btn');
+            const attachmentBtn = this.container.find('#attachment-btn');
             const isVisionModel = FILE_CONFIG.visionModels.includes(configuredModel);
 
             // Always show attachment button - all models can handle files
@@ -1354,7 +1360,7 @@
             attachmentBtn.show();
 
             // Update the file input accept attribute based on model type
-            const fileInput = $('#file-upload');
+            const fileInput = this.container.find('#file-upload');
             if (isVisionModel) {
                 // Vision models: accept all file types
                 fileInput.attr('accept', '*');
@@ -1393,8 +1399,8 @@
          * Resets the form to initial state
          */
         clearMessageForm() {
-            $('#message-input').val('');
-            $('#file-upload').val('');
+            this.container.find('#message-input').val('');
+            this.container.find('#file-upload').val('');
 
             // Clear file tracking
             this.selectedFiles = [];
@@ -1552,8 +1558,8 @@
          */
         addAttachment(file, hash) {
             const attachmentId = 'attach_' + (++this.attachmentIdCounter) + '_' + Date.now();
-            const attachmentsList = $('#attachments-list');
-            const attachmentsContainer = $('#file-attachments');
+            const attachmentsList = this.container.find('#attachments-list');
+            const attachmentsContainer = this.container.find('#file-attachments');
 
             // Store file in selectedFiles array
             this.selectedFiles.push({
@@ -1664,7 +1670,7 @@
          * Show the attachments container with animation
          */
         showAttachmentsContainer() {
-            const container = $('#file-attachments');
+            const container = this.container.find('#file-attachments');
             if (!container.is(':visible')) {
                 container.removeClass('d-none').hide().fadeIn(200);
             }
@@ -1710,8 +1716,8 @@
                 $(this).remove();
 
                 // Hide container if no attachments left
-                if ($('#attachments-list').children().length === 0) {
-                    $('#file-attachments').fadeOut(200, function() {
+                if (self.container.find('#attachments-list').children().length === 0) {
+                    self.container.find('#file-attachments').fadeOut(200, function() {
                         $(this).addClass('d-none');
                     });
                 }
@@ -1722,8 +1728,8 @@
          * Clear all attachments from UI and tracking
          */
         clearAttachments() {
-            $('#attachments-list').empty();
-            $('#file-attachments').hide().addClass('d-none');
+            this.container.find('#attachments-list').empty();
+            this.container.find('#file-attachments').hide().addClass('d-none');
             this.selectedFiles = [];
             this.fileHashes.clear();
         }
@@ -1832,9 +1838,9 @@
          * @param {boolean} streaming - Whether streaming is active
          */
         setStreamingState(streaming) {
-            const messageInput = $('#message-input');
-            const submitBtn = $('#send-message-btn');
-            const attachmentBtn = $('#attachment-btn');
+            const messageInput = this.container.find('#message-input');
+            const submitBtn = this.container.find('#send-message-btn');
+            const attachmentBtn = this.container.find('#attachment-btn');
 
             if (streaming) {
                 // Disable all input controls during streaming

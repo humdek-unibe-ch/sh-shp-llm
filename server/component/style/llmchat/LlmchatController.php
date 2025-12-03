@@ -206,6 +206,8 @@ class LlmchatController extends BaseController
         $conversation_id = $_POST['conversation_id'] ?? null;
         $message = trim($_POST['message'] ?? '');
         $model = $_POST['model'] ?? $this->model->getConfiguredModel();
+        $temperature = $_POST['temperature'] ?? $this->model->getLlmTemperature();
+        $max_tokens = $_POST['max_tokens'] ?? $this->model->getLlmMaxTokens();
 
         if (empty($message)) {
             $this->sendJsonResponse(['error' => 'Message cannot be empty'], 400);
@@ -230,7 +232,7 @@ class LlmchatController extends BaseController
                     if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
                         throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
                     }
-                    $conversation_id = $this->llm_service->createConversation($user_id, null, $model);
+                    $conversation_id = $this->llm_service->createConversation($user_id, null, $model, $temperature, $max_tokens);
                     $is_new_conversation = true;
                 }
 
@@ -272,7 +274,7 @@ class LlmchatController extends BaseController
                 if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
                     throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
                 }
-                $conversation_id = $this->llm_service->createConversation($user_id, null, $model);
+                $conversation_id = $this->llm_service->createConversation($user_id, null, $model, $temperature, $max_tokens);
                 $is_new_conversation = true;
             }
 
@@ -311,7 +313,7 @@ class LlmchatController extends BaseController
                 return;
             } else {
                 // Get complete response
-                $response = $this->llm_service->callLlmApi($api_messages, $model);
+                $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
 
                 if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
                     $assistant_message = $response['choices'][0]['message']['content'];
@@ -639,8 +641,8 @@ class LlmchatController extends BaseController
             $this->llm_service->streamLlmResponse(
                 $messages,
                 $model,
-                $this->model->getLlmTemperature(),
-                $this->model->getLlmMaxTokens(),
+                $temperature,
+                $max_tokens,
                 function($chunk) use (&$full_response, &$tokens_used, $conversation_id, $model) {
                     if ($chunk === '[DONE]') {
                         // Streaming completed

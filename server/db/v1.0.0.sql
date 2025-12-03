@@ -71,7 +71,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_temperature', get_field_type_id('number'), '0'),
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
 (NULL, 'llm_streaming_enabled', get_field_type_id('checkbox'), '0'),
-(NULL, 'enable_conversations_list', get_field_type_id('checkbox'), '0');
+(NULL, 'enable_conversations_list', get_field_type_id('checkbox'), '0'),
+(NULL, 'enable_file_uploads', get_field_type_id('checkbox'), '0');
 
 -- add LLM chat style fields (external - user visible labels)
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
@@ -113,6 +114,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'Maximum tokens per response'),
 (get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time streaming responses'),
 (get_style_id('llmChat'), get_field_id('enable_conversations_list'), '0', 'Enable conversations list on the left side. When disabled, only one conversation is allowed.'),
+(get_style_id('llmChat'), get_field_id('enable_file_uploads'), '0', 'Enable file upload functionality. When enabled, users can attach files to their messages. File types accepted depend on the selected AI model.'),
 (get_style_id('llmChat'), get_field_id('submit_button_label'), 'Send Message', 'Text for the send message button'),
 (get_style_id('llmChat'), get_field_id('new_chat_button_label'), 'New Conversation', 'Text for the new conversation button'),
 (get_style_id('llmChat'), get_field_id('delete_chat_button_label'), 'Delete Chat', 'Text for the delete conversation button'),

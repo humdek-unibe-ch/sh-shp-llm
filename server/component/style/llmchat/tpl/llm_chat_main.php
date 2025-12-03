@@ -16,10 +16,20 @@
     data-max-file-size="<?php echo LLM_MAX_FILE_SIZE; ?>"
     data-max-files="<?php echo LLM_MAX_FILES_PER_MESSAGE; ?>"
     data-allowed-extensions="<?php echo htmlspecialchars(implode(',', LLM_ALLOWED_EXTENSIONS)); ?>"
-    data-enable-conversations-list="<?php echo $this->model->isConversationsListEnabled() ? '1' : '0'; ?>">
+    data-enable-conversations-list="<?php echo $this->model->isConversationsListEnabled() ? '1' : '0'; ?>"
+    data-enable-file-uploads="<?php echo $this->model->isFileUploadsEnabled() ? '1' : '0'; ?>"
+    data-accepted-file-types="<?php echo htmlspecialchars(implode(',', $this->model->getAcceptedFileTypes())); ?>">
     <div class="bg-primary text-white p-3 text-center">
         <h5 class="mb-0"><?php echo htmlspecialchars($conversation_name); ?></h5>
         <small><?php echo htmlspecialchars($chat_description); ?></small>
+        <?php $model_indicator = $this->model->getModelStatusIndicator(); ?>
+        <div class="mt-2">
+            <span class="badge <?php echo $model_indicator['class']; ?> badge-sm">
+                <i class="<?php echo $model_indicator['icon']; ?> me-1"></i>
+                <?php echo htmlspecialchars($model_indicator['text']); ?>
+                <small class="ms-1">(<?php echo htmlspecialchars($configured_model); ?>)</small>
+            </span>
+        </div>
     </div>
 
     <div class="container-fluid">
