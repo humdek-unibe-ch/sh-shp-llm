@@ -239,6 +239,63 @@ startStreaming(streamingUrl) {
 - **Error Handling**: Graceful fallback to non-streaming if SSE fails
 - **Performance**: 5ms delay between chunks to prevent overwhelming the UI
 
+## Context Maintenance
+
+The LLM plugin maintains conversation context by sending the complete message history to the LLM API for each interaction, enabling coherent and contextual responses.
+
+### How Context Works
+
+#### Conversation-Based Context
+1. **Message History Storage**: Each conversation stores a complete chronological history of user and assistant messages in the `llmMessages` table
+2. **Context Retrieval**: When sending any message, the system retrieves the full conversation history using `getConversationMessages($conversation_id, $limit)`
+3. **API Format Conversion**: Messages are converted to OpenAI-compatible format using `convertToApiFormat($messages)`
+4. **Full Context Transmission**: The entire message history is sent to the LLM API as the `messages` array, allowing the AI to understand the full conversation context
+
+#### Context Retrieval Process
+
+**For Regular (Non-Streaming) Messages:**
+```php
+// Retrieve conversation history (up to configured limit)
+$messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+
+// Convert to OpenAI API format
+$api_messages = $this->api_formatter_service->convertToApiFormat($messages);
+
+// Send full context to LLM API
+$response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
+```
+
+**For Streaming Messages:**
+```php
+// Same process for streaming - full context ensures coherent responses
+$messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+$api_messages = $this->api_formatter_service->convertToApiFormat($messages);
+
+// Stream response while maintaining full conversation context
+$this->llm_service->streamLlmResponse($api_messages, $model, $temperature, $max_tokens, $callback);
+```
+
+#### Context Window Management
+
+- **Default Limit**: 50 messages per conversation (configurable via `message_limit` component field)
+- **Purpose**: Prevents context from growing indefinitely while maintaining recent conversation history
+- **Configuration**: Administrators can adjust the context window size through the component's `message_limit` setting
+- **Benefits**:
+  - **Coherent Responses**: AI understands previous messages and maintains conversation flow
+  - **Persistent Context**: Context survives page refreshes and user sessions
+  - **Efficient Storage**: Configurable limits prevent excessive API token usage
+  - **Performance**: Cached message retrieval reduces database load
+
+#### Message Format Conversion
+
+The `LlmApiFormatterService::convertToApiFormat()` method handles:
+- **Role Assignment**: Maps database `role` field to API format (`user`, `assistant`, `system`)
+- **Content Preservation**: Maintains message content with proper encoding
+- **Attachment Processing**: Handles file uploads for vision-capable models
+- **Chronological Ordering**: Ensures messages are sent in timestamp order
+
+This approach ensures that every AI response has access to the complete conversation context within the configured limits, enabling natural, contextual chatbot interactions that remember previous exchanges.
+
 ## Database Structure & Data Storage
 
 The LLM plugin creates and manages several database tables to store conversations, messages, and configuration data.
