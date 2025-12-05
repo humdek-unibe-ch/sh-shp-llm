@@ -70,6 +70,15 @@ class LlmchatModel extends StyleModel
         $this->user_id = $_SESSION['id_user'] ?? null;
         $this->conversation_id = $_GET['conversation'] ?? null;
 
+        // Initialize configuration properties first
+        $this->conversation_limit = $this->get_db_field('conversation_limit', LLM_DEFAULT_CONVERSATION_LIMIT);
+        $this->enable_conversations_list = $this->get_db_field('enable_conversations_list', '0');
+
+        // If conversations list is disabled, always load the last conversation (ignore URL parameter)
+        if ($this->enable_conversations_list !== '1') {
+            $this->conversation_id = null;
+        }
+
         // If no conversation is specified, automatically select the last (most recent) conversation
         if (!$this->conversation_id && $this->user_id) {
             $conversations = $this->llm_service->getUserConversations(
@@ -89,7 +98,6 @@ class LlmchatModel extends StyleModel
         $this->llm_temperature = $this->get_db_field('llm_temperature', '0.7');
         $this->llm_max_tokens = $this->get_db_field('llm_max_tokens', '2048');
         $this->llm_streaming_enabled = $this->get_db_field('llm_streaming_enabled', '1');
-        $this->enable_conversations_list = $this->get_db_field('enable_conversations_list', '0');
         $this->enable_file_uploads = $this->get_db_field('enable_file_uploads', '0');
         $this->enable_full_page_reload = $this->get_db_field('enable_full_page_reload', '0');
         $this->submit_button_label = $this->get_db_field('submit_button_label', LLM_DEFAULT_SUBMIT_LABEL);

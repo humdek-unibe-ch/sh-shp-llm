@@ -194,10 +194,12 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               setIsStreaming(false);
               onDone?.(event.tokens_used || 0);
               
-              // Update URL with conversation ID
-              const url = new URL(window.location.href);
-              url.searchParams.set('conversation', streamConversationId);
-              window.history.pushState({}, '', url.toString());
+              // Update URL with conversation ID (only if conversations list is enabled)
+              if (config.enableConversationsList) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('conversation', streamConversationId);
+                window.history.pushState({}, '', url.toString());
+              }
               
               // Choose refresh strategy based on config
               if (config.enableFullPageReload) {

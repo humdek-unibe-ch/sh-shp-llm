@@ -95,7 +95,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
           setCurrentConversation(firstConv);
           currentConversationIdRef.current = String(firstConv.id);
           await loadConversationMessagesInternal(String(firstConv.id));
-          updateUrl(String(firstConv.id));
+          updateUrl(String(firstConv.id), config);
         }
       } else if (convs.length > 0) {
         // No current conversation set, select the first one
@@ -107,7 +107,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
         await loadConversationMessagesInternal(String(firstConv.id));
         
         // Update URL
-        updateUrl(String(firstConv.id));
+        updateUrl(String(firstConv.id), config);
       }
     } catch (err) {
       console.error('Failed to load conversations:', err);
@@ -164,7 +164,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       currentConversationIdRef.current = conversationIdStr;
 
       // Update URL
-      updateUrl(conversationIdStr);
+      updateUrl(conversationIdStr, config);
 
       // Use loadConversations to properly load and select the new conversation
       // This ensures the conversation list is updated and the new conversation is selected
@@ -225,7 +225,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     setMessages([]);
     
     // Update URL
-    updateUrl(conversationIdStr);
+    updateUrl(conversationIdStr, config);
     
     // Highlight in conversations list
     // (This is done via React state, no jQuery needed)
@@ -280,7 +280,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
         
         if (isNewConversation) {
           currentConversationIdRef.current = responseIdStr;
-          updateUrl(responseIdStr);
+          updateUrl(responseIdStr, config);
         }
         
         // Add assistant message to UI
@@ -387,9 +387,15 @@ function generateDefaultTitle(): string {
 
 /**
  * Update browser URL with conversation ID
- * Maintains bookmarkable links
+ * Only updates URL if conversations list is enabled
+ * When disabled, we never show conversation parameter in URL
  */
-function updateUrl(conversationId: string): void {
+function updateUrl(conversationId: string, config: LlmChatConfig): void {
+  // Only update URL if conversations list is enabled
+  if (!config.enableConversationsList) {
+    return;
+  }
+
   const url = new URL(window.location.href);
   url.searchParams.set('conversation', conversationId);
   window.history.pushState({}, '', url.toString());
