@@ -498,7 +498,22 @@ class LlmService
             $data['last_chunk_at'] = null;
         }
 
-        return $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
+        $result = $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
+
+        // If this update marks streaming as complete, clear conversation cache
+        if ($result && !$is_streaming) {
+            // Get conversation ID for cache clearing
+            $message = $this->db->query_db_first(
+                "SELECT id_llmConversations FROM llmMessages WHERE id = ?",
+                [$message_id]
+            );
+
+            if ($message) {
+                $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $message['id_llmConversations']);
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -692,11 +707,21 @@ class LlmService
 
         $url = rtrim($config['llm_base_url'], '/') . LLM_API_CHAT_COMPLETIONS;
 
+        // Validate and clamp temperature to valid range (0.0 - 2.0)
+        $temp_value = (float)($temperature ?: $config['llm_temperature']);
+        if ($temp_value < 0.0) $temp_value = 0.0;
+        if ($temp_value > 2.0) $temp_value = 2.0;
+        
+        // Validate max_tokens
+        $max_tokens_value = (int)($max_tokens ?: $config['llm_max_tokens']);
+        if ($max_tokens_value < 1) $max_tokens_value = 2048;
+        if ($max_tokens_value > 16384) $max_tokens_value = 16384;
+
         $payload = [
             'model' => $model,
             'messages' => $messages,
-            'temperature' => (float)($temperature ?: $config['llm_temperature']),
-            'max_tokens' => (int)($max_tokens ?: $config['llm_max_tokens']),
+            'temperature' => $temp_value,
+            'max_tokens' => $max_tokens_value,
             'stream' => $stream
         ];
 
@@ -742,36 +767,59 @@ class LlmService
 
         $url = rtrim($config['llm_base_url'], '/') . LLM_API_CHAT_COMPLETIONS;
 
+        // Validate and clamp temperature to valid range (0.0 - 2.0)
+        $temp_value = (float)($temperature ?: $config['llm_temperature']);
+        if ($temp_value < 0.0) $temp_value = 0.0;
+        if ($temp_value > 2.0) $temp_value = 2.0;
+        
+        // Validate max_tokens
+        $max_tokens_value = (int)($max_tokens ?: $config['llm_max_tokens']);
+        if ($max_tokens_value < 1) $max_tokens_value = 2048;
+        if ($max_tokens_value > 16384) $max_tokens_value = 16384;
+
         $payload = [
             'model' => $model,
             'messages' => $messages,
-            'temperature' => $temperature ?: $config['llm_temperature'],
-            'max_tokens' => $max_tokens ?: $config['llm_max_tokens'],
+            'temperature' => $temp_value,
+            'max_tokens' => $max_tokens_value,
             'stream' => true
         ];
 
-
+        // Track if we received any content
+        $received_content = false;
+        $chunk_buffer = ''; // Buffer for incomplete chunks
 
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT => $config['llm_timeout'],
+            CURLOPT_CONNECTTIMEOUT => 10, // Connection timeout
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
             CURLOPT_HTTPHEADER => [
                 'Authorization: Bearer ' . $config['llm_api_key'],
-                'Content-Type: application/json'
+                'Content-Type: application/json',
+                'Accept: text/event-stream',
+                'Cache-Control: no-cache'
             ],
-            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback) {
-                // Parse streaming data
-                $lines = explode("\n", $data);
-                foreach ($lines as $line) {
+            CURLOPT_FOLLOWLOCATION => true, // Follow redirects
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1, // Force HTTP/1.1 for SSE
+            CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback, &$received_content, &$chunk_buffer) {
+                // Append to buffer and process complete lines
+                $chunk_buffer .= $data;
+                
+                // Process complete lines (ending with \n)
+                while (($pos = strpos($chunk_buffer, "\n")) !== false) {
+                    $line = substr($chunk_buffer, 0, $pos);
+                    $chunk_buffer = substr($chunk_buffer, $pos + 1);
+                    
                     $line = trim($line);
                     if (empty($line)) continue;
 
+                    // Handle SSE format: "data: {...}"
                     if (strpos($line, 'data: ') === 0) {
                         $json_data = substr($line, 6);
                     } else {
@@ -779,6 +827,7 @@ class LlmService
                         $json_data = $line;
                     }
 
+                    // Check for stream end marker
                     if ($json_data === '[DONE]') {
                         if ($callback) $callback('[DONE]');
                         return strlen($data);
@@ -786,10 +835,17 @@ class LlmService
 
                     $parsed = json_decode($json_data, true);
                     if ($parsed) {
+                        // Check for API error response
+                        if (isset($parsed['error'])) {
+                            if ($callback) $callback('[DONE]');
+                            return strlen($data);
+                        }
+
                         // Check for content chunk
                         if (isset($parsed['choices'][0]['delta']['content'])) {
                             $content = $parsed['choices'][0]['delta']['content'];
-                            if ($callback && !empty($content)) {
+                            if ($callback && $content !== '') {
+                                $received_content = true;
                                 $callback($content);
                             }
                         }
@@ -813,8 +869,33 @@ class LlmService
             }
         ]);
 
-        curl_exec($ch);
+        $result = curl_exec($ch);
+        $error = curl_error($ch);
+        $errno = curl_errno($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+
+        // If we got a curl error, throw an exception
+        if ($errno) {
+            throw new Exception('Curl error during streaming: ' . $error . ' (code: ' . $errno . ')');
+        }
+
+        // If we got an HTTP error, throw an exception
+        if ($http_code >= 400) {
+            throw new Exception('LLM API returned HTTP ' . $http_code);
+        }
+
+        // If we didn't receive any content and didn't get an explicit [DONE], something went wrong
+        if (!$received_content && !empty($chunk_buffer)) {
+            // Try to parse remaining buffer as error
+            $parsed = json_decode($chunk_buffer, true);
+            if ($parsed && isset($parsed['error'])) {
+                $error_msg = is_array($parsed['error']) 
+                    ? ($parsed['error']['message'] ?? json_encode($parsed['error']))
+                    : $parsed['error'];
+                throw new Exception('LLM API error: ' . $error_msg);
+            }
+        }
     }
 
     /* File Upload Handling */

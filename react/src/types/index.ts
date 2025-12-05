@@ -265,6 +265,7 @@ export interface PrepareStreamingResponse {
   status?: 'prepared';
   conversation_id?: string;
   is_new_conversation?: boolean;
+  user_message?: Message;
   error?: string;
 }
 
@@ -278,7 +279,7 @@ export interface PrepareStreamingResponse {
  */
 export interface StreamingEvent {
   /** Event type */
-  type: 'connected' | 'chunk' | 'done' | 'error' | 'close';
+  type: 'connected' | 'start' | 'chunk' | 'done' | 'error' | 'close';
   /** Text content for chunk events */
   content?: string;
   /** Conversation ID for connected events */
@@ -287,6 +288,10 @@ export interface StreamingEvent {
   tokens_used?: number;
   /** Error message for error events */
   message?: string;
+  /** Model used for start events */
+  model?: string;
+  /** Message count for start events */
+  message_count?: number;
 }
 
 // ============================================================================

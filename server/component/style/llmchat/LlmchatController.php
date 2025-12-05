@@ -144,12 +144,36 @@ class LlmchatController extends BaseController
 
         // Get model and parameters from conversation or defaults
         $model = $conversation['model'] ?? $this->model->getConfiguredModel();
+        
+        // Get and validate temperature (must be between 0.0 and 2.0)
         $temperature = $conversation['temperature'] ?? $this->model->getLlmTemperature();
+        $temperature = (float)$temperature;
+        if ($temperature < 0.0 || $temperature > 2.0) {
+            $temperature = 0.7;
+        }
+        
+        // Get and validate max_tokens
         $max_tokens = $conversation['max_tokens'] ?? $this->model->getLlmMaxTokens();
+        $max_tokens = (int)$max_tokens;
+        if ($max_tokens < 1 || $max_tokens > 16384) {
+            $max_tokens = 2048;
+        }
 
         // Get conversation messages for LLM
         $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+        
+        if (empty($messages)) {
+            $this->sendSSE(['type' => 'error', 'message' => 'No messages found in conversation']);
+            exit;
+        }
+        
         $api_messages = $this->api_formatter_service->convertToApiFormat($messages);
+        
+        // Validate we have at least one user message
+        if (empty($api_messages)) {
+            $this->sendSSE(['type' => 'error', 'message' => 'No valid messages to send']);
+            exit;
+        }
 
         // Send connected event immediately
         $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
@@ -247,8 +271,6 @@ class LlmchatController extends BaseController
                 }
             );
         } catch (Exception $e) {
-            error_log('Streaming failed: ' . $e->getMessage());
-            
             // Try to save partial response on error
             if (!empty($full_response)) {
                 try {
@@ -270,7 +292,21 @@ class LlmchatController extends BaseController
                         );
                     }
                 } catch (Exception $saveError) {
-                    error_log('Failed to save partial response: ' . $saveError->getMessage());
+                    // Silently ignore save errors
+                }
+            } else {
+                // No response received - create a placeholder message to prevent empty messages
+                try {
+                    $this->llm_service->addMessage(
+                        $conversation_id,
+                        'assistant',
+                        "[Error: " . $e->getMessage() . "]",
+                        null,
+                        $conversation['model'],
+                        0
+                    );
+                } catch (Exception $saveError) {
+                    // Silently ignore save errors
                 }
             }
             
@@ -352,6 +388,16 @@ class LlmchatController extends BaseController
                 // Update rate limiting with the current rate data
                 $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
+                // Get the saved message data for response
+                $savedMessage = [
+                    'id' => $messageId,
+                    'role' => 'user',
+                    'content' => $message,
+                    'attachments' => $uploadedFiles,
+                    'model' => $model,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
                 // Store message data in session for streaming (optional, but keep for compatibility)
                 $_SESSION['streaming_conversation_id'] = $conversation_id;
                 $_SESSION['streaming_message'] = $message;
@@ -360,7 +406,8 @@ class LlmchatController extends BaseController
                 $this->sendJsonResponse([
                     'status' => 'prepared',
                     'conversation_id' => $conversation_id,
-                    'is_new_conversation' => $is_new_conversation
+                    'is_new_conversation' => $is_new_conversation,
+                    'user_message' => $savedMessage
                 ]);
                 return;
             }

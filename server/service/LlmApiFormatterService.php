@@ -20,6 +20,16 @@ class LlmApiFormatterService
         $isVisionModel = llm_is_vision_model($configuredModel);
 
         foreach ($messages as $message) {
+            // Skip empty assistant messages (failed previous attempts)
+            if ($message['role'] === 'assistant' && empty(trim($message['content'] ?? ''))) {
+                continue;
+            }
+            
+            // Skip user messages with no content (shouldn't happen, but just in case)
+            if ($message['role'] === 'user' && empty(trim($message['content'] ?? ''))) {
+                continue;
+            }
+            
             $api_message = [
                 'role' => $message['role'],
                 'content' => $message['content']

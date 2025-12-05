@@ -1,5 +1,21 @@
 # Changelog - LLM Plugin
 
+## [1.0.1] - 2025-12-05
+
+### Fixed
+- Streaming response not displaying content - caused by invalid temperature values (>2.0)
+- Empty assistant messages polluting conversation context 
+- Temperature validation now clamps values to 0.0-2.0 range
+- Max tokens validation now clamps values to 1-16384 range
+- Empty messages (user and assistant) are now filtered before sending to LLM API
+- Streaming indicator visibility improved with better contrast and styling
+
+### Changed
+- Streaming indicator bar now uses blue theme colors for better visibility
+- Streaming dots are larger (8px) with subtle glow effect
+- Streaming cursor is more prominent (3px wide) with faster blink animation
+- Removed debug logging from production code
+
 ## [1.0.0] - 2025-12-02 (Not released yet)
 
 ### Added

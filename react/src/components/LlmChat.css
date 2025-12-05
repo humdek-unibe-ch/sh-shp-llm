@@ -712,12 +712,13 @@
 .streaming-indicator-bar {
   display: flex !important;
   align-items: center !important;
-  gap: 8px;
-  padding: 8px 24px;
-  background: linear-gradient(to right, var(--llm-bg-chat), #ffffff);
-  border-top: 1px solid var(--llm-border);
-  font-size: 13px;
-  color: var(--llm-secondary);
+  gap: 10px;
+  padding: 12px 24px;
+  background: linear-gradient(to right, #e3f2fd, #ffffff);
+  border-top: 1px solid var(--llm-primary-light);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--llm-primary);
 }
 
 .streaming-dots {
@@ -727,11 +728,12 @@
 }
 
 .streaming-dots .dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   background: var(--llm-primary);
   border-radius: 50%;
   animation: dotPulse 1.4s ease-in-out infinite both;
+  box-shadow: 0 0 4px rgba(0, 123, 255, 0.4);
 }
 
 .streaming-dots .dot:nth-child(1) { animation-delay: -0.32s; }
@@ -745,11 +747,13 @@
 
 .streaming-cursor {
   display: inline-block;
-  width: 2px;
-  height: 1em;
+  width: 3px;
+  height: 1.2em;
   background: var(--llm-primary);
-  margin-left: 2px;
-  animation: cursorBlink 1s infinite;
+  margin-left: 3px;
+  animation: cursorBlink 0.8s infinite;
+  border-radius: 1px;
+  vertical-align: text-bottom;
 }
 
 @keyframes cursorBlink {

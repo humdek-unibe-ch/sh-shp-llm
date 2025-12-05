@@ -143,8 +143,16 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
         onError?.('No conversation ID returned');
         return null;
       }
-      
+
       const streamConversationId = prepResponse.conversation_id;
+
+      // Handle user message data if returned from preparation
+      if (prepResponse.user_message) {
+        // Add the user message to the chat state immediately
+        // This will be handled by the parent component that uses this hook
+        // The user message should already be added to the UI by addUserMessage() call
+        // but we can use this data for consistency checks if needed
+      }
       
       // Step 2: Start SSE streaming
       setIsStreaming(true);
@@ -159,6 +167,10 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
           switch (event.type) {
             case 'connected':
               // Connection established
+              break;
+              
+            case 'start':
+              // Streaming is about to begin
               break;
               
             case 'chunk':
@@ -178,7 +190,7 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               break;
               
             case 'done':
-              // Streaming completed - clear content immediately
+              // Streaming completed
               setIsStreaming(false);
               onDone?.(event.tokens_used || 0);
               
