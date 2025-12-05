@@ -7,7 +7,10 @@
     "build": "cd gulp && gulp",
     "watch": "cd gulp && gulp watch",
     "css": "cd gulp && gulp css",
-    "js": "cd gulp && gulp js"
+    "js": "cd gulp && gulp js",
+    "react-install": "cd gulp && gulp react-install",
+    "react-build": "cd gulp && gulp react-build",
+    "react-watch": "cd gulp && gulp watch-react"
   },
   "devDependencies": {
     "gulp": "^4.0.2",

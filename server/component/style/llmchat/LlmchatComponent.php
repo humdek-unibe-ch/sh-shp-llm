@@ -49,36 +49,6 @@ class LlmchatComponent extends BaseComponent
         return parent::has_access();
     }
 
-    /**
-     * Get CSS includes for this component
-     */
-    public function get_css_includes($local = array())
-    {
-        if (empty($local)) {
-            if (DEBUG) {
-                $local = array(__DIR__ . '/css/llmchat.css');
-            } else {
-                $local = array(__DIR__ . '/../../../css/ext/llm.min.css?v=' . rtrim(shell_exec("git describe --tags")));
-            }
-        }
-        return parent::get_css_includes($local);
-    }
-
-    /**
-     * Get JS includes for this component
-     */
-    public function get_js_includes($local = array())
-    {
-        if (empty($local)) {
-            if (DEBUG) {
-                $local = array(__DIR__ . '/js/llmchat.js');
-            } else {
-                $local = array(__DIR__ . '/../../../js/ext/llm.min.js?v=' . rtrim(shell_exec("git describe --tags")));
-            }
-        }
-        return parent::get_js_includes($local);
-    }
-
     public function output_content_mobile()
     {
         // not implemented

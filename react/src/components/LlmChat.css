@@ -1,0 +1,619 @@
+/**
+ * LLM Chat React Component Styles
+ * ================================
+ * 
+ * Comprehensive styling for the LLM Chat React component.
+ * Matches the vanilla JS implementation exactly while adding
+ * React-specific enhancements.
+ * 
+ * The component uses Bootstrap 4.6 classes for base styling.
+ * This file provides additional customizations.
+ */
+
+/* ===== Container Layout ===== */
+.llm-chat-container {
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+}
+
+.llm-chat-container .row {
+  margin: 0;
+}
+
+.llm-chat-container .card {
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* ===== Conversation List Styling ===== */
+.card[data-conversation-id] {
+  transition: all 0.2s ease;
+}
+
+.card[data-conversation-id]:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card[data-conversation-id]:hover .position-absolute {
+  opacity: 1 !important;
+}
+
+.card[data-conversation-id].border-primary {
+  border-width: 2px !important;
+}
+
+/* ===== Chat Header ===== */
+.card-header.bg-primary {
+  border-radius: 8px 8px 0 0;
+}
+
+.card-header h6 {
+  font-weight: 600;
+}
+
+/* ===== Messages Container ===== */
+#messages-container {
+  scroll-behavior: smooth;
+  background-color: #fafafa;
+}
+
+/* ===== LLM Message Content ===== */
+.llm-message-content {
+  max-width: 80%;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.llm-message-content pre {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  margin: 8px 0;
+}
+
+.llm-message-content code.inline-code {
+  background-color: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #c7254e;
+}
+
+.llm-message-content ul,
+.llm-message-content ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.llm-message-content h3,
+.llm-message-content h4,
+.llm-message-content h5 {
+  margin-top: 12px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.llm-message-content a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.llm-message-content p {
+  margin-bottom: 8px;
+}
+
+.llm-message-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== Attachment Button ===== */
+.attachment-btn,
+#attachment-btn {
+  border: 1px solid #dee2e6;
+  background: #fff;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+#attachment-btn:hover {
+  background-color: #007bff !important;
+  color: white !important;
+  border-color: #007bff !important;
+  transform: scale(1.05);
+}
+
+#attachment-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+#attachment-btn i {
+  transition: transform 0.2s ease;
+}
+
+#attachment-btn:hover i {
+  transform: rotate(90deg);
+}
+
+/* ===== File Attachments Container ===== */
+#file-attachments {
+  background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+#attachments-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ===== Attachment Item ===== */
+.attachment-item {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 180px;
+  max-width: 250px;
+  position: relative;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.attachment-item:hover {
+  border-color: #007bff;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+}
+
+.attachment-item.attachment-removing {
+  opacity: 0.5;
+  transform: scale(0.95);
+}
+
+/* ===== Attachment Preview ===== */
+.attachment-preview {
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+.attachment-thumbnail {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.attachment-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 6px;
+  font-size: 1.25rem;
+}
+
+/* ===== Attachment Info ===== */
+.attachment-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-name {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.attachment-meta .badge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 2px 5px;
+  text-transform: uppercase;
+}
+
+.attachment-size {
+  font-size: 0.7rem;
+  color: #6c757d;
+}
+
+/* ===== Remove Attachment Button ===== */
+.remove-attachment {
+  flex-shrink: 0;
+  padding: 4px;
+  margin-left: 8px;
+  font-size: 1rem;
+  opacity: 0.6;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.remove-attachment:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.remove-attachment:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* ===== Drag and Drop ===== */
+.message-input-wrapper {
+  position: relative;
+  transition: all 0.3s ease;
+  border-radius: 4px;
+}
+
+.message-input-wrapper.drag-over {
+  border: 2px dashed #007bff !important;
+  background-color: rgba(0, 123, 255, 0.05) !important;
+  border-radius: 8px;
+}
+
+.message-input-wrapper.drag-over::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 123, 255, 0.02);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.message-input-wrapper.drag-over::after {
+  content: 'Drop files here';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+  font-weight: 500;
+  color: #007bff;
+  pointer-events: none;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 16px;
+  border-radius: 4px;
+}
+
+/* ===== Message Attachments Display ===== */
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.message-attachments .attachment-item {
+  max-width: 200px;
+}
+
+.message-attachments img {
+  border-radius: 8px;
+  max-width: 300px;
+  max-height: 200px;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.message-attachments img:hover {
+  transform: scale(1.02);
+}
+
+/* ===== Attachment Indicator in User Messages ===== */
+.attachment-indicator {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.attachment-indicator i {
+  opacity: 0.8;
+}
+
+/* ===== Message Attachments Count ===== */
+.message-attachments-count {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* ===== Error and Success Alerts ===== */
+.llm-error-alert,
+.llm-success-alert {
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+}
+
+.llm-error-alert {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.llm-success-alert {
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #16a34a;
+}
+
+/* ===== Loading States ===== */
+.attachment-item.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.attachment-item.loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 8px;
+}
+
+/* ===== Streaming Indicator ===== */
+.streaming-indicator {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+#streaming-indicator {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ===== Streaming Dots Animation ===== */
+.streaming-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.streaming-dots .dot {
+  width: 6px;
+  height: 6px;
+  background-color: #007bff;
+  border-radius: 50%;
+  animation: dotBounce 1.4s ease-in-out infinite both;
+}
+
+.streaming-dots .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.streaming-dots .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.streaming-dots .dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+@keyframes dotBounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ===== Typing Cursor Animation ===== */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: #007bff;
+  margin-left: 2px;
+  animation: blink 1s infinite;
+}
+
+/* ===== Text Textarea Auto-resize ===== */
+#message-input {
+  min-height: 38px;
+  max-height: 120px;
+  resize: none;
+  overflow-y: auto;
+}
+
+/* ===== Input Group Styling ===== */
+.input-group .btn {
+  transition: all 0.2s ease;
+}
+
+.input-group .btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* ===== Responsive Adjustments ===== */
+@media (max-width: 767.98px) {
+  .llm-chat-container .row {
+    height: auto !important;
+  }
+
+  .col-md-4, .col-md-8 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .border-right {
+    border-right: none !important;
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  .attachment-item {
+    min-width: 150px;
+    max-width: 100%;
+  }
+
+  #attachments-list {
+    flex-direction: column;
+  }
+
+  .llm-message-content {
+    max-width: 90%;
+  }
+
+  .message-input-wrapper.drag-over::after {
+    font-size: 0.85rem;
+    padding: 6px 12px;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .attachment-thumbnail,
+  .attachment-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .attachment-name {
+    font-size: 0.8rem;
+  }
+
+  .attachment-size {
+    font-size: 0.65rem;
+  }
+}
+
+/* ===== Text Color Utilities for Icons ===== */
+.text-purple {
+  color: #7c3aed !important;
+}
+
+/* ===== Badge Colors ===== */
+.badge-success {
+  background-color: #22c55e;
+  color: white;
+}
+
+.badge-primary {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.badge-secondary {
+  background-color: #6b7280;
+  color: white;
+}
+
+/* ===== Conversation Sidebar ===== */
+.conversation-sidebar .card-body {
+  padding: 0.75rem;
+}
+
+.conversation-sidebar .card[data-conversation-id] .card-body {
+  padding: 0.5rem 0.75rem;
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 400px;
+}
+
+/* ===== Modal Styling ===== */
+.modal.show {
+  display: block;
+}
+
+.modal .btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.modal .btn-close:hover {
+  opacity: 1;
+}
+
+/* ===== Scrollbar Styling ===== */
+#messages-container::-webkit-scrollbar,
+#conversations-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#messages-container::-webkit-scrollbar-track,
+#conversations-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+#messages-container::-webkit-scrollbar-thumb,
+#conversations-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+#messages-container::-webkit-scrollbar-thumb:hover,
+#conversations-list::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* ===== Gap Utility (for older browsers) ===== */
+.gap-2 {
+  gap: 0.5rem;
+}

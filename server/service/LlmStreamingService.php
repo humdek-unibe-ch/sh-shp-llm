@@ -52,8 +52,9 @@ class LlmStreamingService
 
         // Ensure parameters are available for streaming
         $streaming_model = $model;
-        $streaming_temperature = $temperature ?? 0.7;
-        $streaming_max_tokens = $max_tokens ?? 1000;
+        $config = $this->llm_service->getLlmConfig();
+        $streaming_temperature = $config['llm_temperature'] ?? 0.7;
+        $streaming_max_tokens = $config['llm_max_tokens'] ?? 1000;
 
         try {
             // Start streaming with callback

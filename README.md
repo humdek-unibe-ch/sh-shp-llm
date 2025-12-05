@@ -953,6 +953,258 @@ private function logHookExecution($hook_name, $args, $result) {
 }
 ```
 
+## React Component
+
+The LLM Chat plugin includes a React-based implementation that provides the same functionality as the vanilla JavaScript version with additional benefits:
+
+- **Smooth UI Experience**: React's virtual DOM provides efficient updates and smooth animations
+- **Component Architecture**: Modular, maintainable codebase with reusable components
+- **TypeScript Support**: Full type safety for better development experience
+- **Modern Build System**: Vite-based build with UMD output for easy integration
+
+### React File Structure
+
+```
+react/
+├── package.json                 # Dependencies and scripts
+├── vite.config.ts              # Build configuration
+├── tsconfig.json               # TypeScript configuration
+└── src/
+    ├── main.tsx                # Entry point and initialization
+    ├── types/
+    │   └── index.ts            # TypeScript type definitions
+    ├── components/
+    │   ├── LlmChat.tsx         # Main chat component
+    │   ├── LlmChat.css         # Component styles
+    │   ├── MessageList.tsx     # Messages display
+    │   ├── MessageInput.tsx    # Input with file upload
+    │   ├── ConversationSidebar.tsx  # Conversations list
+    │   └── StreamingIndicator.tsx   # Streaming status
+    ├── hooks/
+    │   ├── useChatState.ts     # State management hook
+    │   └── useStreaming.ts     # SSE streaming hook
+    └── utils/
+        ├── api.ts              # API communication
+        └── formatters.ts       # Utility functions
+```
+
+### Building the React Component
+
+```bash
+# Navigate to gulp directory
+cd server/plugins/sh-shp-llm/gulp
+
+# Install gulp dependencies (first time only)
+npm install
+
+# Install React dependencies (first time only)
+gulp react-install
+
+# Build everything (React + legacy assets)
+gulp build
+
+# Or build React only
+gulp react-build
+```
+
+### Output Files
+
+After building, the following files are generated:
+
+| File | Description |
+|------|-------------|
+| `js/ext/llm-chat.umd.js` | React component UMD bundle (includes React/ReactDOM) |
+| `js/ext/llm-chat.css` | React component styles |
+| `js/ext/llmchat.min.js` | Legacy vanilla JS (minified) |
+| `css/ext/llmchat.min.css` | Legacy CSS (minified) |
+
+### React Component Architecture
+
+#### Main Components
+
+**LlmChat.tsx** - The main container component that orchestrates:
+- State management via custom hooks
+- Conversation selection and creation
+- Message sending (streaming and non-streaming)
+- File attachment handling
+
+**MessageList.tsx** - Displays messages with:
+- User messages (right-aligned, blue background)
+- Assistant messages (left-aligned, light background)
+- Streaming message with typing cursor
+- Thinking indicator during AI processing
+- File attachment indicators
+
+**MessageInput.tsx** - Input area with:
+- Auto-resizing textarea
+- File attachment button
+- Drag-and-drop file support
+- Character count indicator
+- Send button with loading state
+
+**ConversationSidebar.tsx** - Conversation management:
+- List of conversations with delete buttons
+- New conversation button and modal
+- Active conversation highlighting
+- Empty state message
+
+#### Custom Hooks
+
+**useChatState.ts** - Manages all chat state:
+```typescript
+const {
+  conversations,        // Array of conversations
+  currentConversation,  // Currently selected
+  messages,             // Messages in current conversation
+  isLoading,           // Loading state
+  error,               // Error message
+  loadConversations,   // Load conversation list
+  loadConversationMessages,  // Load messages
+  createConversation,  // Create new conversation
+  deleteConversation,  // Delete conversation
+  selectConversation,  // Select conversation
+  sendMessage,         // Send message (non-streaming)
+  addUserMessage,      // Add user message to UI
+  clearError,          // Clear error state
+  setError             // Set error message
+} = useChatState(config);
+```
+
+**useStreaming.ts** - Manages SSE streaming:
+```typescript
+const {
+  isStreaming,          // Whether currently streaming
+  streamingContent,     // Accumulated response content
+  sendStreamingMessage, // Send with streaming response
+  stopStreaming,        // Stop current stream
+  clearStreamingContent // Clear accumulated content
+} = useStreaming({ config, onChunk, onDone, onError });
+```
+
+#### API Communication
+
+All API calls go through the controller using `window.location` for security:
+
+```typescript
+// Get conversations
+const conversations = await conversationsApi.getAll();
+
+// Create conversation
+const conversationId = await conversationsApi.create(title, model);
+
+// Delete conversation
+await conversationsApi.delete(conversationId);
+
+// Load messages
+const { conversation, messages } = await messagesApi.getByConversation(conversationId);
+
+// Send message (non-streaming)
+const response = await messagesApi.send(message, conversationId, model, files);
+
+// Send message (streaming)
+const prepResponse = await messagesApi.prepareStreaming(message, conversationId, model, files);
+const streamingApi = new StreamingApi(conversationId);
+streamingApi.connect(onMessage, onError);
+```
+
+### Configuration
+
+The React component receives configuration via data attributes on the container element:
+
+```html
+<div id="llm-chat-root"
+     data-user-id="123"
+     data-current-conversation-id="456"
+     data-configured-model="qwen3-vl-8b-instruct"
+     data-enable-conversations-list="1"
+     data-enable-file-uploads="1"
+     data-streaming-enabled="1"
+     data-message-placeholder="Type your message..."
+     data-no-conversations-message="No conversations yet"
+     data-ai-thinking-text="AI is thinking..."
+     data-max-file-size="10485760"
+     data-max-files="5">
+</div>
+```
+
+Or via JSON config:
+
+```html
+<div id="llm-chat-root"
+     data-user-id="123"
+     data-config='{"configuredModel":"qwen3-vl-8b-instruct","streamingEnabled":true,...}'>
+</div>
+```
+
+### Type Definitions
+
+Key types used throughout the React component:
+
+```typescript
+// Message structure
+interface Message {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  formatted_content?: string;
+  timestamp: string;
+  tokens_used?: number;
+  attachments?: string; // JSON string
+}
+
+// Conversation structure
+interface Conversation {
+  id: string;
+  title: string;
+  model: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// File upload tracking
+interface SelectedFile {
+  id: string;
+  file: File;
+  hash: string;
+  previewUrl?: string;
+}
+
+// Component configuration
+interface LlmChatConfig {
+  userId: number;
+  currentConversationId?: string;
+  configuredModel: string;
+  enableConversationsList: boolean;
+  enableFileUploads: boolean;
+  streamingEnabled: boolean;
+  fileConfig: FileConfig;
+  // ... UI labels
+}
+```
+
+### Development Workflow
+
+For React development with hot reload:
+
+```bash
+# Terminal 1: Start Vite dev server
+cd server/plugins/sh-shp-llm/react
+npm run dev
+
+# Terminal 2: Watch for changes and rebuild
+cd server/plugins/sh-shp-llm/gulp
+gulp watch-react
+```
+
+### Switching Between Vanilla JS and React
+
+The plugin supports both implementations. To switch:
+
+1. **Use Vanilla JS**: Include `llmchat.min.js` and `llmchat.min.css`
+2. **Use React**: Include `llm-chat.umd.js` and `llm-chat.css`
+
+The controller template (`llm_chat_main.php`) determines which version to use based on component configuration.
+
 ## Usage
 
 ### Adding Chat to a Page

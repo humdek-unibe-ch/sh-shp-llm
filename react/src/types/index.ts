@@ -1,0 +1,359 @@
+/**
+ * LLM Chat Type Definitions
+ * =========================
+ * 
+ * TypeScript type definitions for the LLM Chat React component.
+ * These types match the data structures used by the SelfHelp backend
+ * controller (LlmchatController.php) and the vanilla JS implementation.
+ * 
+ * @module types
+ */
+
+// ============================================================================
+// FILE CONFIGURATION TYPES
+// ============================================================================
+
+/**
+ * File upload configuration matching the vanilla JS FILE_CONFIG
+ * These values are typically passed from the PHP backend via data attributes
+ */
+export interface FileConfig {
+  /** Maximum file size in bytes (default: 10MB) */
+  maxFileSize: number;
+  /** Maximum number of files per message (default: 5) */
+  maxFilesPerMessage: number;
+  /** Allowed image file extensions */
+  allowedImageExtensions: string[];
+  /** Allowed document file extensions */
+  allowedDocumentExtensions: string[];
+  /** Allowed code file extensions */
+  allowedCodeExtensions: string[];
+  /** All allowed extensions combined */
+  allowedExtensions: string[];
+  /** Models that support vision/image processing */
+  visionModels: string[];
+}
+
+/**
+ * Default file configuration values
+ * Matches DEFAULT_FILE_CONFIG from vanilla JS
+ */
+export const DEFAULT_FILE_CONFIG: FileConfig = {
+  maxFileSize: 10 * 1024 * 1024, // 10MB
+  maxFilesPerMessage: 5,
+  allowedImageExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+  allowedDocumentExtensions: ['pdf', 'txt', 'md', 'csv', 'json', 'xml'],
+  allowedCodeExtensions: ['py', 'js', 'php', 'html', 'css', 'sql', 'sh', 'yaml', 'yml'],
+  allowedExtensions: [
+    'jpg', 'jpeg', 'png', 'gif', 'webp',
+    'pdf', 'txt', 'md', 'csv', 'json', 'xml',
+    'py', 'js', 'php', 'html', 'css', 'sql', 'sh', 'yaml', 'yml'
+  ],
+  visionModels: ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct']
+};
+
+// ============================================================================
+// CORE DATA TYPES
+// ============================================================================
+
+/**
+ * Message object as returned by the controller
+ * Matches the database structure and API response format
+ */
+export interface Message {
+  /** Unique message identifier */
+  id: string;
+  /** Parent conversation ID */
+  conversation_id?: string;
+  /** Message role: 'user' or 'assistant' */
+  role: 'user' | 'assistant' | 'system';
+  /** Raw message content (may contain markdown) */
+  content: string;
+  /** Pre-formatted HTML content from backend */
+  formatted_content?: string;
+  /** Message creation timestamp (ISO format) */
+  timestamp: string;
+  /** Number of tokens used (for assistant messages) */
+  tokens_used?: number;
+  /** JSON string of file attachments */
+  attachments?: string;
+  /** Model used for this message */
+  model?: string;
+}
+
+/**
+ * Conversation object as returned by the controller
+ * Matches the llmConversations table structure
+ */
+export interface Conversation {
+  /** Unique conversation identifier */
+  id: string;
+  /** Owner user ID */
+  user_id?: number;
+  /** Conversation title (auto-generated or user-defined) */
+  title: string;
+  /** LLM model used for this conversation */
+  model: string;
+  /** Temperature setting (0.0-1.0) */
+  temperature?: number;
+  /** Maximum tokens per response */
+  max_tokens?: number;
+  /** Creation timestamp (ISO format) */
+  created_at: string;
+  /** Last update timestamp (ISO format) */
+  updated_at: string;
+}
+
+// ============================================================================
+// FILE ATTACHMENT TYPES
+// ============================================================================
+
+/**
+ * Selected file with tracking information
+ * Used for managing files before upload
+ */
+export interface SelectedFile {
+  /** Unique identifier for this attachment */
+  id: string;
+  /** The actual File object */
+  file: File;
+  /** Hash for duplicate detection */
+  hash: string;
+  /** Preview data URL for images */
+  previewUrl?: string;
+}
+
+/**
+ * File validation result
+ */
+export interface FileValidationResult {
+  /** Whether the file is valid */
+  valid: boolean;
+  /** File hash if valid */
+  hash?: string;
+  /** Error message if invalid */
+  error?: string;
+}
+
+// ============================================================================
+// COMPONENT CONFIGURATION
+// ============================================================================
+
+/**
+ * LLM Chat component configuration
+ * Passed from PHP via data attributes on the container element
+ * Matches the data attributes set in llm_chat_main.php
+ */
+export interface LlmChatConfig {
+  /** Current user ID */
+  userId: number;
+  /** Current conversation ID (if any) */
+  currentConversationId?: string;
+  /** Configured LLM model */
+  configuredModel: string;
+  /** Whether conversations list is enabled */
+  enableConversationsList: boolean;
+  /** Whether file uploads are enabled */
+  enableFileUploads: boolean;
+  /** Whether streaming is enabled */
+  streamingEnabled: boolean;
+  /** Accepted file types string */
+  acceptedFileTypes: string;
+  /** File configuration */
+  fileConfig: FileConfig;
+  
+  // ===== UI Labels =====
+  /** Message input placeholder text */
+  messagePlaceholder: string;
+  /** Message when no conversations exist */
+  noConversationsMessage: string;
+  /** New conversation modal title */
+  newConversationTitleLabel: string;
+  /** Conversation title input label */
+  conversationTitleLabel: string;
+  /** Cancel button label */
+  cancelButtonLabel: string;
+  /** Create conversation button label */
+  createButtonLabel: string;
+  /** Delete confirmation title */
+  deleteConfirmationTitle: string;
+  /** Delete confirmation message */
+  deleteConfirmationMessage: string;
+  /** Tokens used suffix (e.g., ' tokens') */
+  tokensSuffix: string;
+  /** AI thinking text */
+  aiThinkingText: string;
+}
+
+/**
+ * Default configuration values
+ */
+export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
+  configuredModel: 'qwen3-vl-8b-instruct',
+  enableConversationsList: true,
+  enableFileUploads: true,
+  streamingEnabled: true,
+  acceptedFileTypes: '',
+  fileConfig: DEFAULT_FILE_CONFIG,
+  messagePlaceholder: 'Type your message...',
+  noConversationsMessage: 'No conversations yet',
+  newConversationTitleLabel: 'New Conversation',
+  conversationTitleLabel: 'Conversation Title (optional)',
+  cancelButtonLabel: 'Cancel',
+  createButtonLabel: 'Create Conversation',
+  deleteConfirmationTitle: 'Delete Conversation',
+  deleteConfirmationMessage: 'Are you sure you want to delete this conversation? This action cannot be undone.',
+  tokensSuffix: ' tokens',
+  aiThinkingText: 'AI is thinking...'
+};
+
+// ============================================================================
+// API RESPONSE TYPES
+// ============================================================================
+
+/**
+ * Response from get_conversations action
+ */
+export interface GetConversationsResponse {
+  conversations?: Conversation[];
+  error?: string;
+}
+
+/**
+ * Response from get_conversation action
+ */
+export interface GetConversationResponse {
+  conversation?: Conversation;
+  messages?: Message[];
+  error?: string;
+}
+
+/**
+ * Response from send_message action
+ */
+export interface SendMessageResponse {
+  conversation_id?: string;
+  message?: string;
+  is_new_conversation?: boolean;
+  streaming?: boolean;
+  error?: string;
+}
+
+/**
+ * Response from new_conversation action
+ */
+export interface NewConversationResponse {
+  conversation_id?: string;
+  error?: string;
+}
+
+/**
+ * Response from delete_conversation action
+ */
+export interface DeleteConversationResponse {
+  success?: boolean;
+  error?: string;
+}
+
+/**
+ * Response from prepare_streaming action
+ */
+export interface PrepareStreamingResponse {
+  status?: 'prepared';
+  conversation_id?: string;
+  is_new_conversation?: boolean;
+  error?: string;
+}
+
+// ============================================================================
+// STREAMING EVENT TYPES
+// ============================================================================
+
+/**
+ * Server-Sent Event data structure
+ * Matches the SSE events sent by handleStreamingRequest()
+ */
+export interface StreamingEvent {
+  /** Event type */
+  type: 'connected' | 'chunk' | 'done' | 'error' | 'close';
+  /** Text content for chunk events */
+  content?: string;
+  /** Conversation ID for connected events */
+  conversation_id?: string;
+  /** Tokens used for done events */
+  tokens_used?: number;
+  /** Error message for error events */
+  message?: string;
+}
+
+// ============================================================================
+// UI STATE TYPES
+// ============================================================================
+
+/**
+ * Chat UI state
+ */
+export interface ChatState {
+  /** List of user's conversations */
+  conversations: Conversation[];
+  /** Currently selected conversation */
+  currentConversation: Conversation | null;
+  /** Messages in current conversation */
+  messages: Message[];
+  /** Whether data is loading */
+  isLoading: boolean;
+  /** Whether currently streaming */
+  isStreaming: boolean;
+  /** Accumulated streaming message content */
+  streamingContent: string;
+  /** Error message (if any) */
+  error: string | null;
+}
+
+/**
+ * Initial chat state
+ */
+export const INITIAL_CHAT_STATE: ChatState = {
+  conversations: [],
+  currentConversation: null,
+  messages: [],
+  isLoading: false,
+  isStreaming: false,
+  streamingContent: '',
+  error: null
+};
+
+// ============================================================================
+// FILE ERROR MESSAGES
+// ============================================================================
+
+/**
+ * File error message generators
+ * Matches FILE_ERRORS from vanilla JS
+ */
+export const FILE_ERRORS = {
+  fileTooLarge: (fileName: string, maxSize: number): string =>
+    `File "${fileName}" exceeds maximum size of ${formatBytes(maxSize)}`,
+  invalidType: (fileName: string, extension: string): string =>
+    `File type ".${extension}" is not allowed`,
+  duplicateFile: (fileName: string): string =>
+    `File "${fileName}" is already attached`,
+  maxFilesExceeded: (max: number): string =>
+    `Maximum ${max} files allowed per message`,
+  emptyFile: (fileName: string): string =>
+    `File "${fileName}" is empty`,
+  uploadFailed: (fileName: string): string =>
+    `Failed to upload "${fileName}"`
+};
+
+/**
+ * Format bytes to human-readable string
+ * Matches formatBytes from vanilla JS
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}

@@ -100,11 +100,11 @@ class LlmchatView extends StyleView
         if (empty($local)) {
             if (DEBUG) {
                 $local = array(
-                    __DIR__ . "/css/llmchat.css",
+                    __DIR__ . "/../../../../css/ext/style.css",
                 );
             } else {
                 $local = array(
-                    __DIR__ . "/../../../../css/ext/llm.min.css?v=" . rtrim(shell_exec("git describe --tags")),
+                    __DIR__ . "/../../../../css/ext/style.css?v=" . rtrim(shell_exec("git describe --tags")),
                 );
             }
         }
@@ -119,15 +119,35 @@ class LlmchatView extends StyleView
         if (empty($local)) {
             if (DEBUG) {
                 $local = array(
-                    __DIR__ . "/js/llmchat.js",
+                    __DIR__ . "/../../../../js/ext/llm-chat.umd.js",
                 );
             } else {
                 $local = array(
-                    __DIR__ . "/../../../js/ext/llm.min.js?v=" . rtrim(shell_exec("git describe --tags")),
+                    __DIR__ . "/../../../../js/ext/llm-chat.umd.js?v=" . rtrim(shell_exec("git describe --tags")),
                 );
             }
         }
         return parent::get_js_includes($local);
+    }
+
+    /**
+     * Get React configuration as JSON
+     */
+    public function getReactConfig()
+    {
+        return json_encode([
+            'userId' => $this->model->getUserId(),
+            'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
+            'maxFileSize' => LLM_MAX_FILE_SIZE,
+            'streamingEnabled' => $this->model->isStreamingEnabled(),
+            'messagePlaceholder' => $this->model->getMessagePlaceholder(),
+            'model' => $this->model->getConfiguredModel(),
+            'temperature' => $this->model->getLlmTemperature(),
+            'maxTokens' => $this->model->getLlmMaxTokens(),
+            'conversationsEnabled' => $this->model->isConversationsListEnabled(),
+            'fileUploadsEnabled' => $this->model->isFileUploadsEnabled(),
+            'acceptedFileTypes' => $this->model->getAcceptedFileTypes()
+        ]);
     }
 
     public function output_content_mobile()
