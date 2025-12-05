@@ -203,9 +203,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
    * Handle sending a message
    */
   const handleSendMessage = useCallback(async (message: string, files: SelectedFile[]) => {
-    // Validate input
-    if (!message.trim() && files.length === 0) {
-      setError('Please enter a message or attach a file');
+    // Validate input - always require a message, even with file attachments
+    if (!message.trim()) {
+      setError('Please enter a message');
       return;
     }
     

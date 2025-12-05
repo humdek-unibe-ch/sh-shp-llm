@@ -79,8 +79,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     if (disabled) return;
     
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && selectedFiles.length === 0) {
-      setFileError('Please enter a message or attach a file');
+    // Always require a message, even with file attachments
+    if (!trimmedMessage) {
+      setFileError('Please enter a message');
       return;
     }
     
@@ -430,7 +431,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             <button
               type="submit"
               className="message-action-btn send-btn"
-              disabled={disabled || (!message.trim() && selectedFiles.length === 0)}
+              disabled={disabled || !message.trim()}
               title="Send message"
             >
               {disabled ? (

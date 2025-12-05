@@ -129,6 +129,12 @@ class LlmchatController extends BaseController
 
         $user_id = $this->model->getUserId();
 
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendSSE(['type' => 'error', 'message' => 'User not authenticated']);
+            exit;
+        }
+
         // Verify conversation exists and belongs to user
         $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
         if (!$conversation) {
@@ -316,6 +322,13 @@ class LlmchatController extends BaseController
     private function handleMessageSubmission()
     {
         $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
         $conversation_id = $_POST['conversation_id'] ?? null;
         $message = trim($_POST['message'] ?? '');
         $model = $_POST['model'] ?? $this->model->getConfiguredModel();
@@ -534,6 +547,12 @@ class LlmchatController extends BaseController
     {
         $user_id = $this->model->getUserId();
 
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
         // Check if conversations list is enabled
         if (!$this->model->isConversationsListEnabled()) {
             $this->sendJsonResponse(['error' => 'Creating new conversations is not allowed when conversations list is disabled'], 403);
@@ -564,6 +583,13 @@ class LlmchatController extends BaseController
     private function handleDeleteConversation()
     {
         $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
         $conversation_id = $_POST['conversation_id'] ?? null;
 
         if (!$conversation_id) {
@@ -686,6 +712,14 @@ class LlmchatController extends BaseController
      */
     public function getConversationData()
     {
+        $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
         $conversation_id = $_GET['conversation_id'] ?? null;
 
         if (!$conversation_id) {
@@ -694,7 +728,7 @@ class LlmchatController extends BaseController
         }
 
         try {
-            $conversation = $this->llm_service->getConversation($conversation_id, $this->model->getUserId());
+            $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
 
             if (!$conversation) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
@@ -723,8 +757,16 @@ class LlmchatController extends BaseController
      */
     public function getConversationsData()
     {
+        $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
         try {
-            $conversations = $this->llm_service->getUserConversations($this->model->getUserId(), 50, $this->model->get_db_field('llm_model'));
+            $conversations = $this->llm_service->getUserConversations($user_id, 50, $this->model->get_db_field('llm_model'));
             $this->sendJsonResponse(['conversations' => $conversations]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);

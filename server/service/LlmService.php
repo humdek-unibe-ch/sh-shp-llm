@@ -906,7 +906,8 @@ class LlmService
     public function saveUploadedFiles($conversation_id, $user_id)
     {
         $upload_dir = LLM_UPLOAD_FOLDER . '/' . $user_id . '/' . $conversation_id;
-        $full_upload_dir = __DIR__ . '/../../../../' . $upload_dir;
+        // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
+        $full_upload_dir = __DIR__ . '/../../' . $upload_dir;
 
         // Create directory if it doesn't exist
         if (!is_dir($full_upload_dir)) {

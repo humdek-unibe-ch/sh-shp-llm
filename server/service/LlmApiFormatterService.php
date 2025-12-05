@@ -109,8 +109,8 @@ class LlmApiFormatterService
     private function formatAttachmentForApi($attachment, $isVisionModel)
     {
         $path = $attachment['path'] ?? '';
-        // Go up 3 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
-        $fullPath = __DIR__ . "/../../../{$path}";
+        // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
+        $fullPath = __DIR__ . "/../../{$path}";
         $originalName = $attachment['original_name'] ?? basename($path);
 
         if (!file_exists($fullPath)) {
