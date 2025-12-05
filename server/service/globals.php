@@ -7,8 +7,8 @@
 define('LLM_PLUGIN_NAME', 'sh-shp-llm');
 define('LLM_PLUGIN_VERSION', 'v1.0.0');
 
-// Upload directories
-define('LLM_UPLOAD_FOLDER', 'upload/llm');
+// Upload directories - relative to plugin root
+define('LLM_UPLOAD_FOLDER', 'upload');
 
 // Rate limiting
 define('LLM_RATE_LIMIT_REQUESTS_PER_MINUTE', 10);
@@ -85,11 +85,6 @@ define('LLM_FILE_TYPE_CODE', 'code');
 define('LLM_VISION_MODELS', [
     'internvl3-8b-instruct', 
     'qwen3-vl-8b-instruct', 
-    'deepseek-r1-0528-qwen3-8b',
-    'gpt-oss-120b',  // Add if this model supports vision
-    'gpt-4-vision-preview',
-    'gpt-4o',
-    'gpt-4o-mini'
 ]);
 
 // Cache keys

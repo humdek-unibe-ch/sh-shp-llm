@@ -128,11 +128,6 @@ class LlmchatController extends BaseController
         }
 
         $user_id = $this->model->getUserId();
-        if (!$user_id) {
-            echo "data: " . json_encode(['type' => 'error', 'message' => 'Authentication required']) . "\n\n";
-            flush();
-            exit;
-        }
 
         // Verify conversation exists and belongs to user
         $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
@@ -686,12 +681,6 @@ class LlmchatController extends BaseController
      */
     public function handleSubmission()
     {
-        // Check if user is logged in
-        if (!$this->model->getUserId()) {
-            $this->sendJsonResponse(['error' => 'Authentication required'], 401);
-            return;
-        }
-
         $action = $_POST['action'] ?? 'send_message';
 
         switch ($action) {

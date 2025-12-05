@@ -78,12 +78,17 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     container.dataset.streamingEnabled === 'true' ||
     jsonConfig.streamingEnabled !== false;
   
-  const enableFullPageReload = 
+  const enableFullPageReload =
     container.dataset.enableFullPageReload === '1' ||
     container.dataset.enableFullPageReload === 'true' ||
     jsonConfig.enableFullPageReload === true;
-  
-  const acceptedFileTypes = container.dataset.acceptedFileTypes || 
+
+  const isVisionModel =
+    container.dataset.isVisionModel === '1' ||
+    container.dataset.isVisionModel === 'true' ||
+    jsonConfig.isVisionModel === true;
+
+  const acceptedFileTypes = container.dataset.acceptedFileTypes ||
     jsonConfig.acceptedFileTypes || '';
   
   // Parse file config - merge JSON config with defaults, then override with data attributes
@@ -154,6 +159,7 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     streamingEnabled,
     enableFullPageReload,
     acceptedFileTypes,
+    isVisionModel,
     fileConfig,
     messagePlaceholder,
     noConversationsMessage,

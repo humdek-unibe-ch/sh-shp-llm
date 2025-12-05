@@ -287,27 +287,27 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   // Drag and drop handlers
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (config.enableFileUploads) {
+    if (config.enableFileUploads && config.isVisionModel) {
       setIsDragging(true);
     }
-  }, [config.enableFileUploads]);
-  
+  }, [config.enableFileUploads, config.isVisionModel]);
+
   const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
   }, []);
-  
+
   const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    
-    if (!config.enableFileUploads) return;
-    
+
+    if (!config.enableFileUploads || !config.isVisionModel) return;
+
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       handleFileSelection(files);
     }
-  }, [config.enableFileUploads, handleFileSelection]);
+  }, [config.enableFileUploads, config.isVisionModel, handleFileSelection]);
   
   // Character count
   const charCount = message.length;
@@ -351,7 +351,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       
       {/* Modern Message Input Container */}
       <div
-        className={`message-input-container ${isDragging ? 'drag-over' : ''}`}
+        className={`message-input-container ${isDragging && config.isVisionModel ? 'drag-over' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -389,7 +389,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         <div className="message-input-actions">
           {/* Left side - Attachment button */}
           <div className="message-input-actions-left">
-            {config.enableFileUploads && (
+            {config.enableFileUploads && config.isVisionModel && (
               <button
                 type="button"
                 className="message-action-btn attachment-btn"
@@ -399,6 +399,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               >
                 <i className="fas fa-paperclip"></i>
               </button>
+            )}
+            {config.enableFileUploads && !config.isVisionModel && (
+              <div className="message-action-btn attachment-btn disabled" title="Current model does not support image uploads">
+                <i className="fas fa-paperclip text-muted"></i>
+                <small className="text-muted ml-1">No vision</small>
+              </div>
             )}
           </div>
           

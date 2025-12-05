@@ -43,11 +43,6 @@ class LlmchatView extends StyleView
         $user_id = $this->model->getUserId();
         $chat_description = $this->model->getChatDescription();
 
-        if (!$user_id) {
-            echo '<div class="alert alert-warning">Please log in to use the chat feature.</div>';
-            return;
-        }
-
         // Get conversation and message data
         $conversation = $this->model->getCurrentConversation();
         $messages = $this->model->getConversationMessages();
@@ -146,6 +141,7 @@ class LlmchatView extends StyleView
             'enableFileUploads' => $this->model->isFileUploadsEnabled(),
             'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
             'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
+            'isVisionModel' => $this->model->isVisionModel(),
             // UI Labels
             'messagePlaceholder' => $this->model->getMessagePlaceholder(),
             'noConversationsMessage' => $this->model->getNoConversationsMessage(),

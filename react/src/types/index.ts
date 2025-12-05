@@ -161,6 +161,8 @@ export interface LlmChatConfig {
   enableFullPageReload: boolean;
   /** Accepted file types string */
   acceptedFileTypes: string;
+  /** Whether the current model supports vision */
+  isVisionModel: boolean;
   /** File configuration */
   fileConfig: FileConfig;
   
@@ -197,6 +199,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   streamingEnabled: true,
   enableFullPageReload: false,
   acceptedFileTypes: '',
+  isVisionModel: false,
   fileConfig: DEFAULT_FILE_CONFIG,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',

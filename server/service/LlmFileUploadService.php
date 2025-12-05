@@ -172,8 +172,8 @@ class LlmFileUploadService
         $random = bin2hex(random_bytes(8));
         $secureFileName = "temp_{$conversationId}_{$timestamp}_{$random}.{$extension}";
         $relativePath = LLM_UPLOAD_FOLDER . "/{$conversationId}/{$secureFileName}";
-        // Go up 5 levels from server/plugins/sh-shp-llm/server/service/ to reach project root
-        $fullPath = __DIR__ . "/../../../../../{$relativePath}";
+        // Go up 3 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
+        $fullPath = __DIR__ . "/../../../{$relativePath}";
 
         // Create directory with proper permissions if it doesn't exist
         $directory = dirname($fullPath);
@@ -228,14 +228,14 @@ class LlmFileUploadService
     {
         foreach ($uploadedFiles as $file) {
             // Extract current filename parts
-            // Go up 5 levels from server/plugins/sh-shp-llm/server/service/ to reach project root
-            $currentPath = __DIR__ . "/../../../../../{$file['path']}";
+            // Go up 3 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
+            $currentPath = __DIR__ . "/../../../{$file['path']}";
             $extension = pathinfo($file['filename'], PATHINFO_EXTENSION);
 
             // Create new filename with message ID
             $newFileName = "conv_{$conversationId}_msg_{$messageId}_" . bin2hex(random_bytes(8)) . ".{$extension}";
             $newRelativePath = LLM_UPLOAD_FOLDER . "/{$conversationId}/{$newFileName}";
-            $newFullPath = __DIR__ . "/../../../../../{$newRelativePath}";
+            $newFullPath = __DIR__ . "/../../../{$newRelativePath}";
 
             // Rename the file
             if (file_exists($currentPath) && rename($currentPath, $newFullPath)) {
