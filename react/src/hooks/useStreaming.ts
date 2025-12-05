@@ -26,6 +26,10 @@ export interface UseStreamingOptions {
   onError?: (error: string) => void;
   /** Callback when streaming starts */
   onStart?: () => void;
+  /** Callback to refresh messages after streaming (for React-only refresh) */
+  onRefreshMessages?: (conversationId: string) => Promise<void>;
+  /** Callback to get the active model for the current conversation */
+  getActiveModel?: () => string;
 }
 
 /**
@@ -49,13 +53,23 @@ export interface UseStreamingReturn {
 }
 
 /**
+ * Perform page reload
+ * For React-based apps, we simply use window.location.reload()
+ * which will reinitialize the React app properly
+ */
+async function smoothPageReload(): Promise<void> {
+  // Simple page reload - React will reinitialize from the new page
+  window.location.reload();
+}
+
+/**
  * Custom hook for managing streaming connections
  * 
  * @param options - Streaming options
  * @returns Streaming state and controls
  */
 export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
-  const { config, onChunk, onDone, onError, onStart } = options;
+  const { config, onChunk, onDone, onError, onStart, onRefreshMessages, getActiveModel } = options;
   
   // State
   const [isStreaming, setIsStreaming] = useState(false);
@@ -109,11 +123,14 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
       // Clear previous content
       setStreamingContent('');
       
+      // Determine the model to use (conversation model or configured model)
+      const modelToUse = getActiveModel ? getActiveModel() : config.configuredModel;
+
       // Step 1: Prepare streaming (save user message to database)
       const prepResponse = await messagesApi.prepareStreaming(
         message,
         conversationId,
-        config.configuredModel,
+        modelToUse,
         files
       );
       
@@ -161,19 +178,40 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               break;
               
             case 'done':
-              // Streaming completed
+              // Streaming completed - clear content immediately
               setIsStreaming(false);
               onDone?.(event.tokens_used || 0);
               
-              // Update URL before reload
+              // Update URL with conversation ID
               const url = new URL(window.location.href);
               url.searchParams.set('conversation', streamConversationId);
               window.history.pushState({}, '', url.toString());
               
-              // Small delay before page refresh to allow UI updates
-              setTimeout(() => {
-                window.location.reload();
-              }, 500);
+              // Choose refresh strategy based on config
+              if (config.enableFullPageReload) {
+                // Full page reload requested
+                setTimeout(() => {
+                  smoothPageReload();
+                }, 300);
+              } else if (onRefreshMessages) {
+                // React-only refresh - reload messages via API
+                // Use a short delay to let the server save the message
+                setTimeout(async () => {
+                  try {
+                    await onRefreshMessages(streamConversationId);
+                    setStreamingContent(''); // Clear streaming content after refresh
+                  } catch (err) {
+                    console.error('Failed to refresh messages:', err);
+                    // Fall back to page reload
+                    smoothPageReload();
+                  }
+                }, 500);
+              } else {
+                // Default: page reload
+                setTimeout(() => {
+                  smoothPageReload();
+                }, 300);
+              }
               break;
               
             case 'error':
@@ -200,7 +238,7 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
       onError?.(handleApiError(err));
       return null;
     }
-  }, [config.configuredModel, onChunk, onDone, onError, onStart, stopStreaming]);
+  }, [config.configuredModel, config.enableFullPageReload, onChunk, onDone, onError, onStart, onRefreshMessages, stopStreaming, getActiveModel]);
   
   // Cleanup on unmount
   useEffect(() => {

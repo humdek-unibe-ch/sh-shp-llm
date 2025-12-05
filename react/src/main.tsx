@@ -78,11 +78,19 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     container.dataset.streamingEnabled === 'true' ||
     jsonConfig.streamingEnabled !== false;
   
+  const enableFullPageReload = 
+    container.dataset.enableFullPageReload === '1' ||
+    container.dataset.enableFullPageReload === 'true' ||
+    jsonConfig.enableFullPageReload === true;
+  
   const acceptedFileTypes = container.dataset.acceptedFileTypes || 
     jsonConfig.acceptedFileTypes || '';
   
-  // Parse file config from data attributes
-  const fileConfig: FileConfig = { ...defaultFileConfig };
+  // Parse file config - merge JSON config with defaults, then override with data attributes
+  const fileConfig: FileConfig = { 
+    ...defaultFileConfig,
+    ...(jsonConfig.fileConfig || {})
+  };
   
   if (container.dataset.maxFileSize) {
     fileConfig.maxFileSize = parseInt(container.dataset.maxFileSize, 10);
@@ -144,6 +152,7 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     enableConversationsList,
     enableFileUploads,
     streamingEnabled,
+    enableFullPageReload,
     acceptedFileTypes,
     fileConfig,
     messagePlaceholder,

@@ -12,7 +12,7 @@
  * @module components/LlmChat
  */
 
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -21,6 +21,65 @@ import { useChatState } from '../hooks/useChatState';
 import { useStreaming } from '../hooks/useStreaming';
 import type { LlmChatConfig, SelectedFile, Message } from '../types';
 import './LlmChat.css';
+
+/**
+ * Hook for smart auto-scroll behavior
+ * Only scrolls to bottom if user is already near the bottom
+ */
+function useSmartScroll(containerRef: React.RefObject<HTMLDivElement>) {
+  const isNearBottomRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  
+  // Threshold for considering user "at bottom" (in pixels)
+  const SCROLL_THRESHOLD = 100;
+  
+  // Check if user is near bottom
+  const checkIfNearBottom = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return true;
+    
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
+  }, [containerRef]);
+  
+  // Update scroll position tracking
+  const handleScroll = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    lastScrollTopRef.current = container.scrollTop;
+    isNearBottomRef.current = checkIfNearBottom();
+  }, [checkIfNearBottom, containerRef]);
+  
+  // Smooth scroll to bottom with animation
+  const scrollToBottom = useCallback((force = false) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    // Only scroll if user was already at bottom (or force is true)
+    if (force || isNearBottomRef.current) {
+      requestAnimationFrame(() => {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        });
+        isNearBottomRef.current = true;
+      });
+    }
+  }, [containerRef]);
+  
+  // Force scroll to bottom (for user-initiated messages)
+  const forceScrollToBottom = useCallback(() => {
+    scrollToBottom(true);
+  }, [scrollToBottom]);
+  
+  return {
+    handleScroll,
+    scrollToBottom,
+    forceScrollToBottom,
+    isNearBottom: () => isNearBottomRef.current
+  };
+}
 
 /**
  * Props for LlmChat component
@@ -54,7 +113,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     sendMessage,
     addUserMessage,
     clearError,
-    setError
+    setError,
+    getActiveModel
   } = useChatState(config);
   
   // Local state for file attachments
@@ -63,6 +123,21 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   // Ref for messages container (for smooth scrolling)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   
+  // Smart scroll management
+  const {
+    handleScroll,
+    scrollToBottom,
+    forceScrollToBottom
+  } = useSmartScroll(messagesContainerRef);
+  
+  // Callback to refresh messages after streaming (React-only refresh)
+  const refreshMessages = useCallback(async (conversationId: string) => {
+    await loadConversationMessages(conversationId);
+    if (config.enableConversationsList) {
+      await loadConversations();
+    }
+  }, [loadConversationMessages, loadConversations, config.enableConversationsList]);
+
   // Streaming state management
   const {
     isStreaming,
@@ -73,9 +148,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   } = useStreaming({
     config,
     onChunk: useCallback(() => {
-      // Scroll to bottom on each chunk
-      smoothScrollToBottom();
-    }, []),
+      // Smart scroll - only scrolls if user was at bottom
+      scrollToBottom();
+    }, [scrollToBottom]),
     onDone: useCallback(() => {
       // Content clearing handled by hook
     }, []),
@@ -84,45 +159,39 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     }, [setError]),
     onStart: useCallback(() => {
       // Content clearing handled by hook
-    }, [])
+    }, []),
+    onRefreshMessages: refreshMessages,
+    getActiveModel: getActiveModel
   });
-  
-  /**
-   * Smooth scroll to bottom of messages
-   */
-  const smoothScrollToBottom = useCallback(() => {
-    requestAnimationFrame(() => {
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTo({
-          top: messagesContainerRef.current.scrollHeight,
-          behavior: 'smooth'
-        });
-      }
-    });
-  }, []);
   
   /**
    * Initialize chat on mount
    */
   useEffect(() => {
-    if (config.enableConversationsList) {
-      loadConversations();
-    } else {
-      // Single conversation mode - load current or last conversation
-      loadCurrentConversation();
-    }
-  }, []);
+    const initializeChat = async () => {
+      if (config.enableConversationsList) {
+        // Load conversations list - this will also load the current conversation's messages
+        // if there's a conversation ID in the URL/config
+        await loadConversations();
+      } else {
+        // Single conversation mode - load current or last conversation
+        await loadCurrentConversation();
+      }
+    };
+    
+    initializeChat();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   
   /**
    * Load current conversation for single-conversation mode
    */
   const loadCurrentConversation = useCallback(async () => {
     if (config.currentConversationId) {
-      loadConversationMessages(config.currentConversationId);
+      await loadConversationMessages(config.currentConversationId);
     } else {
-      // Try to load the last conversation
+      // Try to load conversations to get the last one
       try {
-        const convs = await loadConversations();
+        await loadConversations();
         // The hook will auto-select the first conversation
       } catch (err) {
         // No conversations - show empty state
@@ -152,8 +221,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     // Clear selected files
     setSelectedFiles([]);
     
-    // Scroll to bottom
-    smoothScrollToBottom();
+    // Force scroll to bottom when user sends a message
+    forceScrollToBottom();
     
     // Get current conversation ID
     const conversationId = currentConversation?.id || null;
@@ -180,7 +249,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     sendStreamingMessage,
     loadConversations,
     setError,
-    smoothScrollToBottom
+    forceScrollToBottom
   ]);
   
   /**
@@ -225,12 +294,22 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   }, [error, clearError]);
   
   /**
-   * Scroll to bottom when messages change
+   * Smart scroll when messages change (only if near bottom)
    */
   useEffect(() => {
-    smoothScrollToBottom();
-  }, [messages, smoothScrollToBottom]);
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
   
+  // Determine the active model for this conversation
+  // - Use conversation's model if it exists
+  // - Otherwise use the configured model (for new conversations)
+  const activeModel = useMemo(() => {
+    if (currentConversation?.model) {
+      return currentConversation.model;
+    }
+    return config.configuredModel;
+  }, [currentConversation?.model, config.configuredModel]);
+
   // Build messages array with streaming message if active
   const displayMessages: Message[] = [...messages];
   if (isStreaming && streamingContent) {
@@ -242,17 +321,21 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     });
   }
   
+  // Determine if model is mismatched
+  const isModelMismatch = currentConversation?.model && 
+    currentConversation.model !== config.configuredModel;
+
   return (
     <div className="llm-chat-container">
       {/* Error Alert */}
       {error && (
-        <div className="alert alert-danger alert-dismissible fade show llm-error-alert mb-2" role="alert">
+        <div className="llm-error-alert">
           <div className="d-flex align-items-center">
             <i className="fas fa-exclamation-circle mr-2"></i>
-            <span>{error}</span>
+            <span style={{ flex: 1 }}>{error}</span>
             <button
               type="button"
-              className="close ml-auto"
+              className="close"
               onClick={clearError}
               aria-label="Close"
             >
@@ -280,16 +363,18 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         
         {/* Main Chat Area */}
         <div className={config.enableConversationsList ? "col-md-8 col-lg-9" : "col-12"}>
-          <div className="card h-100">
+          <div className="d-flex flex-column h-100">
             {/* Chat Header */}
-            <div className="card-header bg-primary text-white">
-              <div className="d-flex justify-content-between align-items-center">
-                <h6 className="mb-0">
-                  {currentConversation?.title || 'AI Chat'}
-                </h6>
-                <small>
-                  Model: {currentConversation?.model || config.configuredModel}
-                </small>
+            <div className="chat-header">
+              <div className="chat-title">
+                <div className="chat-icon">
+                  <i className="fas fa-robot"></i>
+                </div>
+                <h5>{currentConversation?.title || 'AI Chat'}</h5>
+              </div>
+              <div className={`model-badge ${isModelMismatch ? 'model-mismatch' : ''}`}>
+                <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'}`}></i>
+                <span>{activeModel}</span>
               </div>
             </div>
             
@@ -297,8 +382,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
             <div
               ref={messagesContainerRef}
               id="messages-container"
-              className="card-body overflow-auto"
-              style={{ height: 'calc(100% - 150px)', minHeight: '300px' }}
+              onScroll={handleScroll}
             >
               <MessageList
                 messages={displayMessages}

@@ -3,13 +3,13 @@
  * ======================
  * 
  * Displays the list of messages in a conversation.
- * Matches the exact styling of the vanilla JS implementation.
+ * Modern, professional design with smooth animations.
  * 
  * Features:
- * - User messages (right-aligned, blue background)
- * - Assistant messages (left-aligned, light background)
- * - Attachment indicators
- * - Markdown rendering
+ * - User messages (right-aligned, gradient blue)
+ * - Assistant messages (left-aligned, white with border)
+ * - Avatar icons
+ * - Markdown rendering with syntax highlighting
  * - Streaming message with typing cursor
  * - Thinking indicator
  * 
@@ -18,7 +18,8 @@
 
 import React from 'react';
 import type { Message, LlmChatConfig } from '../types';
-import { formatTime, parseMarkdown, escapeHtml } from '../utils/formatters';
+import { formatTime } from '../utils/formatters';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 /**
  * Props for MessageList component
@@ -49,28 +50,6 @@ interface MessageItemProps {
 }
 
 /**
- * Generate avatar HTML for a message
- * Matches generateAvatar() from vanilla JS
- */
-const Avatar: React.FC<{ role: 'user' | 'assistant'; isRightAligned?: boolean }> = ({
-  role,
-  isRightAligned = false
-}) => {
-  const icon = role === 'user' ? 'fa-user' : 'fa-robot';
-  const bgClass = role === 'user' ? 'bg-primary' : 'bg-success';
-  const marginClass = isRightAligned ? 'ml-3' : 'mr-3';
-  
-  return (
-    <div
-      className={`rounded-circle d-flex align-items-center justify-content-center ${marginClass} flex-shrink-0 ${bgClass}`}
-      style={{ width: 38, height: 38 }}
-    >
-      <i className={`fas ${icon}`}></i>
-    </div>
-  );
-};
-
-/**
  * Parse and count attachments from message
  */
 function getAttachmentCount(attachments?: string): number {
@@ -91,11 +70,10 @@ const AttachmentIndicator: React.FC<{ count: number; isUser: boolean }> = ({ cou
   if (count === 0) return null;
   
   const fileText = count === 1 ? '1 file attached' : `${count} files attached`;
-  const textClass = isUser ? 'text-white-50' : 'text-muted';
   
   return (
-    <div className="attachment-indicator mt-1">
-      <small className={textClass}>
+    <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.08)' }}>
+      <small style={{ opacity: 0.7 }}>
         <i className="fas fa-paperclip mr-1"></i>
         {fileText}
       </small>
@@ -111,51 +89,43 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isStreaming = false,
   const isUser = message.role === 'user';
   const attachmentCount = getAttachmentCount(message.attachments);
   
-  // Format content - use pre-formatted if available, otherwise parse markdown
-  const formattedContent = message.formatted_content || 
-    (isUser ? escapeHtml(message.content) : parseMarkdown(message.content));
-  
   return (
-    <div className={`d-flex mb-3 ${isUser ? 'justify-content-end' : 'justify-content-start'}`}>
-      {/* Avatar - position depends on user/assistant */}
-      {!isUser && <Avatar role="assistant" />}
+    <div className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
+      {/* Avatar */}
+      <div className="message-avatar">
+        <i className={`fas ${isUser ? 'fa-user' : 'fa-robot'}`}></i>
+      </div>
       
-      {/* Message content */}
-      <div className={`llm-message-content ${isUser ? 'bg-primary text-white' : 'bg-light'} p-3 rounded border`}>
-        {/* Message text */}
-        <div 
-          className="mb-2"
-          dangerouslySetInnerHTML={{ __html: formattedContent }}
-        />
-        
-        {/* Typing cursor for streaming */}
-        {isStreaming && (
-          <span 
-            className="border-left border-primary ml-1"
-            style={{ 
-              height: '1.2em', 
-              animation: 'blink 1s infinite',
-              display: 'inline-block'
-            }}
-          />
-        )}
+      {/* Message Bubble */}
+      <div className="message-bubble">
+        {/* Message content */}
+        <div className="message-content">
+          {isUser ? (
+            // User messages: plain text with preserved whitespace
+            <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+          ) : (
+            // Assistant messages: render with markdown
+            <MarkdownRenderer 
+              content={message.content} 
+              isStreaming={isStreaming}
+            />
+          )}
+        </div>
         
         {/* Attachment indicator */}
         <AttachmentIndicator count={attachmentCount} isUser={isUser} />
         
         {/* Message metadata */}
-        <div className="mt-2">
-          <small className={isUser ? 'text-white-50' : 'text-muted'}>
-            {formatTime(message.timestamp)}
-            {message.tokens_used && (
-              <> • {message.tokens_used}{config.tokensSuffix}</>
-            )}
-          </small>
+        <div className="message-meta">
+          <span>{formatTime(message.timestamp)}</span>
+          {message.tokens_used && (
+            <span className="tokens">
+              <i className="fas fa-coins fa-xs"></i>
+              {message.tokens_used}{config.tokensSuffix}
+            </span>
+          )}
         </div>
       </div>
-      
-      {/* User avatar on right side */}
-      {isUser && <Avatar role="user" isRightAligned />}
     </div>
   );
 };
@@ -165,14 +135,18 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isStreaming = false,
  * Shows while waiting for AI response
  */
 const ThinkingIndicator: React.FC<{ text: string }> = ({ text }) => (
-  <div className="d-flex mb-3 justify-content-start">
-    <Avatar role="assistant" />
-    <div className="llm-message-content bg-light p-3 rounded border">
+  <div className="message-wrapper assistant">
+    <div className="message-avatar">
+      <i className="fas fa-robot"></i>
+    </div>
+    <div className="message-bubble">
       <div className="d-flex align-items-center">
-        <div className="spinner-border spinner-border-sm text-primary mr-2" role="status">
-          <span className="sr-only">Loading...</span>
+        <div className="streaming-dots mr-3">
+          <span className="dot"></span>
+          <span className="dot"></span>
+          <span className="dot"></span>
         </div>
-        <small className="text-muted">{text}</small>
+        <span style={{ color: 'var(--llm-text-secondary)', fontSize: '14px' }}>{text}</span>
       </div>
     </div>
   </div>
@@ -183,10 +157,10 @@ const ThinkingIndicator: React.FC<{ text: string }> = ({ text }) => (
  * Shows when no messages exist
  */
 const EmptyState: React.FC = () => (
-  <div className="d-flex align-items-center justify-content-center h-100">
-    <p className="text-center text-muted">
-      No messages yet. Send your first message!
-    </p>
+  <div className="empty-chat-state">
+    <i className="fas fa-comments"></i>
+    <h5>Start a conversation</h5>
+    <p>Send a message to start chatting with the AI assistant.</p>
   </div>
 );
 
@@ -195,13 +169,11 @@ const EmptyState: React.FC = () => (
  * Shows while loading initial data
  */
 const LoadingState: React.FC = () => (
-  <div className="d-flex align-items-center justify-content-center h-100">
-    <div className="text-center text-muted">
-      <div className="spinner-border text-primary mb-3" role="status">
-        <span className="sr-only">Loading...</span>
-      </div>
-      <p>Loading messages...</p>
+  <div className="loading-spinner">
+    <div className="spinner-border mb-3" role="status">
+      <span className="sr-only">Loading...</span>
     </div>
+    <p>Loading messages...</p>
   </div>
 );
 

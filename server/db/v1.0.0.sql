@@ -72,7 +72,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
 (NULL, 'llm_streaming_enabled', get_field_type_id('checkbox'), '0'),
 (NULL, 'enable_conversations_list', get_field_type_id('checkbox'), '0'),
-(NULL, 'enable_file_uploads', get_field_type_id('checkbox'), '0');
+(NULL, 'enable_file_uploads', get_field_type_id('checkbox'), '0'),
+(NULL, 'enable_full_page_reload', get_field_type_id('checkbox'), '0');
 
 -- add LLM chat style fields (external - user visible labels)
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
@@ -115,6 +116,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time streaming responses'),
 (get_style_id('llmChat'), get_field_id('enable_conversations_list'), '0', 'Enable conversations list on the left side. When disabled, only one conversation is allowed.'),
 (get_style_id('llmChat'), get_field_id('enable_file_uploads'), '0', 'Enable file upload functionality. When enabled, users can attach files to their messages. File types accepted depend on the selected AI model.'),
+(get_style_id('llmChat'), get_field_id('enable_full_page_reload'), '0', 'When enabled, full page reloads after streaming completion instead of React component refresh. Use this if you need to reload other page elements after chat interaction.'),
 (get_style_id('llmChat'), get_field_id('submit_button_label'), 'Send Message', 'Text for the send message button'),
 (get_style_id('llmChat'), get_field_id('new_chat_button_label'), 'New Conversation', 'Text for the new conversation button'),
 (get_style_id('llmChat'), get_field_id('delete_chat_button_label'), 'Delete Chat', 'Text for the delete conversation button'),
@@ -175,11 +177,14 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `model` varchar(100) DEFAULT NULL,
     `tokens_used` int DEFAULT NULL,
     `raw_response` longtext DEFAULT NULL,
+    `is_streaming` TINYINT(1) DEFAULT 0 NOT NULL, -- 1 if currently streaming, 0 when complete
+    `last_chunk_at` timestamp NULL DEFAULT NULL, -- Last time a chunk was saved during streaming
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_conversation_time` (`id_llmConversations`, `timestamp`),
     KEY `idx_deleted` (`deleted`),
+    KEY `idx_streaming` (`is_streaming`),
     CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 

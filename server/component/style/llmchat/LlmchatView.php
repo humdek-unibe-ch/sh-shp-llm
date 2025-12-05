@@ -100,11 +100,11 @@ class LlmchatView extends StyleView
         if (empty($local)) {
             if (DEBUG) {
                 $local = array(
-                    __DIR__ . "/../../../../css/ext/style.css",
+                    __DIR__ . "/../../../../css/ext/llm-chat.css",
                 );
             } else {
                 $local = array(
-                    __DIR__ . "/../../../../css/ext/style.css?v=" . rtrim(shell_exec("git describe --tags")),
+                    __DIR__ . "/../../../../css/ext/llm-chat.css?v=" . rtrim(shell_exec("git describe --tags")),
                 );
             }
         }
@@ -137,16 +137,36 @@ class LlmchatView extends StyleView
     {
         return json_encode([
             'userId' => $this->model->getUserId(),
+            'currentConversationId' => $this->model->getConversationId(),
+            'configuredModel' => $this->model->getConfiguredModel(),
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
             'maxFileSize' => LLM_MAX_FILE_SIZE,
             'streamingEnabled' => $this->model->isStreamingEnabled(),
+            'enableConversationsList' => $this->model->isConversationsListEnabled(),
+            'enableFileUploads' => $this->model->isFileUploadsEnabled(),
+            'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
+            'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
+            // UI Labels
             'messagePlaceholder' => $this->model->getMessagePlaceholder(),
-            'model' => $this->model->getConfiguredModel(),
-            'temperature' => $this->model->getLlmTemperature(),
-            'maxTokens' => $this->model->getLlmMaxTokens(),
-            'conversationsEnabled' => $this->model->isConversationsListEnabled(),
-            'fileUploadsEnabled' => $this->model->isFileUploadsEnabled(),
-            'acceptedFileTypes' => $this->model->getAcceptedFileTypes()
+            'noConversationsMessage' => $this->model->getNoConversationsMessage(),
+            'newConversationTitleLabel' => $this->model->getNewConversationTitleLabel(),
+            'conversationTitleLabel' => $this->model->getConversationTitleLabel(),
+            'cancelButtonLabel' => $this->model->getCancelButtonLabel(),
+            'createButtonLabel' => $this->model->getCreateButtonLabel(),
+            'deleteConfirmationTitle' => $this->model->getDeleteConfirmationTitle(),
+            'deleteConfirmationMessage' => $this->model->getDeleteConfirmationMessage(),
+            'tokensSuffix' => $this->model->getTokensUsedSuffix(),
+            'aiThinkingText' => $this->model->getAiThinkingText(),
+            // File config
+            'fileConfig' => [
+                'maxFileSize' => LLM_MAX_FILE_SIZE,
+                'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
+                'allowedImageExtensions' => LLM_ALLOWED_IMAGE_EXTENSIONS,
+                'allowedDocumentExtensions' => LLM_ALLOWED_DOCUMENT_EXTENSIONS,
+                'allowedCodeExtensions' => LLM_ALLOWED_CODE_EXTENSIONS,
+                'allowedExtensions' => LLM_ALLOWED_EXTENSIONS,
+                'visionModels' => LLM_VISION_MODELS
+            ]
         ]);
     }
 

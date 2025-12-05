@@ -157,6 +157,8 @@ export interface LlmChatConfig {
   enableFileUploads: boolean;
   /** Whether streaming is enabled */
   streamingEnabled: boolean;
+  /** Whether to do full page reload after streaming (default: false - React refresh only) */
+  enableFullPageReload: boolean;
   /** Accepted file types string */
   acceptedFileTypes: string;
   /** File configuration */
@@ -193,6 +195,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   enableConversationsList: true,
   enableFileUploads: true,
   streamingEnabled: true,
+  enableFullPageReload: false,
   acceptedFileTypes: '',
   fileConfig: DEFAULT_FILE_CONFIG,
   messagePlaceholder: 'Type your message...',

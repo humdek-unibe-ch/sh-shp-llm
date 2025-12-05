@@ -4,6 +4,7 @@ A SelfHelp plugin that enables Large Language Model (LLM) integration with real-
 
 ## Features
 
+### Core Features
 - **Real-time Chat Interface**: Interactive conversations with LLMs
 - **Multiple Model Support**: Support for all gpustack models including vision models
 - **Streaming Responses**: Real-time streaming of LLM responses via Server-Sent Events
@@ -11,6 +12,24 @@ A SelfHelp plugin that enables Large Language Model (LLM) integration with real-
 - **Conversation Management**: Create, view, and delete conversations
 - **Rate Limiting**: Built-in rate limiting and concurrent conversation limits
 - **Admin Interface**: Administrative access to all user conversations
+
+### UI/UX Features (v1.2.0+)
+- **Industry-Level UI Design**: Complete redesign with modern, professional aesthetics
+- **Clean Sidebar**: Conversation list with gradient-highlighted active state and icon badges
+- **Modern Chat Header**: Robot icon, title, and model badge in a clean pill design
+- **Beautiful Empty State**: Engaging "Start a conversation" placeholder with icon
+- **Message Bubbles**: Styled message containers with avatars and timestamps
+- **Modern Message Input**: Redesigned input area with rounded container, attachment button, character counter
+- **Smart Auto-Scroll**: Intelligent scrolling that only auto-scrolls when user is at bottom
+- **Advanced Markdown Rendering**: Rich markdown with syntax highlighting and copy-to-clipboard for code blocks
+- **Responsive Design**: Fully mobile-friendly with adaptive layout for all screen sizes
+- **Smooth Animations**: Message slide-in animations and hover effects
+- **Model Switching Indicators**: Visual feedback when conversation model differs from global default
+
+### Data Integrity Features
+- **Periodic Streaming Saves**: Partial response saves every 10 chunks to prevent data loss on interruption
+- **Streaming State Tracking**: Database fields to track ongoing and stale streaming sessions
+- **Graceful Error Recovery**: Saves partial responses even when streaming fails
 
 ## Requirements
 
@@ -37,18 +56,45 @@ server/plugins/sh-shp-llm/
 ├── gulp/                          # Build system
 │   ├── gulpfile.js
 │   └── package.json
+├── react/                         # React frontend application
+│   ├── package.json               # React dependencies (react-markdown, etc.)
+│   ├── vite.config.ts            # Vite build configuration
+│   ├── tsconfig.json             # TypeScript configuration
+│   └── src/
+│       ├── main.tsx              # Entry point and initialization
+│       ├── types/index.ts        # TypeScript type definitions
+│       ├── components/
+│       │   ├── LlmChat.tsx       # Main chat component
+│       │   ├── LlmChat.css       # Component styles
+│       │   ├── MessageList.tsx   # Messages display
+│       │   ├── MessageInput.tsx  # Input with file upload
+│       │   ├── ConversationSidebar.tsx  # Conversations list
+│       │   ├── StreamingIndicator.tsx   # Streaming status
+│       │   └── MarkdownRenderer.tsx     # Advanced markdown rendering
+│       ├── hooks/
+│       │   ├── useChatState.ts   # State management hook
+│       │   └── useStreaming.ts   # SSE streaming hook
+│       └── utils/
+│           ├── api.ts            # API communication
+│           └── formatters.ts     # Utility functions
 ├── server/
 │   ├── component/
 │   │   ├── LlmHooks.php          # Plugin hooks and component registration
-│   │   ├── llmConversations/     # Admin conversations list component (plugin-scoped)
-│   │   ├── llmConversation/      # Admin conversation details component (plugin-scoped)
+│   │   ├── llmConversations/     # Admin conversations list component
+│   │   ├── llmConversation/      # Admin conversation details component
 │   │   └── style/llmchat/        # Chat component (MVC)
 │   ├── service/
 │   │   ├── globals.php           # Plugin constants
-│   │   └── LlmService.php        # API and database operations
+│   │   ├── LlmService.php        # API and database operations
+│   │   └── LlmStreamingService.php  # SSE streaming service
 │   └── db/
 │       └── v1.0.0.sql            # Database schema
-└── css/ext/ & js/ext/            # Built assets
+├── css/ext/                       # Built CSS assets
+│   ├── style.css                 # Combined styles
+│   └── llm-chat.css              # React component styles
+└── js/ext/                        # Built JS assets
+    ├── llm-chat.umd.js           # React component UMD bundle
+    └── llmchat.min.js            # Legacy vanilla JS (minified)
 ```
 
 ## How Streaming Works
@@ -239,6 +285,240 @@ startStreaming(streamingUrl) {
 - **Error Handling**: Graceful fallback to non-streaming if SSE fails
 - **Performance**: 5ms delay between chunks to prevent overwhelming the UI
 
+### Streaming Data Integrity (v1.1.0+)
+
+To prevent data loss when streaming is interrupted, the plugin implements **periodic partial saves**:
+
+#### Database Schema Additions
+```sql
+-- Added to llmMessages table
+ALTER TABLE llmMessages 
+  ADD COLUMN is_streaming TINYINT(1) DEFAULT 0 NOT NULL,
+  ADD COLUMN last_chunk_at TIMESTAMP NULL DEFAULT NULL;
+```
+
+#### Periodic Save Strategy
+- **Save Interval**: Every 10 chunks (approximately 50-100 words)
+- **Minimum Content**: At least 50 new characters before saving
+- **First Save**: Creates message with `is_streaming = 1`
+- **Subsequent Saves**: Updates existing message with new content
+- **Final Save**: Sets `is_streaming = 0` and records `tokens_used`
+
+#### Implementation
+```php
+// In LlmStreamingService.php
+private function handleStreamingCallback($chunk, &$context) {
+    $context['chunk_count']++;
+    $context['accumulated_response'] .= $chunk;
+    
+    // Periodic save every 10 chunks
+    if ($context['chunk_count'] % 10 == 0) {
+        $new_content = substr($context['accumulated_response'], $context['last_save_length']);
+        if (strlen($new_content) >= 50) {
+            if (!$context['streaming_message_id']) {
+                // First save - create message
+                $context['streaming_message_id'] = $this->llm_service->addStreamingMessage(
+                    $context['conversation_id'], 
+                    $context['accumulated_response'], 
+                    $context['model']
+                );
+            } else {
+                // Update existing message
+                $this->llm_service->updateStreamingMessage(
+                    $context['streaming_message_id'],
+                    $context['accumulated_response']
+                );
+            }
+            $context['last_save_length'] = strlen($context['accumulated_response']);
+        }
+    }
+}
+```
+
+#### Stale Streaming Cleanup
+```php
+// Clean up incomplete streaming messages older than 5 minutes
+$this->llm_service->cleanupStaleStreamingMessages(5);
+```
+
+## Modern UI Features (v1.1.0+)
+
+### Redesigned Message Input
+
+The message input area features a modern design with fixed button positioning:
+
+#### Layout Structure
+```html
+<div class="message-input-container">
+  <!-- Textarea Area - Scrolls internally -->
+  <div class="message-input-textarea-wrapper">
+    <textarea class="message-input-textarea" />
+  </div>
+  
+  <!-- Fixed Button Container - Always at bottom -->
+  <div class="message-input-actions">
+    <div class="message-input-actions-left">
+      <!-- Attachment button -->
+    </div>
+    <div class="message-input-char-count">
+      <!-- Character count -->
+    </div>
+    <div class="message-input-actions-right">
+      <!-- Clear and Send buttons -->
+    </div>
+  </div>
+</div>
+```
+
+#### Key Features
+- **Fixed Buttons**: Buttons stay at bottom regardless of textarea height
+- **Internal Scrolling**: Textarea scrolls internally when content exceeds max height (120px)
+- **Auto-Resize**: Textarea grows from min-height (24px) up to max-height (120px)
+- **Modern Styling**: Rounded buttons with icons, hover effects, focus states
+
+### Smart Auto-Scroll
+
+Intelligent scrolling during streaming that respects user reading position:
+
+```typescript
+// useSmartScroll hook
+const useSmartScroll = (containerRef) => {
+  const isNearBottom = () => {
+    const threshold = 100; // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  };
+  
+  const scrollToBottom = () => {
+    if (isNearBottom()) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }
+  };
+  
+  const forceScrollToBottom = () => {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+  };
+  
+  return { scrollToBottom, forceScrollToBottom, handleScroll };
+};
+```
+
+#### Behavior
+- **During Streaming**: Only scrolls if user is within 100px of bottom
+- **After Sending**: Always scrolls to bottom (user action)
+- **Manual Scroll**: Disables auto-scroll if user scrolls up
+
+### Advanced Markdown Rendering
+
+Rich markdown rendering using `react-markdown` with plugins:
+
+#### Dependencies
+```json
+{
+  "dependencies": {
+    "react-markdown": "^9.x",
+    "remark-gfm": "^4.x",
+    "rehype-highlight": "^7.x"
+  }
+}
+```
+
+#### Features
+- **GitHub Flavored Markdown**: Tables, task lists, strikethrough
+- **Syntax Highlighting**: Code blocks with language detection
+- **Copy-to-Clipboard**: One-click code copying with visual feedback
+- **External Link Handling**: External links open in new tabs with icon
+
+#### Code Block Component
+```tsx
+const CodeBlock: React.FC<CodeBlockProps> = ({ inline, className, children }) => {
+  const match = /language-(\w+)/.exec(className || '');
+  const language = match ? match[1] : '';
+  const codeString = String(children).replace(/\n$/, '');
+
+  if (inline) {
+    return <code className="inline-code">{children}</code>;
+  }
+
+  return (
+    <div className="code-block-wrapper">
+      <div className="code-block-header">
+        <span className="code-language">{language}</span>
+        <CopyButton code={codeString} />
+      </div>
+      <pre className={className}>
+        <code className={className}>{children}</code>
+      </pre>
+    </div>
+  );
+};
+```
+
+### Post-Streaming Refresh Strategy
+
+Configurable refresh behavior after streaming completion:
+
+#### Configuration
+```sql
+-- Database field for enabling full page reload
+INSERT INTO fields (name, id_type, display) 
+VALUES ('enable_full_page_reload', get_field_type_id('checkbox'), '0');
+```
+
+#### Refresh Options
+
+**Default: React Component Refresh**
+- Calls `refreshMessages()` to reload conversation data
+- No page flash or navigation
+- Maintains scroll position and UI state
+
+**Optional: Smooth AJAX Page Reload**
+- Fetches new page content via AJAX
+- Applies fade-out/fade-in transitions
+- Replaces entire page content smoothly
+
+```typescript
+const smoothPageReload = async () => {
+  // Fade out current content
+  document.body.classList.add('fade-out');
+  
+  // Fetch fresh page
+  const response = await fetch(window.location.href);
+  const html = await response.text();
+  
+  // Replace content
+  const parser = new DOMParser();
+  const newDoc = parser.parseFromString(html, 'text/html');
+  document.body.innerHTML = newDoc.body.innerHTML;
+  
+  // Fade in new content
+  document.body.classList.remove('fade-out');
+  document.body.classList.add('fade-in');
+};
+```
+
+### Model Switching Logic
+
+Proper handling of model changes across conversations:
+
+#### Active Model Resolution
+```typescript
+const getActiveModel = useCallback(() => {
+  // Use conversation model if available, otherwise use configured model
+  return currentConversation?.model || config.configuredModel;
+}, [currentConversation, config.configuredModel]);
+```
+
+#### Visual Indicators
+When a conversation uses a different model than the current global default:
+- Badge indicator in chat header
+- Tooltip explaining the discrepancy
+- All API calls use the conversation's model (not global default)
+
+#### Model Consistency
+- New conversations use current global model
+- Existing conversations retain their original model
+- Model is stored per-conversation in database
+
 ## Context Maintenance
 
 The LLM plugin maintains conversation context by sending the complete message history to the LLM API for each interaction, enabling coherent and contextual responses.
@@ -343,17 +623,21 @@ The LLM plugin creates and manages several database tables to store conversation
 - `model` (varchar 100): Model used for this specific message
 - `tokens_used` (int): Token count for assistant responses
 - `raw_response` (longtext): Full JSON response from LLM API (debugging)
+- `is_streaming` (tinyint 1): Streaming state flag (0=complete, 1=in progress) - *v1.1.0+*
+- `last_chunk_at` (timestamp): Last chunk received timestamp for streaming messages - *v1.1.0+*
 - `deleted` (tinyint 1): Soft delete flag (0=active, 1=deleted)
 - `timestamp` (timestamp): Message creation timestamp
 
 **Indexes:**
 - `idx_conversation_time` (`id_llmConversations`, `timestamp`): Messages within conversation by time
 - `idx_deleted` (`deleted`): Quick filtering of deleted messages
+- `idx_streaming` (`is_streaming`): Identify in-progress streaming messages - *v1.1.0+*
 
 **Data Stored:**
 - **Message content**: User inputs and AI responses with full text
 - **File attachments**: Image paths for vision-capable models
 - **API metadata**: Token usage, model information, raw API responses
+- **Streaming state**: Tracks ongoing and stale streaming sessions - *v1.1.0+*
 - **Conversation threading**: Messages linked to specific conversations
 - **Audit trail**: Complete message history with timestamps
 
@@ -606,6 +890,9 @@ Global Config (pages_fields) → Component Config (sections_fields) → Conversa
 - **llm_temperature**: Override global temperature
 - **llm_max_tokens**: Override global token limit
 - **llm_streaming_enabled**: Override global streaming setting
+- **enable_conversations_list**: Show/hide conversations sidebar (default: 1) - *v1.1.0+*
+- **enable_file_uploads**: Enable/disable file upload capability (default: 1) - *v1.1.0+*
+- **enable_full_page_reload**: Use AJAX page reload instead of React refresh (default: 0) - *v1.1.0+*
 
 **User Interface Labels** (30+ configurable text fields):
 - **submit_button_label**: Send button text (default: "Send Message")
@@ -1000,12 +1287,27 @@ npm install
 # Install React dependencies (first time only)
 gulp react-install
 
+# Or install manually (includes markdown dependencies):
+cd ../react
+npm install
+# Installs: react, react-dom, react-markdown, remark-gfm, rehype-highlight, etc.
+
 # Build everything (React + legacy assets)
+cd ../gulp
 gulp build
 
 # Or build React only
 gulp react-build
 ```
+
+### React Dependencies (v1.1.0+)
+
+The React component uses these key dependencies:
+- `react` / `react-dom`: Core React library
+- `react-markdown`: Markdown rendering
+- `remark-gfm`: GitHub Flavored Markdown support
+- `rehype-highlight`: Syntax highlighting for code blocks
+- `@types/hast`: TypeScript types for rehype
 
 ### Output Files
 
@@ -1013,8 +1315,9 @@ After building, the following files are generated:
 
 | File | Description |
 |------|-------------|
-| `js/ext/llm-chat.umd.js` | React component UMD bundle (includes React/ReactDOM) |
-| `js/ext/llm-chat.css` | React component styles |
+| `js/ext/llm-chat.umd.js` | React component UMD bundle (~505KB, includes React/ReactDOM/react-markdown) |
+| `css/ext/llm-chat.css` | React component styles (~13KB, includes syntax highlighting) |
+| `css/ext/style.css` | Combined styles for component |
 | `js/ext/llmchat.min.js` | Legacy vanilla JS (minified) |
 | `css/ext/llmchat.min.css` | Legacy CSS (minified) |
 
@@ -1035,12 +1338,21 @@ After building, the following files are generated:
 - Thinking indicator during AI processing
 - File attachment indicators
 
-**MessageInput.tsx** - Input area with:
-- Auto-resizing textarea
-- File attachment button
+**MessageInput.tsx** - Modern input area with:
+- Auto-resizing textarea (24px to 120px, internal scroll)
+- Fixed button container that doesn't scale with textarea
+- File attachment button (conditionally shown)
 - Drag-and-drop file support
 - Character count indicator
-- Send button with loading state
+- Clear and Send buttons with icon states
+- Loading spinner during streaming
+
+**MarkdownRenderer.tsx** - Advanced markdown component with:
+- GitHub Flavored Markdown support (tables, task lists)
+- Syntax highlighting for code blocks
+- Copy-to-clipboard buttons
+- External link handling (opens in new tab)
+- Responsive table wrappers
 
 **ConversationSidebar.tsx** - Conversation management:
 - List of conversations with delete buttons
@@ -1066,7 +1378,8 @@ const {
   sendMessage,         // Send message (non-streaming)
   addUserMessage,      // Add user message to UI
   clearError,          // Clear error state
-  setError             // Set error message
+  setError,            // Set error message
+  getActiveModel       // Get active model (conversation or config) - v1.1.0+
 } = useChatState(config);
 ```
 
@@ -1078,7 +1391,23 @@ const {
   sendStreamingMessage, // Send with streaming response
   stopStreaming,        // Stop current stream
   clearStreamingContent // Clear accumulated content
-} = useStreaming({ config, onChunk, onDone, onError });
+} = useStreaming({ 
+  config, 
+  onChunk,              // Callback for each chunk
+  onDone,               // Callback when streaming completes
+  onError,              // Callback on error
+  onRefreshMessages,    // Callback to refresh messages (React-only refresh) - v1.1.0+
+  getActiveModel        // Callback to get active model - v1.1.0+
+});
+```
+
+**useSmartScroll** (inline in LlmChat.tsx) - Smart scroll management:
+```typescript
+const {
+  scrollToBottom,       // Scroll if user is near bottom
+  forceScrollToBottom,  // Always scroll to bottom
+  handleScroll          // Handle manual scroll events
+} = useSmartScroll(containerRef);
 ```
 
 #### API Communication
@@ -1119,6 +1448,7 @@ The React component receives configuration via data attributes on the container 
      data-enable-conversations-list="1"
      data-enable-file-uploads="1"
      data-streaming-enabled="1"
+     data-enable-full-page-reload="0"
      data-message-placeholder="Type your message..."
      data-no-conversations-message="No conversations yet"
      data-ai-thinking-text="AI is thinking..."
@@ -1127,14 +1457,29 @@ The React component receives configuration via data attributes on the container 
 </div>
 ```
 
-Or via JSON config:
+Or via JSON config (recommended):
 
 ```html
 <div id="llm-chat-root"
      data-user-id="123"
-     data-config='{"configuredModel":"qwen3-vl-8b-instruct","streamingEnabled":true,...}'>
+     data-config='<?php echo htmlspecialchars($this->getReactConfig()); ?>'>
 </div>
 ```
+
+#### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `userId` | number | required | Current user ID |
+| `currentConversationId` | string | - | Pre-selected conversation |
+| `configuredModel` | string | required | Default LLM model |
+| `enableConversationsList` | boolean | true | Show/hide sidebar |
+| `enableFileUploads` | boolean | true | Enable file attachments |
+| `streamingEnabled` | boolean | true | Enable SSE streaming |
+| `enableFullPageReload` | boolean | false | AJAX reload vs React refresh |
+| `fileConfig` | object | - | File upload constraints |
+| `messagePlaceholder` | string | "Type your message..." | Input placeholder |
+| `aiThinkingText` | string | "AI is thinking..." | Streaming indicator |
 
 ### Type Definitions
 
@@ -1177,8 +1522,20 @@ interface LlmChatConfig {
   enableConversationsList: boolean;
   enableFileUploads: boolean;
   streamingEnabled: boolean;
+  enableFullPageReload: boolean;  // v1.1.0+ - Use AJAX page reload instead of React refresh
   fileConfig: FileConfig;
-  // ... UI labels
+  acceptedFileTypes: string;
+  // UI labels
+  messagePlaceholder: string;
+  noConversationsMessage: string;
+  newConversationTitleLabel: string;
+  conversationTitleLabel: string;
+  cancelButtonLabel: string;
+  createButtonLabel: string;
+  deleteConfirmationTitle: string;
+  deleteConfirmationMessage: string;
+  tokensSuffix: string;
+  aiThinkingText: string;
 }
 ```
 
@@ -1275,6 +1632,27 @@ Check SelfHelp logs for detailed error information:
 - API request/response logs
 - Database operation logs
 - File upload errors
+
+## Version History
+
+### v1.1.0 (December 2024)
+- **Modern Message Input**: Redesigned input with fixed button layout
+- **Smart Auto-Scroll**: Intelligent scrolling during streaming
+- **Streaming Data Integrity**: Periodic partial saves (every 10 chunks)
+- **Advanced Markdown**: react-markdown with syntax highlighting and copy buttons
+- **Smooth Refresh**: AJAX page reload option with fade transitions
+- **Model Switching**: Proper model handling across conversations with visual indicators
+- **Configuration Flags**: `enable_conversations_list`, `enable_file_uploads`, `enable_full_page_reload`
+- **Database Updates**: Added `is_streaming` and `last_chunk_at` fields to `llmMessages`
+
+### v1.0.0 (Initial Release)
+- Real-time chat interface with SSE streaming
+- Multiple model support including vision models
+- File uploads for vision-capable models
+- Conversation management (create, view, delete)
+- Rate limiting and concurrent conversation limits
+- Admin interface for all user conversations
+- React-based frontend with TypeScript support
 
 ## License
 

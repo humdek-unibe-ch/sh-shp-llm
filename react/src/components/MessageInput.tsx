@@ -105,13 +105,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   }, [handleSubmit]);
   
   /**
-   * Auto-resize textarea
+   * Auto-resize textarea - smoothly scales up to max height then scrolls
    */
   const adjustTextareaHeight = useCallback(() => {
     const textarea = textareaRef.current;
     if (textarea) {
+      // Reset to auto to get proper scrollHeight
       textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+      // Calculate new height (min 24px, max 120px for textarea itself)
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
+      textarea.style.height = `${newHeight}px`;
     }
   }, []);
   
@@ -311,7 +314,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isNearLimit = charCount > maxLength * 0.9;
   
   return (
-    <form id="message-form" onSubmit={handleSubmit}>
+    <form id="message-form" onSubmit={handleSubmit} className="message-form-modern">
       {/* File Error Alert */}
       {fileError && (
         <div className="alert alert-danger alert-dismissible fade show mb-2" role="alert">
@@ -346,30 +349,15 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </div>
       )}
       
-      {/* Message Input Wrapper */}
+      {/* Modern Message Input Container */}
       <div
-        className={`message-input-wrapper ${isDragging ? 'drag-over' : ''}`}
+        className={`message-input-container ${isDragging ? 'drag-over' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="input-group">
-          {/* Attachment Button */}
-          {config.enableFileUploads && (
-            <div className="input-group-prepend">
-              <button
-                type="button"
-                className="btn btn-outline-secondary"
-                id="attachment-btn"
-                onClick={handleAttachmentClick}
-                disabled={disabled}
-                title="Attach files"
-              >
-                <i className="fas fa-paperclip"></i>
-              </button>
-            </div>
-          )}
-          
+        {/* Textarea Area - Scrolls internally */}
+        <div className="message-input-textarea-wrapper">
           {/* Hidden File Input */}
           <input
             ref={fileInputRef}
@@ -386,7 +374,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             ref={textareaRef}
             id="message-input"
             name="message"
-            className="form-control"
+            className="message-input-textarea"
             placeholder={disabled ? 'Streaming in progress...' : config.messagePlaceholder}
             value={message}
             onChange={handleInputChange}
@@ -394,50 +382,58 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             disabled={disabled}
             maxLength={maxLength}
             rows={1}
-            style={{ resize: 'none', minHeight: '38px' }}
           />
+        </div>
+        
+        {/* Fixed Button Container - Always at bottom */}
+        <div className="message-input-actions">
+          {/* Left side - Attachment button */}
+          <div className="message-input-actions-left">
+            {config.enableFileUploads && (
+              <button
+                type="button"
+                className="message-action-btn attachment-btn"
+                onClick={handleAttachmentClick}
+                disabled={disabled}
+                title="Attach files"
+              >
+                <i className="fas fa-paperclip"></i>
+              </button>
+            )}
+          </div>
           
-          {/* Clear Button */}
-          <div className="input-group-append">
+          {/* Character Count - Center */}
+          <div className="message-input-char-count">
+            <small className={isNearLimit ? 'text-warning' : 'text-muted'}>
+              {charCount}/{maxLength}
+            </small>
+          </div>
+          
+          {/* Right side - Clear and Send buttons */}
+          <div className="message-input-actions-right">
             <button
               type="button"
-              className="btn btn-outline-secondary"
-              id="clear-message-btn"
+              className="message-action-btn clear-btn"
               onClick={handleClearForm}
               disabled={disabled}
               title="Clear"
             >
               <i className="fas fa-times"></i>
             </button>
-          </div>
-          
-          {/* Send Button */}
-          <div className="input-group-append">
+            
             <button
               type="submit"
-              className="btn btn-primary"
-              id="send-message-btn"
+              className="message-action-btn send-btn"
               disabled={disabled || (!message.trim() && selectedFiles.length === 0)}
+              title="Send message"
             >
               {disabled ? (
-                <>
-                  <i className="fas fa-spinner fa-spin me-2"></i>
-                  Sending...
-                </>
+                <i className="fas fa-spinner fa-spin"></i>
               ) : (
-                <>
-                  <i className="fas fa-paper-plane"></i> Send
-                </>
+                <i className="fas fa-paper-plane"></i>
               )}
             </button>
           </div>
-        </div>
-        
-        {/* Character Count */}
-        <div className="d-flex justify-content-end mt-1">
-          <small id="char-count" className={isNearLimit ? 'text-warning' : 'text-muted'}>
-            {charCount}/{maxLength} characters
-          </small>
         </div>
       </div>
     </form>

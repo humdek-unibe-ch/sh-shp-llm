@@ -429,6 +429,121 @@ class LlmService
     }
 
     /**
+     * Add a streaming message (for partial saves during streaming)
+     * Creates a message marked as is_streaming=1
+     * 
+     * @param int $conversation_id The conversation ID
+     * @param string $content The current content (partial)
+     * @param string $model The model being used
+     * @return int The message ID
+     */
+    public function addStreamingMessage($conversation_id, $content, $model)
+    {
+        // Verify conversation exists
+        $conversation = $this->db->query_db_first(
+            "SELECT id_users FROM llmConversations WHERE id = ?",
+            [$conversation_id]
+        );
+
+        if (!$conversation) {
+            throw new Exception('Conversation not found');
+        }
+
+        $data = [
+            'id_llmConversations' => $conversation_id,
+            'role' => 'assistant',
+            'content' => $content,
+            'model' => $model,
+            'is_streaming' => 1,
+            'last_chunk_at' => date('Y-m-d H:i:s')
+        ];
+
+        $message_id = $this->db->insert('llmMessages', $data);
+
+        // Update conversation timestamp
+        $this->db->update_by_ids('llmConversations',
+            ['updated_at' => date('Y-m-d H:i:s')],
+            ['id' => $conversation_id]
+        );
+
+        // Clear cache
+        $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id);
+
+        return $message_id;
+    }
+
+    /**
+     * Update a streaming message (for partial saves during streaming)
+     * 
+     * @param int $message_id The message ID to update
+     * @param string $content The current content (partial or complete)
+     * @param int|null $tokens_used The tokens used (null if still streaming)
+     * @param bool $is_streaming Whether still streaming (false when complete)
+     * @return bool True if update was successful
+     */
+    public function updateStreamingMessage($message_id, $content, $tokens_used = null, $is_streaming = true)
+    {
+        $data = [
+            'content' => $content,
+            'is_streaming' => $is_streaming ? 1 : 0,
+            'last_chunk_at' => date('Y-m-d H:i:s')
+        ];
+
+        if ($tokens_used !== null) {
+            $data['tokens_used'] = $tokens_used;
+        }
+
+        // If streaming is complete, clear the last_chunk_at field (optional)
+        if (!$is_streaming) {
+            $data['last_chunk_at'] = null;
+        }
+
+        return $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
+    }
+
+    /**
+     * Clean up stale streaming messages (messages that were left in streaming state)
+     * This can be called periodically to handle interrupted streams
+     * 
+     * @param int $stale_minutes Messages older than this are considered stale
+     * @return int Number of messages cleaned up
+     */
+    public function cleanupStaleStreamingMessages($stale_minutes = 5)
+    {
+        $cutoff_time = date('Y-m-d H:i:s', strtotime("-{$stale_minutes} minutes"));
+        
+        // Find stale streaming messages
+        $stale_messages = $this->db->query_db(
+            "SELECT id, id_llmConversations, content FROM llmMessages 
+             WHERE is_streaming = 1 AND last_chunk_at < ?",
+            [$cutoff_time]
+        );
+
+        $cleaned = 0;
+        foreach ($stale_messages as $msg) {
+            // Mark as complete (not streaming anymore)
+            $content = $msg['content'];
+            if (strlen($content) > 0) {
+                // Keep the partial content but mark as interrupted
+                $this->db->update_by_ids('llmMessages', [
+                    'content' => $content . "\n\n[Response interrupted]",
+                    'is_streaming' => 0,
+                    'last_chunk_at' => null
+                ], ['id' => $msg['id']]);
+            } else {
+                // Delete empty streaming messages
+                $this->db->update_by_ids('llmMessages', ['deleted' => 1], ['id' => $msg['id']]);
+            }
+            
+            // Clear cache for affected conversation
+            $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $msg['id_llmConversations']);
+            $cleaned++;
+        }
+
+        return $cleaned;
+    }
+
+    /**
      * Get conversation messages
      */
     public function getConversationMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
@@ -580,8 +695,8 @@ class LlmService
         $payload = [
             'model' => $model,
             'messages' => $messages,
-            'temperature' => $temperature ?: $config['llm_temperature'],
-            'max_tokens' => $max_tokens ?: $config['llm_max_tokens'],
+            'temperature' => (float)($temperature ?: $config['llm_temperature']),
+            'max_tokens' => (int)($max_tokens ?: $config['llm_max_tokens']),
             'stream' => $stream
         ];
 
@@ -599,7 +714,19 @@ class LlmService
         $response = BaseModel::execute_curl_call($data);
 
         if (!$response) {
-            throw new Exception('LLM API request failed');
+            throw new Exception('LLM API request failed - no response received');
+        }
+
+        // If response is a string, try to decode it as JSON
+        if (is_string($response)) {
+            $decoded = json_decode($response, true);
+            if ($decoded !== null) {
+                $response = $decoded;
+            } else {
+                // Raw string response - might be an error message
+                error_log('LLM API returned raw string: ' . substr($response, 0, 500));
+                throw new Exception('LLM API returned unexpected response: ' . substr($response, 0, 200));
+            }
         }
 
         return $response;

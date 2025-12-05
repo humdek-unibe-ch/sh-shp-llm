@@ -48,6 +48,8 @@ export interface UseChatStateReturn {
   clearError: () => void;
   /** Set error */
   setError: (error: string) => void;
+  /** Get the active model (conversation model or configured model) */
+  getActiveModel: () => string;
 }
 
 /**
@@ -77,31 +79,35 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       const convs = await conversationsApi.getAll();
       setConversations(convs);
       
-      // If no current conversation but conversations exist, select the first one
-      if (!currentConversationIdRef.current && convs.length > 0) {
-        const firstConv = convs[0];
-        setCurrentConversation(firstConv);
-        currentConversationIdRef.current = firstConv.id;
-        
-        // Load messages for the first conversation
-        await loadConversationMessagesInternal(firstConv.id);
-        
-        // Update URL
-        updateUrl(firstConv.id);
-      } else if (currentConversationIdRef.current) {
-        // Check if current conversation still exists
-        const exists = convs.some(c => c.id === currentConversationIdRef.current);
+      // If we have a current conversation ID (from URL or config), load it
+      if (currentConversationIdRef.current) {
+        const currentIdStr = String(currentConversationIdRef.current);
+        // Check if current conversation still exists (compare as strings)
+        const exists = convs.some(c => String(c.id) === currentIdStr);
         if (exists) {
-          const conv = convs.find(c => c.id === currentConversationIdRef.current)!;
+          const conv = convs.find(c => String(c.id) === currentIdStr)!;
           setCurrentConversation(conv);
+          // Load messages for the current conversation
+          await loadConversationMessagesInternal(String(conv.id));
         } else if (convs.length > 0) {
           // Current conversation was deleted, select first
           const firstConv = convs[0];
           setCurrentConversation(firstConv);
-          currentConversationIdRef.current = firstConv.id;
-          await loadConversationMessagesInternal(firstConv.id);
-          updateUrl(firstConv.id);
+          currentConversationIdRef.current = String(firstConv.id);
+          await loadConversationMessagesInternal(String(firstConv.id));
+          updateUrl(String(firstConv.id));
         }
+      } else if (convs.length > 0) {
+        // No current conversation set, select the first one
+        const firstConv = convs[0];
+        setCurrentConversation(firstConv);
+        currentConversationIdRef.current = String(firstConv.id);
+        
+        // Load messages for the first conversation
+        await loadConversationMessagesInternal(String(firstConv.id));
+        
+        // Update URL
+        updateUrl(String(firstConv.id));
       }
     } catch (err) {
       console.error('Failed to load conversations:', err);
@@ -151,16 +157,29 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       
       const conversationId = await conversationsApi.create(finalTitle, config.configuredModel);
       
-      // Reload conversations and select the new one
-      await loadConversations();
+      // Convert to string for consistent comparison
+      const conversationIdStr = String(conversationId);
       
-      // Update current conversation ref
-      currentConversationIdRef.current = conversationId;
+      // Update current conversation ref FIRST
+      currentConversationIdRef.current = conversationIdStr;
       
       // Update URL
-      updateUrl(conversationId);
+      updateUrl(conversationIdStr);
       
-      return conversationId;
+      // Reload conversations to get the new one
+      const convs = await conversationsApi.getAll();
+      setConversations(convs);
+      
+      // Find and select the new conversation (compare as strings for consistency)
+      const newConv = convs.find(c => String(c.id) === conversationIdStr);
+      if (newConv) {
+        setCurrentConversation(newConv);
+        setMessages([]); // New conversation has no messages
+      } else {
+        console.warn('New conversation not found in list after creation:', conversationIdStr);
+      }
+      
+      return conversationIdStr;
     } catch (err) {
       console.error('Failed to create conversation:', err);
       setError(handleApiError(err));
@@ -168,7 +187,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [config.configuredModel, loadConversations]);
+  }, [config.configuredModel]);
   
   /**
    * Delete a conversation
@@ -202,22 +221,36 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
    * Select a conversation
    */
   const selectConversation = useCallback((conversation: Conversation) => {
+    // Convert to string for consistent comparison
+    const conversationIdStr = String(conversation.id);
+    
     setCurrentConversation(conversation);
-    currentConversationIdRef.current = conversation.id;
+    currentConversationIdRef.current = conversationIdStr;
     
     // Update UI state
     setMessages([]);
     
     // Update URL
-    updateUrl(conversation.id);
+    updateUrl(conversationIdStr);
     
     // Highlight in conversations list
     // (This is done via React state, no jQuery needed)
     
     // Load messages
-    loadConversationMessages(conversation.id);
+    loadConversationMessages(conversationIdStr);
   }, [loadConversationMessages]);
   
+  /**
+   * Get the active model for API calls
+   * Uses conversation model if exists, otherwise configured model
+   */
+  const getActiveModel = useCallback((): string => {
+    if (currentConversation?.model) {
+      return currentConversation.model;
+    }
+    return config.configuredModel;
+  }, [currentConversation?.model, config.configuredModel]);
+
   /**
    * Send a message (non-streaming mode)
    */
@@ -228,10 +261,16 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     try {
       setError(null);
       
+      // Use the active model (conversation model or configured model)
+      const activeModel = getActiveModel();
+      
+      // Get the current conversation ID
+      const conversationId = currentConversationIdRef.current;
+      
       const response = await messagesApi.send(
         message,
-        currentConversationIdRef.current,
-        config.configuredModel,
+        conversationId,
+        activeModel,
         files
       );
       
@@ -240,11 +279,14 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
         return null;
       }
       
-      // Update conversation ID if new
+      // Update conversation ID if new or changed
       if (response.conversation_id) {
-        if (!currentConversationIdRef.current || response.is_new_conversation) {
-          currentConversationIdRef.current = response.conversation_id;
-          updateUrl(response.conversation_id);
+        const responseIdStr = String(response.conversation_id);
+        const isNewConversation = !conversationId || response.is_new_conversation;
+        
+        if (isNewConversation) {
+          currentConversationIdRef.current = responseIdStr;
+          updateUrl(responseIdStr);
         }
         
         // Add assistant message to UI
@@ -258,12 +300,20 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
           setMessages(prev => [...prev, assistantMessage]);
         }
         
-        // Reload conversations if it was a new conversation
-        if (response.is_new_conversation && config.enableConversationsList) {
-          loadConversations();
+        // Reload conversations list if it was a new conversation
+        if (isNewConversation && config.enableConversationsList) {
+          // Reload conversations to get the updated list
+          const convs = await conversationsApi.getAll();
+          setConversations(convs);
+          
+          // Update current conversation if needed (compare as strings)
+          const newConv = convs.find(c => String(c.id) === responseIdStr);
+          if (newConv) {
+            setCurrentConversation(newConv);
+          }
         }
         
-        return response.conversation_id;
+        return responseIdStr;
       }
       
       return null;
@@ -272,7 +322,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       setError(handleApiError(err));
       return null;
     }
-  }, [config.configuredModel, config.enableConversationsList, loadConversations]);
+  }, [config.enableConversationsList, getActiveModel]);
   
   /**
    * Add user message to UI immediately
@@ -330,7 +380,8 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     addUserMessage,
     clearCurrentConversation,
     clearError,
-    setError
+    setError,
+    getActiveModel
   };
 }
 

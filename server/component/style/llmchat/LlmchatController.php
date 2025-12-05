@@ -156,6 +156,13 @@ class LlmchatController extends BaseController
 
         $full_response = '';
         $tokens_used = 0;
+        $chunk_count = 0;
+        $streaming_message_id = null;
+        $last_save_length = 0;
+        
+        // Constants for partial saves
+        $save_interval = 10; // Save every 10 chunks
+        $min_chars_before_save = 50; // Minimum chars before first save
 
         try {
             // Start streaming with callback
@@ -164,21 +171,31 @@ class LlmchatController extends BaseController
                 $model,
                 $temperature,
                 $max_tokens,
-                function($chunk) use (&$full_response, &$tokens_used, $conversation_id, $conversation) {
+                function($chunk) use (&$full_response, &$tokens_used, &$chunk_count, &$streaming_message_id, &$last_save_length, $conversation_id, $conversation, $save_interval, $min_chars_before_save) {
                     if ($chunk === '[DONE]') {
-                        // Streaming completed
+                        // Streaming completed - finalize the message
                         $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
 
-                        // Save the complete assistant message
                         try {
-                            $this->llm_service->addMessage(
-                                $conversation_id,
-                                'assistant',
-                                $full_response,
-                                null,
-                                $conversation['model'],
-                                $tokens_used
-                            );
+                            if ($streaming_message_id) {
+                                // Update existing streaming message to mark as complete
+                                $this->llm_service->updateStreamingMessage(
+                                    $streaming_message_id,
+                                    $full_response,
+                                    $tokens_used,
+                                    false // is_streaming = false (complete)
+                                );
+                            } else {
+                                // Create new complete message (fallback if no partial saves occurred)
+                                $this->llm_service->addMessage(
+                                    $conversation_id,
+                                    'assistant',
+                                    $full_response,
+                                    null,
+                                    $conversation['model'],
+                                    $tokens_used
+                                );
+                            }
                         } catch (Exception $e) {
                             $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message']);
                         }
@@ -195,13 +212,68 @@ class LlmchatController extends BaseController
 
                     // Accumulate the response
                     $full_response .= $chunk;
+                    $chunk_count++;
 
                     // Send chunk to client
                     $this->sendSSE(['type' => 'chunk', 'content' => $chunk]);
+
+                    // Periodic partial save to prevent data loss
+                    $should_save = ($chunk_count % $save_interval === 0) 
+                                   && (strlen($full_response) >= $min_chars_before_save)
+                                   && (strlen($full_response) > $last_save_length + 20);
+                    
+                    if ($should_save) {
+                        try {
+                            if ($streaming_message_id) {
+                                $this->llm_service->updateStreamingMessage(
+                                    $streaming_message_id,
+                                    $full_response,
+                                    null,
+                                    true
+                                );
+                            } else {
+                                $streaming_message_id = $this->llm_service->addStreamingMessage(
+                                    $conversation_id,
+                                    $full_response,
+                                    $conversation['model']
+                                );
+                            }
+                            $last_save_length = strlen($full_response);
+                        } catch (Exception $e) {
+                            // Log but don't interrupt streaming
+                            error_log('Partial save failed: ' . $e->getMessage());
+                        }
+                    }
                 }
             );
         } catch (Exception $e) {
             error_log('Streaming failed: ' . $e->getMessage());
+            
+            // Try to save partial response on error
+            if (!empty($full_response)) {
+                try {
+                    if ($streaming_message_id) {
+                        $this->llm_service->updateStreamingMessage(
+                            $streaming_message_id,
+                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
+                            $tokens_used,
+                            false
+                        );
+                    } else {
+                        $this->llm_service->addMessage(
+                            $conversation_id,
+                            'assistant',
+                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
+                            null,
+                            $conversation['model'],
+                            $tokens_used
+                        );
+                    }
+                } catch (Exception $saveError) {
+                    error_log('Failed to save partial response: ' . $saveError->getMessage());
+                }
+            }
+            
             $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
         }
 
@@ -349,11 +421,10 @@ class LlmchatController extends BaseController
             $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
             $api_messages = $this->api_formatter_service->convertToApiFormat($messages);
 
-            // Call LLM API - check if streaming is requested (via GET param or config)
-            $streaming_requested = isset($_GET['streaming']) && $_GET['streaming'] === '1';
+            // Call LLM API - check if streaming is enabled in the style configuration (DB field)
             $streaming_enabled = $this->model->isStreamingEnabled();
 
-            if ($streaming_requested || $streaming_enabled) {
+            if ($streaming_enabled) {
                 // Start streaming response
                 $this->streaming_service->startStreamingResponse($conversation_id, $api_messages, $model, $is_new_conversation);
                 // This should exit, so no more code should run
@@ -362,6 +433,26 @@ class LlmchatController extends BaseController
                 // Get complete response
                 $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
 
+                // Check for API error responses first
+                if (is_array($response) && isset($response['error'])) {
+                    // Extract error message from various possible structures
+                    $error_message = 'LLM API error';
+                    if (is_array($response['error'])) {
+                        if (isset($response['error']['message'])) {
+                            $error_message = $response['error']['message'];
+                        } elseif (isset($response['error']['type'])) {
+                            $error_message = 'LLM API error: ' . $response['error']['type'];
+                        }
+                    } elseif (is_string($response['error'])) {
+                        $error_message = $response['error'];
+                    }
+                    
+                    // Log the full error for debugging
+                    error_log('LLM API error response: ' . json_encode($response));
+                    throw new Exception($error_message);
+                }
+
+                // Check for valid success response
                 if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
                     $assistant_message = $response['choices'][0]['message']['content'];
                     $tokens_used = $response['usage']['total_tokens'] ?? null;
@@ -376,7 +467,22 @@ class LlmchatController extends BaseController
                         'is_new_conversation' => $is_new_conversation
                     ]);
                 } else {
-                    throw new Exception('Invalid response from LLM API');
+                    // Log the unexpected response for debugging
+                    error_log('Unexpected LLM API response format: ' . json_encode($response));
+                    
+                    // Try to extract any message from the response
+                    $error_detail = '';
+                    if (is_array($response)) {
+                        if (isset($response['message'])) {
+                            $error_detail = ': ' . $response['message'];
+                        } elseif (isset($response['detail'])) {
+                            $error_detail = ': ' . (is_string($response['detail']) ? $response['detail'] : json_encode($response['detail']));
+                        }
+                    } elseif (is_string($response)) {
+                        $error_detail = ': ' . substr($response, 0, 200); // Limit length
+                    }
+                    
+                    throw new Exception('Invalid response from LLM API' . $error_detail);
                 }
             }
 

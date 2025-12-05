@@ -2,21 +2,19 @@
  * Conversation Sidebar Component
  * ==============================
  * 
- * Displays the list of conversations with:
+ * Modern sidebar displaying conversation list with:
  * - New conversation button
- * - Conversation cards with title, date, and delete button
+ * - Conversation items with title, date, and delete button
  * - Active conversation highlighting
  * - Empty state message
  * - Loading state
- * 
- * Matches the vanilla JS implementation styling.
  * 
  * @module components/ConversationSidebar
  */
 
 import React, { useState, useCallback } from 'react';
 import type { Conversation, LlmChatConfig } from '../types';
-import { formatDate, escapeHtml } from '../utils/formatters';
+import { formatDate } from '../utils/formatters';
 
 /**
  * Props for ConversationSidebar component
@@ -39,9 +37,9 @@ interface ConversationSidebarProps {
 }
 
 /**
- * Props for conversation card
+ * Props for conversation item
  */
-interface ConversationCardProps {
+interface ConversationItemProps {
   /** Conversation data */
   conversation: Conversation;
   /** Whether this is the active conversation */
@@ -55,17 +53,15 @@ interface ConversationCardProps {
 }
 
 /**
- * Individual conversation card component
+ * Individual conversation item component
  */
-const ConversationCard: React.FC<ConversationCardProps> = ({
+const ConversationItem: React.FC<ConversationItemProps> = ({
   conversation,
   isActive,
   onSelect,
   onDelete,
   config
 }) => {
-  const [isHovered, setIsHovered] = useState(false);
-  
   /**
    * Handle delete click
    */
@@ -74,20 +70,16 @@ const ConversationCard: React.FC<ConversationCardProps> = ({
     
     // Use native confirm or the CMS confirmation if available
     if (typeof (window as any).$.confirm === 'function') {
-      // Use jQuery-confirm if available (SelfHelp CMS)
       (window as any).$.confirm({
         title: config.deleteConfirmationTitle,
         content: config.deleteConfirmationMessage,
         type: 'red',
         buttons: {
-          confirm: () => {
-            onDelete();
-          },
+          confirm: () => onDelete(),
           cancel: () => {}
         }
       });
     } else {
-      // Fallback to native confirm
       if (window.confirm(config.deleteConfirmationMessage)) {
         onDelete();
       }
@@ -96,41 +88,25 @@ const ConversationCard: React.FC<ConversationCardProps> = ({
   
   return (
     <div
-      className={`card mb-2 position-relative ${isActive ? 'border-primary bg-light' : ''}`}
-      data-conversation-id={conversation.id}
-      style={{ cursor: 'pointer' }}
+      className={`conversation-item ${isActive ? 'active' : ''}`}
       onClick={onSelect}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="card-body py-2 px-3">
-        <div className="font-weight-bold mb-1">
-          {conversation.title}
-        </div>
-        <div className="small text-muted">
-          {formatDate(conversation.updated_at)}
-        </div>
-        
-        {/* Delete button - visible on hover */}
-        <div
-          className="position-absolute"
-          style={{
-            top: 8,
-            right: 8,
-            opacity: isHovered ? 1 : 0,
-            transition: 'opacity 0.2s'
-          }}
-        >
-          <button
-            className="btn btn-sm btn-outline-danger"
-            data-conversation-id={conversation.id}
-            title="Delete conversation"
-            onClick={handleDeleteClick}
-          >
-            <i className="fas fa-trash"></i>
-          </button>
-        </div>
+      <div className="conversation-icon">
+        <i className="fas fa-comment-dots"></i>
       </div>
+      
+      <div className="conversation-content">
+        <div className="conversation-title">{conversation.title}</div>
+        <div className="conversation-meta">{formatDate(conversation.updated_at)}</div>
+      </div>
+      
+      <button
+        className="delete-btn"
+        title="Delete conversation"
+        onClick={handleDeleteClick}
+      >
+        <i className="fas fa-trash-alt"></i>
+      </button>
     </div>
   );
 };
@@ -153,9 +129,6 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   
-  /**
-   * Handle form submission
-   */
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     onCreate(title.trim());
@@ -163,9 +136,6 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
     onClose();
   }, [title, onCreate, onClose]);
   
-  /**
-   * Handle close
-   */
   const handleClose = useCallback(() => {
     setTitle('');
     onClose();
@@ -175,13 +145,13 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
   
   return (
     <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-      <div className="modal-dialog">
+      <div className="modal-dialog modal-dialog-centered">
         <div className="modal-content">
           <div className="modal-header">
             <h5 className="modal-title">{config.newConversationTitleLabel}</h5>
             <button
               type="button"
-              className="btn-close"
+              className="close"
               aria-label="Close"
               onClick={handleClose}
             >
@@ -190,8 +160,8 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
           </div>
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
-              <div className="mb-3">
-                <label htmlFor="conversation-title" className="form-label">
+              <div className="form-group">
+                <label htmlFor="conversation-title">
                   {config.conversationTitleLabel}
                 </label>
                 <input
@@ -217,6 +187,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
                 type="submit"
                 className="btn btn-primary"
               >
+                <i className="fas fa-plus mr-1"></i>
                 {config.createButtonLabel}
               </button>
             </div>
@@ -243,16 +214,10 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 }) => {
   const [showModal, setShowModal] = useState(false);
   
-  /**
-   * Handle new conversation button click
-   */
   const handleNewConversationClick = useCallback(() => {
     setShowModal(true);
   }, []);
   
-  /**
-   * Handle conversation creation from modal
-   */
   const handleCreate = useCallback((title: string) => {
     onCreate(title);
     setShowModal(false);
@@ -260,49 +225,42 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   
   return (
     <>
-      <div className="card h-100">
+      <div className="conversation-sidebar">
         {/* Sidebar Header */}
-        <div className="card-header bg-secondary text-white">
+        <div className="sidebar-header">
           <div className="d-flex justify-content-between align-items-center">
-            <h6 className="mb-0">Conversations</h6>
+            <h6>Conversations</h6>
             <button
-              className="btn btn-sm btn-light"
-              id="new-conversation-btn"
+              className="btn btn-primary btn-sm"
               onClick={handleNewConversationClick}
             >
-              <i className="fas fa-plus"></i> New
+              <i className="fas fa-plus mr-1"></i> New
             </button>
           </div>
         </div>
         
         {/* Conversations List */}
-        <div
-          className="card-body overflow-auto"
-          id="conversations-list"
-          style={{ maxHeight: 'calc(100vh - 200px)' }}
-        >
+        <div className="conversations-list">
           {isLoading ? (
-            // Loading state
-            <div className="text-center py-3">
+            <div className="sidebar-empty">
               <div className="spinner-border spinner-border-sm text-primary" role="status">
                 <span className="sr-only">Loading...</span>
               </div>
-              <div className="mt-2 text-muted small">Loading conversations...</div>
+              <p className="mt-2">Loading...</p>
             </div>
           ) : conversations.length === 0 ? (
-            // Empty state
-            <div className="text-center text-muted py-3">
-              <small>{config.noConversationsMessage}</small>
+            <div className="sidebar-empty">
+              <i className="fas fa-inbox"></i>
+              <p>{config.noConversationsMessage}</p>
             </div>
           ) : (
-            // Conversation cards
             conversations.map((conversation) => (
-              <ConversationCard
+              <ConversationItem
                 key={conversation.id}
                 conversation={conversation}
-                isActive={currentConversation?.id === conversation.id}
+                isActive={currentConversation ? String(currentConversation.id) === String(conversation.id) : false}
                 onSelect={() => onSelect(conversation)}
-                onDelete={() => onDelete(conversation.id)}
+                onDelete={() => onDelete(String(conversation.id))}
                 config={config}
               />
             ))

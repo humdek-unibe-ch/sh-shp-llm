@@ -26,6 +26,7 @@ class LlmchatModel extends StyleModel
     private $llm_streaming_enabled;
     private $enable_conversations_list;
     private $enable_file_uploads;
+    private $enable_full_page_reload;
     private $submit_button_label;
     private $new_chat_button_label;
     private $chat_description;
@@ -90,6 +91,7 @@ class LlmchatModel extends StyleModel
         $this->llm_streaming_enabled = $this->get_db_field('llm_streaming_enabled', '1');
         $this->enable_conversations_list = $this->get_db_field('enable_conversations_list', '0');
         $this->enable_file_uploads = $this->get_db_field('enable_file_uploads', '0');
+        $this->enable_full_page_reload = $this->get_db_field('enable_full_page_reload', '0');
         $this->submit_button_label = $this->get_db_field('submit_button_label', LLM_DEFAULT_SUBMIT_LABEL);
         $this->new_chat_button_label = $this->get_db_field('new_chat_button_label', LLM_DEFAULT_NEW_CHAT_LABEL);
         $this->chat_description = $this->get_db_field('chat_description', 'Chat with AI assistant');
@@ -248,6 +250,11 @@ class LlmchatModel extends StyleModel
     public function isFileUploadsEnabled()
     {
         return $this->enable_file_uploads == '1';
+    }
+
+    public function isFullPageReloadEnabled()
+    {
+        return $this->enable_full_page_reload == '1';
     }
 
     /**

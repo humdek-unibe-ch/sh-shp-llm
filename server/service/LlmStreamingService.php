@@ -2,11 +2,22 @@
 /**
  * LLM Streaming Service
  * Handles Server-Sent Events streaming for real-time LLM responses
+ * 
+ * Features:
+ * - Periodic partial saves to prevent data loss on interruption
+ * - Smooth SSE delivery with optimized buffering
+ * - Recovery support for interrupted streams
  */
 
 class LlmStreamingService
 {
     private $llm_service;
+    
+    /** @var int Number of chunks between partial saves */
+    const SAVE_INTERVAL_CHUNKS = 10;
+    
+    /** @var int Minimum characters before first save */
+    const MIN_CHARS_BEFORE_SAVE = 50;
 
     public function __construct($llm_service)
     {
@@ -15,7 +26,7 @@ class LlmStreamingService
 
     /**
      * Start streaming response using Server-Sent Events
-     * Optimized for smooth, fluid streaming delivery
+     * Optimized for smooth, fluid streaming delivery with periodic saves
      */
     public function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation)
     {
@@ -49,6 +60,9 @@ class LlmStreamingService
 
         $full_response = '';
         $tokens_used = 0;
+        $chunk_count = 0;
+        $streaming_message_id = null;
+        $last_save_length = 0;
 
         // Ensure parameters are available for streaming
         $streaming_model = $model;
@@ -63,22 +77,33 @@ class LlmStreamingService
                 $streaming_model,
                 $streaming_temperature,
                 $streaming_max_tokens,
-                function($chunk) use (&$full_response, &$tokens_used, $conversation_id, $streaming_model) {
+                function($chunk) use (&$full_response, &$tokens_used, &$chunk_count, &$streaming_message_id, &$last_save_length, $conversation_id, $streaming_model) {
                     if ($chunk === '[DONE]') {
-                        // Streaming completed
+                        // Streaming completed - finalize the message
                         $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
 
-                        // Save the complete assistant message
                         try {
-                            $message_id = $this->llm_service->addMessage(
-                                $conversation_id,
-                                'assistant',
-                                $full_response,
-                                null,
-                                $streaming_model,
-                                $tokens_used
-                            );
-                            error_log("Streaming completed. Saved message ID: $message_id for conversation: $conversation_id");
+                            if ($streaming_message_id) {
+                                // Update existing streaming message to mark as complete
+                                $this->llm_service->updateStreamingMessage(
+                                    $streaming_message_id,
+                                    $full_response,
+                                    $tokens_used,
+                                    false // is_streaming = false (complete)
+                                );
+                                error_log("Streaming completed. Finalized message ID: $streaming_message_id for conversation: $conversation_id");
+                            } else {
+                                // Create new complete message (fallback if no partial saves occurred)
+                                $message_id = $this->llm_service->addMessage(
+                                    $conversation_id,
+                                    'assistant',
+                                    $full_response,
+                                    null,
+                                    $streaming_model,
+                                    $tokens_used
+                                );
+                                error_log("Streaming completed (no partial saves). Saved message ID: $message_id for conversation: $conversation_id");
+                            }
                         } catch (Exception $e) {
                             error_log('Failed to save streamed message: ' . $e->getMessage());
                             $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);
@@ -98,16 +123,76 @@ class LlmStreamingService
 
                     // Accumulate the response
                     $full_response .= $chunk;
+                    $chunk_count++;
 
-                    // Send chunk to client
+                    // Send chunk to client immediately
                     $this->sendSSE([
                         'type' => 'chunk',
                         'content' => $chunk
                     ]);
+
+                    // Periodic partial save to prevent data loss
+                    // Save every SAVE_INTERVAL_CHUNKS chunks if we have enough content
+                    $should_save = ($chunk_count % self::SAVE_INTERVAL_CHUNKS === 0) 
+                                   && (strlen($full_response) >= self::MIN_CHARS_BEFORE_SAVE)
+                                   && (strlen($full_response) > $last_save_length + 20); // Only save if meaningful content added
+                    
+                    if ($should_save) {
+                        try {
+                            if ($streaming_message_id) {
+                                // Update existing streaming message
+                                $this->llm_service->updateStreamingMessage(
+                                    $streaming_message_id,
+                                    $full_response,
+                                    null, // tokens not known yet
+                                    true  // is_streaming = true
+                                );
+                            } else {
+                                // Create new streaming message (first partial save)
+                                $streaming_message_id = $this->llm_service->addStreamingMessage(
+                                    $conversation_id,
+                                    $full_response,
+                                    $streaming_model
+                                );
+                            }
+                            $last_save_length = strlen($full_response);
+                            error_log("Partial save at chunk $chunk_count, " . strlen($full_response) . " chars for conversation: $conversation_id");
+                        } catch (Exception $e) {
+                            // Log but don't interrupt streaming
+                            error_log('Partial save failed (non-critical): ' . $e->getMessage());
+                        }
+                    }
                 }
             );
         } catch (Exception $e) {
             error_log('Streaming failed: ' . $e->getMessage());
+            
+            // Try to save whatever we have so far
+            if (!empty($full_response)) {
+                try {
+                    if ($streaming_message_id) {
+                        $this->llm_service->updateStreamingMessage(
+                            $streaming_message_id,
+                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
+                            $tokens_used,
+                            false // Mark as complete
+                        );
+                    } else {
+                        $this->llm_service->addMessage(
+                            $conversation_id,
+                            'assistant',
+                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
+                            null,
+                            $streaming_model,
+                            $tokens_used
+                        );
+                    }
+                    error_log("Saved partial response on error for conversation: $conversation_id");
+                } catch (Exception $saveError) {
+                    error_log('Failed to save partial response on error: ' . $saveError->getMessage());
+                }
+            }
+            
             $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
         }
 

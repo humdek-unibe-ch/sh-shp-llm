@@ -27,18 +27,13 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   text = 'AI is thinking...'
 }) => {
   return (
-    <div
-      id="streaming-indicator"
-      className="streaming-indicator px-3 py-2 border-top bg-light"
-    >
-      <div className="d-flex align-items-center">
-        <div className="streaming-dots mr-2">
-          <span className="dot"></span>
-          <span className="dot"></span>
-          <span className="dot"></span>
-        </div>
-        <small className="text-muted">{text}</small>
+    <div className="streaming-indicator-bar">
+      <div className="streaming-dots">
+        <span className="dot"></span>
+        <span className="dot"></span>
+        <span className="dot"></span>
       </div>
+      <span>{text}</span>
     </div>
   );
 };
