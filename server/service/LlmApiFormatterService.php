@@ -41,12 +41,8 @@ class LlmApiFormatterService
         $api_messages = [];
         $configuredModel = $model ?? $this->model ?? $this->getConfiguredModel();
         $isVisionModel = llm_is_vision_model($configuredModel);
-        
-        error_log("LlmApiFormatterService::convertToApiFormat - Using model: {$configuredModel}, isVisionModel: " . ($isVisionModel ? 'true' : 'false'));
-        error_log("LlmApiFormatterService::convertToApiFormat - Processing " . count($messages) . " messages");
 
         foreach ($messages as $index => $message) {
-            error_log("Processing message {$index}: role={$message['role']}, has_attachments=" . (!empty($message['attachments']) ? 'yes' : 'no'));
             // Skip empty assistant messages (failed previous attempts)
             if ($message['role'] === 'assistant' && empty(trim($message['content'] ?? ''))) {
                 continue;
@@ -65,14 +61,10 @@ class LlmApiFormatterService
             // Handle attachments for multimodal content
             $attachments = null;
             if (!empty($message['attachments'])) {
-                error_log("Message {$index} raw attachments: " . substr($message['attachments'], 0, 500));
                 // Attachments stored as JSON
                 $decoded = json_decode($message['attachments'], true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                     $attachments = $decoded;
-                    error_log("Message {$index} decoded " . count($attachments) . " attachments");
-                } else {
-                    error_log("Message {$index} JSON decode error: " . json_last_error_msg());
                 }
             }
 
@@ -117,14 +109,11 @@ class LlmApiFormatterService
     private function formatAttachmentForApi($attachment, $isVisionModel)
     {
         $path = $attachment['path'] ?? '';
-        // Go up 5 levels from server/plugins/sh-shp-llm/server/service/ to reach project root
-        $fullPath = __DIR__ . "/../../../../../{$path}";
+        // Go up 3 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
+        $fullPath = __DIR__ . "/../../../{$path}";
         $originalName = $attachment['original_name'] ?? basename($path);
 
-        error_log("formatAttachmentForApi: path={$path}, fullPath={$fullPath}, exists=" . (file_exists($fullPath) ? 'yes' : 'no') . ", isVisionModel=" . ($isVisionModel ? 'yes' : 'no'));
-
         if (!file_exists($fullPath)) {
-            error_log("Attachment file not found: {$fullPath}");
             // Return a note about the missing attachment instead of null
             return [
                 'type' => 'text',
@@ -133,18 +122,15 @@ class LlmApiFormatterService
         }
 
         $isImage = $attachment['is_image'] ?? $this->isImagePath($path);
-        error_log("formatAttachmentForApi: isImage=" . ($isImage ? 'yes' : 'no'));
 
         if ($isImage) {
             if ($isVisionModel) {
                 // Encode image as base64 data URL for vision models
-                error_log("Encoding image for vision model: {$originalName}");
                 return $this->encodeImageForApi($fullPath, $attachment);
             } else {
                 // For non-vision models, still try to send the image as base64
                 // Many modern APIs can handle images even without explicit vision support
                 // If the API can't handle it, it will simply ignore the image
-                error_log("Encoding image for non-vision model (attempting anyway): {$originalName}");
                 $encoded = $this->encodeImageForApi($fullPath, $attachment);
                 if ($encoded) {
                     return $encoded;
@@ -172,7 +158,6 @@ class LlmApiFormatterService
     {
         $imageData = file_get_contents($fullPath);
         if ($imageData === false) {
-            error_log("Failed to read image file: {$fullPath}");
             return null;
         }
 

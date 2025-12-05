@@ -32,7 +32,6 @@ class LlmStreamingService
     {
         // Check if any content has already been sent
         if (headers_sent()) {
-            error_log('Headers already sent, cannot start streaming');
             return;
         }
 
@@ -91,7 +90,6 @@ class LlmStreamingService
                                     $tokens_used,
                                     false // is_streaming = false (complete)
                                 );
-                                error_log("Streaming completed. Finalized message ID: $streaming_message_id for conversation: $conversation_id");
                             } else {
                                 // Create new complete message (fallback if no partial saves occurred)
                                 $message_id = $this->llm_service->addMessage(
@@ -102,10 +100,8 @@ class LlmStreamingService
                                     $streaming_model,
                                     $tokens_used
                                 );
-                                error_log("Streaming completed (no partial saves). Saved message ID: $message_id for conversation: $conversation_id");
                             }
                         } catch (Exception $e) {
-                            error_log('Failed to save streamed message: ' . $e->getMessage());
                             $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);
                         }
 
@@ -156,17 +152,14 @@ class LlmStreamingService
                                 );
                             }
                             $last_save_length = strlen($full_response);
-                            error_log("Partial save at chunk $chunk_count, " . strlen($full_response) . " chars for conversation: $conversation_id");
                         } catch (Exception $e) {
                             // Log but don't interrupt streaming
-                            error_log('Partial save failed (non-critical): ' . $e->getMessage());
                         }
                     }
                 }
             );
         } catch (Exception $e) {
-            error_log('Streaming failed: ' . $e->getMessage());
-            
+
             // Try to save whatever we have so far
             if (!empty($full_response)) {
                 try {
@@ -187,9 +180,8 @@ class LlmStreamingService
                             $tokens_used
                         );
                     }
-                    error_log("Saved partial response on error for conversation: $conversation_id");
                 } catch (Exception $saveError) {
-                    error_log('Failed to save partial response on error: ' . $saveError->getMessage());
+                    // Failed to save partial response on error
                 }
             }
             

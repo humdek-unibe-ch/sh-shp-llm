@@ -156,14 +156,7 @@ class LlmchatController extends BaseController
 
         // Get conversation messages for LLM
         $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
-        
-        error_log("Streaming: Retrieved " . count($messages) . " messages for conversation {$conversation_id}");
-        foreach ($messages as $idx => $msg) {
-            $hasAttach = !empty($msg['attachments']) ? 'yes' : 'no';
-            $attachPreview = !empty($msg['attachments']) ? substr($msg['attachments'], 0, 200) : 'none';
-            error_log("Streaming: Message {$idx} - role={$msg['role']}, has_attachments={$hasAttach}, attachments_preview={$attachPreview}");
-        }
-        
+
         if (empty($messages)) {
             $this->sendSSE(['type' => 'error', 'message' => 'No messages found in conversation']);
             exit;
@@ -267,7 +260,6 @@ class LlmchatController extends BaseController
                             $last_save_length = strlen($full_response);
                         } catch (Exception $e) {
                             // Log but don't interrupt streaming
-                            error_log('Partial save failed: ' . $e->getMessage());
                         }
                     }
                 }
@@ -382,9 +374,7 @@ class LlmchatController extends BaseController
                 }
 
                 // Handle file uploads if any
-                error_log('About to handle file uploads for streaming conversation: ' . $conversation_id);
                 $uploadedFiles = $this->file_upload_service->handleFileUploads($conversation_id);
-                error_log('Streaming file upload result: ' . json_encode($uploadedFiles));
 
                 // Save user message - THIS IS THE CRITICAL PART THAT WAS MISSING
                 $messageId = $this->llm_service->addMessage($conversation_id, 'user', $message, $uploadedFiles, $model);
@@ -455,9 +445,7 @@ class LlmchatController extends BaseController
             }
 
             // Handle file uploads if any
-            error_log('About to handle file uploads for conversation: ' . $conversation_id);
             $uploadedFiles = $this->file_upload_service->handleFileUploads($conversation_id);
-            error_log('File upload result: ' . json_encode($uploadedFiles));
 
             // Save user message with file attachments
             $messageId = $this->llm_service->addMessage($conversation_id, 'user', $message, $uploadedFiles, $model);
@@ -500,8 +488,6 @@ class LlmchatController extends BaseController
                         $error_message = $response['error'];
                     }
                     
-                    // Log the full error for debugging
-                    error_log('LLM API error response: ' . json_encode($response));
                     throw new Exception($error_message);
                 }
 
@@ -520,9 +506,6 @@ class LlmchatController extends BaseController
                         'is_new_conversation' => $is_new_conversation
                     ]);
                 } else {
-                    // Log the unexpected response for debugging
-                    error_log('Unexpected LLM API response format: ' . json_encode($response));
-                    
                     // Try to extract any message from the response
                     $error_detail = '';
                     if (is_array($response)) {
