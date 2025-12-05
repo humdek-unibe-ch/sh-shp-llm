@@ -24,26 +24,13 @@ class LlmFileUploadService
      */
     public function handleFileUploads($conversationId)
     {
-        // Debug logging
-        error_log('LlmFileUploadService::handleFileUploads called with conversationId: ' . $conversationId);
-        error_log('$_FILES contents: ' . json_encode($_FILES));
-        error_log('$_POST contents: ' . json_encode(array_keys($_POST)));
-        error_log('Content-Type header: ' . ($_SERVER['CONTENT_TYPE'] ?? 'not set'));
-        error_log('Request method: ' . $_SERVER['REQUEST_METHOD']);
-        error_log('PHP upload_max_filesize: ' . ini_get('upload_max_filesize'));
-        error_log('PHP post_max_size: ' . ini_get('post_max_size'));
-        error_log('LLM_MAX_FILE_SIZE constant: ' . (LLM_MAX_FILE_SIZE / 1024 / 1024) . 'MB');
-
         // Check for files uploaded via FormData (uploaded_files[])
         if (!empty($_FILES['uploaded_files'])) {
             $files = $_FILES['uploaded_files'];
-            error_log('Using $_FILES[\'uploaded_files\']: ' . json_encode($files));
         } elseif (!empty($_FILES)) {
             // Fallback for direct file uploads
             $files = $_FILES;
-            error_log('Using fallback $_FILES: ' . json_encode($files));
         } else {
-            error_log('No files found in $_FILES');
             return null;
         }
 
@@ -80,8 +67,7 @@ class LlmFileUploadService
                     // Throw exception for critical upload errors so user sees the message
                     $errorMessage = $this->getUploadErrorMessage($files['error'][$i]);
                     $fileName = $files['name'][$i] ?? 'unknown';
-                    error_log('File upload error for ' . $fileName . ': ' . $errorMessage);
-                    
+
                     // For size-related errors, provide helpful message
                     if ($files['error'][$i] === UPLOAD_ERR_INI_SIZE || $files['error'][$i] === UPLOAD_ERR_FORM_SIZE) {
                         throw new Exception("File \"{$fileName}\" is too large. Please reduce the file size or contact administrator to increase upload limits.");
@@ -116,15 +102,11 @@ class LlmFileUploadService
      */
     private function processUploadedFile($file, $conversationId, $processedHashes = [])
     {
-        // Debug logging
-        error_log('Processing uploaded file: ' . json_encode($file));
-
         // Sanitize filename to prevent path traversal and invalid characters
         $originalName = $this->sanitizeFileName($file['name']);
 
         // Check for upload errors
         if ($file['error'] !== UPLOAD_ERR_OK) {
-            error_log('File upload error for "' . $originalName . '": ' . $this->getUploadErrorMessage($file['error']));
             throw new Exception('File upload error for "' . $originalName . '": ' . $this->getUploadErrorMessage($file['error']));
         }
 
@@ -177,27 +159,17 @@ class LlmFileUploadService
 
         // Create directory with proper permissions if it doesn't exist
         $directory = dirname($fullPath);
-        error_log('Upload directory: ' . $directory);
-        error_log('Full path: ' . $fullPath);
 
         if (!is_dir($directory)) {
-            error_log('Creating directory: ' . $directory);
             if (!mkdir($directory, 0755, true)) {
-                error_log('Failed to create upload directory: ' . $directory);
                 throw new Exception('Failed to create upload directory');
             }
-            error_log('Directory created successfully');
-        } else {
-            error_log('Directory already exists: ' . $directory);
         }
 
         // Move uploaded file securely
-        error_log('Moving file from ' . $file['tmp_name'] . ' to ' . $fullPath);
         if (!move_uploaded_file($file['tmp_name'], $fullPath)) {
-            error_log('Failed to move uploaded file. File exists at tmp: ' . file_exists($file['tmp_name']) . ', target dir writable: ' . is_writable($directory));
             throw new Exception('Failed to save file "' . $originalName . '"');
         }
-        error_log('File moved successfully');
 
         // Set proper file permissions
         chmod($fullPath, 0644);
