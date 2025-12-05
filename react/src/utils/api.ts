@@ -227,16 +227,28 @@ export const messagesApi = {
     formData.append('action', 'send_message');
     formData.append('message', message);
     formData.append('model', model);
-    
+
     if (conversationId) {
       formData.append('conversation_id', conversationId);
     }
-    
+
     // Add files to FormData
-    files.forEach((item) => {
+    console.log('API: Adding', files.length, 'files to FormData');
+    files.forEach((item, index) => {
+      console.log(`API: Adding file ${index + 1}:`, item.file.name, item.file.size, 'bytes');
       formData.append('uploaded_files[]', item.file, item.file.name);
     });
-    
+
+    // Log FormData contents for debugging
+    console.log('API: FormData contents:');
+    for (const [key, value] of formData.entries()) {
+      if (value instanceof File) {
+        console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+      } else {
+        console.log(`  ${key}: ${value}`);
+      }
+    }
+
     return apiPost<SendMessageResponse>(formData);
   },
   
@@ -262,15 +274,27 @@ export const messagesApi = {
     formData.append('message', message);
     formData.append('model', model);
     formData.append('prepare_streaming', '1');
-    
+
     if (conversationId) {
       formData.append('conversation_id', conversationId);
     }
-    
+
     // Add files to FormData
-    files.forEach((item) => {
+    console.log('API: prepareStreaming - Adding', files.length, 'files to FormData');
+    files.forEach((item, index) => {
+      console.log(`API: prepareStreaming - Adding file ${index + 1}:`, item.file.name, item.file.size, 'bytes');
       formData.append('uploaded_files[]', item.file, item.file.name);
     });
+
+    // Log FormData contents for debugging
+    console.log('API: prepareStreaming - FormData contents:');
+    for (const [key, value] of formData.entries()) {
+      if (value instanceof File) {
+        console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+      } else {
+        console.log(`  ${key}: ${value}`);
+      }
+    }
     
     // Check for test mode
     const isTestMode = window.location.search.includes('test=1');

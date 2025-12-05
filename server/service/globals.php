@@ -81,7 +81,16 @@ define('LLM_FILE_TYPE_DOCUMENT', 'document');
 define('LLM_FILE_TYPE_CODE', 'code');
 
 // Vision-capable models that can process images
-define('LLM_VISION_MODELS', ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct', 'deepseek-r1-0528-qwen3-8b']);
+// Add any model that supports image/vision inputs
+define('LLM_VISION_MODELS', [
+    'internvl3-8b-instruct', 
+    'qwen3-vl-8b-instruct', 
+    'deepseek-r1-0528-qwen3-8b',
+    'gpt-oss-120b',  // Add if this model supports vision
+    'gpt-4-vision-preview',
+    'gpt-4o',
+    'gpt-4o-mini'
+]);
 
 // Cache keys
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
