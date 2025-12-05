@@ -780,8 +780,8 @@
 }
 
 .message-input-container:focus-within {
-  border-color: var(--llm-primary);
-  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  border-color: var(--llm-border);
+  box-shadow: none;
 }
 
 .message-input-container.drag-over {
