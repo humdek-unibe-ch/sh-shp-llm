@@ -151,34 +151,28 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     try {
       setIsLoading(true);
       setError(null);
-      
+
       // Generate title if not provided
       const finalTitle = title?.trim() || generateDefaultTitle();
-      
+
       const conversationId = await conversationsApi.create(finalTitle, config.configuredModel);
-      
+
       // Convert to string for consistent comparison
       const conversationIdStr = String(conversationId);
-      
+
       // Update current conversation ref FIRST
       currentConversationIdRef.current = conversationIdStr;
-      
+
       // Update URL
       updateUrl(conversationIdStr);
-      
-      // Reload conversations to get the new one
-      const convs = await conversationsApi.getAll();
-      setConversations(convs);
-      
-      // Find and select the new conversation (compare as strings for consistency)
-      const newConv = convs.find(c => String(c.id) === conversationIdStr);
-      if (newConv) {
-        setCurrentConversation(newConv);
-        setMessages([]); // New conversation has no messages
-      } else {
-        console.warn('New conversation not found in list after creation:', conversationIdStr);
-      }
-      
+
+      // Use loadConversations to properly load and select the new conversation
+      // This ensures the conversation list is updated and the new conversation is selected
+      await loadConversations();
+
+      // Clear messages for the new conversation
+      setMessages([]);
+
       return conversationIdStr;
     } catch (err) {
       console.error('Failed to create conversation:', err);
@@ -187,7 +181,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [config.configuredModel]);
+  }, [config.configuredModel, loadConversations]);
   
   /**
    * Delete a conversation
@@ -302,15 +296,8 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
         
         // Reload conversations list if it was a new conversation
         if (isNewConversation && config.enableConversationsList) {
-          // Reload conversations to get the updated list
-          const convs = await conversationsApi.getAll();
-          setConversations(convs);
-          
-          // Update current conversation if needed (compare as strings)
-          const newConv = convs.find(c => String(c.id) === responseIdStr);
-          if (newConv) {
-            setCurrentConversation(newConv);
-          }
+          // Use loadConversations to properly load and select the new conversation
+          await loadConversations();
         }
         
         return responseIdStr;

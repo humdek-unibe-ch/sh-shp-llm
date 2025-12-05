@@ -233,11 +233,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     } else {
       // Use regular AJAX mode
       await sendMessage(message, files);
-      
-      // Reload conversations if new
-      if (config.enableConversationsList) {
-        loadConversations();
-      }
     }
   }, [
     isStreaming,
