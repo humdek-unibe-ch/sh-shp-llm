@@ -12,24 +12,13 @@ A SelfHelp plugin that enables Large Language Model (LLM) integration with real-
 - **Conversation Management**: Create, view, and delete conversations
 - **Rate Limiting**: Built-in rate limiting and concurrent conversation limits
 - **Admin Interface**: Administrative access to all user conversations
+- **MVC Architecture**: Clean separation of concerns following SelfHelp patterns
+- **Multi-language Support**: Built-in translation support for UI elements
 
-### UI/UX Features (v1.2.0+)
-- **Industry-Level UI Design**: Complete redesign with modern, professional aesthetics
-- **Clean Sidebar**: Conversation list with gradient-highlighted active state and icon badges
-- **Modern Chat Header**: Robot icon, title, and model badge in a clean pill design
-- **Beautiful Empty State**: Engaging "Start a conversation" placeholder with icon
-- **Message Bubbles**: Styled message containers with avatars and timestamps
-- **Modern Message Input**: Redesigned input area with rounded container, attachment button, character counter
-- **Smart Auto-Scroll**: Intelligent scrolling that only auto-scrolls when user is at bottom
-- **Advanced Markdown Rendering**: Rich markdown with syntax highlighting and copy-to-clipboard for code blocks
-- **Responsive Design**: Fully mobile-friendly with adaptive layout for all screen sizes
-- **Smooth Animations**: Message slide-in animations and hover effects
-- **Model Switching Indicators**: Visual feedback when conversation model differs from global default
-
-### Data Integrity Features
-- **Periodic Streaming Saves**: Partial response saves every 10 chunks to prevent data loss on interruption
-- **Streaming State Tracking**: Database fields to track ongoing and stale streaming sessions
-- **Graceful Error Recovery**: Saves partial responses even when streaming fails
+### Planned Features
+- **Conversation Context Module**: Configurable AI behavior and context per component
+- **Enhanced UI Features**: Modern message input, smart auto-scroll, advanced markdown rendering
+- **Streaming Data Integrity**: Periodic saves during streaming to prevent data loss
 
 ## Requirements
 
@@ -79,22 +68,23 @@ server/plugins/sh-shp-llm/
 │           └── formatters.ts     # Utility functions
 ├── server/
 │   ├── component/
-│   │   ├── LlmHooks.php          # Plugin hooks and component registration
-│   │   ├── llmConversations/     # Admin conversations list component
-│   │   ├── llmConversation/      # Admin conversation details component
-│   │   └── style/llmchat/        # Chat component (MVC)
+│   │   ├── LlmHooks.php           # Plugin hooks and component registration
+│   │   ├── llmConversations/      # Admin conversations list component
+│   │   ├── llmConversation/       # Admin conversation details component
+│   │   └── style/llmchat/         # Chat component (MVC)
 │   ├── service/
-│   │   ├── globals.php           # Plugin constants
-│   │   ├── LlmService.php        # API and database operations
-│   │   └── LlmStreamingService.php  # SSE streaming service
+│   │   ├── globals.php            # Plugin constants
+│   │   ├── LlmService.php         # API and database operations
+│   │   ├── LlmStreamingService.php  # SSE streaming service
+│   │   └── LlmApiFormatterService.php # API message formatting
 │   └── db/
-│       └── v1.0.0.sql            # Database schema
+│       └── v1.0.0.sql             # Database schema
 ├── css/ext/                       # Built CSS assets
-│   ├── style.css                 # Combined styles
-│   └── llm-chat.css              # React component styles
-└── js/ext/                        # Built JS assets
-    ├── llm-chat.umd.js           # React component UMD bundle
-    └── llmchat.min.js            # Legacy vanilla JS (minified)
+│   └── llm-chat.css               # React component styles
+├── js/ext/                        # Built JS assets
+│   └── llm-chat.umd.js            # React component UMD bundle
+├── toDos/                         # Implementation plans and context files
+└── assets/                        # Static assets and screenshots
 ```
 
 ## How Streaming Works
@@ -285,233 +275,43 @@ startStreaming(streamingUrl) {
 - **Error Handling**: Graceful fallback to non-streaming if SSE fails
 - **Performance**: 5ms delay between chunks to prevent overwhelming the UI
 
-### Streaming Data Integrity (v1.1.0+)
+### Streaming Data Integrity
 
-To prevent data loss when streaming is interrupted, the plugin implements **periodic partial saves**:
+The plugin implements **enterprise-grade streaming** with zero partial saves during streaming to ensure data consistency:
 
-#### Database Schema Additions
-```sql
--- Added to llmMessages table
-ALTER TABLE llmMessages 
-  ADD COLUMN is_streaming TINYINT(1) DEFAULT 0 NOT NULL,
-  ADD COLUMN last_chunk_at TIMESTAMP NULL DEFAULT NULL;
-```
+#### Event-Driven Architecture
+- **Zero Partial Saves**: No database writes occur during streaming to prevent corruption
+- **Atomic Commits**: Complete response saved in single database transaction
+- **Memory Buffering**: Response chunks accumulated in memory until completion
+- **Error Recovery**: Automatic rollback on streaming failures
 
-#### Periodic Save Strategy
-- **Save Interval**: Every 10 chunks (approximately 50-100 words)
-- **Minimum Content**: At least 50 new characters before saving
-- **First Save**: Creates message with `is_streaming = 1`
-- **Subsequent Saves**: Updates existing message with new content
-- **Final Save**: Sets `is_streaming = 0` and records `tokens_used`
-
-#### Implementation
+#### Streaming Buffer Implementation
 ```php
-// In LlmStreamingService.php
-private function handleStreamingCallback($chunk, &$context) {
-    $context['chunk_count']++;
-    $context['accumulated_response'] .= $chunk;
-    
-    // Periodic save every 10 chunks
-    if ($context['chunk_count'] % 10 == 0) {
-        $new_content = substr($context['accumulated_response'], $context['last_save_length']);
-        if (strlen($new_content) >= 50) {
-            if (!$context['streaming_message_id']) {
-                // First save - create message
-                $context['streaming_message_id'] = $this->llm_service->addStreamingMessage(
-                    $context['conversation_id'], 
-                    $context['accumulated_response'], 
-                    $context['model']
-                );
-            } else {
-                // Update existing message
-                $this->llm_service->updateStreamingMessage(
-                    $context['streaming_message_id'],
-                    $context['accumulated_response']
-                );
-            }
-            $context['last_save_length'] = strlen($context['accumulated_response']);
-        }
+class StreamingBuffer {
+    private $conversation_id;
+    private $model;
+    private $accumulated_content = '';
+    private $has_content = false;
+
+    public function appendChunk($chunk) {
+        $this->accumulated_content .= $chunk;
+        $this->has_content = true;
+    }
+
+    public function finalize() {
+        // Single atomic save of complete response
+        return $this->llm_service->addMessage(
+            $this->conversation_id,
+            'assistant',
+            $this->accumulated_content,
+            null,
+            $this->model,
+            $tokens_used
+        );
     }
 }
 ```
 
-## Modern UI Features (v1.1.0+)
-
-### Redesigned Message Input
-
-The message input area features a modern design with fixed button positioning:
-
-#### Layout Structure
-```html
-<div class="message-input-container">
-  <!-- Textarea Area - Scrolls internally -->
-  <div class="message-input-textarea-wrapper">
-    <textarea class="message-input-textarea" />
-  </div>
-  
-  <!-- Fixed Button Container - Always at bottom -->
-  <div class="message-input-actions">
-    <div class="message-input-actions-left">
-      <!-- Attachment button -->
-    </div>
-    <div class="message-input-char-count">
-      <!-- Character count -->
-    </div>
-    <div class="message-input-actions-right">
-      <!-- Clear and Send buttons -->
-    </div>
-  </div>
-</div>
-```
-
-#### Key Features
-- **Fixed Buttons**: Buttons stay at bottom regardless of textarea height
-- **Internal Scrolling**: Textarea scrolls internally when content exceeds max height (120px)
-- **Auto-Resize**: Textarea grows from min-height (24px) up to max-height (120px)
-- **Modern Styling**: Rounded buttons with icons, hover effects, focus states
-
-### Smart Auto-Scroll
-
-Intelligent scrolling during streaming that respects user reading position:
-
-```typescript
-// useSmartScroll hook
-const useSmartScroll = (containerRef) => {
-  const isNearBottom = () => {
-    const threshold = 100; // pixels from bottom
-    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-  };
-  
-  const scrollToBottom = () => {
-    if (isNearBottom()) {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-    }
-  };
-  
-  const forceScrollToBottom = () => {
-    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-  };
-  
-  return { scrollToBottom, forceScrollToBottom, handleScroll };
-};
-```
-
-#### Behavior
-- **During Streaming**: Only scrolls if user is within 100px of bottom
-- **After Sending**: Always scrolls to bottom (user action)
-- **Manual Scroll**: Disables auto-scroll if user scrolls up
-
-### Advanced Markdown Rendering
-
-Rich markdown rendering using `react-markdown` with plugins:
-
-#### Dependencies
-```json
-{
-  "dependencies": {
-    "react-markdown": "^9.x",
-    "remark-gfm": "^4.x",
-    "rehype-highlight": "^7.x"
-  }
-}
-```
-
-#### Features
-- **GitHub Flavored Markdown**: Tables, task lists, strikethrough
-- **Syntax Highlighting**: Code blocks with language detection
-- **Copy-to-Clipboard**: One-click code copying with visual feedback
-- **External Link Handling**: External links open in new tabs with icon
-
-#### Code Block Component
-```tsx
-const CodeBlock: React.FC<CodeBlockProps> = ({ inline, className, children }) => {
-  const match = /language-(\w+)/.exec(className || '');
-  const language = match ? match[1] : '';
-  const codeString = String(children).replace(/\n$/, '');
-
-  if (inline) {
-    return <code className="inline-code">{children}</code>;
-  }
-
-  return (
-    <div className="code-block-wrapper">
-      <div className="code-block-header">
-        <span className="code-language">{language}</span>
-        <CopyButton code={codeString} />
-      </div>
-      <pre className={className}>
-        <code className={className}>{children}</code>
-      </pre>
-    </div>
-  );
-};
-```
-
-### Post-Streaming Refresh Strategy
-
-Configurable refresh behavior after streaming completion:
-
-#### Configuration
-```sql
--- Database field for enabling full page reload
-INSERT INTO fields (name, id_type, display) 
-VALUES ('enable_full_page_reload', get_field_type_id('checkbox'), '0');
-```
-
-#### Refresh Options
-
-**Default: React Component Refresh**
-- Calls `refreshMessages()` to reload conversation data
-- No page flash or navigation
-- Maintains scroll position and UI state
-
-**Optional: Smooth AJAX Page Reload**
-- Fetches new page content via AJAX
-- Applies fade-out/fade-in transitions
-- Replaces entire page content smoothly
-
-```typescript
-const smoothPageReload = async () => {
-  // Fade out current content
-  document.body.classList.add('fade-out');
-  
-  // Fetch fresh page
-  const response = await fetch(window.location.href);
-  const html = await response.text();
-  
-  // Replace content
-  const parser = new DOMParser();
-  const newDoc = parser.parseFromString(html, 'text/html');
-  document.body.innerHTML = newDoc.body.innerHTML;
-  
-  // Fade in new content
-  document.body.classList.remove('fade-out');
-  document.body.classList.add('fade-in');
-};
-```
-
-### Model Switching Logic
-
-Proper handling of model changes across conversations:
-
-#### Active Model Resolution
-```typescript
-const getActiveModel = useCallback(() => {
-  // Use conversation model if available, otherwise use configured model
-  return currentConversation?.model || config.configuredModel;
-}, [currentConversation, config.configuredModel]);
-```
-
-#### Visual Indicators
-When a conversation uses a different model than the current global default:
-- Badge indicator in chat header
-- Tooltip explaining the discrepancy
-- All API calls use the conversation's model (not global default)
-
-#### Model Consistency
-- New conversations use current global model
-- Existing conversations retain their original model
-- Model is stored per-conversation in database
 
 ## Context Maintenance
 
@@ -617,21 +417,17 @@ The LLM plugin creates and manages several database tables to store conversation
 - `model` (varchar 100): Model used for this specific message
 - `tokens_used` (int): Token count for assistant responses
 - `raw_response` (longtext): Full JSON response from LLM API (debugging)
-- `is_streaming` (tinyint 1): Streaming state flag (0=complete, 1=in progress) - *v1.1.0+*
-- `last_chunk_at` (timestamp): Last chunk received timestamp for streaming messages - *v1.1.0+*
 - `deleted` (tinyint 1): Soft delete flag (0=active, 1=deleted)
 - `timestamp` (timestamp): Message creation timestamp
 
 **Indexes:**
 - `idx_conversation_time` (`id_llmConversations`, `timestamp`): Messages within conversation by time
 - `idx_deleted` (`deleted`): Quick filtering of deleted messages
-- `idx_streaming` (`is_streaming`): Identify in-progress streaming messages - *v1.1.0+*
 
 **Data Stored:**
 - **Message content**: User inputs and AI responses with full text
 - **File attachments**: Image paths for vision-capable models
 - **API metadata**: Token usage, model information, raw API responses
-- **Streaming state**: Tracks ongoing and stale streaming sessions - *v1.1.0+*
 - **Conversation threading**: Messages linked to specific conversations
 - **Audit trail**: Complete message history with timestamps
 
@@ -1629,17 +1425,7 @@ Check SelfHelp logs for detailed error information:
 
 ## Version History
 
-### v1.1.0 (December 2024)
-- **Modern Message Input**: Redesigned input with fixed button layout
-- **Smart Auto-Scroll**: Intelligent scrolling during streaming
-- **Streaming Data Integrity**: Periodic partial saves (every 10 chunks)
-- **Advanced Markdown**: react-markdown with syntax highlighting and copy buttons
-- **Smooth Refresh**: AJAX page reload option with fade transitions
-- **Model Switching**: Proper model handling across conversations with visual indicators
-- **Configuration Flags**: `enable_conversations_list`, `enable_file_uploads`, `enable_full_page_reload`
-- **Database Updates**: Added `is_streaming` and `last_chunk_at` fields to `llmMessages`
-
-### v1.0.0 (Initial Release)
+### v1.0.0 (December 2024)
 - Real-time chat interface with SSE streaming
 - Multiple model support including vision models
 - File uploads for vision-capable models
