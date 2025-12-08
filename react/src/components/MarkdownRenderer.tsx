@@ -88,7 +88,19 @@ const CopyButton: React.FC<{ code: string }> = ({ code }) => {
 const CodeBlock: React.FC<CodeBlockProps> = ({ inline, className, children, ...props }) => {
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : '';
-  const codeString = String(children).replace(/\n$/, '');
+  const codeString = React.Children.toArray(children)
+    .map((child) => {
+      if (typeof child === 'string') {
+        return child;
+      }
+      if (React.isValidElement(child)) {
+        const nested = React.Children.toArray(child.props.children);
+        return nested.map((grandChild) => (typeof grandChild === 'string' ? grandChild : '')).join('');
+      }
+      return '';
+    })
+    .join('')
+    .replace(/\n$/, '');
 
   if (inline) {
     // Inline code
