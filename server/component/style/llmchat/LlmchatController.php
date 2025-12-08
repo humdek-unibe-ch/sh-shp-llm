@@ -101,25 +101,12 @@ class LlmchatController extends BaseController
      * Handle streaming request
      * Optimized for smooth, fluid streaming delivery
      */
+    /**
+     * Handle streaming request - Industry Standard Implementation
+     * Delegates all streaming logic to dedicated streaming service
+     */
     private function handleStreamingRequest()
     {
-        // Set SSE headers for optimal streaming
-        header('Content-Type: text/event-stream; charset=utf-8');
-        header('Cache-Control: no-cache, no-store, must-revalidate');
-        header('Connection: keep-alive');
-        header('X-Accel-Buffering: no'); // Disable nginx buffering
-
-        // Clear any output buffers for immediate delivery
-        while (ob_get_level()) {
-            ob_end_clean();
-        }
-
-        // Disable output buffering at PHP level
-        @ini_set('output_buffering', 'Off');
-        @ini_set('zlib.output_compression', 'Off');
-        ob_implicit_flush(true);
-
-        // Get conversation ID from URL parameter
         $conversation_id = $_GET['conversation'] ?? null;
 
         if (!$conversation_id) {
@@ -129,7 +116,6 @@ class LlmchatController extends BaseController
 
         $user_id = $this->model->getUserId();
 
-        // Check if user is authenticated
         if (!$user_id) {
             $this->sendSSE(['type' => 'error', 'message' => 'User not authenticated']);
             exit;
@@ -138,182 +124,30 @@ class LlmchatController extends BaseController
         // Verify conversation exists and belongs to user
         $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
         if (!$conversation) {
-            echo "data: " . json_encode(['type' => 'error', 'message' => 'Conversation not found']) . "\n\n";
-            flush();
+            $this->sendSSE(['type' => 'error', 'message' => 'Conversation not found']);
             exit;
-        }
-
-        // Get model and parameters from conversation or defaults
-        $model = $conversation['model'] ?? $this->model->getConfiguredModel();
-        
-        // Get and validate temperature (must be between 0.0 and 2.0)
-        $temperature = $conversation['temperature'] ?? $this->model->getLlmTemperature();
-        $temperature = (float)$temperature;
-        if ($temperature < 0.0 || $temperature > 2.0) {
-            $temperature = 0.7;
-        }
-        
-        // Get and validate max_tokens
-        $max_tokens = $conversation['max_tokens'] ?? $this->model->getLlmMaxTokens();
-        $max_tokens = (int)$max_tokens;
-        if ($max_tokens < 1 || $max_tokens > 16384) {
-            $max_tokens = 2048;
         }
 
         // Get conversation messages for LLM
         $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
-
         if (empty($messages)) {
             $this->sendSSE(['type' => 'error', 'message' => 'No messages found in conversation']);
             exit;
         }
-        
-        $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model);
-        
-        // Validate we have at least one user message
+
+        $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $conversation['model']);
         if (empty($api_messages)) {
             $this->sendSSE(['type' => 'error', 'message' => 'No valid messages to send']);
             exit;
         }
 
-        // Send connected event immediately
-        $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
-
-        $full_response = '';
-        $tokens_used = 0;
-        $chunk_count = 0;
-        $streaming_message_id = null;
-        $last_save_length = 0;
-        
-        // Constants for partial saves
-        $save_interval = 10; // Save every 10 chunks
-        $min_chars_before_save = 50; // Minimum chars before first save
-
-        try {
-            // Start streaming with callback
-            $this->llm_service->streamLlmResponse(
-                $api_messages,
-                $model,
-                $temperature,
-                $max_tokens,
-                function($chunk) use (&$full_response, &$tokens_used, &$chunk_count, &$streaming_message_id, &$last_save_length, $conversation_id, $conversation, $save_interval, $min_chars_before_save) {
-                    if ($chunk === '[DONE]') {
-                        // Streaming completed - finalize the message
-                        $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
-
-                        try {
-                            if ($streaming_message_id) {
-                                // Update existing streaming message to mark as complete
-                                $this->llm_service->updateStreamingMessage(
-                                    $streaming_message_id,
-                                    $full_response,
-                                    $tokens_used,
-                                    false // is_streaming = false (complete)
-                                );
-                            } else {
-                                // Create new complete message (fallback if no partial saves occurred)
-                                $this->llm_service->addMessage(
-                                    $conversation_id,
-                                    'assistant',
-                                    $full_response,
-                                    null,
-                                    $conversation['model'],
-                                    $tokens_used
-                                );
-                            }
-                        } catch (Exception $e) {
-                            $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message']);
-                        }
-
-                        return;
-                    }
-
-                    // Check for usage data
-                    if (strpos($chunk, '[USAGE:') === 0) {
-                        $usage_str = substr($chunk, 7, -1); // Remove '[USAGE:' and ']'
-                        $tokens_used = intval($usage_str);
-                        return;
-                    }
-
-                    // Accumulate the response
-                    $full_response .= $chunk;
-                    $chunk_count++;
-
-                    // Send chunk to client
-                    $this->sendSSE(['type' => 'chunk', 'content' => $chunk]);
-
-                    // Periodic partial save to prevent data loss
-                    $should_save = ($chunk_count % $save_interval === 0) 
-                                   && (strlen($full_response) >= $min_chars_before_save)
-                                   && (strlen($full_response) > $last_save_length + 20);
-                    
-                    if ($should_save) {
-                        try {
-                            if ($streaming_message_id) {
-                                $this->llm_service->updateStreamingMessage(
-                                    $streaming_message_id,
-                                    $full_response,
-                                    null,
-                                    true
-                                );
-                            } else {
-                                $streaming_message_id = $this->llm_service->addStreamingMessage(
-                                    $conversation_id,
-                                    $full_response,
-                                    $conversation['model']
-                                );
-                            }
-                            $last_save_length = strlen($full_response);
-                        } catch (Exception $e) {
-                            // Log but don't interrupt streaming
-                        }
-                    }
-                }
-            );
-        } catch (Exception $e) {
-            // Try to save partial response on error
-            if (!empty($full_response)) {
-                try {
-                    if ($streaming_message_id) {
-                        $this->llm_service->updateStreamingMessage(
-                            $streaming_message_id,
-                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
-                            $tokens_used,
-                            false
-                        );
-                    } else {
-                        $this->llm_service->addMessage(
-                            $conversation_id,
-                            'assistant',
-                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
-                            null,
-                            $conversation['model'],
-                            $tokens_used
-                        );
-                    }
-                } catch (Exception $saveError) {
-                    // Silently ignore save errors
-                }
-            } else {
-                // No response received - create a placeholder message to prevent empty messages
-                try {
-                    $this->llm_service->addMessage(
-                        $conversation_id,
-                        'assistant',
-                        "[Error: " . $e->getMessage() . "]",
-                        null,
-                        $conversation['model'],
-                        0
-                    );
-                } catch (Exception $saveError) {
-                    // Silently ignore save errors
-                }
-            }
-            
-            $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
-        }
-
-        exit;
+        // Delegate to streaming service - industry standard approach
+        $this->streaming_service->startStreamingResponse(
+            $conversation_id,
+            $api_messages,
+            $conversation['model'],
+            false // is_new_conversation not relevant for existing streaming
+        );
     }
 
     /**
@@ -509,8 +343,11 @@ class LlmchatController extends BaseController
                     $assistant_message = $response['choices'][0]['message']['content'];
                     $tokens_used = $response['usage']['total_tokens'] ?? null;
 
+                    // Ensure content is properly extracted and clean
+                    $clean_content = trim($assistant_message);
+
                     // Save assistant message with full response for debugging
-                    $this->llm_service->addMessage($conversation_id, 'assistant', $assistant_message, null, $model, $tokens_used, json_encode($response));
+                    $this->llm_service->addMessage($conversation_id, 'assistant', $clean_content, null, $model, $tokens_used, $response);
 
                     $this->sendJsonResponse([
                         'conversation_id' => $conversation_id,

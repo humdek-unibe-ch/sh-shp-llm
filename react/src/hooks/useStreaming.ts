@@ -190,17 +190,20 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               break;
               
             case 'done':
-              // Streaming completed
+              // Streaming completed - industry standard: single atomic save
               setIsStreaming(false);
               onDone?.(event.tokens_used || 0);
-              
+
+              // Clear streaming content immediately (server has saved complete message)
+              setStreamingContent('');
+
               // Update URL with conversation ID (only if conversations list is enabled)
               if (config.enableConversationsList) {
                 const url = new URL(window.location.href);
                 url.searchParams.set('conversation', streamConversationId);
                 window.history.pushState({}, '', url.toString());
               }
-              
+
               // Choose refresh strategy based on config
               if (config.enableFullPageReload) {
                 // Full page reload requested
@@ -209,17 +212,16 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
                 }, 300);
               } else if (onRefreshMessages) {
                 // React-only refresh - reload messages via API
-                // Use a short delay to let the server save the message
+                // Use a short delay to ensure server has committed the message
                 setTimeout(async () => {
                   try {
                     await onRefreshMessages(streamConversationId);
-                    setStreamingContent(''); // Clear streaming content after refresh
                   } catch (err) {
                     console.error('Failed to refresh messages:', err);
                     // Fall back to page reload
                     smoothPageReload();
                   }
-                }, 500);
+                }, 200); // Reduced delay since no partial saves
               } else {
                 // Default: page reload
                 setTimeout(() => {

@@ -33,6 +33,8 @@ interface MessageListProps {
   streamingContent: string;
   /** Whether loading initial data */
   isLoading: boolean;
+  /** Whether processing non-streaming request */
+  isProcessing?: boolean;
   /** Component configuration */
   config: LlmChatConfig;
 }
@@ -187,6 +189,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   isStreaming,
   streamingContent,
   isLoading,
+  isProcessing = false,
   config
 }) => {
   // Show loading state
@@ -199,12 +202,11 @@ export const MessageList: React.FC<MessageListProps> = ({
     return <EmptyState />;
   }
   
-  // Check if the last message is a user message and we're streaming
-  // This means we need to show the thinking indicator
+  // Check if we need to show the thinking indicator
+  // Show for both streaming (when no content yet) and non-streaming processing
   const lastMessage = messages[messages.length - 1];
-  const showThinking = isStreaming && 
-    !streamingContent && 
-    lastMessage?.role === 'user';
+  const showThinking = (isStreaming && !streamingContent && lastMessage?.role === 'user') ||
+    (isProcessing && lastMessage?.role === 'user');
   
   return (
     <>

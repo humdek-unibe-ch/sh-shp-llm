@@ -119,6 +119,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   
   // Local state for file attachments
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+
+  // Local state for tracking non-streaming processing
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Ref for messages container (for smooth scrolling)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -232,7 +235,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       await sendStreamingMessage(message, conversationId, files);
     } else {
       // Use regular AJAX mode
-      await sendMessage(message, files);
+      setIsProcessing(true);
+      try {
+        await sendMessage(message, files);
+      } finally {
+        setIsProcessing(false);
+      }
     }
   }, [
     isStreaming,
@@ -384,6 +392,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 isStreaming={isStreaming}
                 streamingContent={streamingContent}
                 isLoading={isLoading && messages.length === 0}
+                isProcessing={isProcessing}
                 config={config}
               />
             </div>
