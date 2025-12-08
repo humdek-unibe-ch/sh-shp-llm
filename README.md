@@ -335,12 +335,6 @@ private function handleStreamingCallback($chunk, &$context) {
 }
 ```
 
-#### Stale Streaming Cleanup
-```php
-// Clean up incomplete streaming messages older than 5 minutes
-$this->llm_service->cleanupStaleStreamingMessages(5);
-```
-
 ## Modern UI Features (v1.1.0+)
 
 ### Redesigned Message Input

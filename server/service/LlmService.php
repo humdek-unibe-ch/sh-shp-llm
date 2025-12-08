@@ -233,24 +233,6 @@ class LlmService
     }
 
     /**
-     * Get or create a conversation for a specific model
-     * Returns the most recent conversation for the model, or creates a new one if none exists
-     */
-    public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null)
-    {
-        // First, try to find an existing conversation for this model
-        $existing_conversations = $this->getUserConversations($user_id, 1, $model);
-
-        if (!empty($existing_conversations)) {
-            // Return the most recent conversation for this model
-            return $existing_conversations[0]['id'];
-        }
-
-        // No existing conversation found, create a new one
-        return $this->createConversation($user_id, null, $model, $temperature, $max_tokens, $section_id);
-    }
-
-    /**
      * Get user conversations
      */
     public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null)
@@ -451,23 +433,6 @@ class LlmService
     }
 
     /**
-     * Recover interrupted streaming messages - Industry Standard Error Recovery
-     * With event-driven streaming, recovery is handled automatically by emergency saves
-     * This method is kept for potential future use or legacy cleanup
-     *
-     * @param int $conversation_id The conversation ID to check
-     * @return int Always returns 0 (no recovery needed with new implementation)
-     */
-    public function recoverInterruptedStreaming($conversation_id)
-    {
-        // With event-driven streaming, messages are either:
-        // 1. Completely saved (success case)
-        // 2. Emergency saved with error message (failure case)
-        // No recovery needed - all messages are in final state
-        return 0;
-    }
-
-    /**
      * Update a message
      *
      * @param int $message_id The message ID to update
@@ -479,48 +444,6 @@ class LlmService
         return $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
     }
 
-
-    /**
-     * Clean up stale streaming messages (messages that were left in streaming state)
-     * This can be called periodically to handle interrupted streams
-     * 
-     * @param int $stale_minutes Messages older than this are considered stale
-     * @return int Number of messages cleaned up
-     */
-    public function cleanupStaleStreamingMessages($stale_minutes = 5)
-    {
-        $cutoff_time = date('Y-m-d H:i:s', strtotime("-{$stale_minutes} minutes"));
-        
-        // Find stale streaming messages
-        $stale_messages = $this->db->query_db(
-            "SELECT id, id_llmConversations, content FROM llmMessages 
-             WHERE is_streaming = 1 AND last_chunk_at < ?",
-            [$cutoff_time]
-        );
-
-        $cleaned = 0;
-        foreach ($stale_messages as $msg) {
-            // Mark as complete (not streaming anymore)
-            $content = $msg['content'];
-            if (strlen($content) > 0) {
-                // Keep the partial content but mark as interrupted
-                $this->db->update_by_ids('llmMessages', [
-                    'content' => $content . "\n\n[Response interrupted]",
-                    'is_streaming' => 0,
-                    'last_chunk_at' => null
-                ], ['id' => $msg['id']]);
-            } else {
-                // Delete empty streaming messages
-                $this->db->update_by_ids('llmMessages', ['deleted' => 1], ['id' => $msg['id']]);
-            }
-            
-            // Clear cache for affected conversation
-            $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $msg['id_llmConversations']);
-            $cleaned++;
-        }
-
-        return $cleaned;
-    }
 
     /**
      * Get conversation messages
@@ -864,65 +787,7 @@ class LlmService
 
     /* File Upload Handling */
 
-    /**
-     * Save uploaded files for LLM
-     */
-    public function saveUploadedFiles($conversation_id, $user_id)
-    {
-        $upload_dir = LLM_UPLOAD_FOLDER . '/' . $user_id . '/' . $conversation_id;
-        // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
-        $full_upload_dir = __DIR__ . '/../../' . $upload_dir;
-
-        // Create directory if it doesn't exist
-        if (!is_dir($full_upload_dir)) {
-            mkdir($full_upload_dir, 0755, true);
-        }
-
-        $uploaded_files = [];
-
-        foreach ($_FILES as $index => $file) {
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                continue;
-            }
-
-            // Validate file
-            if ($file['size'] > LLM_MAX_FILE_SIZE) {
-                throw new Exception('File size exceeds limit');
-            }
-
-            $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            if (!in_array($extension, LLM_ALLOWED_EXTENSIONS)) {
-                throw new Exception('File type not allowed');
-            }
-
-            // Generate unique filename
-            $filename = date('Ymd_His') . '_' . uniqid() . '.' . $extension;
-            $filepath = $full_upload_dir . '/' . $filename;
-
-            if (move_uploaded_file($file['tmp_name'], $filepath)) {
-                $uploaded_files[] = $upload_dir . '/' . $filename;
-            }
-        }
-
-        return $uploaded_files;
-    }
-
     /* Admin Methods */
-
-    /**
-     * Get all conversations (admin only)
-     */
-    public function getAllConversations($limit = 100, $offset = 0)
-    {
-        return $this->db->query_db(
-            "SELECT c.*, u.name as user_name
-             FROM llmConversations c
-             INNER JOIN users u ON c.id_users = u.id
-             ORDER BY c.updated_at DESC
-             LIMIT ? OFFSET ?",
-            [$limit, $offset]
-        );
-    }
 
     /**
      * Get conversation by ID (admin only)
