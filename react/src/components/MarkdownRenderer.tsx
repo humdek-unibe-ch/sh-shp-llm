@@ -82,25 +82,29 @@ const CopyButton: React.FC<{ code: string }> = ({ code }) => {
 };
 
 /**
+ * Recursively extract text from a React node tree (handles nested spans from syntax highlighting)
+ */
+const extractTextFromNode = (node: React.ReactNode): string => {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(extractTextFromNode).join('');
+  }
+  if (React.isValidElement(node)) {
+    return extractTextFromNode(node.props.children);
+  }
+  return '';
+};
+
+/**
  * Custom Code Block Component
  * Renders code with syntax highlighting and copy button
  */
 const CodeBlock: React.FC<CodeBlockProps> = ({ inline, className, children, ...props }) => {
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : '';
-  const codeString = React.Children.toArray(children)
-    .map((child) => {
-      if (typeof child === 'string') {
-        return child;
-      }
-      if (React.isValidElement(child)) {
-        const nested = React.Children.toArray(child.props.children);
-        return nested.map((grandChild) => (typeof grandChild === 'string' ? grandChild : '')).join('');
-      }
-      return '';
-    })
-    .join('')
-    .replace(/\n$/, '');
+  const codeString = extractTextFromNode(children).replace(/\n$/, '');
 
   if (inline) {
     // Inline code

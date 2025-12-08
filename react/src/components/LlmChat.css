@@ -604,7 +604,7 @@
   border-radius: var(--llm-radius);
   overflow: hidden;
   background: #1e1e1e;
-  border: 1px solid #333;
+  border: 1px solid #2d2d2d;
 }
 
 .code-block-header {
@@ -612,8 +612,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 14px;
-  background: #2d2d2d;
   border-bottom: 1px solid #3d3d3d;
+  background: #1e1e1e;
 }
 
 .code-block-header-minimal {
@@ -670,6 +670,7 @@
   margin: 0;
   padding: 14px 16px;
   background: #1e1e1e;
+  color: #d4d4d4;
   overflow-x: auto;
 }
 
@@ -677,6 +678,7 @@
   font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.5;
+  color: inherit;
 }
 
 /* Inline Code */
@@ -697,21 +699,59 @@
   color: #fff;
 }
 
-/* Syntax Highlighting (VS Code Dark Theme) */
-.hljs { background: transparent !important; }
-.hljs-comment, .hljs-quote { color: #6a9955; }
-.hljs-keyword, .hljs-selector-tag { color: #569cd6; }
-.hljs-string, .hljs-title, .hljs-attribute { color: #ce9178; }
-.hljs-attr, .hljs-property { color: #ff7b72; }
-.hljs-number, .hljs-literal { color: #b5cea8; }
-.hljs-function { color: #dcdcaa; }
-.hljs-class, .hljs-type { color: #4ec9b0; }
-.hljs-variable, .hljs-template-variable { color: #9cdcfe; }
-.hljs-built_in { color: #4fc1ff; }
+/* Syntax Highlighting (custom light-on-dark palette) */
+.code-block-wrapper .hljs {
+  background: transparent;
+  color: #d4d4d4; /* VS Code default text */
+}
+.code-block-wrapper .hljs-punctuation {
+  color: #d4d4d4;
+}
+.code-block-wrapper .hljs-comment,
+.code-block-wrapper .hljs-quote {
+  color: #6a9955; /* comments */
+}
+.code-block-wrapper .hljs-keyword,
+.code-block-wrapper .hljs-selector-tag,
+.code-block-wrapper .hljs-meta .hljs-keyword {
+  color: #c586c0; /* keywords */
+}
+.code-block-wrapper .hljs-string,
+.code-block-wrapper .hljs-title {
+  color: #ce9178; /* strings */
+}
 .code-block-wrapper .hljs-attr,
 .code-block-wrapper .hljs-attribute,
 .code-block-wrapper .hljs-property {
-  color: #ff7b72 !important;
+  color: #9cdcfe; /* property names */
+}
+.code-block-wrapper .hljs-number,
+.code-block-wrapper .hljs-literal,
+.code-block-wrapper .hljs-symbol,
+.code-block-wrapper .hljs-bullet {
+  color: #b5cea8; /* numbers */
+}
+.code-block-wrapper .hljs-name,
+.code-block-wrapper .hljs-type,
+.code-block-wrapper .hljs-built_in,
+.code-block-wrapper .hljs-builtin-name {
+  color: #4ec9b0; /* types/builtins */
+}
+.code-block-wrapper .hljs-variable,
+.code-block-wrapper .hljs-template-variable {
+  color: #9cdcfe; /* variables */
+}
+.code-block-wrapper .hljs-section,
+.code-block-wrapper .hljs-selector-id,
+.code-block-wrapper .hljs-selector-class,
+.code-block-wrapper .hljs-link {
+  color: #4fc1ff; /* misc identifiers */
+}
+.code-block-wrapper .hljs-emphasis {
+  font-style: italic;
+}
+.code-block-wrapper .hljs-strong {
+  font-weight: 600;
 }
 
 /* ===== Streaming Indicator ===== */
