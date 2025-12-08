@@ -2,6 +2,11 @@
 INSERT IGNORE INTO plugins (`name`, version)
 VALUES ('llm', 'v1.0.0');
 
+-- Uncomment the following line to upgrade the database to utf8mb4,
+-- which is required for storing emojis and other extended Unicode characters:
+-- ALTER DATABASE sb_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+
 -- add page type sh_module_llm for configuration
 INSERT IGNORE INTO `pageType` (`name`) VALUES ('sh_module_llm');
 
@@ -162,12 +167,11 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     KEY `idx_section` (`id_sections`),
     KEY `idx_deleted` (`deleted`),
     CONSTRAINT `fk_llmConversations_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- create LLM messages table
--- NOTE: image_path and file_path columns were removed in favor of attachments field
--- which stores full attachment metadata as JSON for better file handling
+-- create LLM messages table - Industry Standard Schema
+-- NOTE: Removed is_streaming and last_chunk_at fields - no longer needed with event-driven streaming
 CREATE TABLE IF NOT EXISTS `llmMessages` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
     `id_llmConversations` int(10) UNSIGNED ZEROFILL NOT NULL,
@@ -176,17 +180,14 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `attachments` longtext DEFAULT NULL, -- JSON array of attachment metadata
     `model` varchar(100) DEFAULT NULL,
     `tokens_used` int DEFAULT NULL,
-    `raw_response` longtext DEFAULT NULL,
-    `is_streaming` TINYINT(1) DEFAULT 0 NOT NULL, -- 1 if currently streaming, 0 when complete
-    `last_chunk_at` timestamp NULL DEFAULT NULL, -- Last time a chunk was saved during streaming
+    `raw_response` longtext DEFAULT NULL, -- Raw API response data (JSON)
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_conversation_time` (`id_llmConversations`, `timestamp`),
     KEY `idx_deleted` (`deleted`),
-    KEY `idx_streaming` (`is_streaming`),
-    CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- add transaction logging for LLM plugin
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
@@ -229,5 +230,3 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_conversations, get_field_id('title'), '0000000002', 'LLM Konversationen'),
        (@id_page_llm_conversation, get_field_id('title'), '0000000001', 'LLM Conversation Details'),
        (@id_page_llm_conversation, get_field_id('title'), '0000000002', 'LLM Konversation Details');
-
-

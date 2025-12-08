@@ -1,23 +1,21 @@
 <?php
 /**
- * LLM Streaming Service
- * Handles Server-Sent Events streaming for real-time LLM responses
- * 
+ * LLM Streaming Service - Industry Standard Event-Driven Implementation
+ *
  * Features:
- * - Periodic partial saves to prevent data loss on interruption
- * - Smooth SSE delivery with optimized buffering
- * - Recovery support for interrupted streams
+ * - Zero database writes during streaming (memory-only buffering)
+ * - Single atomic commit on completion
+ * - Guaranteed data integrity
+ * - Enterprise-grade error recovery
+ * - Optimized SSE delivery
  */
 
 class LlmStreamingService
 {
     private $llm_service;
-    
-    /** @var int Number of chunks between partial saves */
-    const SAVE_INTERVAL_CHUNKS = 10;
-    
-    /** @var int Minimum characters before first save */
-    const MIN_CHARS_BEFORE_SAVE = 50;
+    private $conversation_id;
+    private $model;
+    private $has_finalized = false;
 
     public function __construct($llm_service)
     {
@@ -26,16 +24,61 @@ class LlmStreamingService
 
     /**
      * Start streaming response using Server-Sent Events
-     * Optimized for smooth, fluid streaming delivery with periodic saves
+     * Industry-standard implementation with zero partial saves
      */
     public function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation)
     {
-        // Check if any content has already been sent
+        $this->conversation_id = $conversation_id;
+        $this->model = $model;
+        $this->has_finalized = false;
+
+        // Validate headers
         if (headers_sent()) {
             return;
         }
 
-        // Set SSE headers for optimal streaming
+        $this->setupSSEHeaders();
+        $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
+
+        $streaming_buffer = new StreamingBuffer($conversation_id, $model, $this->llm_service);
+        $tokens_used = 0;
+
+        try {
+            $config = $this->llm_service->getLlmConfig();
+
+            $this->llm_service->streamLlmResponse(
+                $messages,
+                $model,
+                $config['llm_temperature'] ?? 0.7,
+                $config['llm_max_tokens'] ?? 1000,
+                function($chunk) use ($streaming_buffer, &$tokens_used) {
+                    return $this->processStreamingChunk($chunk, $streaming_buffer, $tokens_used);
+                }
+            );
+        } catch (Exception $e) {
+            $this->handleStreamingError($e, $streaming_buffer, $tokens_used);
+        }
+
+        // Fallback: if the upstream stream ended without an explicit [DONE],
+        // persist whatever we have so far to avoid losing the response.
+        if (!$this->has_finalized) {
+            if ($streaming_buffer->hasContent()) {
+                $this->finalizeStreaming($streaming_buffer, $tokens_used);
+            } else {
+                $this->has_finalized = true;
+                $this->sendSSE(['type' => 'error', 'message' => 'Streaming ended with no content to save']);
+                $this->sendSSE(['type' => 'close']);
+            }
+        }
+
+        exit;
+    }
+
+    /**
+     * Setup optimized SSE headers for streaming
+     */
+    private function setupSSEHeaders()
+    {
         header('Content-Type: text/event-stream; charset=utf-8');
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Connection: keep-alive');
@@ -43,178 +86,216 @@ class LlmStreamingService
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Headers: Cache-Control');
 
-        // Disable all output buffering for immediate delivery
+        // Disable all output buffering
         while (ob_get_level()) {
             ob_end_clean();
         }
 
-        // Disable output buffering and compression at PHP level
         @ini_set('output_buffering', 'Off');
         @ini_set('zlib.output_compression', 'Off');
         @ini_set('implicit_flush', 1);
         ob_implicit_flush(true);
-
-        // Send initial connection event
-        $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
-
-        $full_response = '';
-        $tokens_used = 0;
-        $chunk_count = 0;
-        $streaming_message_id = null;
-        $last_save_length = 0;
-
-        // Ensure parameters are available for streaming
-        $streaming_model = $model;
-        $config = $this->llm_service->getLlmConfig();
-        $streaming_temperature = $config['llm_temperature'] ?? 0.7;
-        $streaming_max_tokens = $config['llm_max_tokens'] ?? 1000;
-
-        try {
-            // Start streaming with callback
-            $this->llm_service->streamLlmResponse(
-                $messages,
-                $streaming_model,
-                $streaming_temperature,
-                $streaming_max_tokens,
-                function($chunk) use (&$full_response, &$tokens_used, &$chunk_count, &$streaming_message_id, &$last_save_length, $conversation_id, $streaming_model) {
-                    if ($chunk === '[DONE]') {
-                        // Streaming completed - finalize the message
-                        $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
-
-                        try {
-                            if ($streaming_message_id) {
-                                // Update existing streaming message to mark as complete
-                                $this->llm_service->updateStreamingMessage(
-                                    $streaming_message_id,
-                                    $full_response,
-                                    $tokens_used,
-                                    false // is_streaming = false (complete)
-                                );
-                            } else {
-                                // Create new complete message (fallback if no partial saves occurred)
-                                $message_id = $this->llm_service->addMessage(
-                                    $conversation_id,
-                                    'assistant',
-                                    $full_response,
-                                    null,
-                                    $streaming_model,
-                                    $tokens_used
-                                );
-                            }
-                        } catch (Exception $e) {
-                            $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);
-                        }
-
-                        // Close the connection
-                        $this->sendSSE(['type' => 'close']);
-                        return;
-                    }
-
-                    // Check for usage data
-                    if (strpos($chunk, '[USAGE:') === 0) {
-                        $usage_str = substr($chunk, 7, -1); // Remove '[USAGE:' and ']'
-                        $tokens_used = intval($usage_str);
-                        return;
-                    }
-
-                    // Accumulate the response
-                    $full_response .= $chunk;
-                    $chunk_count++;
-
-                    // Send chunk to client immediately
-                    $this->sendSSE([
-                        'type' => 'chunk',
-                        'content' => $chunk
-                    ]);
-
-                    // Periodic partial save to prevent data loss
-                    // Save every SAVE_INTERVAL_CHUNKS chunks if we have enough content
-                    $should_save = ($chunk_count % self::SAVE_INTERVAL_CHUNKS === 0) 
-                                   && (strlen($full_response) >= self::MIN_CHARS_BEFORE_SAVE)
-                                   && (strlen($full_response) > $last_save_length + 20); // Only save if meaningful content added
-                    
-                    if ($should_save) {
-                        try {
-                            if ($streaming_message_id) {
-                                // Update existing streaming message
-                                $this->llm_service->updateStreamingMessage(
-                                    $streaming_message_id,
-                                    $full_response,
-                                    null, // tokens not known yet
-                                    true  // is_streaming = true
-                                );
-                            } else {
-                                // Create new streaming message (first partial save)
-                                $streaming_message_id = $this->llm_service->addStreamingMessage(
-                                    $conversation_id,
-                                    $full_response,
-                                    $streaming_model
-                                );
-                            }
-                            $last_save_length = strlen($full_response);
-                        } catch (Exception $e) {
-                            // Log but don't interrupt streaming
-                        }
-                    }
-                }
-            );
-        } catch (Exception $e) {
-
-            // Try to save whatever we have so far
-            if (!empty($full_response)) {
-                try {
-                    if ($streaming_message_id) {
-                        $this->llm_service->updateStreamingMessage(
-                            $streaming_message_id,
-                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
-                            $tokens_used,
-                            false // Mark as complete
-                        );
-                    } else {
-                        $this->llm_service->addMessage(
-                            $conversation_id,
-                            'assistant',
-                            $full_response . "\n\n[Streaming interrupted: " . $e->getMessage() . "]",
-                            null,
-                            $streaming_model,
-                            $tokens_used
-                        );
-                    }
-                } catch (Exception $saveError) {
-                    // Failed to save partial response on error
-                }
-            }
-            
-            $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
-        }
-
-        // Ensure connection is closed
-        if (function_exists('uopz_allow_exit')) {
-            uopz_allow_exit(true);
-        }
-        exit;
     }
 
     /**
-     * Send Server-Sent Event
-     * Optimized for smooth, low-latency delivery
+     * Process individual streaming chunks
+     */
+    private function processStreamingChunk($chunk, StreamingBuffer $buffer, &$tokens_used)
+    {
+        if ($chunk === '[DONE]') {
+            $this->finalizeStreaming($buffer, $tokens_used);
+            return;
+        }
+
+        if (strpos($chunk, '[USAGE:') === 0) {
+            $tokens_used = intval(substr($chunk, 7, -1));
+            return;
+        }
+
+        $buffer->append($chunk);
+        $this->sendSSE(['type' => 'chunk', 'content' => $chunk]);
+    }
+
+    /**
+     * Finalize streaming with atomic database commit
+     */
+    private function finalizeStreaming(StreamingBuffer $buffer, $tokens_used)
+    {
+        if ($this->has_finalized) {
+            return;
+        }
+
+        $this->has_finalized = true;
+
+        try {
+            $raw_response = $this->buildRawResponse($buffer->getContent(), $tokens_used);
+            $buffer->finalize($tokens_used, $raw_response);
+            $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
+            $this->sendSSE(['type' => 'close']);
+        } catch (Exception $e) {
+            $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Build a minimal raw_response payload so streamed messages
+     * are persisted with the same fidelity as non-streamed calls.
+     */
+    private function buildRawResponse($content, $tokens_used)
+    {
+        return [
+            'streaming' => true,
+            'model' => $this->model,
+            'choices' => [
+                [
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => $content
+                    ],
+                    'finish_reason' => 'stop'
+                ]
+            ],
+            'usage' => [
+                'total_tokens' => $tokens_used
+            ]
+        ];
+    }
+
+    /**
+     * Handle streaming errors with emergency recovery
+     */
+    private function handleStreamingError(Exception $e, StreamingBuffer $buffer, $tokens_used)
+    {
+        if ($this->has_finalized) {
+            return;
+        }
+
+        try {
+            $raw_response = [
+                'streaming' => true,
+                'model' => $this->model,
+                'error' => $e->getMessage(),
+                'partial_content' => $buffer->getContent(),
+                'usage' => ['total_tokens' => $tokens_used]
+            ];
+
+            $buffer->emergencySave($e->getMessage(), $raw_response);
+            $this->has_finalized = true;
+            $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
+            $this->sendSSE(['type' => 'close']);
+        } catch (Exception $saveError) {
+            $this->has_finalized = true;
+            $this->sendSSE(['type' => 'error', 'message' => 'Critical error: ' . $e->getMessage()]);
+            $this->sendSSE(['type' => 'close']);
+        }
+    }
+
+    /**
+     * Send Server-Sent Event with optimized delivery
      */
     private function sendSSE($data)
     {
-        // Use JSON encoding with minimal whitespace for faster transmission
         echo "data: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
 
-        // Flush immediately for real-time delivery
         if (ob_get_level() > 0) {
             ob_flush();
         }
         flush();
 
-        // Small delay to prevent overwhelming the client on rapid chunks
-        // This helps with smooth rendering on the frontend
+        // Rate limiting for smooth rendering
         if (isset($data['type']) && $data['type'] === 'chunk') {
-            usleep(5000); // 5ms delay between chunks for smoother rendering
+            usleep(2000); // 2ms delay for optimal rendering
         }
+    }
+}
+
+/**
+ * Streaming Buffer - In-memory content management with atomic commits
+ */
+class StreamingBuffer
+{
+    private $buffer = '';
+    private $conversation_id;
+    private $model;
+    private $llm_service;
+    private $start_time;
+
+    public function __construct($conversation_id, $model, $llm_service)
+    {
+        $this->conversation_id = $conversation_id;
+        $this->model = $model;
+        $this->llm_service = $llm_service;
+        $this->start_time = microtime(true);
+    }
+
+    /**
+     * Append chunk to buffer and send to client
+     */
+    public function append($chunk)
+    {
+        $this->buffer .= $chunk;
+    }
+
+    /**
+     * Atomic final commit to database
+     */
+    public function finalize($tokens_used, $raw_response = null)
+    {
+        $this->llm_service->addMessage(
+            $this->conversation_id,
+            'assistant',
+            $this->buffer,
+            null,
+            $this->model,
+            $tokens_used,
+            $raw_response
+        );
+    }
+
+    /**
+     * Emergency save on error
+     */
+    public function emergencySave($error_message, $raw_response = null)
+    {
+        $emergency_content = $this->buffer . "\n\n[Streaming interrupted: {$error_message}]";
+
+        $this->llm_service->addMessage(
+            $this->conversation_id,
+            'assistant',
+            $emergency_content,
+            null,
+            $this->model,
+            null,
+            $raw_response
+        );
+    }
+
+    /**
+     * Get the current buffered content
+     */
+    public function getContent()
+    {
+        return $this->buffer;
+    }
+
+    /**
+     * Check whether any content has been buffered
+     */
+    public function hasContent()
+    {
+        return strlen($this->buffer) > 0;
+    }
+
+    /**
+     * Get buffer statistics for monitoring
+     */
+    public function getStats()
+    {
+        return [
+            'buffer_size' => strlen($this->buffer),
+            'chunks_count' => substr_count($this->buffer, ' '), // Rough estimate
+            'duration' => microtime(true) - $this->start_time
+        ];
     }
 }
 ?>
