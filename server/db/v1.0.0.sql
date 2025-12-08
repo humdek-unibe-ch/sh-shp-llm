@@ -17,7 +17,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_default_model', get_field_type_id('select-llm-model'), '0'),
 (NULL, 'llm_timeout', get_field_type_id('number'), '0'),
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
-(NULL, 'llm_temperature', get_field_type_id('number'), '0'),
+(NULL, 'llm_temperature', get_field_type_id('text'), '0'),
 (NULL, 'llm_streaming_enabled', get_field_type_id('checkbox'), '0');
 
 -- link fields to page type
@@ -27,8 +27,8 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_api_key'), '', 'API key for LLM service authentication'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_max_tokens'), '2048', 'Maximum tokens per response'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_temperature'), '0.7', 'Response randomness (0.0-1.0)'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the model''s context length.'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time response streaming');
 
 -- set variables for parent pages
@@ -48,8 +48,8 @@ INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `he
 (@id_page_llm_config, get_field_id('llm_api_key'), '', 'API key for LLM service authentication'),
 (@id_page_llm_config, get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 (@id_page_llm_config, get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
-(@id_page_llm_config, get_field_id('llm_max_tokens'), '2048', 'Maximum tokens per response'),
-(@id_page_llm_config, get_field_id('llm_temperature'), '0.7', 'Response randomness (0.0-1.0)'),
+(@id_page_llm_config, get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the model''s context length.'),
+(@id_page_llm_config, get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
 (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '1', 'Enable real-time response streaming');
 
 -- add translation for LLM config page
@@ -73,7 +73,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'conversation_limit', get_field_type_id('number'), '0'),
 (NULL, 'message_limit', get_field_type_id('number'), '0'),
 (NULL, 'llm_model', get_field_type_id('select-llm-model'), '0'),
-(NULL, 'llm_temperature', get_field_type_id('number'), '0'),
+(NULL, 'llm_temperature', get_field_type_id('text'), '0'),
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
 (NULL, 'llm_streaming_enabled', get_field_type_id('checkbox'), '0'),
 (NULL, 'enable_conversations_list', get_field_type_id('checkbox'), '0'),
@@ -116,8 +116,8 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('conversation_limit'), '20', 'Number of recent conversations to show in sidebar'),
 (get_style_id('llmChat'), get_field_id('message_limit'), '100', 'Number of messages to load per conversation'),
 (get_style_id('llmChat'), get_field_id('llm_model'), '', 'Select AI model from dropdown. Admin can configure multiple llmChat components with different models if needed.'),
-(get_style_id('llmChat'), get_field_id('llm_temperature'), '0.7', 'Response randomness (0.0-1.0)'),
-(get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'Maximum tokens per response'),
+(get_style_id('llmChat'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
+(get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the model''s context length.'),
 (get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time streaming responses'),
 (get_style_id('llmChat'), get_field_id('enable_conversations_list'), '0', 'Enable conversations list on the left side. When disabled, only one conversation is allowed.'),
 (get_style_id('llmChat'), get_field_id('enable_file_uploads'), '0', 'Enable file upload functionality. When enabled, users can attach files to their messages. File types accepted depend on the selected AI model.'),
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id_sections` int(10) UNSIGNED ZEROFILL DEFAULT NULL,
     `title` varchar(255) DEFAULT 'New Conversation',
     `model` varchar(100) NOT NULL,
-    `temperature` decimal(3,2) DEFAULT 0.7,
+    `temperature` decimal(3,2) DEFAULT 1,
     `max_tokens` int DEFAULT 2048,
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
@@ -224,7 +224,7 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_config, get_field_id('llm_default_model'), '0000000001', 'qwen3-vl-8b-instruct'),
        (@id_page_llm_config, get_field_id('llm_timeout'), '0000000001', '30'),
        (@id_page_llm_config, get_field_id('llm_max_tokens'), '0000000001', '2048'),
-       (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '0.7'),
+       (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '1'),
        (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '1'),
        (@id_page_llm_conversations, get_field_id('title'), '0000000001', 'LLM Conversations'),
        (@id_page_llm_conversations, get_field_id('title'), '0000000002', 'LLM Konversationen'),
