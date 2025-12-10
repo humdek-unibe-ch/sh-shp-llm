@@ -183,10 +183,68 @@ export interface LlmChatConfig {
   deleteConfirmationTitle: string;
   /** Delete confirmation message */
   deleteConfirmationMessage: string;
+  /** Confirm delete button label */
+  confirmDeleteButtonLabel: string;
+  /** Cancel delete button label */
+  cancelDeleteButtonLabel: string;
   /** Tokens used suffix (e.g., ' tokens') */
   tokensSuffix: string;
   /** AI thinking text */
   aiThinkingText: string;
+  /** Conversations sidebar heading */
+  conversationsHeading: string;
+  /** New chat button label */
+  newChatButtonLabel: string;
+  /** Select conversation heading */
+  selectConversationHeading: string;
+  /** Select conversation description */
+  selectConversationDescription: string;
+  /** Model label prefix */
+  modelLabelPrefix: string;
+  /** Message when no messages exist */
+  noMessagesMessage: string;
+  /** Loading text */
+  loadingText: string;
+  /** Upload image label */
+  uploadImageLabel: string;
+  /** Upload help text */
+  uploadHelpText: string;
+  /** Clear button label */
+  clearButtonLabel: string;
+  /** Submit button label */
+  submitButtonLabel: string;
+  /** Error message for empty message */
+  emptyMessageError: string;
+  /** Error message for streaming active */
+  streamingActiveError: string;
+  /** Default chat title */
+  defaultChatTitle: string;
+  /** Delete button title/tooltip */
+  deleteButtonTitle: string;
+  /** Conversation title input placeholder */
+  conversationTitlePlaceholder: string;
+  /** Text for single file attached indicator */
+  singleFileAttachedText: string;
+  /** Text for multiple files attached indicator */
+  multipleFilesAttachedText: string;
+  /** Empty state title */
+  emptyStateTitle: string;
+  /** Empty state description */
+  emptyStateDescription: string;
+  /** Loading messages text */
+  loadingMessagesText: string;
+  /** Placeholder text when streaming is in progress */
+  streamingInProgressPlaceholder: string;
+  /** Attach files button title */
+  attachFilesTitle: string;
+  /** No vision support title */
+  noVisionSupportTitle: string;
+  /** No vision support text */
+  noVisionSupportText: string;
+  /** Send message button title */
+  sendMessageTitle: string;
+  /** Remove file button title */
+  removeFileTitle: string;
 }
 
 /**
@@ -209,8 +267,37 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   createButtonLabel: 'Create Conversation',
   deleteConfirmationTitle: 'Delete Conversation',
   deleteConfirmationMessage: 'Are you sure you want to delete this conversation? This action cannot be undone.',
+  confirmDeleteButtonLabel: 'Delete',
+  cancelDeleteButtonLabel: 'Cancel',
   tokensSuffix: ' tokens',
-  aiThinkingText: 'AI is thinking...'
+  aiThinkingText: 'AI is thinking...',
+  conversationsHeading: 'Conversations',
+  newChatButtonLabel: 'New',
+  selectConversationHeading: 'Select a conversation',
+  selectConversationDescription: 'Choose a conversation from the list below or start a new one.',
+  modelLabelPrefix: 'Model:',
+  noMessagesMessage: 'No messages yet. Start a conversation!',
+  loadingText: 'Loading...',
+  uploadImageLabel: 'Upload Image',
+  uploadHelpText: 'Select an image file to attach to your message.',
+  clearButtonLabel: 'Clear',
+  submitButtonLabel: 'Send',
+  emptyMessageError: 'Please enter a message',
+  streamingActiveError: 'Please wait for the current response to complete',
+  defaultChatTitle: 'AI Chat',
+  deleteButtonTitle: 'Delete conversation',
+  conversationTitlePlaceholder: 'Enter conversation title (optional)',
+  singleFileAttachedText: '1 file attached',
+  multipleFilesAttachedText: '{count} files attached',
+  emptyStateTitle: 'Start a conversation',
+  emptyStateDescription: 'Send a message to start chatting with the AI assistant.',
+  loadingMessagesText: 'Loading messages...',
+  streamingInProgressPlaceholder: 'Streaming in progress...',
+  attachFilesTitle: 'Attach files',
+  noVisionSupportTitle: 'Current model does not support image uploads',
+  noVisionSupportText: 'No vision',
+  sendMessageTitle: 'Send message',
+  removeFileTitle: 'Remove file'
 };
 
 // ============================================================================

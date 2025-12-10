@@ -15,8 +15,8 @@
  */
 
 import React, { useState, useRef, useCallback, KeyboardEvent, DragEvent } from 'react';
-import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../../types';
-import { FILE_ERRORS, formatBytes } from '../../../../types';
+import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../types';
+import { FILE_ERRORS, formatBytes } from '../../../types';
 import {
   formatFileSize,
   getFileExtension,
@@ -25,7 +25,7 @@ import {
   generateFileHash,
   truncateFileName,
   isImageExtension
-} from '../../../../utils/formatters';
+} from '../../../utils/formatters';
 
 /**
  * Props for MessageInput component

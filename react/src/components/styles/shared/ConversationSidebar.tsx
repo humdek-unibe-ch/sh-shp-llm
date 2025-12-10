@@ -107,7 +107,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
         variant="link"
         size="sm"
         className="text-danger p-1 conversation-delete-btn"
-        title="Delete conversation"
+        title={config.deleteButtonTitle}
         onClick={handleDeleteClick}
       >
         <i className="fas fa-trash-alt"></i>
@@ -160,7 +160,7 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
             <Form.Control
               type="text"
               id="conversation-title"
-              placeholder="Enter conversation title (optional)"
+              placeholder={config.conversationTitlePlaceholder}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               autoFocus
@@ -212,14 +212,14 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         {/* Sidebar Header */}
         <Card.Header className="bg-white border-0 conversation-sidebar-header">
           <div className="d-flex justify-content-between w-100 align-items-center">
-            <h6 className="mb-0">Conversations</h6>
+            <h6 className="mb-0">{config.conversationsHeading}</h6>
             <Button
               variant="primary"
               size="sm"
               onClick={handleNewConversationClick}
               className="conversation-new-btn"
             >
-              <i className="fas fa-plus mr-1"></i> New
+              <i className="fas fa-plus mr-1"></i> {config.newChatButtonLabel}
             </Button>
           </div>
         </Card.Header>
@@ -230,9 +230,9 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
             {isLoading ? (
               <ListGroup.Item className="text-center py-4">
                 <div className="spinner-border spinner-border-sm text-primary" role="status">
-                  <span className="sr-only">Loading...</span>
-                </div>
-                <p className="mt-2 mb-0">Loading...</p>
+                <span className="sr-only">{config.loadingText}</span>
+              </div>
+              <p className="mt-2 mb-0">{config.loadingText}</p>
               </ListGroup.Item>
             ) : conversations.length === 0 ? (
               <ListGroup.Item className="text-center py-4">

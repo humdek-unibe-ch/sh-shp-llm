@@ -53,6 +53,32 @@ class LlmchatModel extends StyleModel
     private $confirm_delete_button_label;
     private $cancel_delete_button_label;
 
+    // Error messages
+    private $empty_message_error;
+    private $streaming_active_error;
+    private $default_chat_title;
+
+    // Additional UI labels
+    private $delete_button_title;
+    private $conversation_title_placeholder;
+
+    // File attachment labels
+    private $single_file_attached_text;
+    private $multiple_files_attached_text;
+
+    // Empty state labels
+    private $empty_state_title;
+    private $empty_state_description;
+    private $loading_messages_text;
+
+    // Message input labels
+    private $streaming_in_progress_placeholder;
+    private $attach_files_title;
+    private $no_vision_support_title;
+    private $no_vision_support_text;
+    private $send_message_title;
+    private $remove_file_title;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -125,6 +151,32 @@ class LlmchatModel extends StyleModel
         $this->delete_confirmation_message = $this->get_db_field('delete_confirmation_message', 'Are you sure you want to delete this conversation? This action cannot be undone.');
         $this->confirm_delete_button_label = $this->get_db_field('confirm_delete_button_label', 'Delete');
         $this->cancel_delete_button_label = $this->get_db_field('cancel_delete_button_label', 'Cancel');
+
+        // Error messages
+        $this->empty_message_error = $this->get_db_field('empty_message_error', 'Please enter a message');
+        $this->streaming_active_error = $this->get_db_field('streaming_active_error', 'Please wait for the current response to complete');
+        $this->default_chat_title = $this->get_db_field('default_chat_title', 'AI Chat');
+
+        // Additional UI labels
+        $this->delete_button_title = $this->get_db_field('delete_button_title', 'Delete conversation');
+        $this->conversation_title_placeholder = $this->get_db_field('conversation_title_placeholder', 'Enter conversation title (optional)');
+
+        // File attachment labels
+        $this->single_file_attached_text = $this->get_db_field('single_file_attached_text', '1 file attached');
+        $this->multiple_files_attached_text = $this->get_db_field('multiple_files_attached_text', '{count} files attached');
+
+        // Empty state labels
+        $this->empty_state_title = $this->get_db_field('empty_state_title', 'Start a conversation');
+        $this->empty_state_description = $this->get_db_field('empty_state_description', 'Send a message to start chatting with the AI assistant.');
+        $this->loading_messages_text = $this->get_db_field('loading_messages_text', 'Loading messages...');
+
+        // Message input labels
+        $this->streaming_in_progress_placeholder = $this->get_db_field('streaming_in_progress_placeholder', 'Streaming in progress...');
+        $this->attach_files_title = $this->get_db_field('attach_files_title', 'Attach files');
+        $this->no_vision_support_title = $this->get_db_field('no_vision_support_title', 'Current model does not support image uploads');
+        $this->no_vision_support_text = $this->get_db_field('no_vision_support_text', 'No vision');
+        $this->send_message_title = $this->get_db_field('send_message_title', 'Send message');
+        $this->remove_file_title = $this->get_db_field('remove_file_title', 'Remove file');
     }
 
     /* Private Methods *********************************************************/
@@ -604,6 +656,96 @@ class LlmchatModel extends StyleModel
     public function getCancelDeleteButtonLabel()
     {
         return $this->cancel_delete_button_label;
+    }
+
+    // ===== Error Messages =====
+
+    public function getEmptyMessageError()
+    {
+        return $this->empty_message_error;
+    }
+
+    public function getStreamingActiveError()
+    {
+        return $this->streaming_active_error;
+    }
+
+    public function getDefaultChatTitle()
+    {
+        return $this->default_chat_title;
+    }
+
+    // ===== Additional UI Labels =====
+
+    public function getDeleteButtonTitle()
+    {
+        return $this->delete_button_title;
+    }
+
+    public function getConversationTitlePlaceholder()
+    {
+        return $this->conversation_title_placeholder;
+    }
+
+    // ===== File Attachment Labels =====
+
+    public function getSingleFileAttachedText()
+    {
+        return $this->single_file_attached_text;
+    }
+
+    public function getMultipleFilesAttachedText()
+    {
+        return $this->multiple_files_attached_text;
+    }
+
+    // ===== Empty State Labels =====
+
+    public function getEmptyStateTitle()
+    {
+        return $this->empty_state_title;
+    }
+
+    public function getEmptyStateDescription()
+    {
+        return $this->empty_state_description;
+    }
+
+    public function getLoadingMessagesText()
+    {
+        return $this->loading_messages_text;
+    }
+
+    // ===== Message Input Labels =====
+
+    public function getStreamingInProgressPlaceholder()
+    {
+        return $this->streaming_in_progress_placeholder;
+    }
+
+    public function getAttachFilesTitle()
+    {
+        return $this->attach_files_title;
+    }
+
+    public function getNoVisionSupportTitle()
+    {
+        return $this->no_vision_support_title;
+    }
+
+    public function getNoVisionSupportText()
+    {
+        return $this->no_vision_support_text;
+    }
+
+    public function getSendMessageTitle()
+    {
+        return $this->send_message_title;
+    }
+
+    public function getRemoveFileTitle()
+    {
+        return $this->remove_file_title;
     }
 
     /**

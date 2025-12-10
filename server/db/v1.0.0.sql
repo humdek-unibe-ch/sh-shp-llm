@@ -107,7 +107,23 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'delete_confirmation_title', get_field_type_id('text'), '1'),
 (NULL, 'delete_confirmation_message', get_field_type_id('text'), '1'),
 (NULL, 'confirm_delete_button_label', get_field_type_id('text'), '1'),
-(NULL, 'cancel_delete_button_label', get_field_type_id('text'), '1');
+(NULL, 'cancel_delete_button_label', get_field_type_id('text'), '1'),
+(NULL, 'empty_message_error', get_field_type_id('text'), '1'),
+(NULL, 'streaming_active_error', get_field_type_id('text'), '1'),
+(NULL, 'default_chat_title', get_field_type_id('text'), '1'),
+(NULL, 'delete_button_title', get_field_type_id('text'), '1'),
+(NULL, 'conversation_title_placeholder', get_field_type_id('text'), '1'),
+(NULL, 'single_file_attached_text', get_field_type_id('text'), '1'),
+(NULL, 'multiple_files_attached_text', get_field_type_id('text'), '1'),
+(NULL, 'empty_state_title', get_field_type_id('text'), '1'),
+(NULL, 'empty_state_description', get_field_type_id('text'), '1'),
+(NULL, 'loading_messages_text', get_field_type_id('text'), '1'),
+(NULL, 'streaming_in_progress_placeholder', get_field_type_id('text'), '1'),
+(NULL, 'attach_files_title', get_field_type_id('text'), '1'),
+(NULL, 'no_vision_support_title', get_field_type_id('text'), '1'),
+(NULL, 'no_vision_support_text', get_field_type_id('text'), '1'),
+(NULL, 'send_message_title', get_field_type_id('text'), '1'),
+(NULL, 'remove_file_title', get_field_type_id('text'), '1');
 
 -- link fields to llmchat style
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
@@ -147,7 +163,23 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('delete_confirmation_title'), 'Delete Conversation', 'Title for the delete confirmation modal'),
 (get_style_id('llmChat'), get_field_id('delete_confirmation_message'), 'Are you sure you want to delete this conversation? This action cannot be undone.', 'Message shown in the delete confirmation modal'),
 (get_style_id('llmChat'), get_field_id('confirm_delete_button_label'), 'Delete', 'Text for the confirm delete button'),
-(get_style_id('llmChat'), get_field_id('cancel_delete_button_label'), 'Cancel', 'Text for the cancel delete button');
+(get_style_id('llmChat'), get_field_id('cancel_delete_button_label'), 'Cancel', 'Text for the cancel delete button'),
+(get_style_id('llmChat'), get_field_id('empty_message_error'), 'Please enter a message', 'Error message when user tries to send empty message'),
+(get_style_id('llmChat'), get_field_id('streaming_active_error'), 'Please wait for the current response to complete', 'Error message when streaming is active'),
+(get_style_id('llmChat'), get_field_id('default_chat_title'), 'AI Chat', 'Default title for conversations'),
+(get_style_id('llmChat'), get_field_id('delete_button_title'), 'Delete conversation', 'Tooltip/title for delete conversation button'),
+(get_style_id('llmChat'), get_field_id('conversation_title_placeholder'), 'Enter conversation title (optional)', 'Placeholder text for conversation title input'),
+(get_style_id('llmChat'), get_field_id('single_file_attached_text'), '1 file attached', 'Text shown when single file is attached'),
+(get_style_id('llmChat'), get_field_id('multiple_files_attached_text'), '{count} files attached', 'Text shown when multiple files are attached (use {count} placeholder)'),
+(get_style_id('llmChat'), get_field_id('empty_state_title'), 'Start a conversation', 'Title shown when no messages exist'),
+(get_style_id('llmChat'), get_field_id('empty_state_description'), 'Send a message to start chatting with the AI assistant.', 'Description shown when no messages exist'),
+(get_style_id('llmChat'), get_field_id('loading_messages_text'), 'Loading messages...', 'Text shown while loading messages'),
+(get_style_id('llmChat'), get_field_id('streaming_in_progress_placeholder'), 'Streaming in progress...', 'Placeholder text when streaming is active'),
+(get_style_id('llmChat'), get_field_id('attach_files_title'), 'Attach files', 'Tooltip/title for attach files button'),
+(get_style_id('llmChat'), get_field_id('no_vision_support_title'), 'Current model does not support image uploads', 'Tooltip when vision model is not selected'),
+(get_style_id('llmChat'), get_field_id('no_vision_support_text'), 'No vision', 'Text shown when vision model is not selected'),
+(get_style_id('llmChat'), get_field_id('send_message_title'), 'Send message', 'Tooltip/title for send message button'),
+(get_style_id('llmChat'), get_field_id('remove_file_title'), 'Remove file', 'Tooltip/title for remove file button');
 
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (

@@ -82,7 +82,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     const trimmedMessage = message.trim();
     // Always require a message, even with file attachments
     if (!trimmedMessage) {
-      setFileError('Please enter a message');
+      setFileError(config.emptyMessageError);
       return;
     }
     
@@ -337,6 +337,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 item={item}
                 onRemove={handleRemoveFile}
                 fileConfig={fileConfig}
+                config={config}
               />
             ))}
           </div>
@@ -364,7 +365,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         <Form.Control
           ref={textareaRef}
           as="textarea"
-          placeholder={disabled ? 'Streaming in progress...' : config.messagePlaceholder}
+          placeholder={disabled ? config.streamingInProgressPlaceholder : config.messagePlaceholder}
           value={message}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
@@ -385,16 +386,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 size="sm"
                 onClick={handleAttachmentClick}
                 disabled={disabled}
-                title="Attach files"
+                title={config.attachFilesTitle}
                 className="message-action-btn"
               >
                 <i className="fas fa-paperclip"></i>
               </Button>
             )}
             {config.enableFileUploads && !config.isVisionModel && (
-              <Button variant="outline-secondary" size="sm" disabled title="Current model does not support image uploads">
+              <Button variant="outline-secondary" size="sm" disabled title={config.noVisionSupportTitle}>
                 <i className="fas fa-paperclip text-muted"></i>
-                <small className="text-muted ml-1">No vision</small>
+                <small className="text-muted ml-1">{config.noVisionSupportText}</small>
               </Button>
             )}
           </div>
@@ -411,7 +412,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               size="sm"
               onClick={handleClearForm}
               disabled={disabled}
-              title="Clear"
+              title={config.clearButtonLabel}
               className="message-action-btn message-clear-btn mr-1"
             >
               <i className="fas fa-times"></i>
@@ -422,7 +423,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               variant="primary"
               size="sm"
               disabled={disabled || !message.trim()}
-              title="Send message"
+              title={config.sendMessageTitle}
               className="message-action-btn message-send-btn"
             >
               {disabled ? (
@@ -448,7 +449,7 @@ interface AttachmentItemProps {
   fileConfig: LlmChatConfig['fileConfig'];
 }
 
-const AttachmentItem: React.FC<AttachmentItemProps> = ({ item, onRemove, fileConfig }) => {
+const AttachmentItem: React.FC<AttachmentItemProps & { config: LlmChatConfig }> = ({ item, onRemove, fileConfig, config }) => {
   const extension = getFileExtension(item.file.name);
   const isImage = isImageExtension(extension, fileConfig.allowedImageExtensions);
   const fileIcon = getFileIconByExtension(extension);
@@ -490,7 +491,7 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({ item, onRemove, fileCon
       <CloseButton
         className="ml-1"
         onClick={() => onRemove(item.id)}
-        title="Remove file"
+        title={config.removeFileTitle}
         style={{ fontSize: '12px' }}
       />
     </div>

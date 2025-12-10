@@ -84,6 +84,32 @@ class LlmchatView extends StyleView
         $cancel_delete_button_label = $this->model->getCancelDeleteButtonLabel();
         $submit_button_label = $this->model->getSubmitButtonLabel();
 
+        // Error messages
+        $empty_message_error = $this->model->getEmptyMessageError();
+        $streaming_active_error = $this->model->getStreamingActiveError();
+        $default_chat_title = $this->model->getDefaultChatTitle();
+
+        // Additional UI labels
+        $delete_button_title = $this->model->getDeleteButtonTitle();
+        $conversation_title_placeholder = $this->model->getConversationTitlePlaceholder();
+
+        // File attachment labels
+        $single_file_attached = $this->model->getSingleFileAttachedText();
+        $multiple_files_attached = $this->model->getMultipleFilesAttachedText();
+
+        // Empty state labels
+        $empty_state_title = $this->model->getEmptyStateTitle();
+        $empty_state_description = $this->model->getEmptyStateDescription();
+        $loading_messages_text = $this->model->getLoadingMessagesText();
+
+        // Message input labels
+        $streaming_in_progress_placeholder = $this->model->getStreamingInProgressPlaceholder();
+        $attach_files_title = $this->model->getAttachFilesTitle();
+        $no_vision_support_title = $this->model->getNoVisionSupportTitle();
+        $no_vision_support_text = $this->model->getNoVisionSupportText();
+        $send_message_title = $this->model->getSendMessageTitle();
+        $remove_file_title = $this->model->getRemoveFileTitle();
+
         include __DIR__ . '/tpl/llm_chat_main.php';
     }
 
@@ -151,8 +177,37 @@ class LlmchatView extends StyleView
             'createButtonLabel' => $this->model->getCreateButtonLabel(),
             'deleteConfirmationTitle' => $this->model->getDeleteConfirmationTitle(),
             'deleteConfirmationMessage' => $this->model->getDeleteConfirmationMessage(),
+            'confirmDeleteButtonLabel' => $this->model->getConfirmDeleteButtonLabel(),
+            'cancelDeleteButtonLabel' => $this->model->getCancelDeleteButtonLabel(),
             'tokensSuffix' => $this->model->getTokensUsedSuffix(),
             'aiThinkingText' => $this->model->getAiThinkingText(),
+            'conversationsHeading' => $this->model->getConversationsHeading(),
+            'newChatButtonLabel' => $this->model->getNewChatButtonLabel(),
+            'selectConversationHeading' => $this->model->getSelectConversationHeading(),
+            'selectConversationDescription' => $this->model->getSelectConversationDescription(),
+            'modelLabelPrefix' => $this->model->getModelLabelPrefix(),
+            'noMessagesMessage' => $this->model->getNoMessagesMessage(),
+            'loadingText' => $this->model->getLoadingText(),
+            'uploadImageLabel' => $this->model->getUploadImageLabel(),
+            'uploadHelpText' => $this->model->getUploadHelpText(),
+            'clearButtonLabel' => $this->model->getClearButtonLabel(),
+            'submitButtonLabel' => $this->model->getSubmitButtonLabel(),
+            'emptyMessageError' => $this->model->getEmptyMessageError(),
+            'streamingActiveError' => $this->model->getStreamingActiveError(),
+            'defaultChatTitle' => $this->model->getDefaultChatTitle(),
+            'deleteButtonTitle' => $this->model->getDeleteButtonTitle(),
+            'conversationTitlePlaceholder' => $this->model->getConversationTitlePlaceholder(),
+            'singleFileAttachedText' => $this->model->getSingleFileAttachedText(),
+            'multipleFilesAttachedText' => $this->model->getMultipleFilesAttachedText(),
+            'emptyStateTitle' => $this->model->getEmptyStateTitle(),
+            'emptyStateDescription' => $this->model->getEmptyStateDescription(),
+            'loadingMessagesText' => $this->model->getLoadingMessagesText(),
+            'streamingInProgressPlaceholder' => $this->model->getStreamingInProgressPlaceholder(),
+            'attachFilesTitle' => $this->model->getAttachFilesTitle(),
+            'noVisionSupportTitle' => $this->model->getNoVisionSupportTitle(),
+            'noVisionSupportText' => $this->model->getNoVisionSupportText(),
+            'sendMessageTitle' => $this->model->getSendMessageTitle(),
+            'removeFileTitle' => $this->model->getRemoveFileTitle(),
             // File config
             'fileConfig' => [
                 'maxFileSize' => LLM_MAX_FILE_SIZE,

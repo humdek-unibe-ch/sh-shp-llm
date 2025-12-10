@@ -193,7 +193,7 @@ class LlmchatController extends BaseController
                         throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
                     }
                     // Get or create conversation for the specific model
-                    $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens);
+                    $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens, $this->model->getSectionId());
                     $is_new_conversation = true;
                 } else {
                     // Check if existing conversation matches the requested model
@@ -209,7 +209,7 @@ class LlmchatController extends BaseController
                             throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
                         }
                         // Create new conversation for the new model
-                        $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens);
+                        $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens, $this->model->getSectionId());
                         $is_new_conversation = true;
                     }
                 }
@@ -264,7 +264,7 @@ class LlmchatController extends BaseController
                     throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
                 }
                 // Get or create conversation for the specific model
-                $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens);
+                $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens, $this->model->getSectionId());
                 $is_new_conversation = true;
             } else {
                 // Check if existing conversation matches the requested model
@@ -280,7 +280,7 @@ class LlmchatController extends BaseController
                         throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
                     }
                     // Create new conversation for the new model
-                    $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens);
+                    $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens, $this->model->getSectionId());
                     $is_new_conversation = true;
                 }
             }

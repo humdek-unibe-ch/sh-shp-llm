@@ -146,10 +146,126 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     jsonConfig.tokensSuffix || 
     DEFAULT_CONFIG.tokensSuffix!;
   
-  const aiThinkingText = container.dataset.aiThinkingText || 
-    jsonConfig.aiThinkingText || 
+  const aiThinkingText = container.dataset.aiThinkingText ||
+    jsonConfig.aiThinkingText ||
     DEFAULT_CONFIG.aiThinkingText!;
-  
+
+  const conversationsHeading = container.dataset.conversationsHeading ||
+    jsonConfig.conversationsHeading ||
+    DEFAULT_CONFIG.conversationsHeading!;
+
+  const newChatButtonLabel = container.dataset.newChatButtonLabel ||
+    jsonConfig.newChatButtonLabel ||
+    DEFAULT_CONFIG.newChatButtonLabel!;
+
+  const selectConversationHeading = container.dataset.selectConversationHeading ||
+    jsonConfig.selectConversationHeading ||
+    DEFAULT_CONFIG.selectConversationHeading!;
+
+  const selectConversationDescription = container.dataset.selectConversationDescription ||
+    jsonConfig.selectConversationDescription ||
+    DEFAULT_CONFIG.selectConversationDescription!;
+
+  const modelLabelPrefix = container.dataset.modelLabelPrefix ||
+    jsonConfig.modelLabelPrefix ||
+    DEFAULT_CONFIG.modelLabelPrefix!;
+
+  const noMessagesMessage = container.dataset.noMessagesMessage ||
+    jsonConfig.noMessagesMessage ||
+    DEFAULT_CONFIG.noMessagesMessage!;
+
+  const loadingText = container.dataset.loadingText ||
+    jsonConfig.loadingText ||
+    DEFAULT_CONFIG.loadingText!;
+
+  const uploadImageLabel = container.dataset.uploadImageLabel ||
+    jsonConfig.uploadImageLabel ||
+    DEFAULT_CONFIG.uploadImageLabel!;
+
+  const uploadHelpText = container.dataset.uploadHelpText ||
+    jsonConfig.uploadHelpText ||
+    DEFAULT_CONFIG.uploadHelpText!;
+
+  const clearButtonLabel = container.dataset.clearButtonLabel ||
+    jsonConfig.clearButtonLabel ||
+    DEFAULT_CONFIG.clearButtonLabel!;
+
+  const submitButtonLabel = container.dataset.submitButtonLabel ||
+    jsonConfig.submitButtonLabel ||
+    DEFAULT_CONFIG.submitButtonLabel!;
+
+  const confirmDeleteButtonLabel = container.dataset.confirmDeleteButtonLabel ||
+    jsonConfig.confirmDeleteButtonLabel ||
+    DEFAULT_CONFIG.confirmDeleteButtonLabel!;
+
+  const cancelDeleteButtonLabel = container.dataset.cancelDeleteButtonLabel ||
+    jsonConfig.cancelDeleteButtonLabel ||
+    DEFAULT_CONFIG.cancelDeleteButtonLabel!;
+
+  const emptyMessageError = container.dataset.emptyMessageError ||
+    jsonConfig.emptyMessageError ||
+    DEFAULT_CONFIG.emptyMessageError!;
+
+  const streamingActiveError = container.dataset.streamingActiveError ||
+    jsonConfig.streamingActiveError ||
+    DEFAULT_CONFIG.streamingActiveError!;
+
+  const defaultChatTitle = container.dataset.defaultChatTitle ||
+    jsonConfig.defaultChatTitle ||
+    DEFAULT_CONFIG.defaultChatTitle!;
+
+  const deleteButtonTitle = container.dataset.deleteButtonTitle ||
+    jsonConfig.deleteButtonTitle ||
+    DEFAULT_CONFIG.deleteButtonTitle!;
+
+  const conversationTitlePlaceholder = container.dataset.conversationTitlePlaceholder ||
+    jsonConfig.conversationTitlePlaceholder ||
+    DEFAULT_CONFIG.conversationTitlePlaceholder!;
+
+  const singleFileAttachedText = container.dataset.singleFileAttachedText ||
+    jsonConfig.singleFileAttachedText ||
+    DEFAULT_CONFIG.singleFileAttachedText!;
+
+  const multipleFilesAttachedText = container.dataset.multipleFilesAttachedText ||
+    jsonConfig.multipleFilesAttachedText ||
+    DEFAULT_CONFIG.multipleFilesAttachedText!;
+
+  const emptyStateTitle = container.dataset.emptyStateTitle ||
+    jsonConfig.emptyStateTitle ||
+    DEFAULT_CONFIG.emptyStateTitle!;
+
+  const emptyStateDescription = container.dataset.emptyStateDescription ||
+    jsonConfig.emptyStateDescription ||
+    DEFAULT_CONFIG.emptyStateDescription!;
+
+  const loadingMessagesText = container.dataset.loadingMessagesText ||
+    jsonConfig.loadingMessagesText ||
+    DEFAULT_CONFIG.loadingMessagesText!;
+
+  const streamingInProgressPlaceholder = container.dataset.streamingInProgressPlaceholder ||
+    jsonConfig.streamingInProgressPlaceholder ||
+    DEFAULT_CONFIG.streamingInProgressPlaceholder!;
+
+  const attachFilesTitle = container.dataset.attachFilesTitle ||
+    jsonConfig.attachFilesTitle ||
+    DEFAULT_CONFIG.attachFilesTitle!;
+
+  const noVisionSupportTitle = container.dataset.noVisionSupportTitle ||
+    jsonConfig.noVisionSupportTitle ||
+    DEFAULT_CONFIG.noVisionSupportTitle!;
+
+  const noVisionSupportText = container.dataset.noVisionSupportText ||
+    jsonConfig.noVisionSupportText ||
+    DEFAULT_CONFIG.noVisionSupportText!;
+
+  const sendMessageTitle = container.dataset.sendMessageTitle ||
+    jsonConfig.sendMessageTitle ||
+    DEFAULT_CONFIG.sendMessageTitle!;
+
+  const removeFileTitle = container.dataset.removeFileTitle ||
+    jsonConfig.removeFileTitle ||
+    DEFAULT_CONFIG.removeFileTitle!;
+
   return {
     userId,
     currentConversationId,
@@ -169,8 +285,37 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     createButtonLabel,
     deleteConfirmationTitle,
     deleteConfirmationMessage,
+    confirmDeleteButtonLabel,
+    cancelDeleteButtonLabel,
     tokensSuffix,
-    aiThinkingText
+    aiThinkingText,
+    conversationsHeading,
+    newChatButtonLabel,
+    selectConversationHeading,
+    selectConversationDescription,
+    modelLabelPrefix,
+    noMessagesMessage,
+    loadingText,
+    uploadImageLabel,
+    uploadHelpText,
+    clearButtonLabel,
+    submitButtonLabel,
+    emptyMessageError,
+    streamingActiveError,
+    defaultChatTitle,
+    deleteButtonTitle,
+    conversationTitlePlaceholder,
+    singleFileAttachedText,
+    multipleFilesAttachedText,
+    emptyStateTitle,
+    emptyStateDescription,
+    loadingMessagesText,
+    streamingInProgressPlaceholder,
+    attachFilesTitle,
+    noVisionSupportTitle,
+    noVisionSupportText,
+    sendMessageTitle,
+    removeFileTitle
   };
 }
 

@@ -49,7 +49,7 @@ server/plugins/sh-shp-llm/
 │   ├── vite.config.ts            # Vite build configuration
 │   ├── tsconfig.json             # TypeScript configuration
 │   └── src/
-│       ├── LLMChat.tsx            # Entry point and initialization
+│       ├── LlmChat.tsx            # Entry point and initialization
 │       ├── types/index.ts        # TypeScript type definitions
 │       ├── components/
 │       │   ├── LlmChat.tsx       # Main chat component
@@ -1054,7 +1054,7 @@ react/
 ├── vite.config.ts              # Build configuration
 ├── tsconfig.json               # TypeScript configuration
 └── src/
-    ├── LLMChat.tsx             # Entry point and initialization
+    ├── LlmChat.tsx             # Entry point and initialization
     ├── types/
     │   └── index.ts            # TypeScript type definitions
     ├── components/

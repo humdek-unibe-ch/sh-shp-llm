@@ -17,9 +17,9 @@
  */
 
 import React from 'react';
-import type { Message, LlmChatConfig } from '../../../../types';
-import { formatTime } from '../../../../utils/formatters';
-import { MarkdownRenderer } from './MarkdownRenderer';
+import type { Message, LlmChatConfig } from '../../../types';
+import { formatTime } from '../../../utils/formatters';
+import MarkdownRenderer from '@/components/styles/shared/MarkdownRenderer';
 
 /**
  * Props for MessageList component

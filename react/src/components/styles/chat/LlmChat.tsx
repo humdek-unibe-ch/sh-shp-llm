@@ -209,13 +209,13 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   const handleSendMessage = useCallback(async (message: string, files: SelectedFile[]) => {
     // Validate input - always require a message, even with file attachments
     if (!message.trim()) {
-      setError('Please enter a message');
+      setError(config.emptyMessageError);
       return;
     }
     
     // Prevent concurrent sends
     if (isStreaming) {
-      setError('Please wait for the current response to complete');
+      setError(config.streamingActiveError);
       return;
     }
     
@@ -364,7 +364,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3" style={{width: '40px', height: '40px'}}>
                   <i className="fas fa-robot text-white"></i>
                 </div>
-                <h5 className="mb-0">{currentConversation?.title || 'AI Chat'}</h5>
+                <h5 className="mb-0">{currentConversation?.title || config.defaultChatTitle}</h5>
               </div>
               <div className="d-flex align-items-center">
                 <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'} llm-model-badge`}>

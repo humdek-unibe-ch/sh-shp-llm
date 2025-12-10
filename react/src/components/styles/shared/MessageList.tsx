@@ -68,10 +68,10 @@ function getAttachmentCount(attachments?: string): number {
 /**
  * Render attachment indicator
  */
-const AttachmentIndicator: React.FC<{ count: number; isUser: boolean }> = ({ count, isUser }) => {
+const AttachmentIndicator: React.FC<{ count: number; isUser: boolean; config: LlmChatConfig }> = ({ count, isUser, config }) => {
   if (count === 0) return null;
   
-  const fileText = count === 1 ? '1 file attached' : `${count} files attached`;
+  const fileText = count === 1 ? config.singleFileAttachedText : config.multipleFilesAttachedText.replace('{count}', count.toString());
   
   return (
     <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.08)' }}>
@@ -115,7 +115,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isStreaming = false,
         </div>
         
         {/* Attachment indicator */}
-        <AttachmentIndicator count={attachmentCount} isUser={isUser} />
+        <AttachmentIndicator count={attachmentCount} isUser={isUser} config={config} />
         
         {/* Message metadata */}
         <div className="message-meta">
@@ -158,11 +158,11 @@ const ThinkingIndicator: React.FC<{ text: string }> = ({ text }) => (
  * Empty state component
  * Shows when no messages exist
  */
-const EmptyState: React.FC = () => (
+const EmptyState: React.FC<{ config: LlmChatConfig }> = ({ config }) => (
   <div className="empty-chat-state">
     <i className="fas fa-comments"></i>
-    <h5>Start a conversation</h5>
-    <p>Send a message to start chatting with the AI assistant.</p>
+    <h5>{config.emptyStateTitle}</h5>
+    <p>{config.emptyStateDescription}</p>
   </div>
 );
 
@@ -170,12 +170,12 @@ const EmptyState: React.FC = () => (
  * Loading state component
  * Shows while loading initial data
  */
-const LoadingState: React.FC = () => (
+const LoadingState: React.FC<{ config: LlmChatConfig }> = ({ config }) => (
   <div className="loading-spinner">
     <div className="spinner-border mb-3" role="status">
-      <span className="sr-only">Loading...</span>
+      <span className="sr-only">{config.loadingText}</span>
     </div>
-    <p>Loading messages...</p>
+    <p>{config.loadingMessagesText}</p>
   </div>
 );
 
@@ -194,12 +194,12 @@ export const MessageList: React.FC<MessageListProps> = ({
 }) => {
   // Show loading state
   if (isLoading) {
-    return <LoadingState />;
+    return <LoadingState config={config} />;
   }
-  
+
   // Show empty state
   if (messages.length === 0 && !isStreaming) {
-    return <EmptyState />;
+    return <EmptyState config={config} />;
   }
   
   // Check if we need to show the thinking indicator
