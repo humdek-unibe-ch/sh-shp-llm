@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import { Card, ListGroup, Button, Modal, Form, CloseButton } from 'react-bootstrap';
 import type { Conversation, LlmChatConfig } from '../../../types';
 import { formatDate } from '../../../utils/formatters';
 
@@ -87,27 +88,31 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
   }, [onDelete, config]);
   
   return (
-    <div
-      className={`conversation-item ${isActive ? 'active' : ''}`}
+    <ListGroup.Item
+      action
+      active={isActive}
       onClick={onSelect}
+      className="d-flex align-items-center justify-content-between"
     >
-      <div className="conversation-icon">
-        <i className="fas fa-comment-dots"></i>
+      <div className="d-flex align-items-center flex-grow-1">
+        <div className="conversation-icon mr-3">
+          <i className="fas fa-comment-dots"></i>
+        </div>
+        <div className="conversation-content">
+          <div className="conversation-title font-weight-medium">{conversation.title}</div>
+          <small className="text-muted">{formatDate(conversation.updated_at)}</small>
+        </div>
       </div>
-      
-      <div className="conversation-content">
-        <div className="conversation-title">{conversation.title}</div>
-        <div className="conversation-meta">{formatDate(conversation.updated_at)}</div>
-      </div>
-      
-      <button
-        className="delete-btn"
+      <Button
+        variant="link"
+        size="sm"
+        className="text-danger p-1"
         title="Delete conversation"
         onClick={handleDeleteClick}
       >
         <i className="fas fa-trash-alt"></i>
-      </button>
-    </div>
+      </Button>
+    </ListGroup.Item>
   );
 };
 
@@ -141,60 +146,38 @@ const NewConversationModal: React.FC<NewConversationModalProps> = ({
     onClose();
   }, [onClose]);
   
-  if (!isOpen) return null;
-  
   return (
-    <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-      <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content">
-          <div className="modal-header">
-            <h5 className="modal-title">{config.newConversationTitleLabel}</h5>
-            <button
-              type="button"
-              className="close"
-              aria-label="Close"
-              onClick={handleClose}
-            >
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-          <form onSubmit={handleSubmit}>
-            <div className="modal-body">
-              <div className="form-group">
-                <label htmlFor="conversation-title">
-                  {config.conversationTitleLabel}
-                </label>
-                <input
-                  type="text"
-                  className="form-control"
-                  id="conversation-title"
-                  placeholder="Enter conversation title (optional)"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  autoFocus
-                />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleClose}
-              >
-                {config.cancelButtonLabel}
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-              >
-                <i className="fas fa-plus mr-1"></i>
-                {config.createButtonLabel}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
+    <Modal show={isOpen} onHide={handleClose} centered>
+      <Modal.Header closeButton>
+        <Modal.Title>{config.newConversationTitleLabel}</Modal.Title>
+      </Modal.Header>
+      <Form onSubmit={handleSubmit}>
+        <Modal.Body>
+          <Form.Group>
+            <Form.Label htmlFor="conversation-title">
+              {config.conversationTitleLabel}
+            </Form.Label>
+            <Form.Control
+              type="text"
+              id="conversation-title"
+              placeholder="Enter conversation title (optional)"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleClose}>
+            {config.cancelButtonLabel}
+          </Button>
+          <Button variant="primary" type="submit">
+            <i className="fas fa-plus mr-1"></i>
+            {config.createButtonLabel}
+          </Button>
+        </Modal.Footer>
+      </Form>
+    </Modal>
   );
 };
 
@@ -225,48 +208,51 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   
   return (
     <>
-      <div className="conversation-sidebar">
+      <Card className="h-100 border-0 shadow-sm">
         {/* Sidebar Header */}
-        <div className="sidebar-header">
+        <Card.Header className="bg-white border-bottom">
           <div className="d-flex justify-content-between align-items-center">
-            <h6>Conversations</h6>
-            <button
-              className="btn btn-primary btn-sm"
+            <h6 className="mb-0">Conversations</h6>
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleNewConversationClick}
             >
               <i className="fas fa-plus mr-1"></i> New
-            </button>
+            </Button>
           </div>
-        </div>
-        
+        </Card.Header>
+
         {/* Conversations List */}
-        <div className="conversations-list">
-          {isLoading ? (
-            <div className="sidebar-empty">
-              <div className="spinner-border spinner-border-sm text-primary" role="status">
-                <span className="sr-only">Loading...</span>
-              </div>
-              <p className="mt-2">Loading...</p>
-            </div>
-          ) : conversations.length === 0 ? (
-            <div className="sidebar-empty">
-              <i className="fas fa-inbox"></i>
-              <p>{config.noConversationsMessage}</p>
-            </div>
-          ) : (
-            conversations.map((conversation) => (
-              <ConversationItem
-                key={conversation.id}
-                conversation={conversation}
-                isActive={currentConversation ? String(currentConversation.id) === String(conversation.id) : false}
-                onSelect={() => onSelect(conversation)}
-                onDelete={() => onDelete(String(conversation.id))}
-                config={config}
-              />
-            ))
-          )}
-        </div>
-      </div>
+        <Card.Body className="p-0 flex-grow-1 overflow-auto">
+          <ListGroup variant="flush">
+            {isLoading ? (
+              <ListGroup.Item className="text-center py-4">
+                <div className="spinner-border spinner-border-sm text-primary" role="status">
+                  <span className="sr-only">Loading...</span>
+                </div>
+                <p className="mt-2 mb-0">Loading...</p>
+              </ListGroup.Item>
+            ) : conversations.length === 0 ? (
+              <ListGroup.Item className="text-center py-4">
+                <i className="fas fa-inbox fa-2x text-muted mb-3"></i>
+                <p className="text-muted mb-0">{config.noConversationsMessage}</p>
+              </ListGroup.Item>
+            ) : (
+              conversations.map((conversation) => (
+                <ConversationItem
+                  key={conversation.id}
+                  conversation={conversation}
+                  isActive={currentConversation ? String(currentConversation.id) === String(conversation.id) : false}
+                  onSelect={() => onSelect(conversation)}
+                  onDelete={() => onDelete(String(conversation.id))}
+                  config={config}
+                />
+              ))
+            )}
+          </ListGroup>
+        </Card.Body>
+      </Card>
       
       {/* New Conversation Modal */}
       <NewConversationModal

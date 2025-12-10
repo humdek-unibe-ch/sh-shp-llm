@@ -23,6 +23,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import 'bootstrap/dist/css/bootstrap.min.css';
 import { LlmChat } from './components/styles/chat/LlmChat';
 import type { LlmChatConfig, FileConfig } from './types';
 import { DEFAULT_FILE_CONFIG, DEFAULT_CONFIG } from './types';

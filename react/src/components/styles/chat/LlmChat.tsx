@@ -13,6 +13,7 @@
  */
 
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
+import { Container, Row, Col, Alert, Card } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
@@ -329,29 +330,19 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation.model !== config.configuredModel;
 
   return (
-    <div className="llm-chat-container">
+    <Container fluid className="llm-chat-container">
       {/* Error Alert */}
       {error && (
-        <div className="llm-error-alert">
-          <div className="d-flex align-items-center">
-            <i className="fas fa-exclamation-circle mr-2"></i>
-            <span style={{ flex: 1 }}>{error}</span>
-            <button
-              type="button"
-              className="close"
-              onClick={clearError}
-              aria-label="Close"
-            >
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-        </div>
+        <Alert variant="danger" dismissible onClose={clearError} className="mb-3">
+          <i className="fas fa-exclamation-circle mr-2"></i>
+          {error}
+        </Alert>
       )}
-      
-      <div className="row no-gutters h-100">
+
+      <Row className="no-gutters h-100">
         {/* Conversations Sidebar */}
         {config.enableConversationsList && (
-          <div className="col-md-4 col-lg-3">
+          <Col md={4} lg={3}>
             <ConversationSidebar
               conversations={conversations}
               currentConversation={currentConversation}
@@ -361,31 +352,32 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
               isLoading={isLoading}
               config={config}
             />
-          </div>
+          </Col>
         )}
-        
+
         {/* Main Chat Area */}
-        <div className={config.enableConversationsList ? "col-md-8 col-lg-9" : "col-12"}>
-          <div className="d-flex flex-column h-100">
+        <Col className={config.enableConversationsList ? "" : "col-12"}>
+          <Card className="h-100 border-0 shadow-sm">
             {/* Chat Header */}
-            <div className="chat-header">
-              <div className="chat-title">
-                <div className="chat-icon">
-                  <i className="fas fa-robot"></i>
+            <Card.Header className="bg-white border-bottom d-flex justify-content-between align-items-center">
+              <div className="d-flex align-items-center">
+                <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3" style={{width: '40px', height: '40px'}}>
+                  <i className="fas fa-robot text-white"></i>
                 </div>
-                <h5>{currentConversation?.title || 'AI Chat'}</h5>
+                <h5 className="mb-0">{currentConversation?.title || 'AI Chat'}</h5>
               </div>
-              <div className={`model-badge ${isModelMismatch ? 'model-mismatch' : ''}`}>
-                <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'}`}></i>
-                <span>{activeModel}</span>
-              </div>
-            </div>
-            
+              <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'}`}>
+                <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'} mr-1`}></i>
+                {activeModel}
+              </span>
+            </Card.Header>
+
             {/* Messages Container */}
-            <div
+            <Card.Body
               ref={messagesContainerRef}
               id="messages-container"
               onScroll={handleScroll}
+              className="p-3 flex-grow-1 overflow-auto"
             >
               <MessageList
                 messages={displayMessages}
@@ -395,15 +387,15 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 isProcessing={isProcessing}
                 config={config}
               />
-            </div>
-            
+            </Card.Body>
+
             {/* Streaming Indicator */}
             {isStreaming && (
               <StreamingIndicator text={config.aiThinkingText} />
             )}
-            
+
             {/* Message Input */}
-            <div className="card-footer">
+            <Card.Footer className="bg-white border-top p-3">
               <MessageInput
                 onSend={handleSendMessage}
                 selectedFiles={selectedFiles}
@@ -411,11 +403,11 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 disabled={isStreaming || isLoading}
                 config={config}
               />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            </Card.Footer>
+          </Card>
+        </Col>
+      </Row>
+    </Container>
   );
 };
 

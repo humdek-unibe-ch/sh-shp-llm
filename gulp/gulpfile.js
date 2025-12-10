@@ -70,6 +70,7 @@ gulp.task('react-install', function(cb) {
 /**
  * Build React component as UMD bundle
  * Output: ../js/ext/llm-chat.umd.js and ../css/ext/llm-chat.css
+ * Note: CSS files are automatically moved to css/ext/ by the npm build script
  */
 gulp.task('react-build', function(cb) {
   console.log('Building React component...');
@@ -94,35 +95,53 @@ gulp.task('react-build', function(cb) {
 
 /**
  * Move React CSS files from js/ext/ to css/ext/ after build
+ * NOTE: This task is now handled by the npm build script, kept for manual use if needed
  */
 gulp.task('move-react-css', function(cb) {
   console.log('Moving React CSS files to css folder...');
 
-  // Move both CSS files
-  gulp.src([path.join(paths.react.output, 'llm-chat.css'), path.join(paths.react.output, 'llm-admin.css')])
-    .pipe(gulp.dest(path.join(__dirname, '../css/ext')))
-    .on('end', function() {
-      console.log('React CSS files moved to: css/ext/');
+  // Check if CSS files exist in js/ext/ (they might already be moved by npm)
+  const cssFiles = ['llm-chat.css', 'llm-admin.css'];
+  let filesToMove = [];
+  let completed = 0;
 
-      // Remove the original CSS files from js/ext/
-      const cssFiles = ['llm-chat.css', 'llm-admin.css'];
-      let completed = 0;
+  cssFiles.forEach(function(filename) {
+    const filePath = path.join(paths.react.output, filename);
+    if (fs.existsSync(filePath)) {
+      filesToMove.push(filePath);
+    }
+    completed++;
+    if (completed === cssFiles.length) {
+      if (filesToMove.length === 0) {
+        console.log('CSS files already moved by npm build script.');
+        return cb();
+      }
 
-      cssFiles.forEach(function(filename) {
-        const originalCssPath = path.join(paths.react.output, filename);
-        fs.unlink(originalCssPath, function(err) {
-          if (err) {
-            console.warn('Warning: Could not remove original CSS file ' + filename + ':', err.message);
-          } else {
-            console.log('Cleaned up original CSS file ' + filename + ' from js/ext/');
-          }
-          completed++;
-          if (completed === cssFiles.length) {
-            cb();
-          }
+      // Move remaining CSS files
+      gulp.src(filesToMove)
+        .pipe(gulp.dest(path.join(__dirname, '../css/ext')))
+        .on('end', function() {
+          console.log('React CSS files moved to: css/ext/');
+
+          // Remove the original CSS files from js/ext/
+          let cleanCompleted = 0;
+          cssFiles.forEach(function(filename) {
+            const originalCssPath = path.join(paths.react.output, filename);
+            fs.unlink(originalCssPath, function(err) {
+              if (err) {
+                console.warn('Warning: Could not remove original CSS file ' + filename + ':', err.message);
+              } else {
+                console.log('Cleaned up original CSS file ' + filename + ' from js/ext/');
+              }
+              cleanCompleted++;
+              if (cleanCompleted === cssFiles.length) {
+                cb();
+              }
+            });
+          });
         });
-      });
-    });
+    }
+  });
 });
 
 /**
@@ -185,10 +204,11 @@ gulp.task('legacy', gulp.parallel('css', 'js'));
 /**
  * Full build task
  * Builds both React component and legacy assets
+ * Note: React build already moves CSS files to css/ext/
  */
 gulp.task('build', gulp.series(
   gulp.parallel('css', 'js'),
-  gulp.series('react-build', 'move-react-css')
+  'react-build'
 ));
 
 /**
@@ -230,7 +250,8 @@ Available tasks:
   gulp                  - Build everything (default)
   gulp build            - Build React + legacy assets
   gulp react-install    - Install React dependencies
-  gulp react-build      - Build React component only
+  gulp react-build      - Build React component only (CSS auto-moved)
+  gulp move-react-css   - Manually move React CSS files (if needed)
   gulp legacy           - Build legacy CSS/JS only
   gulp css              - Build legacy CSS only
   gulp js               - Build legacy JS only
@@ -247,13 +268,15 @@ First-time setup:
 
 Output locations:
   - React JS: js/ext/llm-chat.umd.js, js/ext/llm-admin.umd.js
-  - React CSS: css/ext/llm-chat.css, css/ext/llm-admin.css
+  - React CSS: css/ext/llm-chat.css, css/ext/llm-admin.css (auto-moved)
   - Legacy CSS: css/ext/llmchat.min.css
   - Legacy JS: js/ext/llmchat.min.js
 
 Development:
   gulp watch-react      - For React development with hot reload
   gulp watch            - For legacy CSS/JS changes
+
+Note: React CSS files are automatically moved to css/ext/ during the build process.
 `);
   cb();
 });

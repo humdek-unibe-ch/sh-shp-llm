@@ -6,14 +6,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && vite build --config vite.admin.config.ts",
+    "build": "tsc && vite build && vite build --config vite.admin.config.ts && node move-css.cjs",
     "preview": "vite preview",
     "watch": "vite build --watch && vite build --config vite.admin.config.ts --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@types/hast": "^3.0.4",
+    "bootstrap": "^4.6.0",
     "react": "^18.2.0",
+    "react-bootstrap": "^1.6.8",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.2",

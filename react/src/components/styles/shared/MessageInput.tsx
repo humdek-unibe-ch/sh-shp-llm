@@ -15,6 +15,7 @@
  */
 
 import React, { useState, useRef, useCallback, KeyboardEvent, DragEvent } from 'react';
+import { Form, Button, Alert, Badge, CloseButton } from 'react-bootstrap';
 import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../types';
 import { FILE_ERRORS, formatBytes } from '../../../types';
 import {
@@ -315,29 +316,21 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isNearLimit = charCount > maxLength * 0.9;
   
   return (
-    <form id="message-form" onSubmit={handleSubmit} className="message-form-modern">
+    <Form onSubmit={handleSubmit}>
       {/* File Error Alert */}
       {fileError && (
-        <div className="alert alert-danger alert-dismissible fade show mb-2" role="alert">
+        <Alert variant="danger" dismissible onClose={() => setFileError(null)} className="mb-2">
           <small>
             <i className="fas fa-exclamation-circle mr-1"></i>
             {fileError}
           </small>
-          <button
-            type="button"
-            className="close"
-            onClick={() => setFileError(null)}
-            aria-label="Close"
-          >
-            <span aria-hidden="true">&times;</span>
-          </button>
-        </div>
+        </Alert>
       )}
       
       {/* File Attachments Preview */}
       {selectedFiles.length > 0 && (
-        <div id="file-attachments" className="mb-2">
-          <div id="attachments-list" className="d-flex flex-wrap gap-2">
+        <div className="mb-2">
+          <div className="d-flex flex-wrap gap-2">
             {selectedFiles.map((item) => (
               <AttachmentItem
                 key={item.id}
@@ -350,87 +343,82 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </div>
       )}
       
-      {/* Modern Message Input Container */}
+      {/* Message Input Container */}
       <div
-        className={`message-input-container ${isDragging && config.isVisionModel ? 'drag-over' : ''}`}
+        className={`border rounded ${isDragging && config.isVisionModel ? 'border-primary bg-light' : 'border-secondary'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Textarea Area - Scrolls internally */}
-        <div className="message-input-textarea-wrapper">
-          {/* Hidden File Input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            id="file-upload"
-            className="d-none"
-            multiple
-            accept={config.acceptedFileTypes || fileConfig.allowedExtensions.map(ext => `.${ext}`).join(',')}
-            onChange={handleFileInputChange}
-          />
-          
-          {/* Text Input */}
-          <textarea
-            ref={textareaRef}
-            id="message-input"
-            name="message"
-            className="message-input-textarea"
-            placeholder={disabled ? 'Streaming in progress...' : config.messagePlaceholder}
-            value={message}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            disabled={disabled}
-            maxLength={maxLength}
-            rows={1}
-          />
-        </div>
+        {/* Hidden File Input */}
+        <Form.Control
+          ref={fileInputRef}
+          type="file"
+          className="d-none"
+          multiple
+          accept={config.acceptedFileTypes || fileConfig.allowedExtensions.map(ext => `.${ext}`).join(',')}
+          onChange={handleFileInputChange}
+        />
+
+        {/* Text Input */}
+        <Form.Control
+          ref={textareaRef}
+          as="textarea"
+          placeholder={disabled ? 'Streaming in progress...' : config.messagePlaceholder}
+          value={message}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          maxLength={maxLength}
+          rows={1}
+          className="border-0 rounded-0"
+          style={{ resize: 'none', minHeight: '44px', maxHeight: '120px' }}
+        />
         
-        {/* Fixed Button Container - Always at bottom */}
-        <div className="message-input-actions">
+        {/* Action Buttons */}
+        <div className="d-flex justify-content-between align-items-center p-2 border-top bg-light">
           {/* Left side - Attachment button */}
-          <div className="message-input-actions-left">
+          <div>
             {config.enableFileUploads && config.isVisionModel && (
-              <button
-                type="button"
-                className="message-action-btn attachment-btn"
+              <Button
+                variant="outline-secondary"
+                size="sm"
                 onClick={handleAttachmentClick}
                 disabled={disabled}
                 title="Attach files"
               >
                 <i className="fas fa-paperclip"></i>
-              </button>
+              </Button>
             )}
             {config.enableFileUploads && !config.isVisionModel && (
-              <div className="message-action-btn attachment-btn disabled" title="Current model does not support image uploads">
+              <Button variant="outline-secondary" size="sm" disabled title="Current model does not support image uploads">
                 <i className="fas fa-paperclip text-muted"></i>
                 <small className="text-muted ml-1">No vision</small>
-              </div>
+              </Button>
             )}
           </div>
-          
+
           {/* Character Count - Center */}
-          <div className="message-input-char-count">
-            <small className={isNearLimit ? 'text-warning' : 'text-muted'}>
-              {charCount}/{maxLength}
-            </small>
-          </div>
-          
+          <small className={isNearLimit ? 'text-warning' : 'text-muted'}>
+            {charCount}/{maxLength}
+          </small>
+
           {/* Right side - Clear and Send buttons */}
-          <div className="message-input-actions-right">
-            <button
-              type="button"
-              className="message-action-btn clear-btn"
+          <div className="d-flex gap-1">
+            <Button
+              variant="outline-secondary"
+              size="sm"
               onClick={handleClearForm}
               disabled={disabled}
               title="Clear"
             >
               <i className="fas fa-times"></i>
-            </button>
-            
-            <button
+            </Button>
+
+            <Button
               type="submit"
-              className="message-action-btn send-btn"
+              variant="primary"
+              size="sm"
               disabled={disabled || !message.trim()}
               title="Send message"
             >
@@ -439,11 +427,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               ) : (
                 <i className="fas fa-paper-plane"></i>
               )}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-    </form>
+    </Form>
   );
 };
 
@@ -470,37 +458,38 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({ item, onRemove, fileCon
   const fileSize = formatFileSize(item.file.size);
   
   return (
-    <div className="attachment-item" data-attachment-id={item.id}>
-      <div className="attachment-preview">
+    <div className="d-flex align-items-center bg-light border rounded p-2 position-relative" style={{ minWidth: '160px', maxWidth: '220px' }}>
+      <div className="mr-2 flex-shrink-0">
         {isImage && item.previewUrl ? (
           <img
             src={item.previewUrl}
             alt={item.file.name}
-            className="attachment-thumbnail"
+            style={{ width: '42px', height: '42px', objectFit: 'cover' }}
+            className="rounded border"
           />
         ) : (
-          <div className="attachment-icon">
-            <i className={fileIcon}></i>
+          <div className="d-flex align-items-center justify-content-center rounded border bg-white" style={{ width: '42px', height: '42px' }}>
+            <i className={`${fileIcon} text-secondary`}></i>
           </div>
         )}
       </div>
-      <div className="attachment-info">
-        <span className="attachment-name" title={item.file.name}>
+      <div className="flex-grow-1 min-w-0">
+        <div className="font-weight-medium text-truncate small" title={item.file.name}>
           {truncatedName}
-        </span>
-        <span className="attachment-meta">
-          <span className={`badge ${badgeClass}`}>.{extension}</span>
-          <span className="attachment-size">{fileSize}</span>
-        </span>
+        </div>
+        <div className="d-flex align-items-center gap-1 mt-1">
+          <Badge variant={badgeClass === 'badge-success' ? 'success' : badgeClass === 'badge-info' ? 'info' : 'secondary'} className="small">
+            .{extension}
+          </Badge>
+          <small className="text-muted">{fileSize}</small>
+        </div>
       </div>
-      <button
-        type="button"
-        className="btn btn-sm btn-link remove-attachment text-danger"
+      <CloseButton
+        className="ml-1"
         onClick={() => onRemove(item.id)}
         title="Remove file"
-      >
-        <i className="fas fa-times-circle"></i>
-      </button>
+        style={{ fontSize: '12px' }}
+      />
     </div>
   );
 };
