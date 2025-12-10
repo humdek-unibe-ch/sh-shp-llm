@@ -21,7 +21,10 @@ import type {
   DeleteConversationResponse,
   PrepareStreamingResponse,
   StreamingEvent,
-  SelectedFile
+  SelectedFile,
+  AdminConversationsResponse,
+  AdminFiltersResponse,
+  AdminMessagesResponse
 } from '../types';
 
 // ============================================================================
@@ -291,6 +294,39 @@ export const messagesApi = {
     }
     
     return response.json();
+  }
+};
+
+// ============================================================================
+// ADMIN API
+// ============================================================================
+
+export const adminApi = {
+  async getFilters() {
+    return apiGet<AdminFiltersResponse>('admin_filters');
+  },
+
+  async getConversations(params: {
+    page?: number;
+    per_page?: number;
+    user_id?: string;
+    section_id?: string;
+    q?: string;
+  }) {
+    const cleanParams: Record<string, string> = {};
+    if (params.page) cleanParams.page = String(params.page);
+    if (params.per_page) cleanParams.per_page = String(params.per_page);
+    if (params.user_id) cleanParams.user_id = params.user_id;
+    if (params.section_id) cleanParams.section_id = params.section_id;
+    if (params.q) cleanParams.q = params.q;
+
+    return apiGet<AdminConversationsResponse>('admin_conversations', cleanParams);
+  },
+
+  async getMessages(conversationId: string) {
+    return apiGet<AdminMessagesResponse>('admin_messages', {
+      conversation_id: conversationId
+    });
   }
 };
 

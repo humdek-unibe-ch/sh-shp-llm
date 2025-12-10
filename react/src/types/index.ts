@@ -298,6 +298,63 @@ export interface StreamingEvent {
 }
 
 // ============================================================================
+// ADMIN TYPES
+// ============================================================================
+
+export interface AdminConfig {
+  pageSize: number;
+  labels: {
+    heading: string;
+    filtersTitle: string;
+    userFilterLabel: string;
+    sectionFilterLabel: string;
+    searchPlaceholder: string;
+    conversationsEmpty: string;
+    messagesEmpty: string;
+    refreshLabel: string;
+    loadingLabel: string;
+  };
+  csrfToken?: string;
+}
+
+export interface AdminFilterOption {
+  id: number;
+  name: string;
+  email?: string;
+}
+
+export interface AdminFiltersResponse {
+  filters: {
+    users: AdminFilterOption[];
+    sections: { id: number; name: string }[];
+  };
+  error?: string;
+}
+
+export interface AdminConversation extends Conversation {
+  id_users?: number;
+  id_sections?: number;
+  user_name?: string;
+  user_email?: string;
+  section_name?: string;
+  message_count?: number;
+}
+
+export interface AdminConversationsResponse {
+  items: AdminConversation[];
+  page: number;
+  per_page: number;
+  total: number;
+  error?: string;
+}
+
+export interface AdminMessagesResponse {
+  conversation: AdminConversation | null;
+  messages: Message[];
+  error?: string;
+}
+
+// ============================================================================
 // UI STATE TYPES
 // ============================================================================
 

@@ -17,8 +17,8 @@
  */
 
 import React from 'react';
-import type { Message, LlmChatConfig } from '../types';
-import { formatTime } from '../utils/formatters';
+import type { Message, LlmChatConfig } from '../../../types';
+import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 /**

@@ -13,8 +13,8 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import type { Conversation, LlmChatConfig } from '../types';
-import { formatDate } from '../utils/formatters';
+import type { Conversation, LlmChatConfig } from '../../../types';
+import { formatDate } from '../../../utils/formatters';
 
 /**
  * Props for ConversationSidebar component

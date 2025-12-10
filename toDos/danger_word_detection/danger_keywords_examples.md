@@ -216,3 +216,5 @@ suicide:emergency,pensées suicidaires:emergency,me tuer:emergency
 - Clear boundaries between platform responsibility and professional care
 - Documentation of all emergency interventions
 
+
+

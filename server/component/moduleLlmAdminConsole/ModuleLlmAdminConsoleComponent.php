@@ -5,29 +5,31 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../component/BaseComponent.php";
-require_once __DIR__ . "/LlmConversationsModel.php";
-require_once __DIR__ . "/LlmConversationsView.php";
+require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
+require_once __DIR__ . "/ModuleLlmAdminConsoleView.php";
 
 /**
- * The LLM conversations admin component - lists all user conversations
+ * The LLM admin console component - comprehensive interface for managing conversations
  */
-class LlmConversationsComponent extends BaseComponent
+class ModuleLlmAdminConsoleComponent extends BaseComponent
 {
     /* Constructors ***********************************************************/
 
     /**
-     * The constructor creates an instance of the LlmConversationsModel and
-     * LlmConversationsView classes.
+     * The constructor creates an instance of the ModuleLlmAdminConsoleModel and
+     * ModuleLlmAdminConsoleView classes.
      *
      * @param array $services
      *  An associative array holding the different available services.
      * @param array $params
-     *  The GET parameters
+     *  The GET parameters.
+     * @param int $id_page
+     *  The page ID.
      */
-    public function __construct($services, $params)
+    public function __construct($services,  $params = [], $id_page = null)
     {
-        $model = new LlmConversationsModel($services);
-        $view = new LlmConversationsView($model);
+        $model = new ModuleLlmAdminConsoleModel($services, $params, $id_page);
+        $view = new ModuleLlmAdminConsoleView($model);
         parent::__construct($model, $view);
     }
 

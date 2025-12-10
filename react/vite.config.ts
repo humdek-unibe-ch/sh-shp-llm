@@ -35,7 +35,7 @@ export default defineConfig({
      * Outputs a UMD bundle that exposes LlmChat globally
      */
     lib: {
-      entry: resolve(__dirname, 'src/main.tsx'),
+      entry: resolve(__dirname, 'src/LLMChat.tsx'),
       name: 'LlmChat',
       fileName: (format) => `llm-chat.${format}.js`,
       formats: ['umd'],

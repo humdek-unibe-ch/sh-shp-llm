@@ -17,8 +17,7 @@ A SelfHelp plugin that enables Large Language Model (LLM) integration with real-
 
 ### Planned Features
 - **Conversation Context Module**: Configurable AI behavior and context per component
-- **Enhanced UI Features**: Modern message input, smart auto-scroll, advanced markdown rendering
-- **Streaming Data Integrity**: Periodic saves during streaming to prevent data loss
+- **Danger Word Detection System**: Safety monitoring with configurable keywords and notifications
 
 ## Requirements
 
@@ -50,7 +49,7 @@ server/plugins/sh-shp-llm/
 │   ├── vite.config.ts            # Vite build configuration
 │   ├── tsconfig.json             # TypeScript configuration
 │   └── src/
-│       ├── main.tsx              # Entry point and initialization
+│       ├── LLMChat.tsx            # Entry point and initialization
 │       ├── types/index.ts        # TypeScript type definitions
 │       ├── components/
 │       │   ├── LlmChat.tsx       # Main chat component
@@ -69,14 +68,14 @@ server/plugins/sh-shp-llm/
 ├── server/
 │   ├── component/
 │   │   ├── LlmHooks.php           # Plugin hooks and component registration
-│   │   ├── llmConversations/      # Admin conversations list component
-│   │   ├── llmConversation/       # Admin conversation details component
+│   │   ├── moduleLlmAdminConsole/ # Admin console component (MVC)
 │   │   └── style/llmchat/         # Chat component (MVC)
 │   ├── service/
 │   │   ├── globals.php            # Plugin constants
 │   │   ├── LlmService.php         # API and database operations
 │   │   ├── LlmStreamingService.php  # SSE streaming service
-│   │   └── LlmApiFormatterService.php # API message formatting
+│   │   ├── LlmApiFormatterService.php # API message formatting
+│   │   └── LlmFileUploadService.php  # File upload handling
 │   └── db/
 │       └── v1.0.0.sql             # Database schema
 ├── css/ext/                       # Built CSS assets
@@ -484,8 +483,16 @@ The LLM plugin creates and manages several database tables to store conversation
 **Purpose**: Grant admin access to LLM management pages
 
 **Permissions Granted:**
-- `admin_llm_conversations`: Access to `/admin/llm/conversations` (view all conversations)
-- `admin_llm_conversation`: Access to `/admin/llm/conversation?id={id}` (view specific conversation)
+- `llmAdmin`: Access to `/admin/module_llm/conversations` (comprehensive admin console)
+
+#### `pageType_fields` - Admin Console Configuration
+**Purpose**: Configure admin console behavior and display options
+
+**Fields for `sh_llm_admin` pageType:**
+- `admin_page_size`: Number of conversations/messages per page (default: 50)
+- `admin_refresh_interval`: Auto-refresh interval in seconds (default: 300, 0 = disabled)
+- `admin_default_view`: Default view mode - 'conversations' or 'messages' (default: conversations)
+- `admin_show_filters`: Show filter panel by default (default: 1/enabled)
 
 #### `hooks` - Dynamic Field Rendering
 **Purpose**: Register plugin hooks for dynamic form field generation
@@ -576,7 +583,7 @@ This plugin uses a **non-standard component location** for admin interfaces:
 - Components are loaded directly through `LlmHooks::handleAdminComponentRequest()` to bypass SelfHelp's standard routing system
 - ACL permissions are checked in the hooks before component instantiation
 - This approach allows admin functionality to be self-contained within the plugin while maintaining proper access control
-- Admin access is controlled by the `admin_llm_conversations` and `admin_llm_conversation` page permissions defined in the database
+- Admin access is controlled by the `llmAdmin` page permissions defined in the database
 
 ### Template Usage (REQUIRED)
 
@@ -680,9 +687,9 @@ Global Config (pages_fields) → Component Config (sections_fields) → Conversa
 - **llm_temperature**: Override global temperature
 - **llm_max_tokens**: Override global token limit
 - **llm_streaming_enabled**: Override global streaming setting
-- **enable_conversations_list**: Show/hide conversations sidebar (default: 1) - *v1.1.0+*
-- **enable_file_uploads**: Enable/disable file upload capability (default: 1) - *v1.1.0+*
-- **enable_full_page_reload**: Use AJAX page reload instead of React refresh (default: 0) - *v1.1.0+*
+- **enable_conversations_list**: Show/hide conversations sidebar (default: 1)
+- **enable_file_uploads**: Enable/disable file upload capability (default: 1)
+- **enable_full_page_reload**: Use AJAX page reload instead of React refresh (default: 0)
 
 **User Interface Labels** (30+ configurable text fields):
 - **submit_button_label**: Send button text (default: "Send Message")
@@ -1047,7 +1054,7 @@ react/
 ├── vite.config.ts              # Build configuration
 ├── tsconfig.json               # TypeScript configuration
 └── src/
-    ├── main.tsx                # Entry point and initialization
+    ├── LLMChat.tsx             # Entry point and initialization
     ├── types/
     │   └── index.ts            # TypeScript type definitions
     ├── components/
@@ -1090,7 +1097,7 @@ gulp build
 gulp react-build
 ```
 
-### React Dependencies (v1.1.0+)
+### React Dependencies
 
 The React component uses these key dependencies:
 - `react` / `react-dom`: Core React library
@@ -1169,7 +1176,7 @@ const {
   addUserMessage,      // Add user message to UI
   clearError,          // Clear error state
   setError,            // Set error message
-  getActiveModel       // Get active model (conversation or config) - v1.1.0+
+  getActiveModel       // Get active model (conversation or config)
 } = useChatState(config);
 ```
 
@@ -1186,8 +1193,8 @@ const {
   onChunk,              // Callback for each chunk
   onDone,               // Callback when streaming completes
   onError,              // Callback on error
-  onRefreshMessages,    // Callback to refresh messages (React-only refresh) - v1.1.0+
-  getActiveModel        // Callback to get active model - v1.1.0+
+  onRefreshMessages,    // Callback to refresh messages (React-only refresh)
+  getActiveModel        // Callback to get active model
 });
 ```
 
@@ -1312,7 +1319,7 @@ interface LlmChatConfig {
   enableConversationsList: boolean;
   enableFileUploads: boolean;
   streamingEnabled: boolean;
-  enableFullPageReload: boolean;  // v1.1.0+ - Use AJAX page reload instead of React refresh
+  enableFullPageReload: boolean;  // Use AJAX page reload instead of React refresh
   fileConfig: FileConfig;
   acceptedFileTypes: string;
   // UI labels
@@ -1402,10 +1409,11 @@ For vision models, users can upload images that are:
 ## Admin Features
 
 Administrators can:
-- View all user conversations and messages via `/admin/llm/conversations`
-- View individual conversation details via `/admin/llm/conversation?id={id}`
-- Monitor usage and performance
-- Access is controlled by the `admin_llm_conversations` and `admin_llm_conversation` page permissions
+- Access the LLM Admin Console component via `/admin/module_llm/conversations` for a comprehensive interface to browse all user conversations and messages
+- View individual conversation details via conversation links in the admin console
+- Monitor usage and performance across all users
+- Access quick admin links through the LLM panel in the configuration page
+- Access is controlled by the `llmAdmin` page permissions and admin group membership
 
 ## Troubleshooting
 
@@ -1425,14 +1433,42 @@ Check SelfHelp logs for detailed error information:
 
 ## Version History
 
-### v1.0.0 (December 2024)
-- Real-time chat interface with SSE streaming
-- Multiple model support including vision models
-- File uploads for vision-capable models
-- Conversation management (create, view, delete)
-- Rate limiting and concurrent conversation limits
-- Admin interface for all user conversations
+### 1.0.0 (December 2024)
+- Complete LLM chat plugin implementation for SelfHelp CMS
+- Real-time streaming responses via Server-Sent Events (SSE)
+- Support for multiple LLM models including vision-capable models
+- File upload functionality for images (vision models)
+- Conversation management (create, view, delete conversations)
+- Rate limiting system (10 requests/minute, 3 concurrent conversations)
+- Comprehensive Admin Console for monitoring all user conversations and messages
+- LLM panel with quick admin links in configuration page
+- Global configuration page following SelfHelp pageType patterns
+- Custom database tables: `llmConversations`, `llmMessages`
+- OpenAI-compatible API integration
 - React-based frontend with TypeScript support
+- MVC architecture following SelfHelp component patterns
+- Multi-language UI support with translatable labels
+- Secure file upload system with validation
+- Transaction logging integration
+- Plugin hooks for dynamic model selection and admin panel
+- Admin components with custom routing
+
+#### Component Configuration Enhancements
+- **Granular Chat Control**: Added `enable_conversations_list`, `enable_file_uploads`, and `enable_full_page_reload` component fields for flexible chat interface customization
+- **Improved Temperature Configuration**: Changed temperature field type from number to text for better flexibility, updated default from 0.7 to 1.0 with enhanced descriptions
+- **Legacy Conversation Management**: Added `getOrCreateConversationForModel()` method for model-specific conversation handling
+
+#### Enhanced User Experience
+- **Advanced Markdown Rendering**: Improved code block copy functionality and JSON key color highlighting
+- **UI/UX Refinements**: Cleaned up chat interface styling, removed blue border on textarea focus
+- **Smart Conversation Selection**: Fixed conversation selection behavior during creation
+- **Responsive File Uploads**: Improved file upload path handling and API formatting
+
+#### Technical Improvements
+- **Build System**: Moved React CSS output to `css/ext` folder for better organization
+- **Streaming Enhancements**: Better streaming response display and parameter validation
+- **Code Quality**: Removed debug logging from services and controllers
+- **Asset Management**: Improved asset compilation and React component integration
 
 ## License
 

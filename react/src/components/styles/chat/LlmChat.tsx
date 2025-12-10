@@ -13,13 +13,13 @@
  */
 
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
-import { MessageList } from './MessageList';
-import { MessageInput } from './MessageInput';
-import { ConversationSidebar } from './ConversationSidebar';
-import { StreamingIndicator } from './StreamingIndicator';
-import { useChatState } from '../hooks/useChatState';
-import { useStreaming } from '../hooks/useStreaming';
-import type { LlmChatConfig, SelectedFile, Message } from '../types';
+import { MessageList } from '../shared/MessageList';
+import { MessageInput } from '../shared/MessageInput';
+import { ConversationSidebar } from '../shared/ConversationSidebar';
+import { StreamingIndicator } from '../shared/StreamingIndicator';
+import { useChatState } from '../../../hooks/useChatState';
+import { useStreaming } from '../../../hooks/useStreaming';
+import type { LlmChatConfig, SelectedFile, Message } from '../../../types';
 import './LlmChat.css';
 
 /**

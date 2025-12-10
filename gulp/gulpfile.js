@@ -16,8 +16,8 @@
  * - `gulp default`: Build everything
  * 
  * Output Locations:
- * - React UMD bundle: ../js/ext/llm-chat.umd.js
- * - React CSS: ../css/ext/llm-chat.css
+ * - React UMD bundles: ../js/ext/llm-chat.umd.js, ../js/ext/llm-admin.umd.js
+ * - React CSS: ../css/ext/llm-chat.css, ../css/ext/llm-admin.css
  * - Legacy CSS: ../css/ext/llmchat.min.css
  * - Legacy JS: ../js/ext/llmchat.min.js
  */
@@ -84,33 +84,43 @@ gulp.task('react-build', function(cb) {
       console.log('React component built successfully.');
       console.log('Output files:');
       console.log('  - js/ext/llm-chat.umd.js');
+      console.log('  - js/ext/llm-admin.umd.js');
       console.log('  - css/ext/llm-chat.css');
+      console.log('  - css/ext/llm-admin.css');
     }
     cb(err);
   });
 });
 
 /**
- * Move React CSS from js/ext/ to css/ext/ after build
+ * Move React CSS files from js/ext/ to css/ext/ after build
  */
 gulp.task('move-react-css', function(cb) {
-  console.log('Moving React CSS to css folder...');
+  console.log('Moving React CSS files to css folder...');
 
-  // First move the CSS file
-  gulp.src(path.join(paths.react.output, 'llm-chat.css'))
+  // Move both CSS files
+  gulp.src([path.join(paths.react.output, 'llm-chat.css'), path.join(paths.react.output, 'llm-admin.css')])
     .pipe(gulp.dest(path.join(__dirname, '../css/ext')))
     .on('end', function() {
-      console.log('React CSS moved to: css/ext/llm-chat.css');
+      console.log('React CSS files moved to: css/ext/');
 
-      // Then remove the original CSS file from js/ext/
-      const originalCssPath = path.join(paths.react.output, 'llm-chat.css');
-      fs.unlink(originalCssPath, function(err) {
-        if (err) {
-          console.warn('Warning: Could not remove original CSS file:', err.message);
-        } else {
-          console.log('Cleaned up original CSS file from js/ext/');
-        }
-        cb();
+      // Remove the original CSS files from js/ext/
+      const cssFiles = ['llm-chat.css', 'llm-admin.css'];
+      let completed = 0;
+
+      cssFiles.forEach(function(filename) {
+        const originalCssPath = path.join(paths.react.output, filename);
+        fs.unlink(originalCssPath, function(err) {
+          if (err) {
+            console.warn('Warning: Could not remove original CSS file ' + filename + ':', err.message);
+          } else {
+            console.log('Cleaned up original CSS file ' + filename + ' from js/ext/');
+          }
+          completed++;
+          if (completed === cssFiles.length) {
+            cb();
+          }
+        });
       });
     });
 });
@@ -197,7 +207,9 @@ gulp.task('clean', function(cb) {
     paths.legacy.css.dest + '/llmchat.min.css',
     paths.legacy.js.dest + '/llmchat.min.js',
     paths.react.output + '/llm-chat.umd.js',
-    path.join(__dirname, '../css/ext/llm-chat.css')
+    paths.react.output + '/llm-admin.umd.js',
+    path.join(__dirname, '../css/ext/llm-chat.css'),
+    path.join(__dirname, '../css/ext/llm-admin.css')
   ]).then(() => {
     console.log('Cleaned build files.');
     cb();
@@ -234,8 +246,8 @@ First-time setup:
   4. gulp build
 
 Output locations:
-  - React JS: js/ext/llm-chat.umd.js
-  - React CSS: css/ext/llm-chat.css
+  - React JS: js/ext/llm-chat.umd.js, js/ext/llm-admin.umd.js
+  - React CSS: css/ext/llm-chat.css, css/ext/llm-admin.css
   - Legacy CSS: css/ext/llmchat.min.css
   - Legacy JS: js/ext/llmchat.min.js
 

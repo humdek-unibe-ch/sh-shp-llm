@@ -23,10 +23,9 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { LlmChat } from './components/LlmChat';
+import { LlmChat } from './components/styles/chat/LlmChat';
 import type { LlmChatConfig, FileConfig } from './types';
 import { DEFAULT_FILE_CONFIG, DEFAULT_CONFIG } from './types';
-import './components/LlmChat.css';
 
 /**
  * Default file configuration

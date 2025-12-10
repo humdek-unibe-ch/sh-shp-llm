@@ -133,5 +133,44 @@ class LlmHooks extends BaseHooks
     {
         return $this->returnSelectLlmModelField($args, 1);
     }
+
+    /**
+     * Build the LLM admin panel with quick links.
+     */
+    private function outputLlmPanel()
+    {
+        return new BaseStyleComponent("card", array(
+            "type" => "secondary",
+            "is_expanded" => true,
+            "is_collapsible" => true,
+            "title" => "LLM Panel",
+            "children" => array(
+                new BaseStyleComponent("button", array(
+                    "label" => "LLM Conversations",
+                    "url" => $this->get_link_url(LLM_ADMIN_PAGE_KEYWORD),
+                    "type" => "secondary",
+                    "css" => "btn-sm"
+                ))
+            )
+        ));
+    }
+
+    /**
+     * Add LLM panel into CMS field rendering.
+     */
+    public function outputFieldPanel($args)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+        if ($field['name'] == 'llm_panel') {
+            $panel = $this->outputLlmPanel();
+            if ($panel && $res) {
+                $children = $res->get_view()->get_children();
+                $children[] = $panel;
+                $res->get_view()->set_children($children);
+            }
+        }
+        return $res;
+    }
 }
 ?>

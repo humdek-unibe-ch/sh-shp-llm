@@ -488,6 +488,196 @@ class LlmService
         return $messages;
     }
 
+    /* Admin helpers *********************************************************/
+
+    /**
+     * Check if a user belongs to the admin group
+     */
+    public function isAdminUser($user_id)
+    {
+        if (!$user_id) {
+            return false;
+        }
+
+        $row = $this->db->query_db_first(
+            "SELECT 1 
+             FROM user_groups ug
+             INNER JOIN `groups` g ON ug.id_groups = g.id
+             WHERE ug.id_users = ? AND g.name = 'admin'
+             LIMIT 1",
+            [$user_id]
+        );
+
+        return !empty($row);
+    }
+
+    /**
+     * Get admin filter options (users and sections with conversations)
+     */
+    public function getAdminFilterOptions()
+    {
+        $users = $this->db->query_db(
+            "SELECT DISTINCT u.id, u.name, u.email
+             FROM users u
+             INNER JOIN llmConversations c ON c.id_users = u.id
+             WHERE c.deleted = 0
+             ORDER BY u.name ASC"
+        );
+
+        $sections = $this->db->query_db(
+            "SELECT DISTINCT s.id, s.name
+             FROM sections s
+             INNER JOIN llmConversations c ON c.id_sections = s.id
+             WHERE c.deleted = 0 AND s.name IS NOT NULL
+             ORDER BY s.name ASC"
+        );
+
+        return [
+            'users' => $users ?: [],
+            'sections' => $sections ?: []
+        ];
+    }
+
+    /**
+     * Get conversations for admin view with filters and pagination
+     */
+    public function getAdminConversations(array $filters = [], int $page = 1, int $per_page = LLM_ADMIN_DEFAULT_PAGE_SIZE)
+    {
+        $page = max(1, $page);
+        $per_page = max(1, min(100, $per_page));
+        $offset = ($page - 1) * $per_page;
+
+        $where = ["c.deleted = 0"];
+        $params = [];
+
+        if (!empty($filters['user_id'])) {
+            $where[] = "c.id_users = :user_id";
+            $params[':user_id'] = (int)$filters['user_id'];
+        }
+
+        if (!empty($filters['section_id'])) {
+            $where[] = "c.id_sections = :section_id";
+            $params[':section_id'] = (int)$filters['section_id'];
+        }
+
+        if (!empty($filters['q'])) {
+            $where[] = "(c.title LIKE :q OR u.name LIKE :q OR u.email LIKE :q)";
+            $params[':q'] = '%' . $filters['q'] . '%';
+        }
+
+        $where_sql = implode(' AND ', $where);
+
+        $sql = "
+            SELECT 
+                c.id,
+                c.title,
+                c.model,
+                c.temperature,
+                c.max_tokens,
+                c.id_users,
+                c.id_sections,
+                c.created_at,
+                c.updated_at,
+                u.name AS user_name,
+                u.email AS user_email,
+                s.name AS section_name,
+                (
+                    SELECT COUNT(*) 
+                    FROM llmMessages m 
+                    WHERE m.id_llmConversations = c.id AND m.deleted = 0
+                ) AS message_count
+            FROM llmConversations c
+            LEFT JOIN users u ON c.id_users = u.id
+            LEFT JOIN sections s ON c.id_sections = s.id
+            WHERE {$where_sql}
+            ORDER BY c.updated_at DESC
+            LIMIT {$per_page} OFFSET {$offset}";
+
+        return $this->db->query_db($sql, $params) ?: [];
+    }
+
+    /**
+     * Count conversations for admin pagination
+     */
+    public function countAdminConversations(array $filters = [])
+    {
+        $where = ["deleted = 0"];
+        $params = [];
+
+        if (!empty($filters['user_id'])) {
+            $where[] = "id_users = :user_id";
+            $params[':user_id'] = (int)$filters['user_id'];
+        }
+
+        if (!empty($filters['section_id'])) {
+            $where[] = "id_sections = :section_id";
+            $params[':section_id'] = (int)$filters['section_id'];
+        }
+
+        if (!empty($filters['q'])) {
+            $where[] = "(title LIKE :q)";
+            $params[':q'] = '%' . $filters['q'] . '%';
+        }
+
+        $where_sql = implode(' AND ', $where);
+
+        $row = $this->db->query_db_first(
+            "SELECT COUNT(*) AS cnt FROM llmConversations WHERE {$where_sql}",
+            $params
+        );
+
+        return isset($row['cnt']) ? (int)$row['cnt'] : 0;
+    }
+
+    /**
+     * Get a conversation (admin view) including user and section info
+     */
+    public function getAdminConversation($conversation_id)
+    {
+        return $this->db->query_db_first(
+            "SELECT 
+                c.id,
+                c.title,
+                c.model,
+                c.temperature,
+                c.max_tokens,
+                c.id_users,
+                c.id_sections,
+                c.created_at,
+                c.updated_at,
+                u.name AS user_name,
+                u.email AS user_email,
+                s.name AS section_name
+             FROM llmConversations c
+             LEFT JOIN users u ON c.id_users = u.id
+             LEFT JOIN sections s ON c.id_sections = s.id
+             WHERE c.id = ? AND c.deleted = 0",
+            [$conversation_id]
+        );
+    }
+
+    /**
+     * Get messages for admin view (no cache to ensure fresh auditing)
+     */
+    public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
+    {
+        return $this->db->query_db(
+            "SELECT 
+                m.id,
+                m.role,
+                m.content,
+                m.attachments,
+                m.model,
+                m.tokens_used,
+                m.timestamp
+             FROM llmMessages m
+             WHERE m.id_llmConversations = :conversation_id AND m.deleted = 0
+             ORDER BY m.timestamp ASC
+             LIMIT " . (int)$limit,
+            [':conversation_id' => $conversation_id]
+        ) ?: [];
+    }
+
     /* LLM API Integration */
 
     /**

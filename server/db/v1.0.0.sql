@@ -27,7 +27,7 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_api_key'), '', 'API key for LLM service authentication'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the model''s context length.'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time response streaming');
 
@@ -48,13 +48,13 @@ INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `he
 (@id_page_llm_config, get_field_id('llm_api_key'), '', 'API key for LLM service authentication'),
 (@id_page_llm_config, get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 (@id_page_llm_config, get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
-(@id_page_llm_config, get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the model''s context length.'),
+(@id_page_llm_config, get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
 (@id_page_llm_config, get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
 (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '1', 'Enable real-time response streaming');
 
 -- add translation for LLM config page
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
-VALUES (@id_page_llm_config, get_field_id('title'), '0000000001', 'LLM Configuration'),
+VALUES (@id_page_llm_config, get_field_id('title'), '0000000003', 'LLM Configuration'),
        (@id_page_llm_config, get_field_id('title'), '0000000002', 'LLM Konfiguration');
 
 -- add admin permissions
@@ -117,7 +117,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('message_limit'), '100', 'Number of messages to load per conversation'),
 (get_style_id('llmChat'), get_field_id('llm_model'), '', 'Select AI model from dropdown. Admin can configure multiple llmChat components with different models if needed.'),
 (get_style_id('llmChat'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
-(get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the model''s context length.'),
+(get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
 (get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time streaming responses'),
 (get_style_id('llmChat'), get_field_id('enable_conversations_list'), '0', 'Enable conversations list on the left side. When disabled, only one conversation is allowed.'),
 (get_style_id('llmChat'), get_field_id('enable_file_uploads'), '0', 'Enable file upload functionality. When enabled, users can attach files to their messages. File types accepted depend on the selected AI model.'),
@@ -200,22 +200,94 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-llm-model-view', 'Output select LLM Model field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldLlmModelView');
 
--- add admin pages for LLM management
+
+-- add page type for admin page
+INSERT IGNORE INTO pageType (`name`) VALUES ('sh_llm_admin');
+
+-- add LLM admin console configuration fields
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'admin_page_size', get_field_type_id('number'), '0'),
+(NULL, 'admin_refresh_interval', get_field_type_id('number'), '0'),
+(NULL, 'admin_default_view', get_field_type_id('select'), '0'),
+(NULL, 'admin_show_filters', get_field_type_id('checkbox'), '0');
+
+-- link admin console fields to page type
+INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
+((SELECT id FROM pageType WHERE `name` = 'sh_llm_admin'), get_field_id('title'), 'LLM Admin Console', 'Page title'),
+((SELECT id FROM pageType WHERE `name` = 'sh_llm_admin'), get_field_id('admin_page_size'), '50', 'Number of conversations/messages to display per page'),
+((SELECT id FROM pageType WHERE `name` = 'sh_llm_admin'), get_field_id('admin_refresh_interval'), '300', 'Auto-refresh interval in seconds (0 = disabled)'),
+((SELECT id FROM pageType WHERE `name` = 'sh_llm_admin'), get_field_id('admin_default_view'), 'conversations', 'Default view mode: conversations or messages'),
+((SELECT id FROM pageType WHERE `name` = 'sh_llm_admin'), get_field_id('admin_show_filters'), '1', 'Show filter panel by default');
+
+-- add panel field for quick links
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES (NULL, 'llm_panel', get_field_type_id('panel'), '0');
+INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`)
+VALUES ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm' LIMIT 1), get_field_id('llm_panel'), NULL, 'LLM panel with quick admin links');
+
+-- register hooks for LLM panel
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES (
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 1),
+    'field-llm_panel-edit',
+    'Output LLM panel in edit mode',
+    'CmsView',
+    'create_field_form_item',
+    'LlmHooks',
+    'outputFieldPanel'
+);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`)
+VALUES (
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 1),
+    'field-llm_panel-view',
+    'Output LLM panel in view mode',
+    'CmsView',
+    'create_field_item',
+    'LlmHooks',
+    'outputFieldPanel'
+);
+
+
+-- create admin page for conversations/messages
+SET @id_page_modules = (SELECT id FROM pages WHERE keyword = 'sh_modules');
+
 INSERT IGNORE INTO `pages` (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
-VALUES (NULL, 'admin_llm_conversations', '/admin/llm/conversations', 'GET', (SELECT id FROM actions WHERE `name` = 'component'), NULL, @id_page_admin, 0, NULL, NULL, (SELECT id FROM pageType WHERE `name` = 'intern'), (SELECT id FROM lookups WHERE type_code = "pageAccessTypes" AND lookup_code = "mobile_and_web"));
+VALUES (
+    NULL,
+    'moduleLlmAdminConsole',
+    '/admin/module_llm/conversations',
+    'GET|POST',
+    (SELECT id FROM actions WHERE `name` = 'component' LIMIT 1),
+    NULL,
+    @id_page_modules,
+    0,
+    NULL,
+    NULL,
+    (SELECT id FROM pageType WHERE `name` = 'sh_llm_admin' LIMIT 1),
+    (SELECT id FROM lookups WHERE type_code = "pageAccessTypes" AND lookup_code = "mobile_and_web")
+);
 
--- get the inserted page IDs
-SET @id_page_llm_conversations = (SELECT id FROM pages WHERE keyword = 'admin_llm_conversations');
+SET @id_page_llm_admin = (SELECT id FROM pages WHERE keyword = 'moduleLlmAdminConsole');
 
-INSERT IGNORE INTO `pages` (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
-VALUES (NULL, 'admin_llm_conversation', '/admin/llm/conversation/[i:id]', 'GET', (SELECT id FROM actions WHERE `name` = 'component'), NULL, @id_page_admin, 0, NULL, NULL, (SELECT id FROM pageType WHERE `name` = 'intern'), (SELECT id FROM lookups WHERE type_code = "pageAccessTypes" AND lookup_code = "mobile_and_web"));
+-- set default values for admin console page fields
+INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
+(@id_page_llm_admin, get_field_id('admin_page_size'), '50', 'Number of conversations/messages to display per page'),
+(@id_page_llm_admin, get_field_id('admin_refresh_interval'), '300', 'Auto-refresh interval in seconds (0 = disabled)'),
+(@id_page_llm_admin, get_field_id('admin_default_view'), 'conversations', 'Default view mode: conversations or messages'),
+(@id_page_llm_admin, get_field_id('admin_show_filters'), '1', 'Show filter panel by default');
 
-SET @id_page_llm_conversation = (SELECT id FROM pages WHERE keyword = 'admin_llm_conversation');
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
+VALUES
+(@id_page_llm_admin, get_field_id('title'), '0000000003', 'LLM Conversations'),
+(@id_page_llm_admin, get_field_id('title'), '0000000002', 'LLM Konversationen'),
+(@id_page_llm_admin, get_field_id('admin_page_size'), '0000000001', '50'),
+(@id_page_llm_admin, get_field_id('admin_refresh_interval'), '0000000001', '300'),
+(@id_page_llm_admin, get_field_id('admin_default_view'), '0000000001', 'conversations'),
+(@id_page_llm_admin, get_field_id('admin_show_filters'), '0000000001', '1');
 
--- add admin permissions for LLM pages
 INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
-VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), @id_page_llm_conversations, '1', '0', '0', '0'),
-       ((SELECT id FROM `groups` WHERE `name` = 'admin'), @id_page_llm_conversation, '1', '0', '0', '0');
+VALUES ((SELECT id FROM `groups` WHERE `name` = 'admin'), @id_page_llm_admin, '1', '0', '0', '0');
+
 
 -- add page translations
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
@@ -225,8 +297,4 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_config, get_field_id('llm_timeout'), '0000000001', '30'),
        (@id_page_llm_config, get_field_id('llm_max_tokens'), '0000000001', '2048'),
        (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '1'),
-       (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '1'),
-       (@id_page_llm_conversations, get_field_id('title'), '0000000001', 'LLM Conversations'),
-       (@id_page_llm_conversations, get_field_id('title'), '0000000002', 'LLM Konversationen'),
-       (@id_page_llm_conversation, get_field_id('title'), '0000000001', 'LLM Conversation Details'),
-       (@id_page_llm_conversation, get_field_id('title'), '0000000002', 'LLM Konversation Details');
+       (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '1');

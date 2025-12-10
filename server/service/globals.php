@@ -3,6 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+// LLM Admin Page Keyword
+define('LLM_ADMIN_PAGE_KEYWORD', 'moduleLlmAdminConsole');
+
 // LLM Plugin Constants
 define('LLM_PLUGIN_NAME', 'sh-shp-llm');
 define('LLM_PLUGIN_VERSION', 'v1.0.0');
@@ -22,6 +25,7 @@ define('LLM_DEFAULT_MAX_TOKENS', 2048);
 define('LLM_DEFAULT_TIMEOUT', 30);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
+define('LLM_ADMIN_DEFAULT_PAGE_SIZE', 25);
 
 // API endpoints
 define('LLM_API_CHAT_COMPLETIONS', '/chat/completions');
