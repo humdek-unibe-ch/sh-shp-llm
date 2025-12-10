@@ -28,9 +28,11 @@ class LlmAdminService extends LlmService
             "SELECT DISTINCT
                 u.id,
                 u.name,
-                u.email
+                u.email,
+                vc.code as user_validation_code
              FROM users u
              INNER JOIN llmConversations lc ON lc.id_users = u.id
+             LEFT JOIN validation_codes vc ON vc.id_users = u.id
              ORDER BY u.name ASC"
         );
 

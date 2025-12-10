@@ -411,6 +411,7 @@ export interface AdminFilterOption {
   id: number;
   name: string;
   email?: string;
+  user_validation_code?: string | null;
 }
 
 export interface AdminFiltersResponse {

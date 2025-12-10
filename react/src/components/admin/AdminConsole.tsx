@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination } from 'react-bootstrap';
+import Select from 'react-select';
 import { adminApi } from '../../utils/api';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import type { AdminConfig, AdminConversation, Message } from '../../types';
@@ -16,6 +17,7 @@ interface FilterOption {
   id: number;
   name: string;
   email?: string;
+  user_validation_code?: string | null;
 }
 
 // Helper function to get today's date in YYYY-MM-DD format
@@ -145,13 +147,32 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   };
 
   const getUserDisplayName = (user: FilterOption) => {
-    if (user.name && user.email) {
-      return `${user.name} (${user.email})`;
-    }
-    return user.name || user.email || `User ${user.id}`;
+    const nameParts = [];
+    if (user.name) nameParts.push(user.name);
+    if (user.email) nameParts.push(`(${user.email})`);
+    if (user.user_validation_code) nameParts.push(`[ ${user.user_validation_code}]`);
+
+    return nameParts.length > 0 ? nameParts.join(' ') : `User ${user.id}`;
   };
 
   const hasActiveFilters = filters.userId || filters.sectionId || filters.query;
+
+  // Prepare options for react-select
+  const userOptions = [
+    { value: '', label: 'All users' },
+    ...filterOptions.users.map(user => ({
+      value: user.id.toString(),
+      label: getUserDisplayName(user)
+    }))
+  ];
+
+  const sectionOptions = [
+    { value: '', label: 'All sections' },
+    ...filterOptions.sections.map(section => ({
+      value: section.id.toString(),
+      label: section.name
+    }))
+  ];
 
   return (
     <Container fluid className="llm-admin-console py-4">
@@ -270,20 +291,31 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                     <i className="fas fa-user mr-2"></i>
                     {config.labels.userFilterLabel}
                   </Form.Label>
-                  <Form.Control
-                    as="select"
-                    value={filters.userId}
-                    onChange={(e) => handleFilterChange('userId', e.target.value)}
-                    size="sm"
-                    custom
-                  >
-                    <option value="">All users</option>
-                    {filterOptions.users.map(user => (
-                      <option key={user.id} value={user.id}>
-                        {getUserDisplayName(user)}
-                      </option>
-                    ))}
-                  </Form.Control>
+                  <Select
+                    value={userOptions.find(option => option.value === filters.userId)}
+                    onChange={(selectedOption) => handleFilterChange('userId', selectedOption?.value || '')}
+                    options={userOptions}
+                    isSearchable={true}
+                    isClearable={false}
+                    placeholder="Search users..."
+                    className="react-select-container"
+                    classNamePrefix="react-select"
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '31px',
+                        fontSize: '0.875rem'
+                      }),
+                      option: (provided) => ({
+                        ...provided,
+                        fontSize: '0.875rem'
+                      }),
+                      singleValue: (provided) => ({
+                        ...provided,
+                        fontSize: '0.875rem'
+                      })
+                    }}
+                  />
                 </Form.Group>
 
                 {/* Section Filter */}
@@ -292,20 +324,31 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                     <i className="fas fa-folder mr-2"></i>
                     {config.labels.sectionFilterLabel}
                   </Form.Label>
-                  <Form.Control
-                    as="select"
-                    value={filters.sectionId}
-                    onChange={(e) => handleFilterChange('sectionId', e.target.value)}
-                    size="sm"
-                    custom
-                  >
-                    <option value="">All sections</option>
-                    {filterOptions.sections.map(section => (
-                      <option key={section.id} value={section.id}>
-                        {section.name}
-                      </option>
-                    ))}
-                  </Form.Control>
+                  <Select
+                    value={sectionOptions.find(option => option.value === filters.sectionId)}
+                    onChange={(selectedOption) => handleFilterChange('sectionId', selectedOption?.value || '')}
+                    options={sectionOptions}
+                    isSearchable={true}
+                    isClearable={false}
+                    placeholder="Search sections..."
+                    className="react-select-container"
+                    classNamePrefix="react-select"
+                    styles={{
+                      control: (provided) => ({
+                        ...provided,
+                        minHeight: '31px',
+                        fontSize: '0.875rem'
+                      }),
+                      option: (provided) => ({
+                        ...provided,
+                        fontSize: '0.875rem'
+                      }),
+                      singleValue: (provided) => ({
+                        ...provided,
+                        fontSize: '0.875rem'
+                      })
+                    }}
+                  />
                 </Form.Group>
 
                 <hr className="my-3" />
