@@ -122,6 +122,9 @@ class ModuleLlmAdminConsoleModel extends BaseModel
             'messagesEmpty' => 'Select a conversation to view its messages.',
             'refreshLabel' => 'Refresh',
             'loadingLabel' => 'Loading...',
+            'dateFilterLabel' => 'Date Range',
+            'dateFromLabel' => 'From',
+            'dateToLabel' => 'To',
         ];
     }
 }

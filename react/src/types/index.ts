@@ -400,6 +400,9 @@ export interface AdminConfig {
     messagesEmpty: string;
     refreshLabel: string;
     loadingLabel: string;
+    dateFilterLabel: string;
+    dateFromLabel: string;
+    dateToLabel: string;
   };
   csrfToken?: string;
 }

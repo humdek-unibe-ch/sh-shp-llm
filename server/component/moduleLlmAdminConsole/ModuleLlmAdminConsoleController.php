@@ -86,6 +86,12 @@ class ModuleLlmAdminConsoleController extends BaseController
         if (!empty($_GET['q'])) {
             $filters['query'] = $_GET['q'];
         }
+        if (!empty($_GET['date_from'])) {
+            $filters['date_from'] = $_GET['date_from'];
+        }
+        if (!empty($_GET['date_to'])) {
+            $filters['date_to'] = $_GET['date_to'];
+        }
 
         try {
             $result = $this->model->getAdminConversations($filters, $page, $per_page);

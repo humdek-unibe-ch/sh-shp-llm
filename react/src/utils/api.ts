@@ -312,6 +312,8 @@ export const adminApi = {
     user_id?: string;
     section_id?: string;
     q?: string;
+    date_from?: string;
+    date_to?: string;
   }) {
     const cleanParams: Record<string, string> = {};
     if (params.page) cleanParams.page = String(params.page);
@@ -319,6 +321,8 @@ export const adminApi = {
     if (params.user_id) cleanParams.user_id = params.user_id;
     if (params.section_id) cleanParams.section_id = params.section_id;
     if (params.q) cleanParams.q = params.q;
+    if (params.date_from) cleanParams.date_from = params.date_from;
+    if (params.date_to) cleanParams.date_to = params.date_to;
 
     return apiGet<AdminConversationsResponse>('admin_conversations', cleanParams);
   },

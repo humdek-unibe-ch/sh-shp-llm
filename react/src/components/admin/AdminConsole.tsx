@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination, Modal } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination } from 'react-bootstrap';
 import { adminApi } from '../../utils/api';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import type { AdminConfig, AdminConversation, Message } from '../../types';
 
 interface AdminFilters {
   userId: string;
   sectionId: string;
   query: string;
+  dateFrom: string;
+  dateTo: string;
 }
 
 interface FilterOption {
@@ -16,8 +19,41 @@ interface FilterOption {
   code?: string;
 }
 
+// Helper function to get today's date in YYYY-MM-DD format
+const getTodayDate = (): string => {
+  const today = new Date();
+  return today.toISOString().split('T')[0];
+};
+
+// Helper function to format date for display
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+// Helper function to format date badge
+const formatDateBadge = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, { 
+    month: 'short', 
+    day: 'numeric'
+  });
+};
+
 export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
-  const [filters, setFilters] = useState<AdminFilters>({ userId: '', sectionId: '', query: '' });
+  const [filters, setFilters] = useState<AdminFilters>({ 
+    userId: '', 
+    sectionId: '', 
+    query: '',
+    dateFrom: getTodayDate(),
+    dateTo: getTodayDate()
+  });
   const [filterOptions, setFilterOptions] = useState<{
     users: FilterOption[];
     sections: { id: number; name: string }[];
@@ -59,7 +95,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         per_page: config.pageSize,
         user_id: filters.userId || undefined,
         section_id: filters.sectionId || undefined,
-        q: filters.query || undefined
+        q: filters.query || undefined,
+        date_from: filters.dateFrom || undefined,
+        date_to: filters.dateTo || undefined
       });
 
       setConversations(response.items || []);
@@ -95,7 +133,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   };
 
   const clearFilters = () => {
-    setFilters({ userId: '', sectionId: '', query: '' });
+    setFilters({ 
+      userId: '', 
+      sectionId: '', 
+      query: '',
+      dateFrom: getTodayDate(),
+      dateTo: getTodayDate()
+    });
     setSelectedConversation(null);
     setMessages([]);
     setCurrentPage(1);
@@ -108,38 +152,47 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     return user.name || user.email || `User ${user.id}`;
   };
 
+  const hasActiveFilters = filters.userId || filters.sectionId || filters.query;
+
   return (
-    <Container fluid className="py-4">
+    <Container fluid className="llm-admin-console py-4">
+      {/* Header Section */}
       <Row className="mb-4">
         <Col>
-          <div className="d-flex justify-content-between align-items-center">
+          <div className="d-flex justify-content-between align-items-start">
             <div>
-              <h2 className="mb-0 text-primary">{config.labels.heading}</h2>
-              <p className="text-muted mt-1 mb-0">
-                {totalConversations.toLocaleString()} total conversations
-                {(filters.userId || filters.sectionId || filters.query) && (
-                  <span className="ms-2">
-                    • {conversations.length} matching current filters
+              <h2 className="text-primary mb-2 font-weight-bold">
+                <i className="fas fa-comments mr-3"></i>
+                {config.labels.heading}
+              </h2>
+              <p className="text-muted mb-0">
+                <i className="fas fa-database mr-2"></i>
+                <strong>{totalConversations.toLocaleString()}</strong> total conversations
+                {hasActiveFilters && (
+                  <span className="ml-3">
+                    <i className="fas fa-filter mr-2"></i>
+                    <strong>{conversations.length}</strong> matching filters
                   </span>
                 )}
               </p>
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex">
               <Button
                 variant="outline-secondary"
                 size="sm"
                 onClick={() => setShowFilters(!showFilters)}
+                className="mr-2"
               >
-                <i className={`fas fa-filter me-2`}></i>
+                <i className={`fas fa-${showFilters ? 'eye-slash' : 'eye'} mr-2`}></i>
                 {showFilters ? 'Hide' : 'Show'} Filters
               </Button>
               <Button
-                variant="outline-primary"
+                variant="primary"
                 size="sm"
                 onClick={() => loadConversations(currentPage)}
                 disabled={loading}
               >
-                <i className="fas fa-sync-alt me-2"></i>
+                <i className={`fas fa-sync-alt mr-2 ${loading ? 'fa-spin' : ''}`}></i>
                 {config.labels.refreshLabel}
               </Button>
             </div>
@@ -147,12 +200,15 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         </Col>
       </Row>
 
+      {/* Error Alert */}
       {error && (
         <Row className="mb-4">
           <Col>
-            <Alert variant="danger" dismissible onClose={() => setError(null)}>
-              <i className="fas fa-exclamation-triangle me-2"></i>
-              {error}
+            <Alert variant="danger" dismissible onClose={() => setError(null)} className="shadow-sm">
+              <div className="d-flex align-items-center">
+                <i className="fas fa-exclamation-triangle fa-lg mr-3"></i>
+                <div>{error}</div>
+              </div>
             </Alert>
           </Col>
         </Row>
@@ -161,30 +217,66 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
       <Row>
         {/* Filters Sidebar */}
         {showFilters && (
-          <Col lg={4} className="mb-4">
-            <Card className="shadow-sm border-0">
-              <Card.Header className="bg-light">
+          <Col lg={3} className="mb-4">
+            <Card className="shadow-sm border-0 h-100">
+              <Card.Header className="bg-light border-bottom">
                 <div className="d-flex justify-content-between align-items-center">
-                  <h6 className="mb-0 fw-bold">{config.labels.filtersTitle}</h6>
-                  {(filters.userId || filters.sectionId || filters.query) && (
+                  <h6 className="mb-0 font-weight-bold text-secondary">
+                    <i className="fas fa-filter mr-2"></i>
+                    {config.labels.filtersTitle}
+                  </h6>
+                  {hasActiveFilters && (
                     <Button
                       variant="link"
                       size="sm"
                       onClick={clearFilters}
-                      className="text-decoration-none p-0"
+                      className="text-danger p-0 text-decoration-none"
                     >
-                      Clear all
+                      <i className="fas fa-times mr-1"></i>
+                      Clear
                     </Button>
                   )}
                 </div>
               </Card.Header>
-              <Card.Body>
+              <Card.Body className="p-3">
+                {/* Date Range Filter */}
                 <Form.Group className="mb-3">
-                  <Form.Label className="fw-bold small text-muted mb-2">{config.labels.userFilterLabel}</Form.Label>
-                  <select
+                  <Form.Label className="font-weight-bold small text-muted mb-2">
+                    <i className="fas fa-calendar-alt mr-2"></i>
+                    Date Range
+                  </Form.Label>
+                  <Form.Control
+                    type="date"
+                    value={filters.dateFrom}
+                    onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
+                    size="sm"
+                    className="mb-2"
+                  />
+                  <Form.Control
+                    type="date"
+                    value={filters.dateTo}
+                    onChange={(e) => handleFilterChange('dateTo', e.target.value)}
+                    size="sm"
+                  />
+                  <Form.Text className="text-muted small">
+                    Filter by conversation creation date
+                  </Form.Text>
+                </Form.Group>
+
+                <hr className="my-3" />
+
+                {/* User Filter */}
+                <Form.Group className="mb-3">
+                  <Form.Label className="font-weight-bold small text-muted mb-2">
+                    <i className="fas fa-user mr-2"></i>
+                    {config.labels.userFilterLabel}
+                  </Form.Label>
+                  <Form.Control
+                    as="select"
                     value={filters.userId}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('userId', e.target.value)}
-                    className="form-control form-control-sm"
+                    onChange={(e) => handleFilterChange('userId', e.target.value)}
+                    size="sm"
+                    custom
                   >
                     <option value="">All users</option>
                     {filterOptions.users.map(user => (
@@ -192,15 +284,21 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         {getUserDisplayName(user)}
                       </option>
                     ))}
-                  </select>
+                  </Form.Control>
                 </Form.Group>
 
+                {/* Section Filter */}
                 <Form.Group className="mb-3">
-                  <Form.Label className="fw-bold small text-muted mb-2">{config.labels.sectionFilterLabel}</Form.Label>
-                  <select
+                  <Form.Label className="font-weight-bold small text-muted mb-2">
+                    <i className="fas fa-folder mr-2"></i>
+                    {config.labels.sectionFilterLabel}
+                  </Form.Label>
+                  <Form.Control
+                    as="select"
                     value={filters.sectionId}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('sectionId', e.target.value)}
-                    className="form-control form-control-sm"
+                    onChange={(e) => handleFilterChange('sectionId', e.target.value)}
+                    size="sm"
+                    custom
                   >
                     <option value="">All sections</option>
                     {filterOptions.sections.map(section => (
@@ -208,11 +306,17 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         {section.name}
                       </option>
                     ))}
-                  </select>
+                  </Form.Control>
                 </Form.Group>
 
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-bold small text-muted mb-2">Search</Form.Label>
+                <hr className="my-3" />
+
+                {/* Search Filter */}
+                <Form.Group className="mb-0">
+                  <Form.Label className="font-weight-bold small text-muted mb-2">
+                    <i className="fas fa-search mr-2"></i>
+                    Search
+                  </Form.Label>
                   <Form.Control
                     type="text"
                     placeholder={config.labels.searchPlaceholder}
@@ -230,61 +334,81 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         )}
 
         {/* Conversations List */}
-        <Col lg={showFilters ? 4 : 6} className="mb-4">
-          <Card className="shadow-sm border-0 h-100">
-            <Card.Header className="bg-light">
-              <h6 className="mb-0 fw-bold">Conversations</h6>
+        <Col lg={showFilters ? 4 : 5} className="mb-4">
+          <Card className="shadow-sm border-0 conversations-panel">
+            <Card.Header className="bg-primary text-white border-0">
+              <div className="d-flex justify-content-between align-items-center">
+                <h6 className="mb-0 font-weight-bold">
+                  <i className="fas fa-list mr-2"></i>
+                  Conversations
+                </h6>
+                <Badge variant="light" className="px-2 py-1">
+                  {conversations.length}
+                </Badge>
+              </div>
             </Card.Header>
-            <div className="conversations-list" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+            <div className="conversations-list" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
               {loading && conversations.length === 0 ? (
                 <div className="text-center py-5">
-                  <Spinner animation="border" size="sm" className="mb-3" />
-                  <div className="text-muted small">{config.labels.loadingLabel}</div>
+                  <Spinner animation="border" variant="primary" className="mb-3" />
+                  <div className="text-muted">{config.labels.loadingLabel}</div>
                 </div>
               ) : conversations.length === 0 ? (
-                <div className="text-center py-5 text-muted">
-                  <i className="fas fa-comments fa-3x mb-3 opacity-50"></i>
-                  <h6>{config.labels.conversationsEmpty}</h6>
-                  {(filters.userId || filters.sectionId || filters.query) && (
-                    <p className="mb-0 small">Try adjusting your filters</p>
+                <div className="text-center py-5 px-3">
+                  <i className="fas fa-inbox fa-4x text-muted mb-3 opacity-50"></i>
+                  <h6 className="text-muted">{config.labels.conversationsEmpty}</h6>
+                  {hasActiveFilters && (
+                    <p className="text-muted small mb-0">Try adjusting your filters</p>
                   )}
                 </div>
               ) : (
                 conversations.map(conversation => (
                   <div
                     key={conversation.id}
-                    className={`conversation-item p-3 border-bottom cursor-pointer transition-all ${
+                    className={`conversation-item p-3 border-bottom ${
                       selectedConversation?.id === conversation.id
-                        ? 'bg-primary bg-opacity-10 border-primary'
-                        : 'hover-bg-light'
+                        ? 'bg-primary text-white active'
+                        : 'bg-white'
                     }`}
                     onClick={() => selectConversation(conversation)}
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
                   >
                     <div className="d-flex justify-content-between align-items-start mb-2">
-                      <div className="flex-grow-1 me-2">
-                        <div className="fw-bold text-truncate mb-1">
+                      <div className="flex-grow-1 mr-2">
+                        <h6 className={`font-weight-bold mb-1 ${selectedConversation?.id === conversation.id ? 'text-white' : 'text-dark'}`}>
                           {conversation.title || 'Untitled Conversation'}
-                        </div>
-                        <div className="small text-muted mb-1">
+                        </h6>
+                        <div className={`small mb-1 ${selectedConversation?.id === conversation.id ? 'text-white-50' : 'text-muted'}`}>
+                          <i className="fas fa-user mr-1"></i>
                           {conversation.user_name || 'Unknown user'}
                           {conversation.user_email && (
-                            <span className="ms-1">({conversation.user_email})</span>
+                            <span className="ml-1">({conversation.user_email})</span>
                           )}
                         </div>
                         {conversation.user_validation_code && (
-                          <div className="small text-muted mb-1">
-                            <i className="fas fa-key me-1"></i>
+                          <div className={`small mb-1 ${selectedConversation?.id === conversation.id ? 'text-white-50' : 'text-muted'}`}>
+                            <i className="fas fa-key mr-1"></i>
                             {conversation.user_validation_code}
                           </div>
                         )}
-                        <div className="small text-muted">
-                          {conversation.section_name && `${conversation.section_name} • `}
-                          {conversation.model} • {conversation.message_count || 0} messages
+                        <div className={`small ${selectedConversation?.id === conversation.id ? 'text-white-50' : 'text-muted'}`}>
+                          {conversation.section_name && (
+                            <>
+                              <i className="fas fa-folder mr-1"></i>
+                              {conversation.section_name} • 
+                            </>
+                          )}
+                          <i className="fas fa-brain ml-1 mr-1"></i>
+                          {conversation.model} • 
+                          <i className="fas fa-comment-dots ml-1 mr-1"></i>
+                          {conversation.message_count || 0}
                         </div>
                       </div>
-                      <Badge variant="secondary" className="flex-shrink-0 ms-2">
-                        {new Date(conversation.updated_at).toLocaleDateString()}
+                      <Badge 
+                        variant={selectedConversation?.id === conversation.id ? 'light' : 'secondary'} 
+                        className="flex-shrink-0"
+                      >
+                        {formatDateBadge(conversation.updated_at)}
                       </Badge>
                     </div>
                   </div>
@@ -294,12 +418,16 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <Card.Footer className="bg-white border-top">
-                <div className="d-flex justify-content-between align-items-center">
-                  <small className="text-muted">
+              <Card.Footer className="bg-light border-top">
+                <div className="d-flex justify-content-between align-items-center flex-wrap">
+                  <small className="text-muted mb-2 mb-md-0">
                     Page {currentPage} of {totalPages}
                   </small>
-                  <Pagination className="mb-0" size="sm">
+                  <Pagination size="sm" className="mb-0">
+                    <Pagination.First
+                      disabled={currentPage <= 1 || loading}
+                      onClick={() => loadConversations(1)}
+                    />
                     <Pagination.Prev
                       disabled={currentPage <= 1 || loading}
                       onClick={() => loadConversations(currentPage - 1)}
@@ -309,6 +437,10 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       disabled={currentPage >= totalPages || loading}
                       onClick={() => loadConversations(currentPage + 1)}
                     />
+                    <Pagination.Last
+                      disabled={currentPage >= totalPages || loading}
+                      onClick={() => loadConversations(totalPages)}
+                    />
                   </Pagination>
                 </div>
               </Card.Footer>
@@ -317,107 +449,121 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         </Col>
 
         {/* Messages Panel */}
-        <Col lg={showFilters ? 4 : 6}>
-          <Card className="shadow-sm border-0 h-100">
-            <Card.Body className="d-flex flex-column">
-              {loading && selectedConversation ? (
-                <div className="text-center py-5 flex-grow-1">
-                  <Spinner animation="border" className="mb-3" />
-                  <div className="text-muted">{config.labels.loadingLabel}</div>
-                </div>
-              ) : !selectedConversation ? (
-                <div className="text-center py-5 text-muted flex-grow-1">
-                  <i className="fas fa-comments fa-3x mb-3 opacity-50"></i>
-                  <h6>{config.labels.messagesEmpty}</h6>
-                  <p className="mb-0 small">Select a conversation to view its messages</p>
-                </div>
-              ) : (
-                <>
-                  <div className="conversation-header mb-4 pb-3 border-bottom">
-                    <div className="d-flex justify-content-between align-items-start mb-2">
-                      <div className="flex-grow-1">
-                        <h5 className="mb-1 text-primary">{selectedConversation.title || 'Untitled Conversation'}</h5>
-                        <div className="text-muted small mb-1">
-                          <strong>User:</strong> {selectedConversation.user_name || 'Unknown'}
-                          {selectedConversation.user_email && ` (${selectedConversation.user_email})`}
+        <Col lg={showFilters ? 5 : 7}>
+          <Card className="shadow-sm border-0 messages-panel">
+            {loading && selectedConversation ? (
+              <Card.Body className="text-center py-5">
+                <Spinner animation="border" variant="primary" size="sm" className="mb-3" />
+                <div className="text-muted">{config.labels.loadingLabel}</div>
+              </Card.Body>
+            ) : !selectedConversation ? (
+              <Card.Body className="text-center py-5">
+                <i className="fas fa-hand-pointer fa-4x text-muted mb-3 opacity-50"></i>
+                <h5 className="text-muted mb-2">{config.labels.messagesEmpty}</h5>
+                <p className="text-muted small mb-0">Select a conversation to view its messages</p>
+              </Card.Body>
+            ) : (
+              <>
+                {/* Conversation Header */}
+                <Card.Header className="bg-white border-bottom">
+                  <div className="d-flex justify-content-between align-items-start">
+                    <div className="flex-grow-1">
+                      <h5 className="text-primary mb-2 font-weight-bold">
+                        {selectedConversation.title || 'Untitled Conversation'}
+                      </h5>
+                      <div className="small text-muted mb-1">
+                        <i className="fas fa-user mr-2"></i>
+                        <strong>User:</strong> {selectedConversation.user_name || 'Unknown'}
+                        {selectedConversation.user_email && ` (${selectedConversation.user_email})`}
+                      </div>
+                      {selectedConversation.user_validation_code && (
+                        <div className="small text-muted mb-1">
+                          <i className="fas fa-key mr-2"></i>
+                          <strong>Validation:</strong> {selectedConversation.user_validation_code}
                         </div>
-                        {selectedConversation.user_validation_code && (
-                          <div className="text-muted small mb-1">
-                            <i className="fas fa-key me-1"></i>
-                            <strong>Validation:</strong> {selectedConversation.user_validation_code}
+                      )}
+                      <div className="small text-muted">
+                        {selectedConversation.section_name && (
+                          <>
+                            <i className="fas fa-folder mr-2"></i>
+                            <strong>Section:</strong> {selectedConversation.section_name} • 
+                          </>
+                        )}
+                        <i className="fas fa-brain ml-1 mr-2"></i>
+                        <strong>Model:</strong> {selectedConversation.model} • 
+                        <i className="fas fa-clock ml-1 mr-2"></i>
+                        <strong>Created:</strong> {formatDate(selectedConversation.created_at)} • 
+                        <strong>Updated:</strong> {formatDate(selectedConversation.updated_at)}
+                      </div>
+                    </div>
+                    <Badge variant="info" className="px-3 py-2">
+                      <i className="fas fa-comment-dots mr-2"></i>
+                      {selectedConversation.message_count || 0}
+                    </Badge>
+                  </div>
+                </Card.Header>
+
+                {/* Messages Container */}
+                <Card.Body className="messages-container p-4" style={{ maxHeight: '60vh', overflowY: 'auto', backgroundColor: '#f8f9fa' }}>
+                  {messages.length === 0 ? (
+                    <div className="text-center py-5">
+                      <i className="fas fa-comment-slash fa-3x text-muted mb-3 opacity-50"></i>
+                      <div className="text-muted">No messages in this conversation</div>
+                    </div>
+                  ) : (
+                    messages.map(message => (
+                      <div
+                        key={message.id}
+                        className={`message-bubble mb-3 p-3 shadow-sm ${
+                          message.role === 'user'
+                            ? 'bg-primary text-white ml-auto'
+                            : 'bg-white border'
+                        }`}
+                        style={{
+                          maxWidth: '85%',
+                          marginLeft: message.role === 'user' ? 'auto' : '0',
+                          marginRight: message.role === 'user' ? '0' : 'auto',
+                          borderRadius: message.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px'
+                        }}
+                      >
+                        <div className={`message-header small font-weight-bold mb-2 text-uppercase ${message.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
+                          {message.role === 'user' ? (
+                            <><i className="fas fa-user mr-2"></i>User</>
+                          ) : (
+                            <><i className="fas fa-robot mr-2"></i>Assistant</>
+                          )}
+                        </div>
+                        <div className={`message-content ${message.role === 'user' ? 'text-white' : ''}`}>
+                          {message.role === 'user' ? (
+                            <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+                              {message.content}
+                            </div>
+                          ) : (
+                            <MarkdownRenderer content={message.content} />
+                          )}
+                        </div>
+                        {message.attachments && (
+                          <div className={`message-attachments mt-2 small ${message.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
+                            <i className="fas fa-paperclip mr-2"></i>
+                            {JSON.parse(message.attachments).length} attachment{JSON.parse(message.attachments).length !== 1 ? 's' : ''}
                           </div>
                         )}
-                        <div className="text-muted small">
-                          {selectedConversation.section_name && (
-                            <><strong>Section:</strong> {selectedConversation.section_name} • </>
+                        <div className={`message-timestamp small mt-2 text-right ${message.role === 'user' ? 'text-white-50' : 'text-muted'}`}>
+                          <i className="fas fa-clock mr-1"></i>
+                          {formatDate(message.timestamp)}
+                          {message.tokens_used && (
+                            <>
+                              <i className="fas fa-microchip ml-2 mr-1"></i>
+                              {message.tokens_used.toLocaleString()} tokens
+                            </>
                           )}
-                          <strong>Model:</strong> {selectedConversation.model} •
-                          <strong>Created:</strong> {new Date(selectedConversation.created_at).toLocaleString()} •
-                          <strong>Updated:</strong> {new Date(selectedConversation.updated_at).toLocaleString()}
                         </div>
                       </div>
-                      <Badge variant="info" className="flex-shrink-0">
-                        {selectedConversation.message_count || 0} messages
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="messages-container flex-grow-1" style={{ maxHeight: '500px', overflowY: 'auto' }}>
-                    {messages.length === 0 ? (
-                      <div className="text-center py-4 text-muted">
-                        <i className="fas fa-inbox fa-2x mb-2 opacity-50"></i>
-                        <div>No messages in this conversation</div>
-                      </div>
-                    ) : (
-                      messages.map(message => (
-                        <div
-                          key={message.id}
-                          className={`message-item mb-3 p-3 rounded shadow-sm ${
-                            message.role === 'user'
-                              ? 'bg-primary text-white ms-auto border'
-                              : 'bg-light border'
-                          }`}
-                          style={{
-                            maxWidth: '85%',
-                            marginLeft: message.role === 'user' ? 'auto' : '0',
-                            borderRadius: message.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px'
-                          }}
-                        >
-                          <div className="message-role small fw-bold mb-1 text-uppercase opacity-75">
-                            {message.role === 'user' ? (
-                              <><i className="fas fa-user me-1"></i>User</>
-                            ) : (
-                              <><i className="fas fa-robot me-1"></i>Assistant</>
-                            )}
-                          </div>
-                          <div className="message-content">
-                            {message.formatted_content ? (
-                              <div dangerouslySetInnerHTML={{ __html: message.formatted_content }} />
-                            ) : (
-                              <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                                {message.content}
-                              </div>
-                            )}
-                          </div>
-                          {message.attachments && (
-                            <div className="message-attachments mt-2 small opacity-75">
-                              <i className="fas fa-paperclip me-1"></i>
-                              {JSON.parse(message.attachments).length} attachment{JSON.parse(message.attachments).length !== 1 ? 's' : ''}
-                            </div>
-                          )}
-                          <div className="message-timestamp small mt-2 opacity-75 text-end">
-                            {new Date(message.timestamp).toLocaleString()}
-                            {message.tokens_used && (
-                              <> • {message.tokens_used.toLocaleString()} tokens</>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-            </Card.Body>
+                    ))
+                  )}
+                </Card.Body>
+              </>
+            )}
           </Card>
         </Col>
       </Row>

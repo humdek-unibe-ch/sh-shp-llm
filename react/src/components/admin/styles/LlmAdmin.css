@@ -1,29 +1,595 @@
-.llm-admin-container {
-  min-height: 70vh;
+/**
+ * LLM Admin Console Styles
+ * =========================
+ * Professional, industry-standard UI for the LLM administration console
+ * Based on Bootstrap 4.6 with custom enhancements
+ */
+
+/* ============================================================================
+   GLOBAL ADMIN STYLES
+   ============================================================================ */
+
+.llm-admin-console {
+  background-color: #f5f7fa;
+  min-height: 100vh;
 }
 
-.llm-admin-dropdown {
-  z-index: 20;
+.llm-admin-console h2 {
+  font-size: 1.75rem;
+  letter-spacing: -0.5px;
 }
 
-.llm-admin-dropdown-list {
-  max-height: 220px;
+.llm-admin-console .card {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.llm-admin-console .card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ============================================================================
+   FILTERS PANEL
+   ============================================================================ */
+
+.llm-admin-console .card-header {
+  border-radius: 8px 8px 0 0;
+  padding: 1rem 1.25rem;
+}
+
+.llm-admin-console .form-control:focus,
+.llm-admin-console .custom-select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.llm-admin-console .form-control-sm,
+.llm-admin-console .custom-select-sm {
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
+
+.llm-admin-console hr {
+  border-top: 1px solid #e9ecef;
+}
+
+/* ============================================================================
+   CONVERSATIONS PANEL
+   ============================================================================ */
+
+.conversations-panel {
+  height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+}
+
+.conversations-list {
   overflow-y: auto;
+  flex: 1;
+  background-color: #fff;
 }
 
-.conversation-list {
-  max-height: 50vh;
-  overflow-y: auto;
+.conversations-list::-webkit-scrollbar {
+  width: 8px;
 }
 
-.llm-admin-messages {
-  max-height: 65vh;
+.conversations-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.conversations-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.conversations-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.conversation-item {
+  transition: all 0.2s ease;
+  border-left: 4px solid transparent;
+}
+
+.conversation-item:hover:not(.active) {
+  background-color: #f8f9fa !important;
+  border-left-color: #007bff;
+}
+
+.conversation-item.active {
+  background-color: #007bff !important;
+  border-left-color: #0056b3 !important;
+  color: white !important;
+}
+
+.conversation-item.active h6,
+.conversation-item.active .small {
+  color: white !important;
+}
+
+.conversation-item .badge {
+  font-size: 0.7rem;
+  padding: 0.35rem 0.6rem;
+  font-weight: 600;
+}
+
+/* ============================================================================
+   MESSAGES PANEL
+   ============================================================================ */
+
+.messages-panel {
+  height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+}
+
+.messages-container {
   overflow-y: auto;
+  flex: 1;
+}
+
+.messages-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.message-bubble {
+  position: relative;
+  word-wrap: break-word;
+  animation: fadeInUp 0.3s ease;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-bubble.bg-primary {
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%) !important;
+}
+
+.message-bubble.bg-white {
+  border: 1px solid #e9ecef;
 }
 
 .message-content {
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.6;
+  font-size: 0.95rem;
 }
 
+/* ============================================================================
+   MARKDOWN CONTENT STYLES FOR MESSAGES
+   ============================================================================ */
 
+.message-content .markdown-content {
+  color: inherit;
+}
+
+.message-content .markdown-content p {
+  margin-bottom: 0.75rem;
+}
+
+.message-content .markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content .markdown-content h1,
+.message-content .markdown-content h2,
+.message-content .markdown-content h3,
+.message-content .markdown-content h4,
+.message-content .markdown-content h5,
+.message-content .markdown-content h6 {
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.message-content .markdown-content h1 {
+  font-size: 1.5rem;
+}
+
+.message-content .markdown-content h2 {
+  font-size: 1.35rem;
+}
+
+.message-content .markdown-content h3 {
+  font-size: 1.2rem;
+}
+
+.message-content .markdown-content ul,
+.message-content .markdown-content ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.message-content .markdown-content li {
+  margin-bottom: 0.25rem;
+}
+
+.message-content .markdown-content code.inline-code {
+  background-color: rgba(0, 0, 0, 0.08);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.875em;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.bg-primary .message-content code.inline-code {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.message-content .markdown-content .code-block-wrapper {
+  margin: 1rem 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f8f9fa;
+}
+
+.message-content .markdown-content .code-block-header {
+  background: #e9ecef;
+  padding: 0.5rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.message-content .markdown-content .code-language {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: #6c757d;
+  letter-spacing: 0.5px;
+}
+
+.message-content .markdown-content .code-copy-btn {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.message-content .markdown-content .code-copy-btn:hover {
+  background: #0056b3;
+}
+
+.message-content .markdown-content .code-copy-btn.copied {
+  background: #28a745;
+}
+
+.message-content .markdown-content .copy-tooltip {
+  position: absolute;
+  top: -30px;
+  right: 0;
+  background: #28a745;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.message-content .markdown-content pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  background: #282c34;
+  color: #abb2bf;
+}
+
+.message-content .markdown-content pre code {
+  background: none;
+  color: inherit;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.message-content .markdown-content .md-blockquote {
+  border-left: 4px solid #007bff;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.message-content .markdown-content table {
+  width: 100%;
+  margin: 1rem 0;
+}
+
+.message-content .markdown-content .table-responsive {
+  margin: 1rem 0;
+}
+
+.message-content .markdown-content .md-link {
+  color: #007bff;
+  text-decoration: underline;
+}
+
+.bg-primary .message-content .md-link {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.message-content .markdown-content .task-checkbox {
+  margin-right: 0.5rem;
+}
+
+/* ============================================================================
+   BADGES AND LABELS
+   ============================================================================ */
+
+.llm-admin-console .badge {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.llm-admin-console .badge-secondary {
+  background-color: #6c757d;
+}
+
+.llm-admin-console .badge-info {
+  background-color: #17a2b8;
+}
+
+.llm-admin-console .badge-light {
+  background-color: #f8f9fa;
+  color: #212529;
+  border: 1px solid #dee2e6;
+}
+
+/* ============================================================================
+   BUTTONS
+   ============================================================================ */
+
+.llm-admin-console .btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  text-transform: none;
+}
+
+.llm-admin-console .btn-sm {
+  padding: 0.375rem 0.875rem;
+  font-size: 0.875rem;
+}
+
+.llm-admin-console .btn-primary {
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+}
+
+.llm-admin-console .btn-primary:hover {
+  background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
+  box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.llm-admin-console .btn-primary:disabled {
+  background: #6c757d;
+  opacity: 0.65;
+  transform: none;
+}
+
+.llm-admin-console .btn-outline-secondary {
+  border-color: #ced4da;
+  color: #6c757d;
+}
+
+.llm-admin-console .btn-outline-secondary:hover {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  color: white;
+}
+
+.llm-admin-console .btn-link {
+  text-decoration: none;
+}
+
+.llm-admin-console .btn-link:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================================
+   PAGINATION
+   ============================================================================ */
+
+.llm-admin-console .pagination {
+  margin: 0;
+}
+
+.llm-admin-console .pagination .page-link {
+  border-radius: 4px;
+  margin: 0 2px;
+  border: 1px solid #dee2e6;
+  color: #007bff;
+  transition: all 0.2s ease;
+}
+
+.llm-admin-console .pagination .page-link:hover {
+  background-color: #e9ecef;
+  border-color: #dee2e6;
+}
+
+.llm-admin-console .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  border-color: #007bff;
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+}
+
+.llm-admin-console .pagination .page-item.disabled .page-link {
+  color: #6c757d;
+  background-color: #fff;
+  border-color: #dee2e6;
+}
+
+/* ============================================================================
+   ALERTS
+   ============================================================================ */
+
+.llm-admin-console .alert {
+  border-radius: 8px;
+  border: none;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.llm-admin-console .alert-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+/* ============================================================================
+   LOADING STATES
+   ============================================================================ */
+
+.llm-admin-console .spinner-border {
+  width: 2rem;
+  height: 2rem;
+  border-width: 0.2em;
+}
+
+.llm-admin-console .spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+  border-width: 0.15em;
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+
+@media (max-width: 991.98px) {
+  .llm-admin-console h2 {
+    font-size: 1.5rem;
+  }
+
+  .conversations-panel,
+  .messages-panel {
+    height: auto;
+    min-height: 400px;
+  }
+
+  .conversations-list,
+  .messages-container {
+    max-height: 500px;
+  }
+
+  .message-bubble {
+    max-width: 90% !important;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .llm-admin-console .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  .llm-admin-console .d-flex.justify-content-between > div:last-child {
+    margin-top: 1rem;
+  }
+
+  .message-bubble {
+    max-width: 95% !important;
+  }
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.llm-admin-console .opacity-50 {
+  opacity: 0.5;
+}
+
+.llm-admin-console .text-white-50 {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.llm-admin-console .shadow-sm {
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+}
+
+.llm-admin-console .border-0 {
+  border: 0 !important;
+}
+
+/* ============================================================================
+   DARK MODE SUPPORT (Optional)
+   ============================================================================ */
+
+@media (prefers-color-scheme: dark) {
+  .llm-admin-console {
+    background-color: #1a1d23;
+  }
+
+  .llm-admin-console .card {
+    background-color: #242830;
+    border-color: #3a3f4b;
+  }
+
+  .llm-admin-console .card-header.bg-light {
+    background-color: #2d3139 !important;
+    border-color: #3a3f4b;
+  }
+
+  .llm-admin-console .text-muted {
+    color: #a0a0a0 !important;
+  }
+
+  .llm-admin-console .conversation-item:not(.active) {
+    background-color: #242830 !important;
+    color: #e9ecef;
+  }
+
+  .llm-admin-console .conversation-item:hover:not(.active) {
+    background-color: #2d3139 !important;
+  }
+
+  .llm-admin-console .message-bubble.bg-white {
+    background-color: #2d3139 !important;
+    border-color: #3a3f4b !important;
+    color: #e9ecef !important;
+  }
+
+  .llm-admin-console .messages-container {
+    background-color: #1a1d23 !important;
+  }
+}

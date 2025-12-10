@@ -79,6 +79,16 @@ class LlmAdminService extends LlmService
             $params[] = $search;
         }
 
+        if (!empty($filters['date_from'])) {
+            $where[] = "DATE(lc.created_at) >= ?";
+            $params[] = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $where[] = "DATE(lc.created_at) <= ?";
+            $params[] = $filters['date_to'];
+        }
+
         $where_clause = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
         $offset = ($page - 1) * $per_page;
 
