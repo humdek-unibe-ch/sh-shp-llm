@@ -403,7 +403,7 @@ class LlmchatController extends BaseController
             // Check rate limiting before creating new conversation
             $rate_data = $this->llm_service->checkRateLimit($user_id);
 
-            $conversation_id = $this->llm_service->createConversation($user_id, $title, $model, $this->model->getSectionId());
+            $conversation_id = $this->llm_service->createConversation($user_id, $title, $model, null, null, $this->model->getSectionId());
 
             // Update rate limiting to include the new conversation
             $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
