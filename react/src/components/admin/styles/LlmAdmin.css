@@ -1,0 +1,29 @@
+.llm-admin-container {
+  min-height: 70vh;
+}
+
+.llm-admin-dropdown {
+  z-index: 20;
+}
+
+.llm-admin-dropdown-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.conversation-list {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.llm-admin-messages {
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.message-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+

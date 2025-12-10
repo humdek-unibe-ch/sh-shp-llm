@@ -15,9 +15,8 @@
  */
 
 import React, { useState, useRef, useCallback, KeyboardEvent, DragEvent } from 'react';
-import { Form, Button, Alert, Badge, CloseButton } from 'react-bootstrap';
-import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../types';
-import { FILE_ERRORS, formatBytes } from '../../../types';
+import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../../types';
+import { FILE_ERRORS, formatBytes } from '../../../../types';
 import {
   formatFileSize,
   getFileExtension,
@@ -26,7 +25,7 @@ import {
   generateFileHash,
   truncateFileName,
   isImageExtension
-} from '../../../utils/formatters';
+} from '../../../../utils/formatters';
 
 /**
  * Props for MessageInput component
@@ -316,21 +315,29 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isNearLimit = charCount > maxLength * 0.9;
   
   return (
-    <Form onSubmit={handleSubmit}>
+    <form id="message-form" onSubmit={handleSubmit} className="message-form-modern">
       {/* File Error Alert */}
       {fileError && (
-        <Alert variant="danger" dismissible onClose={() => setFileError(null)} className="mb-2">
+        <div className="alert alert-danger alert-dismissible fade show mb-2" role="alert">
           <small>
             <i className="fas fa-exclamation-circle mr-1"></i>
             {fileError}
           </small>
-        </Alert>
+          <button
+            type="button"
+            className="close"
+            onClick={() => setFileError(null)}
+            aria-label="Close"
+          >
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
       )}
       
       {/* File Attachments Preview */}
       {selectedFiles.length > 0 && (
-        <div className="mb-2">
-          <div className="d-flex flex-wrap attachment-preview-list">
+        <div id="file-attachments" className="mb-2">
+          <div id="attachments-list" className="d-flex flex-wrap gap-2">
             {selectedFiles.map((item) => (
               <AttachmentItem
                 key={item.id}
@@ -343,98 +350,100 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </div>
       )}
       
-      {/* Message Input Container */}
+      {/* Modern Message Input Container */}
       <div
-        className={`message-input-container p-1 border rounded ${isDragging && config.isVisionModel ? 'border-primary bg-light' : ''}`}
+        className={`message-input-container ${isDragging && config.isVisionModel ? 'drag-over' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Hidden File Input */}
-        <Form.Control
-          ref={fileInputRef}
-          type="file"
-          className="d-none"
-          multiple
-          accept={config.acceptedFileTypes || fileConfig.allowedExtensions.map(ext => `.${ext}`).join(',')}
-          onChange={handleFileInputChange}
-        />
-
-        {/* Text Input */}
-        <Form.Control
-          ref={textareaRef}
-          as="textarea"
-          placeholder={disabled ? 'Streaming in progress...' : config.messagePlaceholder}
-          value={message}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          maxLength={maxLength}
-          rows={1}
-          className="border-0 rounded-0 message-input-textarea"
-          style={{ resize: 'none', minHeight: '44px', maxHeight: '120px' }}
-        />
+        {/* Textarea Area - Scrolls internally */}
+        <div className="message-input-textarea-wrapper">
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            id="file-upload"
+            className="d-none"
+            multiple
+            accept={config.acceptedFileTypes || fileConfig.allowedExtensions.map(ext => `.${ext}`).join(',')}
+            onChange={handleFileInputChange}
+          />
+          
+          {/* Text Input */}
+          <textarea
+            ref={textareaRef}
+            id="message-input"
+            name="message"
+            className="message-input-textarea"
+            placeholder={disabled ? 'Streaming in progress...' : config.messagePlaceholder}
+            value={message}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            maxLength={maxLength}
+            rows={1}
+          />
+        </div>
         
-        {/* Action Buttons */}
-        <div className="d-flex justify-content-between align-items-center p-2 border-top bg-light message-input-actions">
+        {/* Fixed Button Container - Always at bottom */}
+        <div className="message-input-actions">
           {/* Left side - Attachment button */}
-          <div>
+          <div className="message-input-actions-left">
             {config.enableFileUploads && config.isVisionModel && (
-              <Button
-                variant="outline-secondary"
-                size="sm"
+              <button
+                type="button"
+                className="message-action-btn attachment-btn"
                 onClick={handleAttachmentClick}
                 disabled={disabled}
                 title="Attach files"
-                className="message-action-btn"
               >
                 <i className="fas fa-paperclip"></i>
-              </Button>
+              </button>
             )}
             {config.enableFileUploads && !config.isVisionModel && (
-              <Button variant="outline-secondary" size="sm" disabled title="Current model does not support image uploads">
+              <div className="message-action-btn attachment-btn disabled" title="Current model does not support image uploads">
                 <i className="fas fa-paperclip text-muted"></i>
                 <small className="text-muted ml-1">No vision</small>
-              </Button>
+              </div>
             )}
           </div>
-
+          
           {/* Character Count - Center */}
-          <small className={isNearLimit ? 'text-warning' : 'text-muted'}>
-            {charCount}/{maxLength}
-          </small>
-
+          <div className="message-input-char-count">
+            <small className={isNearLimit ? 'text-warning' : 'text-muted'}>
+              {charCount}/{maxLength}
+            </small>
+          </div>
+          
           {/* Right side - Clear and Send buttons */}
-          <div className="d-flex gap-2 flex-wrap justify-content-end">
-            <Button
-              variant="outline-secondary"
-              size="sm"
+          <div className="message-input-actions-right">
+            <button
+              type="button"
+              className="message-action-btn clear-btn"
               onClick={handleClearForm}
               disabled={disabled}
               title="Clear"
-              className="message-action-btn message-clear-btn mr-1"
             >
               <i className="fas fa-times"></i>
-            </Button>
-
-            <Button
+            </button>
+            
+            <button
               type="submit"
-              variant="primary"
-              size="sm"
+              className="message-action-btn send-btn"
               disabled={disabled || !message.trim()}
               title="Send message"
-              className="message-action-btn message-send-btn"
             >
               {disabled ? (
                 <i className="fas fa-spinner fa-spin"></i>
               ) : (
                 <i className="fas fa-paper-plane"></i>
               )}
-            </Button>
+            </button>
           </div>
         </div>
       </div>
-    </Form>
+    </form>
   );
 };
 
@@ -461,38 +470,37 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({ item, onRemove, fileCon
   const fileSize = formatFileSize(item.file.size);
   
   return (
-    <div className="d-flex align-items-center bg-light border rounded p-2 position-relative" style={{ minWidth: '160px', maxWidth: '220px' }}>
-      <div className="mr-2 flex-shrink-0">
+    <div className="attachment-item" data-attachment-id={item.id}>
+      <div className="attachment-preview">
         {isImage && item.previewUrl ? (
           <img
             src={item.previewUrl}
             alt={item.file.name}
-            style={{ width: '42px', height: '42px', objectFit: 'cover' }}
-            className="rounded border"
+            className="attachment-thumbnail"
           />
         ) : (
-          <div className="d-flex align-items-center justify-content-center rounded border bg-white" style={{ width: '42px', height: '42px' }}>
-            <i className={`${fileIcon} text-secondary`}></i>
+          <div className="attachment-icon">
+            <i className={fileIcon}></i>
           </div>
         )}
       </div>
-      <div className="flex-grow-1 min-w-0">
-        <div className="font-weight-medium text-truncate small" title={item.file.name}>
+      <div className="attachment-info">
+        <span className="attachment-name" title={item.file.name}>
           {truncatedName}
-        </div>
-        <div className="d-flex align-items-center gap-1 mt-1">
-          <Badge variant={badgeClass === 'badge-success' ? 'success' : badgeClass === 'badge-info' ? 'info' : 'secondary'} className="small">
-            .{extension}
-          </Badge>
-          <small className="text-muted">{fileSize}</small>
-        </div>
+        </span>
+        <span className="attachment-meta">
+          <span className={`badge ${badgeClass}`}>.{extension}</span>
+          <span className="attachment-size">{fileSize}</span>
+        </span>
       </div>
-      <CloseButton
-        className="ml-1"
+      <button
+        type="button"
+        className="btn btn-sm btn-link remove-attachment text-danger"
         onClick={() => onRemove(item.id)}
         title="Remove file"
-        style={{ fontSize: '12px' }}
-      />
+      >
+        <i className="fas fa-times-circle"></i>
+      </button>
     </div>
   );
 };
