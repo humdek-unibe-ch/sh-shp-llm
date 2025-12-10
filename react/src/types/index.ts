@@ -408,6 +408,7 @@ export interface AdminFilterOption {
   id: number;
   name: string;
   email?: string;
+  code?: string;
 }
 
 export interface AdminFiltersResponse {
@@ -423,6 +424,7 @@ export interface AdminConversation extends Conversation {
   id_sections?: number;
   user_name?: string;
   user_email?: string;
+  user_validation_code?: string;
   section_name?: string;
   message_count?: number;
 }

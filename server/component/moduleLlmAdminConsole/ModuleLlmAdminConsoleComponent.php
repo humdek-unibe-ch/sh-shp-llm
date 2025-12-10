@@ -7,6 +7,7 @@
 require_once __DIR__ . "/../../../../../component/BaseComponent.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleView.php";
+require_once __DIR__ . "/ModuleLlmAdminConsoleController.php";
 
 /**
  * The LLM admin console component - comprehensive interface for managing conversations
@@ -29,8 +30,9 @@ class ModuleLlmAdminConsoleComponent extends BaseComponent
     public function __construct($services,  $params = [], $id_page = null)
     {
         $model = new ModuleLlmAdminConsoleModel($services, $params, $id_page);
+        $controller = new ModuleLlmAdminConsoleController($model);
         $view = new ModuleLlmAdminConsoleView($model);
-        parent::__construct($model, $view);
+        parent::__construct($model, $view, $controller);
     }
 
     /* Private Methods *********************************************************/

@@ -90,6 +90,15 @@ class LlmchatController extends BaseController
                 case 'get_conversations':
                     $this->getConversationsData();
                     break;
+                case 'admin_filters':
+                    $this->handleAdminFilters();
+                    break;
+                case 'admin_conversations':
+                    $this->handleAdminConversations();
+                    break;
+                case 'admin_messages':
+                    $this->handleAdminMessages();
+                    break;
                 default:
                     // Regular page load - continue with normal rendering
                     break;
@@ -605,6 +614,79 @@ class LlmchatController extends BaseController
         try {
             $conversations = $this->llm_service->getUserConversations($user_id, 50, $this->model->get_db_field('llm_model'));
             $this->sendJsonResponse(['conversations' => $conversations]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle admin filters request (users and sections)
+     */
+    private function handleAdminFilters()
+    {
+        try {
+            // Import admin model for admin functionality
+            require_once __DIR__ . "/../../moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php";
+            $admin_model = new ModuleLlmAdminConsoleModel($this->model->get_services(), [], $this->model->getPageId());
+            $filters = $admin_model->getAdminFilters();
+
+            $this->sendJsonResponse([
+                'filters' => $filters
+            ]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle admin conversations request
+     */
+    private function handleAdminConversations()
+    {
+        $page = (int)($_GET['page'] ?? 1);
+        $per_page = min((int)($_GET['per_page'] ?? 50), 100); // Max 100 per page
+
+        $filters = [];
+        if (!empty($_GET['user_id'])) $filters['user_id'] = $_GET['user_id'];
+        if (!empty($_GET['section_id'])) $filters['section_id'] = $_GET['section_id'];
+        if (!empty($_GET['q'])) $filters['query'] = $_GET['q'];
+
+        try {
+            // Import admin model for admin functionality
+            require_once __DIR__ . "/../../moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php";
+            $admin_model = new ModuleLlmAdminConsoleModel($this->model->get_services(), [], $this->model->getPageId());
+            $result = $admin_model->getAdminConversations($filters, $page, $per_page);
+
+            $this->sendJsonResponse($result);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle admin conversation messages request
+     */
+    private function handleAdminMessages()
+    {
+        $conversation_id = $_GET['conversation_id'] ?? null;
+
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+
+        try {
+            // Import admin model for admin functionality
+            require_once __DIR__ . "/../../moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php";
+            $admin_model = new ModuleLlmAdminConsoleModel($this->model->get_services(), [], $this->model->getPageId());
+            $result = $admin_model->getAdminConversationMessages($conversation_id);
+
+            if ($result === null) {
+                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                return;
+            }
+
+            $this->sendJsonResponse($result);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

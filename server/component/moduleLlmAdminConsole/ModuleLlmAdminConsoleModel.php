@@ -4,8 +4,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 ?>
 <?php
-require_once __DIR__ . "/../../../../../../component/BaseModel.php";
+require_once __DIR__ . "/../../../../../component/BaseModel.php";
 require_once __DIR__ . "/../../service/LlmService.php";
+require_once __DIR__ . "/../../service/LlmAdminService.php";
+
 
 /**
  * The model class for the LLM admin console component.
@@ -13,7 +15,7 @@ require_once __DIR__ . "/../../service/LlmService.php";
  */
 class ModuleLlmAdminConsoleModel extends BaseModel
 {
-    private $llm_service;
+    private $llm_admin_service;
     private $page_fields;
 
     private $id_page;
@@ -33,7 +35,7 @@ class ModuleLlmAdminConsoleModel extends BaseModel
     public function __construct($services, $params = [], $id_page = null)
     {
         parent::__construct($services, $params, $id_page);
-        $this->llm_service = new LlmService($services);
+        $this->llm_admin_service = new LlmAdminService($services);
         $this->id_page = $id_page;
         // Load page fields using the stored procedure
         $this->page_fields = $this->getPageFields();
@@ -56,11 +58,6 @@ class ModuleLlmAdminConsoleModel extends BaseModel
         return $this->user_id;
     }
 
-    public function isAdmin()
-    {
-        return $this->llm_service->isAdminUser($this->user_id);
-    }
-
     public function getAdminPageSize()
     {
         return $this->page_fields['admin_page_size'] ?? '50';
@@ -81,9 +78,33 @@ class ModuleLlmAdminConsoleModel extends BaseModel
         return ($this->page_fields['admin_show_filters'] ?? '1') === '1';
     }
 
-    public function getLlmService()
+    public function getLlmAdminService()
     {
-        return $this->llm_service;
+        return $this->llm_admin_service;
+    }
+
+    /**
+     * Get admin filter options (users and sections with conversations)
+     */
+    public function getAdminFilters()
+    {
+        return $this->llm_admin_service->getAdminFilterOptions();
+    }
+
+    /**
+     * Get conversations for admin with filtering and pagination
+     */
+    public function getAdminConversations($filters = [], $page = 1, $per_page = 50)
+    {
+        return $this->llm_admin_service->getAdminConversations($filters, $page, $per_page);
+    }
+
+    /**
+     * Get messages for a specific conversation (admin view)
+     */
+    public function getAdminConversationMessages($conversation_id)
+    {
+        return $this->llm_admin_service->getAdminConversationMessages($conversation_id);
     }
 
     /**
