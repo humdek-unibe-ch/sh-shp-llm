@@ -21,7 +21,6 @@ class LlmAdminService extends LlmService
 
     /**
      * Get admin filter options (users and sections with conversations)
-     * Includes validation_codes table join for user validation codes
      */
     public function getAdminFilterOptions()
     {
@@ -29,11 +28,9 @@ class LlmAdminService extends LlmService
             "SELECT DISTINCT
                 u.id,
                 u.name,
-                u.email,
-                vc.code as validation_code
+                u.email
              FROM users u
              INNER JOIN llmConversations lc ON lc.id_users = u.id
-             LEFT JOIN validation_codes vc ON vc.id_users = u.id
              ORDER BY u.name ASC"
         );
 
@@ -71,9 +68,8 @@ class LlmAdminService extends LlmService
         }
 
         if (!empty($filters['query'])) {
-            $where[] = "(lc.title LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR vc.code LIKE ?)";
+            $where[] = "(lc.title LIKE ? OR u.name LIKE ? OR u.email LIKE ?)";
             $search = "%{$filters['query']}%";
-            $params[] = $search;
             $params[] = $search;
             $params[] = $search;
             $params[] = $search;
@@ -92,25 +88,22 @@ class LlmAdminService extends LlmService
         $where_clause = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
         $offset = ($page - 1) * $per_page;
 
-        // Get total count with validation_codes join
+        // Get total count
         $count_sql = "SELECT COUNT(DISTINCT lc.id) as total
                       FROM llmConversations lc
                       LEFT JOIN users u ON lc.id_users = u.id
-                      LEFT JOIN validation_codes vc ON vc.id_users = u.id
                       {$where_clause}";
         $total_result = $this->db->query_db_first($count_sql, $params);
         $total = $total_result['total'] ?? 0;
 
-        // Get conversations with user, section, and validation code details
+        // Get conversations with user, section details
         $sql = "SELECT lc.*,
                        u.name as user_name,
                        u.email as user_email,
-                       vc.code as user_validation_code,
                        s.name as section_name,
                        (SELECT COUNT(*) FROM llmMessages lm WHERE lm.id_llmConversations = lc.id) as message_count
                 FROM llmConversations lc
                 LEFT JOIN users u ON lc.id_users = u.id
-                LEFT JOIN validation_codes vc ON vc.id_users = u.id
                 LEFT JOIN sections s ON lc.id_sections = s.id
                 {$where_clause}
                 ORDER BY lc.updated_at DESC
@@ -132,16 +125,14 @@ class LlmAdminService extends LlmService
      */
     public function getAdminConversationMessages($conversation_id)
     {
-        // Get conversation details with validation code
+        // Get conversation details
         $conversation = $this->db->query_db_first(
             "SELECT lc.*,
                     u.name as user_name,
                     u.email as user_email,
-                    vc.code as user_validation_code,
                     s.name as section_name
              FROM llmConversations lc
              LEFT JOIN users u ON lc.id_users = u.id
-             LEFT JOIN validation_codes vc ON vc.id_users = u.id
              LEFT JOIN sections s ON lc.id_sections = s.id
              WHERE lc.id = ?",
             [$conversation_id]

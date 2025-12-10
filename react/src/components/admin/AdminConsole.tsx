@@ -16,7 +16,6 @@ interface FilterOption {
   id: number;
   name: string;
   email?: string;
-  code?: string;
 }
 
 // Helper function to get today's date in YYYY-MM-DD format
@@ -385,12 +384,6 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                             <span className="ml-1">({conversation.user_email})</span>
                           )}
                         </div>
-                        {conversation.user_validation_code && (
-                          <div className={`small mb-1 ${selectedConversation?.id === conversation.id ? 'text-white-50' : 'text-muted'}`}>
-                            <i className="fas fa-key mr-1"></i>
-                            {conversation.user_validation_code}
-                          </div>
-                        )}
                         <div className={`small ${selectedConversation?.id === conversation.id ? 'text-white-50' : 'text-muted'}`}>
                           {conversation.section_name && (
                             <>
@@ -476,12 +469,6 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         <strong>User:</strong> {selectedConversation.user_name || 'Unknown'}
                         {selectedConversation.user_email && ` (${selectedConversation.user_email})`}
                       </div>
-                      {selectedConversation.user_validation_code && (
-                        <div className="small text-muted mb-1">
-                          <i className="fas fa-key mr-2"></i>
-                          <strong>Validation:</strong> {selectedConversation.user_validation_code}
-                        </div>
-                      )}
                       <div className="small text-muted">
                         {selectedConversation.section_name && (
                           <>
