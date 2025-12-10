@@ -92,7 +92,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
       action
       active={isActive}
       onClick={onSelect}
-      className="d-flex align-items-center justify-content-between"
+      className="d-flex align-items-center justify-content-between conversation-row"
     >
       <div className="d-flex align-items-center flex-grow-1">
         <div className="conversation-icon mr-3">
@@ -106,7 +106,7 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
       <Button
         variant="link"
         size="sm"
-        className="text-danger p-1"
+        className="text-danger p-1 conversation-delete-btn"
         title="Delete conversation"
         onClick={handleDeleteClick}
       >
@@ -208,15 +208,16 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   
   return (
     <>
-      <Card className="h-100 border-0 shadow-sm">
+      <Card className="h-100 border-0 shadow-sm conversation-sidebar-card d-flex flex-column">
         {/* Sidebar Header */}
-        <Card.Header className="bg-white border-bottom">
+        <Card.Header className="bg-white border-0 conversation-sidebar-header">
           <div className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">Conversations</h6>
             <Button
               variant="primary"
               size="sm"
               onClick={handleNewConversationClick}
+              className="conversation-new-btn"
             >
               <i className="fas fa-plus mr-1"></i> New
             </Button>
@@ -224,8 +225,8 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         </Card.Header>
 
         {/* Conversations List */}
-        <Card.Body className="p-0 flex-grow-1 overflow-auto">
-          <ListGroup variant="flush">
+        <Card.Body className="p-0 flex-grow-1 overflow-auto conversation-sidebar-body">
+          <ListGroup variant="flush" className="conversation-list">
             {isLoading ? (
               <ListGroup.Item className="text-center py-4">
                 <div className="spinner-border spinner-border-sm text-primary" role="status">

@@ -330,7 +330,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       {/* File Attachments Preview */}
       {selectedFiles.length > 0 && (
         <div className="mb-2">
-          <div className="d-flex flex-wrap gap-2">
+          <div className="d-flex flex-wrap attachment-preview-list">
             {selectedFiles.map((item) => (
               <AttachmentItem
                 key={item.id}
@@ -345,7 +345,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       
       {/* Message Input Container */}
       <div
-        className={`border rounded ${isDragging && config.isVisionModel ? 'border-primary bg-light' : 'border-secondary'}`}
+        className={`message-input-container border rounded ${isDragging && config.isVisionModel ? 'border-primary bg-light' : 'border-secondary'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -371,12 +371,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           disabled={disabled}
           maxLength={maxLength}
           rows={1}
-          className="border-0 rounded-0"
+          className="border-0 rounded-0 message-input-textarea"
           style={{ resize: 'none', minHeight: '44px', maxHeight: '120px' }}
         />
         
         {/* Action Buttons */}
-        <div className="d-flex justify-content-between align-items-center p-2 border-top bg-light">
+        <div className="d-flex justify-content-between align-items-center p-2 border-top bg-light message-input-actions">
           {/* Left side - Attachment button */}
           <div>
             {config.enableFileUploads && config.isVisionModel && (

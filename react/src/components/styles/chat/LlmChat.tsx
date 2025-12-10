@@ -330,7 +330,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation.model !== config.configuredModel;
 
   return (
-    <Container fluid className="llm-chat-container">
+    <Container fluid className="llm-chat-container llm-chat-shell">
       {/* Error Alert */}
       {error && (
         <Alert variant="danger" dismissible onClose={clearError} className="mb-3">
@@ -339,7 +339,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         </Alert>
       )}
 
-      <Row className="no-gutters h-100">
+      <Row className="no-gutters h-100 llm-chat-grid">
         {/* Conversations Sidebar */}
         {config.enableConversationsList && (
           <Col md={4} lg={3}>
@@ -357,19 +357,21 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
         {/* Main Chat Area */}
         <Col className={config.enableConversationsList ? "" : "col-12"}>
-          <Card className="h-100 border-0 shadow-sm">
+          <Card className="h-100 border-0 shadow-sm llm-chat-panel d-flex flex-column">
             {/* Chat Header */}
-            <Card.Header className="bg-white border-bottom d-flex justify-content-between align-items-center">
+            <Card.Header className="llm-chat-header bg-white border-0 d-flex justify-content-between align-items-center">
               <div className="d-flex align-items-center">
                 <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3" style={{width: '40px', height: '40px'}}>
                   <i className="fas fa-robot text-white"></i>
                 </div>
                 <h5 className="mb-0">{currentConversation?.title || 'AI Chat'}</h5>
               </div>
-              <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'}`}>
-                <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'} mr-1`}></i>
-                {activeModel}
-              </span>
+              <div className="d-flex align-items-center">
+                <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'} llm-model-badge`}>
+                  <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'} mr-1`}></i>
+                  {activeModel}
+                </span>
+              </div>
             </Card.Header>
 
             {/* Messages Container */}
@@ -377,7 +379,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
               ref={messagesContainerRef}
               id="messages-container"
               onScroll={handleScroll}
-              className="p-3 flex-grow-1 overflow-auto"
+              className="p-3 flex-grow-1 overflow-auto llm-chat-body"
             >
               <MessageList
                 messages={displayMessages}
@@ -395,7 +397,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
             )}
 
             {/* Message Input */}
-            <Card.Footer className="bg-white border-top p-3">
+            <Card.Footer className="bg-white border-0 p-3 llm-chat-footer">
               <MessageInput
                 onSend={handleSendMessage}
                 selectedFiles={selectedFiles}

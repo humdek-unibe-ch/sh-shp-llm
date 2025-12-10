@@ -209,7 +209,7 @@ export const MessageList: React.FC<MessageListProps> = ({
     (isProcessing && lastMessage?.role === 'user');
   
   return (
-    <>
+    <div className="message-stack">
       {/* Render all messages */}
       {messages.map((message, index) => {
         // Check if this is a streaming message (last assistant message during streaming)
@@ -232,7 +232,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       {showThinking && (
         <ThinkingIndicator text={config.aiThinkingText} />
       )}
-    </>
+    </div>
   );
 };
 
