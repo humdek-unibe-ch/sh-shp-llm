@@ -236,32 +236,31 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
           <Col>
             <Card className="border">
               <Card.Body className="py-3">
-                <Row className="align-items-end">
+                <Row className="align-items-end filter-row">
                   {/* Date Range Filter */}
-                  <Col md={3} lg={2} className="mb-2 mb-lg-0">
+                  <Col xs={12} sm={6} md={4} lg={3} xl={2} className="mb-2 mb-xl-0 filter-col">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-calendar-alt mr-1"></i>
                       Date Range
                     </Form.Label>
-                    <div className="d-flex">
+                    <div className="d-flex filter-date-range">
                       <Form.Control
                         type="date"
                         value={filters.dateFrom}
                         onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
-                        size="sm"
-                        className="mr-1"
+                        className="filter-input mr-1"
                       />
                       <Form.Control
                         type="date"
                         value={filters.dateTo}
                         onChange={(e) => handleFilterChange('dateTo', e.target.value)}
-                        size="sm"
+                        className="filter-input"
                       />
                     </div>
                   </Col>
 
                   {/* User Filter */}
-                  <Col md={3} lg={3} className="mb-2 mb-lg-0">
+                  <Col xs={12} sm={6} md={4} lg={3} xl={3} className="mb-2 mb-xl-0 filter-col">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-user mr-1"></i>
                       {config.labels.userFilterLabel}
@@ -273,13 +272,28 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       isSearchable={true}
                       isClearable={false}
                       placeholder="All users..."
-                      className="react-select-container"
+                      className="react-select-container filter-select"
                       classNamePrefix="react-select"
                       styles={{
                         control: (provided) => ({
                           ...provided,
-                          minHeight: '31px',
+                          minHeight: '38px',
+                          height: '38px',
                           fontSize: '0.875rem'
+                        }),
+                        valueContainer: (provided) => ({
+                          ...provided,
+                          height: '38px',
+                          padding: '0 8px'
+                        }),
+                        input: (provided) => ({
+                          ...provided,
+                          margin: '0',
+                          padding: '0'
+                        }),
+                        indicatorsContainer: (provided) => ({
+                          ...provided,
+                          height: '38px'
                         }),
                         option: (provided) => ({
                           ...provided,
@@ -294,7 +308,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                   </Col>
 
                   {/* Section Filter */}
-                  <Col md={3} lg={3} className="mb-2 mb-lg-0">
+                  <Col xs={12} sm={6} md={4} lg={3} xl={3} className="mb-2 mb-xl-0 filter-col">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-folder mr-1"></i>
                       {config.labels.sectionFilterLabel}
@@ -306,13 +320,28 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       isSearchable={true}
                       isClearable={false}
                       placeholder="All sections..."
-                      className="react-select-container"
+                      className="react-select-container filter-select"
                       classNamePrefix="react-select"
                       styles={{
                         control: (provided) => ({
                           ...provided,
-                          minHeight: '31px',
+                          minHeight: '38px',
+                          height: '38px',
                           fontSize: '0.875rem'
+                        }),
+                        valueContainer: (provided) => ({
+                          ...provided,
+                          height: '38px',
+                          padding: '0 8px'
+                        }),
+                        input: (provided) => ({
+                          ...provided,
+                          margin: '0',
+                          padding: '0'
+                        }),
+                        indicatorsContainer: (provided) => ({
+                          ...provided,
+                          height: '38px'
                         }),
                         option: (provided) => ({
                           ...provided,
@@ -327,7 +356,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                   </Col>
 
                   {/* Search Filter */}
-                  <Col md={2} lg={2} className="mb-2 mb-lg-0">
+                  <Col xs={12} sm={6} md={4} lg={2} xl={2} className="mb-2 mb-xl-0 filter-col">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-search mr-1"></i>
                       Search
@@ -337,18 +366,17 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       placeholder={config.labels.searchPlaceholder}
                       value={filters.query}
                       onChange={(e) => handleFilterChange('query', e.target.value)}
-                      size="sm"
+                      className="filter-input"
                     />
                   </Col>
 
                   {/* Clear Filters Button */}
-                  <Col md={1} lg={2} className="mb-2 mb-lg-0">
+                  <Col xs={12} sm={6} md={4} lg={1} xl={2} className="mb-2 mb-xl-0 filter-col d-flex align-items-end">
                     {hasActiveFilters && (
                       <Button
                         variant="outline-danger"
-                        size="sm"
                         onClick={clearFilters}
-                        className="w-100"
+                        className="w-100 filter-clear-btn"
                       >
                         <i className="fas fa-times mr-1"></i>
                         Clear
