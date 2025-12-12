@@ -38,3 +38,4 @@ cssFiles.forEach(cssFile => {
 });
 
 console.log('CSS files moved successfully');
+

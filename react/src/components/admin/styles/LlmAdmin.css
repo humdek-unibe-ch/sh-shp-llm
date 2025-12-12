@@ -24,10 +24,45 @@
 .llm-admin-console .filter-row {
   display: flex;
   flex-wrap: wrap;
+  gap: 1rem;
+  align-items: end;
 }
 
 .llm-admin-console .filter-col {
-  min-width: 0; /* Allow flex items to shrink below content size */
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* Allow flex items to shrink */
+}
+
+/* Set fixed widths for different filter types */
+.llm-admin-console .filter-col.filter-date-range {
+  width: 320px; /* Fixed width for date range (150px + 150px + gap) */
+}
+
+.llm-admin-console .filter-col.filter-user,
+.llm-admin-console .filter-col.filter-section {
+  width: 200px; /* Fixed width for select dropdowns */
+}
+
+.llm-admin-console .filter-col.filter-search {
+  width: 250px; /* Fixed width for search input */
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .llm-admin-console .filter-row {
+    gap: 0.75rem;
+  }
+
+  .llm-admin-console .filter-col.filter-date-range {
+    width: 100%; /* Full width on mobile */
+  }
+
+  .llm-admin-console .filter-col.filter-user,
+  .llm-admin-console .filter-col.filter-section,
+  .llm-admin-console .filter-col.filter-search {
+    width: 100%; /* Full width on mobile */
+  }
 }
 
 /* Consistent height for all filter inputs - 38px */
@@ -41,12 +76,12 @@
 /* Date inputs specific styling */
 .llm-admin-console .filter-date-range {
   display: flex;
-  gap: 0;
+  gap: 0.5rem; /* Small gap between date inputs for better spacing */
 }
 
 .llm-admin-console .filter-date-range .filter-input {
   flex: 1;
-  min-width: 0; /* Allow shrinking */
+  max-width: 150px;
 }
 
 /* React-select consistent height */
@@ -68,12 +103,21 @@
   height: 38px;
 }
 
-/* Clear button consistent height */
+/* Button group for consistent sizing and spacing */
+.llm-admin-console .button-group {
+  gap: 0.5rem; /* Consistent spacing between buttons */
+}
+
+.llm-admin-console .button-group .btn {
+  width: 120px; /* Fixed width for all buttons in the group */
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+/* Clear button styling override for consistency */
 .llm-admin-console .filter-clear-btn {
-  height: 38px;
-  min-height: 38px;
+  height: 31px; /* Match sm button height */
   font-size: 0.875rem;
-  padding: 0.375rem 0.75rem;
+  padding: 0.25rem 0.5rem;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -155,7 +155,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     return nameParts.length > 0 ? nameParts.join(' ') : `User ${user.id}`;
   };
 
-  const hasActiveFilters = filters.userId || filters.sectionId || filters.query;
+  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.query;
 
   // Prepare options for react-select
   const userOptions = [
@@ -194,12 +194,11 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 </Badge>
               )}
             </div>
-            <div className="d-flex">
+            <div className="d-flex button-group">
               <Button
                 variant={showFilters ? 'secondary' : 'outline-secondary'}
                 size="sm"
                 onClick={() => setShowFilters(!showFilters)}
-                className="mr-2"
               >
                 <i className={`fas fa-filter mr-2`}></i>
                 {showFilters ? 'Hide Filters' : 'Show Filters'}
@@ -212,6 +211,16 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
               >
                 <i className={`fas fa-sync-alt mr-2 ${loading ? 'fa-spin' : ''}`}></i>
                 {config.labels.refreshLabel}
+              </Button>
+              <Button
+                variant="outline-danger"
+                size="sm"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="filter-clear-btn"
+              >
+                <i className="fas fa-times mr-1"></i>
+                Clear
               </Button>
             </div>
           </div>
@@ -236,9 +245,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
           <Col>
             <Card className="border">
               <Card.Body className="py-3">
-                <Row className="align-items-end filter-row">
+                <div className="filter-row">
                   {/* Date Range Filter */}
-                  <Col xs={12} sm={6} md={4} lg={3} xl={2} className="mb-2 mb-xl-0 filter-col">
+                  <div className="filter-col filter-date-range">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-calendar-alt mr-1"></i>
                       Date Range
@@ -257,10 +266,10 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         className="filter-input"
                       />
                     </div>
-                  </Col>
+                  </div>
 
                   {/* User Filter */}
-                  <Col xs={12} sm={6} md={4} lg={3} xl={3} className="mb-2 mb-xl-0 filter-col">
+                  <div className="filter-col filter-user">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-user mr-1"></i>
                       {config.labels.userFilterLabel}
@@ -305,10 +314,10 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         })
                       }}
                     />
-                  </Col>
+                  </div>
 
                   {/* Section Filter */}
-                  <Col xs={12} sm={6} md={4} lg={3} xl={3} className="mb-2 mb-xl-0 filter-col">
+                  <div className="filter-col filter-section">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-folder mr-1"></i>
                       {config.labels.sectionFilterLabel}
@@ -350,13 +359,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         singleValue: (provided) => ({
                           ...provided,
                           fontSize: '0.875rem'
-                        })
+                          })
                       }}
                     />
-                  </Col>
+                  </div>
 
                   {/* Search Filter */}
-                  <Col xs={12} sm={6} md={4} lg={2} xl={2} className="mb-2 mb-xl-0 filter-col">
+                  <div className="filter-col filter-search">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-search mr-1"></i>
                       Search
@@ -368,22 +377,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       onChange={(e) => handleFilterChange('query', e.target.value)}
                       className="filter-input"
                     />
-                  </Col>
+                  </div>
 
-                  {/* Clear Filters Button */}
-                  <Col xs={12} sm={6} md={4} lg={1} xl={2} className="mb-2 mb-xl-0 filter-col d-flex align-items-end">
-                    {hasActiveFilters && (
-                      <Button
-                        variant="outline-danger"
-                        onClick={clearFilters}
-                        className="w-100 filter-clear-btn"
-                      >
-                        <i className="fas fa-times mr-1"></i>
-                        Clear
-                      </Button>
-                    )}
-                  </Col>
-                </Row>
+                </div>
               </Card.Body>
             </Card>
           </Col>
