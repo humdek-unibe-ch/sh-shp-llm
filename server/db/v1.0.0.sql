@@ -181,6 +181,14 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('send_message_title'), 'Send message', 'Tooltip/title for send message button'),
 (get_style_id('llmChat'), get_field_id('remove_file_title'), 'Remove file', 'Tooltip/title for remove file button');
 
+-- Add conversation context field (user visible, translatable, supports markdown/JSON)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'conversation_context', get_field_type_id('markdown'), '1');
+
+-- Link conversation_context to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('conversation_context'), '', 'System context/instructions sent to AI at the start of each conversation. Supports markdown or JSON format.\n\n**Markdown format:**\n```\nYou are a helpful assistant...\n```\n\n**JSON format (for multiple system messages):**\n```json\n[{"role": "system", "content": "You are..."}]\n```\n\nThis context defines how the AI should behave and what information it has access to. The context is tracked with each message for debugging purposes.');
+
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -213,6 +221,7 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `model` varchar(100) DEFAULT NULL,
     `tokens_used` int DEFAULT NULL,
     `raw_response` longtext DEFAULT NULL, -- Raw API response data (JSON)
+    `sent_context` longtext DEFAULT NULL, -- JSON snapshot of context sent with this message for debugging/audit
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

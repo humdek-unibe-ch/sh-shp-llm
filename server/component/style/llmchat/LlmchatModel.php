@@ -79,6 +79,9 @@ class LlmchatModel extends StyleModel
     private $send_message_title;
     private $remove_file_title;
 
+    // Conversation context
+    private $conversation_context;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -177,6 +180,9 @@ class LlmchatModel extends StyleModel
         $this->no_vision_support_text = $this->get_db_field('no_vision_support_text', 'No vision');
         $this->send_message_title = $this->get_db_field('send_message_title', 'Send message');
         $this->remove_file_title = $this->get_db_field('remove_file_title', 'Remove file');
+
+        // Conversation context - system instructions sent to AI
+        $this->conversation_context = $this->get_db_field('conversation_context', '');
     }
 
     /* Private Methods *********************************************************/
@@ -746,6 +752,79 @@ class LlmchatModel extends StyleModel
     public function getRemoveFileTitle()
     {
         return $this->remove_file_title;
+    }
+
+    // ===== Conversation Context =====
+
+    /**
+     * Get the conversation context/system instructions
+     * 
+     * This returns the raw context string which can be either:
+     * - Free text/markdown: Will be converted to a single system message
+     * - JSON array: Will be used as-is for multiple system messages
+     * 
+     * @return string Raw context string (may be empty)
+     */
+    public function getConversationContext()
+    {
+        return $this->conversation_context;
+    }
+
+    /**
+     * Parse conversation context into API-ready format
+     * 
+     * Converts the configured context into an array of message objects
+     * suitable for prepending to the API messages array.
+     * 
+     * Supports two formats:
+     * 1. JSON array: [{"role": "system", "content": "..."}]
+     * 2. Free text/markdown: Converted to single system message
+     * 
+     * @return array Array of message objects with 'role' and 'content' keys
+     */
+    public function getParsedConversationContext()
+    {
+        $context = trim($this->conversation_context);
+        
+        if (empty($context)) {
+            return [];
+        }
+        
+        // Try to parse as JSON first
+        if (substr($context, 0, 1) === '[') {
+            $parsed = json_decode($context, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+                // Validate structure - each item should have role and content
+                $validated = [];
+                foreach ($parsed as $item) {
+                    if (isset($item['role']) && isset($item['content'])) {
+                        $validated[] = [
+                            'role' => $item['role'],
+                            'content' => $item['content']
+                        ];
+                    }
+                }
+                return $validated;
+            }
+        }
+        
+        // Treat as free text - convert to single system message
+        return [
+            [
+                'role' => 'system',
+                'content' => $context
+            ]
+        ];
+    }
+
+    /**
+     * Check if conversation context is configured
+     * 
+     * @return bool True if context is configured and not empty
+     */
+    public function hasConversationContext()
+    {
+        return !empty(trim($this->conversation_context));
     }
 
     /**

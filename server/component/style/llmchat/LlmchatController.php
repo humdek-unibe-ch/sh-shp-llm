@@ -84,6 +84,9 @@ class LlmchatController extends BaseController
             $action = $_GET['action'] ?? '';
 
             switch ($action) {
+                case 'get_config':
+                    $this->getChatConfig();
+                    break;
                 case 'get_conversation':
                     $this->getConversationData();
                     break;
@@ -144,18 +147,24 @@ class LlmchatController extends BaseController
             exit;
         }
 
-        $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $conversation['model']);
+        // Get conversation context if configured
+        $context_messages = $this->model->getParsedConversationContext();
+
+        // Convert messages to API format with context prepended
+        $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $conversation['model'], $context_messages);
         if (empty($api_messages)) {
             $this->sendSSE(['type' => 'error', 'message' => 'No valid messages to send']);
             exit;
         }
 
         // Delegate to streaming service - industry standard approach
+        // Pass context for tracking/audit purposes
         $this->streaming_service->startStreamingResponse(
             $conversation_id,
             $api_messages,
             $conversation['model'],
-            false // is_new_conversation not relevant for existing streaming
+            false, // is_new_conversation not relevant for existing streaming
+            $context_messages // sent_context for tracking
         );
     }
 
@@ -316,14 +325,19 @@ class LlmchatController extends BaseController
 
             // Get conversation messages for LLM
             $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
-            $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model);
+            
+            // Get conversation context if configured
+            $context_messages = $this->model->getParsedConversationContext();
+            
+            // Convert messages to API format with context prepended
+            $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model, $context_messages);
 
             // Call LLM API - check if streaming is enabled in the style configuration (DB field)
             $streaming_enabled = $this->model->isStreamingEnabled();
 
             if ($streaming_enabled) {
-                // Start streaming response
-                $this->streaming_service->startStreamingResponse($conversation_id, $api_messages, $model, $is_new_conversation);
+                // Start streaming response with context tracking
+                $this->streaming_service->startStreamingResponse($conversation_id, $api_messages, $model, $is_new_conversation, $context_messages);
                 // This should exit, so no more code should run
                 return;
             } else {
@@ -355,8 +369,8 @@ class LlmchatController extends BaseController
                     // Ensure content is properly extracted and clean
                     $clean_content = trim($assistant_message);
 
-                    // Save assistant message with full response for debugging
-                    $this->llm_service->addMessage($conversation_id, 'assistant', $clean_content, null, $model, $tokens_used, $response);
+                    // Save assistant message with full response and context for debugging
+                    $this->llm_service->addMessage($conversation_id, 'assistant', $clean_content, null, $model, $tokens_used, $response, $context_messages);
 
                     $this->sendJsonResponse([
                         'conversation_id' => $conversation_id,
@@ -550,6 +564,93 @@ class LlmchatController extends BaseController
                 break;
             default:
                 $this->sendJsonResponse(['error' => 'Unknown action'], 400);
+        }
+    }
+
+    /**
+     * Get chat configuration (API endpoint)
+     * Returns all configuration needed for React component initialization
+     */
+    private function getChatConfig()
+    {
+        $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
+        try {
+            // Build complete configuration for React component
+            $config = [
+                'userId' => $user_id,
+                'currentConversationId' => $this->model->getConversationId(),
+                'configuredModel' => $this->model->getConfiguredModel(),
+                'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
+                'maxFileSize' => LLM_MAX_FILE_SIZE,
+                'streamingEnabled' => $this->model->isStreamingEnabled(),
+                'enableConversationsList' => $this->model->isConversationsListEnabled(),
+                'enableFileUploads' => $this->model->isFileUploadsEnabled(),
+                'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
+                'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
+                'isVisionModel' => $this->model->isVisionModel(),
+                'hasConversationContext' => $this->model->hasConversationContext(),
+                // UI Labels
+                'messagePlaceholder' => $this->model->getMessagePlaceholder(),
+                'noConversationsMessage' => $this->model->getNoConversationsMessage(),
+                'newConversationTitleLabel' => $this->model->getNewConversationTitleLabel(),
+                'conversationTitleLabel' => $this->model->getConversationTitleLabel(),
+                'cancelButtonLabel' => $this->model->getCancelButtonLabel(),
+                'createButtonLabel' => $this->model->getCreateButtonLabel(),
+                'deleteConfirmationTitle' => $this->model->getDeleteConfirmationTitle(),
+                'deleteConfirmationMessage' => $this->model->getDeleteConfirmationMessage(),
+                'confirmDeleteButtonLabel' => $this->model->getConfirmDeleteButtonLabel(),
+                'cancelDeleteButtonLabel' => $this->model->getCancelDeleteButtonLabel(),
+                'tokensSuffix' => $this->model->getTokensUsedSuffix(),
+                'aiThinkingText' => $this->model->getAiThinkingText(),
+                'conversationsHeading' => $this->model->getConversationsHeading(),
+                'newChatButtonLabel' => $this->model->getNewChatButtonLabel(),
+                'selectConversationHeading' => $this->model->getSelectConversationHeading(),
+                'selectConversationDescription' => $this->model->getSelectConversationDescription(),
+                'modelLabelPrefix' => $this->model->getModelLabelPrefix(),
+                'noMessagesMessage' => $this->model->getNoMessagesMessage(),
+                'loadingText' => $this->model->getLoadingText(),
+                'uploadImageLabel' => $this->model->getUploadImageLabel(),
+                'uploadHelpText' => $this->model->getUploadHelpText(),
+                'clearButtonLabel' => $this->model->getClearButtonLabel(),
+                'submitButtonLabel' => $this->model->getSubmitButtonLabel(),
+                'emptyMessageError' => $this->model->getEmptyMessageError(),
+                'streamingActiveError' => $this->model->getStreamingActiveError(),
+                'defaultChatTitle' => $this->model->getDefaultChatTitle(),
+                'deleteButtonTitle' => $this->model->getDeleteButtonTitle(),
+                'conversationTitlePlaceholder' => $this->model->getConversationTitlePlaceholder(),
+                'singleFileAttachedText' => $this->model->getSingleFileAttachedText(),
+                'multipleFilesAttachedText' => $this->model->getMultipleFilesAttachedText(),
+                'emptyStateTitle' => $this->model->getEmptyStateTitle(),
+                'emptyStateDescription' => $this->model->getEmptyStateDescription(),
+                'loadingMessagesText' => $this->model->getLoadingMessagesText(),
+                'streamingInProgressPlaceholder' => $this->model->getStreamingInProgressPlaceholder(),
+                'attachFilesTitle' => $this->model->getAttachFilesTitle(),
+                'noVisionSupportTitle' => $this->model->getNoVisionSupportTitle(),
+                'noVisionSupportText' => $this->model->getNoVisionSupportText(),
+                'sendMessageTitle' => $this->model->getSendMessageTitle(),
+                'removeFileTitle' => $this->model->getRemoveFileTitle(),
+                // File config
+                'fileConfig' => [
+                    'maxFileSize' => LLM_MAX_FILE_SIZE,
+                    'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
+                    'allowedImageExtensions' => LLM_ALLOWED_IMAGE_EXTENSIONS,
+                    'allowedDocumentExtensions' => LLM_ALLOWED_DOCUMENT_EXTENSIONS,
+                    'allowedCodeExtensions' => LLM_ALLOWED_CODE_EXTENSIONS,
+                    'allowedExtensions' => LLM_ALLOWED_EXTENSIONS,
+                    'visionModels' => LLM_VISION_MODELS
+                ]
+            ];
+
+            $this->sendJsonResponse(['config' => $config]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
     }
 

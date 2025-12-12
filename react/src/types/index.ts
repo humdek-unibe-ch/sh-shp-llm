@@ -163,6 +163,8 @@ export interface LlmChatConfig {
   acceptedFileTypes: string;
   /** Whether the current model supports vision */
   isVisionModel: boolean;
+  /** Whether conversation context is configured */
+  hasConversationContext: boolean;
   /** File configuration */
   fileConfig: FileConfig;
   
@@ -258,6 +260,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   enableFullPageReload: false,
   acceptedFileTypes: '',
   isVisionModel: false,
+  hasConversationContext: false,
   fileConfig: DEFAULT_FILE_CONFIG,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',

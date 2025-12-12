@@ -34,13 +34,26 @@ class LlmApiFormatterService
      *
      * @param array $messages Array of message objects from database
      * @param string|null $model Optional model override
+     * @param array|null $context_messages Optional context/system messages to prepend
      * @return array Messages formatted for OpenAI-compatible API
      */
-    public function convertToApiFormat($messages, $model = null)
+    public function convertToApiFormat($messages, $model = null, $context_messages = null)
     {
         $api_messages = [];
         $configuredModel = $model ?? $this->model ?? $this->getConfiguredModel();
         $isVisionModel = llm_is_vision_model($configuredModel);
+
+        // Prepend context messages if provided
+        if (!empty($context_messages) && is_array($context_messages)) {
+            foreach ($context_messages as $ctx_msg) {
+                if (isset($ctx_msg['role']) && isset($ctx_msg['content'])) {
+                    $api_messages[] = [
+                        'role' => $ctx_msg['role'],
+                        'content' => $ctx_msg['content']
+                    ];
+                }
+            }
+        }
 
         foreach ($messages as $index => $message) {
             // Skip empty assistant messages (failed previous attempts)

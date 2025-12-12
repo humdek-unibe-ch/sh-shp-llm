@@ -168,6 +168,7 @@ class LlmchatView extends StyleView
             'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
             'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
             'isVisionModel' => $this->model->isVisionModel(),
+            'hasConversationContext' => $this->model->hasConversationContext(),
             // UI Labels
             'messagePlaceholder' => $this->model->getMessagePlaceholder(),
             'noConversationsMessage' => $this->model->getNoConversationsMessage(),

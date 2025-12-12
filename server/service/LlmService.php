@@ -372,9 +372,10 @@ class LlmService
      * @param string|null $model The AI model used
      * @param int|null $tokens_used Token count for the message
      * @param array|null $raw_response Raw API response data (will be JSON encoded)
+     * @param array|null $sent_context Context messages that were sent with this message (for debugging/audit)
      * @return int The message ID
      */
-    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null)
+    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null)
     {
         // Validate inputs to prevent corruption
         if (!is_string($content) || empty($content)) {
@@ -416,6 +417,16 @@ class LlmService
             }
         }
 
+        // Handle sent_context - store context snapshot for debugging/audit
+        $sentContextData = null;
+        if ($sent_context !== null) {
+            if (is_array($sent_context)) {
+                $sentContextData = json_encode($sent_context);
+            } elseif (is_string($sent_context)) {
+                $sentContextData = $sent_context;
+            }
+        }
+
         $data = [
             'id_llmConversations' => $conversation_id,
             'role' => $role,
@@ -423,7 +434,8 @@ class LlmService
             'attachments' => $attachmentsData,
             'model' => $model,
             'tokens_used' => $tokens_used,
-            'raw_response' => $rawResponseData
+            'raw_response' => $rawResponseData,
+            'sent_context' => $sentContextData
         ];
 
 

@@ -1,38 +1,70 @@
 # Changelog - LLM Plugin
 
-## [1.0.0] - 2024-12-09
+## [1.0.0] - 2024-12-12
 
 ### Added
+
+#### Core Features
 - Complete LLM chat plugin implementation for SelfHelp CMS
 - Real-time streaming responses via Server-Sent Events (SSE)
 - Support for multiple LLM models including vision-capable models
-- File upload functionality for images (vision models)
+- File upload functionality for images and documents
 - Conversation management (create, view, delete conversations)
 - Rate limiting system (10 requests/minute, 3 concurrent conversations)
 - Comprehensive Admin Console for browsing all user conversations and messages
-- LLM panel with quick admin links in configuration page
-- Plugin hooks for admin panel display (edit and view modes)
-- Dedicated admin page type (`sh_llm_admin`) and admin console style
-- Global configuration page following SelfHelp pageType patterns
-- Custom database tables: `llmConversations`, `llmMessages`
 - OpenAI-compatible API integration
 - React-based frontend with TypeScript support
 - MVC architecture following SelfHelp component patterns
 - Multi-language UI support with translatable labels
 - Secure file upload system with validation
-- Transaction logging integration
-- Plugin hooks for dynamic model selection
-- Admin components with custom routing (non-standard location)
-- **Component Configuration Enhancements**: Added granular control over chat interface features
-  - `enable_conversations_list`: Show/hide conversations sidebar (default: enabled)
-  - `enable_file_uploads`: Enable/disable file upload capability (default: enabled)
-  - `enable_full_page_reload`: Use AJAX page reload instead of React refresh for post-chat updates
-- **Improved Temperature Configuration**: Changed temperature field type from number to text for better flexibility, updated default from 0.7 to 1.0 with enhanced descriptions
-- **Legacy Conversation Management**: Added `getOrCreateConversationForModel()` method for model-specific conversation handling
-- **Enhanced Markdown Rendering**: Improved code block copy functionality and JSON key color highlighting
-- **UI/UX Improvements**: Refined chat interface styling and user experience
+
+#### Conversation Context Module (New)
+- **Configurable AI Behavior**: Define system instructions per chat component via CMS field
+- **Multi-format Support**: Supports both markdown/free text and JSON array formats
+- **Context Tracking**: Each message records the context sent for debugging/audit
+- **Parsing Methods**: `getConversationContext()`, `getParsedConversationContext()`, `hasConversationContext()`
+- **API Integration**: Context prepended to API messages via `LlmApiFormatterService`
+- **Database Tracking**: New `sent_context` column in `llmMessages` table
+
+#### API Improvements
+- **Config API Endpoint**: New `?action=get_config` for React component initialization
+- **API-First Architecture**: React components can now fetch config via API instead of data attributes
+- **Backwards Compatible**: Supports both API-based and data attribute configuration
+
+#### Component Configuration
+- `conversation_context`: System instructions sent to AI (markdown field)
+- `enable_conversations_list`: Show/hide conversations sidebar
+- `enable_file_uploads`: Enable/disable file upload capability
+- `enable_full_page_reload`: Use AJAX page reload instead of React refresh
+
+#### Admin Features
+- Comprehensive Admin Console for monitoring all user conversations
+- LLM panel with quick admin links in configuration page
+- Date filtering support in admin console
+- User and section filtering
+
+#### Documentation
+- Restructured documentation into `doc/` folder
+- [Architecture Guide](doc/architecture.md) - System design and component interactions
+- [Conversation Context Guide](doc/conversation-context.md) - Context module configuration
+- [API Reference](doc/api-reference.md) - Controller actions and endpoints
+- [Configuration Guide](doc/configuration.md) - Complete configuration reference
+- Streamlined README with quick start and links to detailed docs
 
 ### Technical Implementation
+
+#### Conversation Context Processing
+- `LlmchatModel`: New `conversation_context` property with JSON/text parsing
+- `LlmApiFormatterService`: Updated `convertToApiFormat()` accepts context parameter
+- `LlmStreamingService`: Updated to track and store sent context
+- `LlmService`: Updated `addMessage()` accepts `$sent_context` parameter
+- `LlmchatController`: Context processing in both streaming and non-streaming paths
+
+#### Database Changes
+- New `conversation_context` field in `styles_fields` for llmChat style
+- New `sent_context` column in `llmMessages` table for context tracking
+
+#### Architecture
 - **Streaming Architecture**: Event-driven SSE implementation with zero partial saves
 - **Database Design**: Optimized schema with proper foreign keys and indexing
 - **Security**: Input validation, rate limiting, and secure file handling
@@ -41,8 +73,7 @@
 - **Caching**: APCu integration for performance optimization
 - **Error Handling**: Comprehensive error recovery and logging
 - **Build System**: Gulp-based asset compilation with DEBUG/production modes
-- **Asset Management**: Git version cache-busting and minification
-- **Component Architecture**: Admin console restructured as proper component (not style)
+- **React Architecture**: API-first config loading with data attribute fallback
 
 ### Files Created
 - Database schema (`server/db/v1.0.0.sql`)
@@ -99,5 +130,10 @@
 - **Migration**: No breaking changes, scoped CSS to avoid conflicts
 
 ### Known Limitations
-- Conversation context module planned but not yet implemented
-- Advanced UI features (smart auto-scroll, enhanced markdown) planned for future versions
+- Danger word detection system planned for future version
+- Advanced analytics and reporting features planned
+
+### Migration Notes
+- No breaking changes from previous development builds
+- Run database migration to add new `conversation_context` and `sent_context` fields
+- Rebuild React assets after updating (`gulp build`)

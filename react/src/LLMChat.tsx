@@ -4,16 +4,20 @@
  * 
  * Main entry point for the LLM Chat React component.
  * Initializes the React application by finding the container element
- * and extracting configuration from data attributes.
+ * and loading configuration via API or data attributes.
  * 
  * This file is built as a UMD bundle that can be loaded directly
  * in SelfHelp CMS pages without requiring a full React app setup.
  * 
+ * Configuration Loading Priority:
+ * 1. API endpoint (?action=get_config) - preferred method
+ * 2. JSON config from data-config attribute - fallback
+ * 3. Individual data attributes - legacy fallback
+ * 
  * Usage in HTML:
  * ```html
- * <div id="llm-chat-root"
- *      data-user-id="123"
- *      data-config='{"configuredModel":"qwen3-vl-8b-instruct",...}'>
+ * <div id="llm-chat-root" data-user-id="123">
+ *   <!-- Config loaded via API -->
  * </div>
  * <script src="js/ext/llm-chat.umd.js"></script>
  * ```
@@ -21,10 +25,11 @@
  * @module main
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { LlmChat } from './components/styles/chat/LlmChat';
+import { configApi } from './utils/api';
 import type { LlmChatConfig, FileConfig } from './types';
 import { DEFAULT_FILE_CONFIG, DEFAULT_CONFIG } from './types';
 
@@ -87,6 +92,11 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     container.dataset.isVisionModel === '1' ||
     container.dataset.isVisionModel === 'true' ||
     jsonConfig.isVisionModel === true;
+
+  const hasConversationContext =
+    container.dataset.hasConversationContext === '1' ||
+    container.dataset.hasConversationContext === 'true' ||
+    jsonConfig.hasConversationContext === true;
 
   const acceptedFileTypes = container.dataset.acceptedFileTypes ||
     jsonConfig.acceptedFileTypes || '';
@@ -276,6 +286,7 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     enableFullPageReload,
     acceptedFileTypes,
     isVisionModel,
+    hasConversationContext,
     fileConfig,
     messagePlaceholder,
     noConversationsMessage,
@@ -320,6 +331,75 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
 }
 
 /**
+ * Loading wrapper component that fetches config via API
+ */
+const LlmChatLoader: React.FC<{ fallbackConfig?: LlmChatConfig }> = ({ fallbackConfig }) => {
+  const [config, setConfig] = useState<LlmChatConfig | null>(fallbackConfig || null);
+  const [loading, setLoading] = useState(!fallbackConfig);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // If we have fallback config, try to fetch fresh config from API in background
+    const loadConfig = async () => {
+      try {
+        const apiConfig = await configApi.get();
+        setConfig(apiConfig);
+        setError(null);
+      } catch (err) {
+        // If API fails and we have fallback, use fallback
+        if (!fallbackConfig) {
+          setError(err instanceof Error ? err.message : 'Failed to load configuration');
+        }
+        console.debug('LLM Chat: API config fetch failed, using fallback', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadConfig();
+  }, [fallbackConfig]);
+
+  if (loading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center p-5">
+        <div className="spinner-border text-primary" role="status">
+          <span className="sr-only">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !config) {
+    return (
+      <div className="alert alert-danger m-3">
+        <i className="fas fa-exclamation-circle mr-2"></i>
+        {error}
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="alert alert-warning m-3">
+        <i className="fas fa-exclamation-triangle mr-2"></i>
+        Configuration not available.
+      </div>
+    );
+  }
+
+  if (!config.userId || config.userId === 0) {
+    return (
+      <div className="alert alert-warning m-3">
+        <i className="fas fa-exclamation-triangle mr-2"></i>
+        Please log in to use the chat feature.
+      </div>
+    );
+  }
+
+  return <LlmChat config={config} />;
+};
+
+/**
  * Initialize the LLM Chat React application
  * Finds the container element and mounts the React component
  */
@@ -334,19 +414,18 @@ function initializeLlmChat(): void {
     return;
   }
   
-  // Parse configuration from data attributes
-  const config = parseConfig(container);
+  // Parse fallback configuration from data attributes (for initial render)
+  let fallbackConfig: LlmChatConfig | undefined;
   
-  // Validate required configuration
-  if (!config.userId || config.userId === 0) {
-    console.error('LLM Chat: User ID not provided');
-    container.innerHTML = `
-      <div class="alert alert-warning m-3">
-        <i class="fas fa-exclamation-triangle mr-2"></i>
-        Please log in to use the chat feature.
-      </div>
-    `;
-    return;
+  try {
+    fallbackConfig = parseConfig(container);
+    // Only use fallback if it has a valid user ID
+    if (!fallbackConfig.userId || fallbackConfig.userId === 0) {
+      fallbackConfig = undefined;
+    }
+  } catch (e) {
+    console.debug('LLM Chat: Could not parse fallback config from data attributes');
+    fallbackConfig = undefined;
   }
   
   // Create React root and render the application
@@ -354,20 +433,16 @@ function initializeLlmChat(): void {
     const root = ReactDOM.createRoot(container);
     root.render(
       <React.StrictMode>
-        <LlmChat config={config} />
+        <LlmChatLoader fallbackConfig={fallbackConfig} />
       </React.StrictMode>
     );
     
-    console.debug('LLM Chat: Initialized successfully', {
-      userId: config.userId,
-      model: config.configuredModel,
-      streaming: config.streamingEnabled
-    });
+    console.debug('LLM Chat: Initialized successfully');
   } catch (error) {
     console.error('LLM Chat: Failed to initialize', error);
     container.innerHTML = `
       <div class="alert alert-danger m-3">
-        <i class="fas fa-exclamation-circle mr-2"></i>
+        <i className="fas fa-exclamation-circle mr-2"></i>
         Failed to load chat interface. Please refresh the page.
       </div>
     `;

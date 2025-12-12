@@ -24,8 +24,18 @@ import type {
   SelectedFile,
   AdminConversationsResponse,
   AdminFiltersResponse,
-  AdminMessagesResponse
+  AdminMessagesResponse,
+  LlmChatConfig
 } from '../types';
+
+// ============================================================================
+// CONFIG API RESPONSE TYPES
+// ============================================================================
+
+interface GetConfigResponse {
+  config?: LlmChatConfig;
+  error?: string;
+}
 
 // ============================================================================
 // API REQUEST HELPERS
@@ -100,6 +110,36 @@ async function apiPost<T>(formData: FormData): Promise<T> {
   
   return response.json();
 }
+
+// ============================================================================
+// CONFIG API
+// ============================================================================
+
+/**
+ * Config API namespace
+ * Fetches chat configuration from the server
+ */
+export const configApi = {
+  /**
+   * Load chat configuration for the current user
+   * Calls: ?action=get_config
+   * 
+   * @returns Promise resolving to LlmChatConfig
+   */
+  async get(): Promise<LlmChatConfig> {
+    const response = await apiGet<GetConfigResponse>('get_config');
+    
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    
+    if (!response.config) {
+      throw new Error('No configuration returned');
+    }
+    
+    return response.config;
+  }
+};
 
 // ============================================================================
 // CONVERSATIONS API

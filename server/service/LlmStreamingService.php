@@ -16,6 +16,7 @@ class LlmStreamingService
     private $conversation_id;
     private $model;
     private $has_finalized = false;
+    private $sent_context = null;
 
     public function __construct($llm_service)
     {
@@ -25,12 +26,19 @@ class LlmStreamingService
     /**
      * Start streaming response using Server-Sent Events
      * Industry-standard implementation with zero partial saves
+     * 
+     * @param int $conversation_id The conversation ID
+     * @param array $messages The formatted API messages
+     * @param string $model The model to use
+     * @param bool $is_new_conversation Whether this is a new conversation
+     * @param array|null $sent_context Context messages that were sent (for tracking)
      */
-    public function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation)
+    public function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation, $sent_context = null)
     {
         $this->conversation_id = $conversation_id;
         $this->model = $model;
         $this->has_finalized = false;
+        $this->sent_context = $sent_context;
 
         // Validate headers
         if (headers_sent()) {
@@ -40,7 +48,7 @@ class LlmStreamingService
         $this->setupSSEHeaders();
         $this->sendSSE(['type' => 'connected', 'conversation_id' => $conversation_id]);
 
-        $streaming_buffer = new StreamingBuffer($conversation_id, $model, $this->llm_service);
+        $streaming_buffer = new StreamingBuffer($conversation_id, $model, $this->llm_service, $sent_context);
         $tokens_used = 0;
 
         try {
@@ -219,13 +227,15 @@ class StreamingBuffer
     private $model;
     private $llm_service;
     private $start_time;
+    private $sent_context;
 
-    public function __construct($conversation_id, $model, $llm_service)
+    public function __construct($conversation_id, $model, $llm_service, $sent_context = null)
     {
         $this->conversation_id = $conversation_id;
         $this->model = $model;
         $this->llm_service = $llm_service;
         $this->start_time = microtime(true);
+        $this->sent_context = $sent_context;
     }
 
     /**
@@ -248,7 +258,8 @@ class StreamingBuffer
             null,
             $this->model,
             $tokens_used,
-            $raw_response
+            $raw_response,
+            $this->sent_context
         );
     }
 
@@ -266,7 +277,8 @@ class StreamingBuffer
             null,
             $this->model,
             null,
-            $raw_response
+            $raw_response,
+            $this->sent_context
         );
     }
 
