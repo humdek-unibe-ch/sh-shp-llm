@@ -82,6 +82,10 @@ class LlmchatModel extends StyleModel
     // Conversation context
     private $conversation_context;
 
+    // Auto-start conversation settings
+    private $auto_start_conversation;
+    private $auto_start_message;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -183,6 +187,10 @@ class LlmchatModel extends StyleModel
 
         // Conversation context - system instructions sent to AI
         $this->conversation_context = $this->get_db_field('conversation_context', '');
+
+        // Auto-start conversation settings
+        $this->auto_start_conversation = $this->get_db_field('auto_start_conversation', '0');
+        $this->auto_start_message = $this->get_db_field('auto_start_message', 'Hello! I\'m here to help you. What would you like to talk about?');
     }
 
     /* Private Methods *********************************************************/
@@ -819,12 +827,202 @@ class LlmchatModel extends StyleModel
 
     /**
      * Check if conversation context is configured
-     * 
+     *
      * @return bool True if context is configured and not empty
      */
     public function hasConversationContext()
     {
         return !empty(trim($this->conversation_context));
+    }
+
+    /**
+     * Generate a context-aware auto-start message based on conversation context
+     *
+     * Analyzes the conversation context and creates an engaging auto-start message
+     * that references the topics and themes in the context.
+     *
+     * @return string Context-aware auto-start message
+     */
+    public function generateContextAwareAutoStartMessage()
+    {
+        $context = trim($this->conversation_context);
+
+        if (empty($context)) {
+            // Fallback to default message if no context
+            return $this->getAutoStartMessage();
+        }
+
+        // Extract key topics and themes from context
+        $topics = $this->extractTopicsFromContext($context);
+
+        if (empty($topics)) {
+            // If no specific topics found, use configured message
+            return $this->getAutoStartMessage();
+        }
+
+        // Generate engaging message based on topics
+        $topicList = implode(', ', array_slice($topics, 0, 3)); // Limit to 3 topics
+        if (count($topics) > 3) {
+            $topicList .= '...';
+        }
+
+        // Create context-aware greeting based on topic analysis
+        if ($this->isAnxietyRelated($topics)) {
+            return "Hello! I'm here to support you on your journey to better understand and manage anxiety. We can explore topics like {$topicList}. What specific area would you like to focus on today?";
+        } elseif ($this->isEducational($topics)) {
+            return "Hi there! I'm excited to help you learn about {$topicList}. This educational module covers these important topics. Which one interests you most, or shall we start from the beginning?";
+        } elseif ($this->isHealthRelated($topics)) {
+            return "Welcome! I'm here to provide helpful information about {$topicList}. Let's work through this together. What questions do you have, or would you like me to explain any specific topic?";
+        } else {
+            // Generic but context-aware message
+            return "Hello! I'm here to help you with {$topicList}. What would you like to explore first, or do you have any specific questions about these topics?";
+        }
+    }
+
+    /**
+     * Extract key topics and themes from conversation context
+     *
+     * @param string $context Raw context content
+     * @return array Array of extracted topics/themes
+     */
+    private function extractTopicsFromContext($context)
+    {
+        $topics = [];
+
+        // Try to parse as JSON first
+        if (substr($context, 0, 1) === '[') {
+            $parsed = json_decode($context, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+                // Extract topics from JSON context
+                foreach ($parsed as $item) {
+                    if (isset($item['content'])) {
+                        $contentTopics = $this->extractTopicsFromText($item['content']);
+                        $topics = array_merge($topics, $contentTopics);
+                    }
+                }
+            }
+        } else {
+            // Extract topics from free text
+            $topics = $this->extractTopicsFromText($context);
+        }
+
+        return array_unique(array_filter($topics));
+    }
+
+    /**
+     * Extract topics from text content using keyword analysis
+     *
+     * @param string $text Text content to analyze
+     * @return array Array of extracted topic keywords
+     */
+    private function extractTopicsFromText($text)
+    {
+        $topics = [];
+
+        // Convert to lowercase for matching
+        $lowerText = strtolower($text);
+
+        // Define topic patterns and keywords
+        $topicPatterns = [
+            'anxiety' => ['anxiety', 'anxious', 'worry', 'panic', 'stress', 'fear', 'nervous'],
+            'depression' => ['depression', 'depressed', 'mood', 'sadness', 'hopeless'],
+            'therapy' => ['therapy', 'therapist', 'counseling', 'treatment', 'cognitive behavioral'],
+            'coping' => ['coping', 'coping skills', 'strategies', 'techniques', 'tools'],
+            'mindfulness' => ['mindfulness', 'meditation', 'breathing', 'relaxation'],
+            'sleep' => ['sleep', 'insomnia', 'rest', 'tired', 'fatigue'],
+            'relationships' => ['relationships', 'social', 'friends', 'family', 'communication'],
+            'self-care' => ['self-care', 'wellness', 'healthy habits', 'routine'],
+            'education' => ['learn', 'understand', 'knowledge', 'information', 'module', 'course'],
+            'health' => ['health', 'wellbeing', 'mental health', 'physical health']
+        ];
+
+        // Check for topic matches
+        foreach ($topicPatterns as $topic => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (strpos($lowerText, $keyword) !== false) {
+                    $topics[] = $topic;
+                    break; // Only add each topic once
+                }
+            }
+        }
+
+        // Extract specific topics from headings and structured content
+        if (preg_match_all('/(?:^|\n)#+\s*([^\n]+)/m', $text, $matches)) {
+            foreach ($matches[1] as $heading) {
+                $cleanHeading = trim($heading, '#* ');
+                if (strlen($cleanHeading) > 3 && strlen($cleanHeading) < 50) {
+                    $topics[] = $cleanHeading;
+                }
+            }
+        }
+
+        // Extract topics from bullet points or numbered lists
+        if (preg_match_all('/(?:^|\n)[•\-\*]\s*([^\n]+)/m', $text, $matches)) {
+            foreach ($matches[1] as $item) {
+                $cleanItem = trim($item);
+                if (strlen($cleanItem) > 5 && strlen($cleanItem) < 40 && !preg_match('/^(what|how|why|when)/i', $cleanItem)) {
+                    $topics[] = $cleanItem;
+                }
+            }
+        }
+
+        return array_slice($topics, 0, 10); // Limit to 10 topics
+    }
+
+    /**
+     * Check if topics are anxiety-related
+     *
+     * @param array $topics Array of topic keywords
+     * @return bool True if anxiety-related topics are detected
+     */
+    private function isAnxietyRelated($topics)
+    {
+        $anxietyTopics = ['anxiety', 'panic', 'worry', 'stress', 'fear'];
+        return !empty(array_intersect($topics, $anxietyTopics));
+    }
+
+    /**
+     * Check if topics are educational
+     *
+     * @param array $topics Array of topic keywords
+     * @return bool True if educational topics are detected
+     */
+    private function isEducational($topics)
+    {
+        $educationTopics = ['learn', 'understand', 'education', 'module', 'course'];
+        return !empty(array_intersect($topics, $educationTopics));
+    }
+
+    /**
+     * Check if topics are health-related
+     *
+     * @param array $topics Array of topic keywords
+     * @return bool True if health-related topics are detected
+     */
+    private function isHealthRelated($topics)
+    {
+        $healthTopics = ['health', 'wellbeing', 'mental health', 'therapy', 'treatment'];
+        return !empty(array_intersect($topics, $healthTopics));
+    }
+
+    /**
+     * Check if auto-start conversation is enabled
+     *
+     * @return bool True if auto-start is enabled
+     */
+    public function isAutoStartConversationEnabled()
+    {
+        return $this->auto_start_conversation === '1';
+    }
+
+    /**
+     * Get the auto-start message content
+     *
+     * @return string The auto-start message
+     */
+    public function getAutoStartMessage()
+    {
+        return $this->auto_start_message;
     }
 
     /**

@@ -167,6 +167,10 @@ export interface LlmChatConfig {
   isVisionModel: boolean;
   /** Whether conversation context is configured */
   hasConversationContext: boolean;
+  /** Whether auto-start conversation is enabled */
+  autoStartConversation: boolean;
+  /** Auto-start message content */
+  autoStartMessage: string;
   /** File configuration */
   fileConfig: FileConfig;
   
@@ -263,6 +267,8 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   acceptedFileTypes: '',
   isVisionModel: false,
   hasConversationContext: false,
+  autoStartConversation: false,
+  autoStartMessage: 'Hello! I\'m here to help you. What would you like to talk about?',
   fileConfig: DEFAULT_FILE_CONFIG,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',

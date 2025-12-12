@@ -99,6 +99,53 @@ interface LlmChatProps {
  * @param props - Component props
  */
 export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
+  
+  // Local state for file attachments
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+
+  // Local state for tracking non-streaming processing
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Ref for messages container (for smooth scrolling)
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  // Smart scroll management
+  const {
+    handleScroll,
+    scrollToBottom,
+    forceScrollToBottom
+  } = useSmartScroll(messagesContainerRef);
+
+  // Streaming state management (must come before chat state to provide stopStreaming)
+  const {
+    isStreaming,
+    streamingContent,
+    sendStreamingMessage,
+    stopStreaming,
+    clearStreamingContent
+  } = useStreaming({
+    config,
+    onChunk: useCallback(() => {
+      // Smart scroll - only scrolls if user was at bottom
+      scrollToBottom();
+    }, [scrollToBottom]),
+    onDone: useCallback(() => {
+      // Content clearing handled by hook
+    }, []),
+    onError: useCallback((err: string) => {
+      // Error handling will be done by chat state
+      console.error('Streaming error:', err);
+    }, []),
+    onStart: useCallback(() => {
+      // Content clearing handled by hook
+    }, []),
+    onRefreshMessages: useCallback(async (conversationId: string) => {
+      // Message refresh will be handled by the chat state after initialization
+      console.debug('Message refresh requested for conversation:', conversationId);
+    }, []),
+    getActiveModel: useCallback(() => config.configuredModel, [config.configuredModel])
+  });
+
   // Chat state management
   const {
     conversations,
@@ -116,57 +163,19 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     clearError,
     setError,
     getActiveModel
-  } = useChatState(config);
-  
-  // Local state for file attachments
-  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+  } = useChatState(config, stopStreaming);
 
-  // Local state for tracking non-streaming processing
-  const [isProcessing, setIsProcessing] = useState(false);
-  
-  // Ref for messages container (for smooth scrolling)
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  
-  // Smart scroll management
-  const {
-    handleScroll,
-    scrollToBottom,
-    forceScrollToBottom
-  } = useSmartScroll(messagesContainerRef);
-  
-  // Callback to refresh messages after streaming (React-only refresh)
-  const refreshMessages = useCallback(async (conversationId: string) => {
+  // Set up proper error handling and message refresh for streaming
+  const streamingErrorHandler = useCallback((err: string) => {
+    setError(err);
+  }, [setError]);
+
+  const messageRefreshHandler = useCallback(async (conversationId: string) => {
     await loadConversationMessages(conversationId);
     if (config.enableConversationsList) {
       await loadConversations();
     }
   }, [loadConversationMessages, loadConversations, config.enableConversationsList]);
-
-  // Streaming state management
-  const {
-    isStreaming,
-    streamingContent,
-    sendStreamingMessage,
-    stopStreaming,
-    clearStreamingContent
-  } = useStreaming({
-    config,
-    onChunk: useCallback(() => {
-      // Smart scroll - only scrolls if user was at bottom
-      scrollToBottom();
-    }, [scrollToBottom]),
-    onDone: useCallback(() => {
-      // Content clearing handled by hook
-    }, []),
-    onError: useCallback((err: string) => {
-      setError(err);
-    }, [setError]),
-    onStart: useCallback(() => {
-      // Content clearing handled by hook
-    }, []),
-    onRefreshMessages: refreshMessages,
-    getActiveModel: getActiveModel
-  });
   
   /**
    * Initialize chat on mount

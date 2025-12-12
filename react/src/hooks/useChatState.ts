@@ -10,7 +10,27 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { Conversation, Message, LlmChatConfig, SelectedFile } from '../types';
-import { conversationsApi, messagesApi, handleApiError } from '../utils/api';
+import { conversationsApi, messagesApi, autoStartApi, handleApiError } from '../utils/api';
+
+/**
+ * Check for auto-started conversation
+ */
+async function checkAutoStartedConversation(): Promise<{conversation: Conversation, messages: Message[]} | null> {
+  try {
+    const data = await autoStartApi.check();
+    if (data.auto_started && data.conversation && data.messages) {
+      return {
+        conversation: data.conversation,
+        messages: data.messages
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.debug('No auto-started conversation found:', error);
+    return null;
+  }
+}
 
 /**
  * Return type for useChatState hook
@@ -26,7 +46,7 @@ export interface UseChatStateReturn {
   isLoading: boolean;
   /** Error message */
   error: string | null;
-  
+
   // Actions
   /** Load all conversations */
   loadConversations: () => Promise<void>;
@@ -54,11 +74,12 @@ export interface UseChatStateReturn {
 
 /**
  * Custom hook for managing chat state
- * 
+ *
  * @param config - LLM Chat configuration
+ * @param stopStreaming - Optional function to stop streaming
  * @returns Chat state and actions
  */
-export function useChatState(config: LlmChatConfig): UseChatStateReturn {
+export function useChatState(config: LlmChatConfig, stopStreaming?: () => void): UseChatStateReturn {
   // State
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
@@ -76,9 +97,41 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     try {
       setIsLoading(true);
       setError(null);
+
+      // First, check if there's an auto-started conversation
+      const autoStarted = await checkAutoStartedConversation();
+      if (autoStarted) {
+        // Stop any active streaming before loading auto-started conversation
+        if (stopStreaming) {
+          stopStreaming();
+        }
+
+        // Load the auto-started conversation directly
+        setCurrentConversation(autoStarted.conversation);
+        setMessages(autoStarted.messages);
+        currentConversationIdRef.current = String(autoStarted.conversation.id);
+
+        // Update URL to reflect the auto-started conversation
+        updateUrl(String(autoStarted.conversation.id), config);
+
+        // Load all conversations in background to populate the sidebar
+        try {
+          const convs = await conversationsApi.getAll();
+          setConversations(convs);
+        } catch (convError) {
+          // Don't fail if conversation loading fails
+          console.debug('Failed to load conversation list:', convError);
+          setConversations([]);
+        }
+
+        setIsLoading(false);
+        return;
+      }
+
+      // Normal conversation loading logic
       const convs = await conversationsApi.getAll();
       setConversations(convs);
-      
+
       // If we have a current conversation ID (from URL or config), load it
       if (currentConversationIdRef.current) {
         const currentIdStr = String(currentConversationIdRef.current);
@@ -102,10 +155,10 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
         const firstConv = convs[0];
         setCurrentConversation(firstConv);
         currentConversationIdRef.current = String(firstConv.id);
-        
+
         // Load messages for the first conversation
         await loadConversationMessagesInternal(String(firstConv.id));
-        
+
         // Update URL
         updateUrl(String(firstConv.id), config);
       }
@@ -115,7 +168,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [config]);
   
   /**
    * Internal function to load messages (without setting loading state)

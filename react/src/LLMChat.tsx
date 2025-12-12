@@ -44,7 +44,7 @@ const defaultFileConfig: FileConfig = DEFAULT_FILE_CONFIG;
  * @param container - The container element with data attributes
  * @returns Parsed LlmChatConfig object
  */
-function parseConfig(container: HTMLElement): LlmChatConfig {
+function parseConfig(container: HTMLElement) {
   // Get user ID (required)
   const userId = parseInt(container.dataset.userId || '0', 10);
   
@@ -97,6 +97,15 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     container.dataset.hasConversationContext === '1' ||
     container.dataset.hasConversationContext === 'true' ||
     jsonConfig.hasConversationContext === true;
+
+  const autoStartConversation =
+    container.dataset.autoStartConversation === '1' ||
+    container.dataset.autoStartConversation === 'true' ||
+    jsonConfig.autoStartConversation === true;
+
+  const autoStartMessage = container.dataset.autoStartMessage ||
+    jsonConfig.autoStartMessage ||
+    'Hello! I\'m here to help you. What would you like to talk about?';
 
   const acceptedFileTypes = container.dataset.acceptedFileTypes ||
     jsonConfig.acceptedFileTypes || '';
@@ -276,7 +285,8 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     jsonConfig.removeFileTitle ||
     DEFAULT_CONFIG.removeFileTitle!;
 
-  return {
+  // Create minimal config first
+  const baseConfig = {
     userId,
     currentConversationId,
     configuredModel,
@@ -286,7 +296,19 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     enableFullPageReload,
     acceptedFileTypes,
     isVisionModel,
-    hasConversationContext,
+    hasConversationContext
+  };
+
+  // Add auto-start fields
+  const autoStartConfig = {
+    ...baseConfig,
+    autoStartConversation,
+    autoStartMessage
+  };
+
+  // Add remaining fields
+  const fullConfig = {
+    ...autoStartConfig,
     fileConfig,
     messagePlaceholder,
     noConversationsMessage,
@@ -328,6 +350,8 @@ function parseConfig(container: HTMLElement): LlmChatConfig {
     sendMessageTitle,
     removeFileTitle
   };
+
+  return fullConfig as LlmChatConfig;
 }
 
 /**

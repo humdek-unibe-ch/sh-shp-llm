@@ -189,6 +189,16 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmChat'), get_field_id('conversation_context'), '', 'System context/instructions sent to AI at the start of each conversation. Supports markdown or JSON format.\n\n**Markdown format:**\n```\nYou are a helpful assistant...\n```\n\n**JSON format (for multiple system messages):**\n```json\n[{"role": "system", "content": "You are..."}]\n```\n\nThis context defines how the AI should behave and what information it has access to. The context is tracked with each message for debugging purposes.');
 
+-- Add auto-start conversation fields (user visible, translatable)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'auto_start_conversation', get_field_type_id('checkbox'), '0'),
+(NULL, 'auto_start_message', get_field_type_id('markdown'), '1');
+
+-- Link auto-start fields to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('auto_start_conversation'), '0', 'Automatically start a conversation when no active conversation exists. The AI will analyze the conversation context and send an intelligent, topic-specific initial message to engage the user.'),
+(get_style_id('llmChat'), get_field_id('auto_start_message'), 'Hello! I''m here to help you. What would you like to talk about?', 'Fallback message used when auto-starting conversations. When conversation context is configured, the system automatically generates a more engaging, context-aware message based on the topics and themes in your context. This field serves as a fallback for generic greetings.');
+
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,

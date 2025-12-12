@@ -341,6 +341,33 @@ export const messagesApi = {
 // ADMIN API
 // ============================================================================
 
+// ============================================================================
+// AUTO-START API
+// ============================================================================
+
+interface AutoStartedResponse {
+  auto_started: boolean;
+  conversation?: Conversation;
+  messages?: Message[];
+  error?: string;
+}
+
+export const autoStartApi = {
+  /**
+   * Check if there's an auto-started conversation for the current session
+   * Calls: ?action=get_auto_started
+   *
+   * @returns Promise resolving to auto-start status and data
+   */
+  async check(): Promise<AutoStartedResponse> {
+    return apiGet<AutoStartedResponse>('get_auto_started');
+  }
+};
+
+// ============================================================================
+// ADMIN API
+// ============================================================================
+
 export const adminApi = {
   async getFilters() {
     return apiGet<AdminFiltersResponse>('admin_filters');

@@ -102,11 +102,61 @@ class LlmchatController extends BaseController
                 case 'admin_messages':
                     $this->handleAdminMessages();
                     break;
+                case 'get_auto_started':
+                    $this->getAutoStartedConversation();
+                    break;
                 default:
                     // Regular page load - continue with normal rendering
                     break;
             }
         }
+
+        // Check for auto-start conversation after handling all requests
+        // This ensures auto-start only happens during normal page loads, not API calls
+        if ($_SERVER['REQUEST_METHOD'] === 'GET' &&
+            !isset($_GET['action']) &&
+            !isset($_GET['streaming'])) {
+            $this->checkAndAutoStartConversation();
+        }
+    }
+
+    /**
+     * Get auto-started conversation data for the frontend
+     * This is called by the frontend to check if a conversation was auto-started
+     */
+    private function getAutoStartedConversation()
+    {
+        $user_id = $this->model->getUserId();
+        if (!$user_id) {
+            $this->sendJsonResponse(['auto_started' => false]);
+            return;
+        }
+
+        // Check if there was an auto-started conversation in this session
+        $session_key = 'llm_auto_started_' . $this->model->getSectionId();
+        if (!isset($_SESSION[$session_key])) {
+            $this->sendJsonResponse(['auto_started' => false]);
+            return;
+        }
+
+        // Get the current conversation (should be the auto-started one)
+        $conversation = $this->model->getCurrentConversation();
+        if (!$conversation) {
+            $this->sendJsonResponse(['auto_started' => false]);
+            return;
+        }
+
+        $messages = $this->model->getConversationMessages();
+        if (empty($messages)) {
+            $this->sendJsonResponse(['auto_started' => false]);
+            return;
+        }
+
+        $this->sendJsonResponse([
+            'auto_started' => true,
+            'conversation' => $conversation,
+            'messages' => $messages
+        ]);
     }
 
     /**
@@ -166,6 +216,115 @@ class LlmchatController extends BaseController
             false, // is_new_conversation not relevant for existing streaming
             $context_messages // sent_context for tracking
         );
+    }
+
+    /**
+     * Check if auto-start conversation should be triggered
+     * Called during component initialization when no conversation exists
+     */
+    private function checkAndAutoStartConversation()
+    {
+        // Only auto-start if enabled in configuration
+        if (!$this->model->isAutoStartConversationEnabled()) {
+            return;
+        }
+
+        $user_id = $this->model->getUserId();
+        if (!$user_id) {
+            return; // User not authenticated
+        }
+
+        // Check if there's already an active conversation
+        $current_conversation = $this->model->getCurrentConversation();
+        if ($current_conversation) {
+            return; // Conversation already exists
+        }
+
+        // Check if conversations list is enabled
+        $conversations_list_enabled = $this->model->isConversationsListEnabled();
+
+        if ($conversations_list_enabled) {
+            // When conversations list is enabled, only auto-start if no conversations exist at all
+            $user_conversations = $this->llm_service->getUserConversations(
+                $user_id,
+                1, // Just check if any exist
+                $this->model->getConfiguredModel()
+            );
+            if (!empty($user_conversations)) {
+                return; // User already has conversations
+            }
+        }
+
+        // Perform auto-start
+        $this->performAutoStartConversation();
+    }
+
+    /**
+     * Perform the auto-start conversation by creating a conversation and sending the initial message
+     */
+    private function performAutoStartConversation()
+    {
+        $user_id = $this->model->getUserId();
+        if (!$user_id) {
+            return;
+        }
+
+        try {
+            // Check rate limiting before creating conversation
+            $rate_data = $this->llm_service->checkRateLimit($user_id);
+
+            // Create new conversation for auto-start
+            $conversation_id = $this->llm_service->getOrCreateConversationForModel(
+                $user_id,
+                $this->model->getConfiguredModel(),
+                $this->model->getLlmTemperature(),
+                $this->model->getLlmMaxTokens(),
+                $this->model->getSectionId()
+            );
+
+            // Generate title for auto-start conversation
+            $auto_start_title = $this->generateAutoStartTitle();
+            $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $auto_start_title]);
+
+            // Get context-aware auto-start message and context
+            $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
+            $context_messages = $this->model->getParsedConversationContext();
+
+            // Create auto-start message with context
+            $message_id = $this->llm_service->addMessage(
+                $conversation_id,
+                'assistant', // AI sends the auto-start message
+                $auto_start_message,
+                null, // No file attachments for auto-start
+                $this->model->getConfiguredModel(),
+                null, // Tokens will be calculated when actually sent
+                null, // No raw response for auto-start
+                $context_messages // Include context for tracking
+            );
+
+            // Update rate limiting
+            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
+            // Mark as auto-started in session to prevent duplicates
+            $session_key = 'llm_auto_started_' . $this->model->getSectionId();
+            $_SESSION[$session_key] = true;
+
+            // Auto-start setup complete - normal page rendering will continue
+            // Frontend will check for auto-started conversation via API
+
+        } catch (Exception $e) {
+            // Log error but don't fail the page load - auto-start is optional
+            error_log('LLM Auto-start failed: ' . $e->getMessage());
+            // Don't send error response as this is called during normal page load
+        }
+    }
+
+    /**
+     * Generate a title for auto-started conversations
+     */
+    private function generateAutoStartTitle()
+    {
+        return 'AI Assistant - ' . date('M j, H:i');
     }
 
     /**
@@ -596,6 +755,8 @@ class LlmchatController extends BaseController
                 'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
                 'isVisionModel' => $this->model->isVisionModel(),
                 'hasConversationContext' => $this->model->hasConversationContext(),
+                'autoStartConversation' => $this->model->isAutoStartConversationEnabled(),
+                'autoStartMessage' => $this->model->getAutoStartMessage(),
                 // UI Labels
                 'messagePlaceholder' => $this->model->getMessagePlaceholder(),
                 'noConversationsMessage' => $this->model->getNoConversationsMessage(),
