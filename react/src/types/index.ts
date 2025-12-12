@@ -79,6 +79,8 @@ export interface Message {
   attachments?: string;
   /** Model used for this message */
   model?: string;
+  /** JSON snapshot of context sent with this message for debugging/audit */
+  sent_context?: string;
 }
 
 /**

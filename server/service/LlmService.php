@@ -488,7 +488,7 @@ class LlmService
         }
 
         $messages = $this->db->query_db(
-            "SELECT id, `role`, `content`, `attachments`, `model`, `tokens_used`, `timestamp`
+            "SELECT id, `role`, `content`, `attachments`, `model`, `tokens_used`, `timestamp`, `sent_context`
              FROM llmMessages
              WHERE id_llmConversations = :conversation_id AND deleted = 0
              ORDER BY timestamp ASC

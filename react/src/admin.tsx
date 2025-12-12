@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AdminConsole } from './components/admin/AdminConsole';
-import './components/admin/styles/LlmAdmin.css';
+import './components/admin/AdminConsole.css';
 import type { AdminConfig } from './types';
 
 function initializeAdminConsole(): void {

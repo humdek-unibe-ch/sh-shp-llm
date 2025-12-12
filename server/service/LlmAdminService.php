@@ -226,7 +226,8 @@ class LlmAdminService extends LlmService
                 m.attachments,
                 m.model,
                 m.tokens_used,
-                m.timestamp
+                m.timestamp,
+                m.sent_context
              FROM llmMessages m
              WHERE m.id_llmConversations = :conversation_id
              ORDER BY m.timestamp ASC

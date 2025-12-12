@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination } from 'react-bootstrap';
 import Select from 'react-select';
 import { adminApi } from '../../utils/api';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import type { AdminConfig, AdminConversation, Message } from '../../types';
+import './AdminConsole.css';
 
 interface AdminFilters {
   userId: string;
@@ -19,6 +20,225 @@ interface FilterOption {
   email?: string;
   user_validation_code?: string | null;
 }
+
+// Context Popup Component - Using Bootstrap 4.6 classes
+interface ContextPopupProps {
+  message: Message;
+  show: boolean;
+  onHide: () => void;
+}
+
+const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHide }) => {
+  const [copied, setCopied] = useState(false);
+  const [copyType, setCopyType] = useState<'raw' | 'formatted'>('formatted');
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  // Handle ESC key and click outside to close
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && show) {
+        onHide();
+      }
+    };
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (backdropRef.current && event.target === backdropRef.current) {
+        onHide();
+      }
+    };
+
+    if (show) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.addEventListener('mousedown', handleClickOutside);
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.body.style.overflow = '';
+      };
+    }
+  }, [show, onHide]);
+
+  // Safety check for null message
+  if (!message || !message.sent_context || typeof message.sent_context !== 'string' || message.sent_context.trim() === '') {
+    return null;
+  }
+
+  if (!show) return null;
+
+  const handleCopy = async (type: 'raw' | 'formatted') => {
+    if (message.sent_context) {
+      try {
+        let textToCopy = message.sent_context;
+        
+        if (type === 'formatted') {
+          // Try to extract readable content from JSON, strip HTML tags for plain text
+          try {
+            const parsed = JSON.parse(message.sent_context);
+            if (Array.isArray(parsed)) {
+              textToCopy = parsed
+                .filter((item) => item && typeof item === 'object' && item.content)
+                .map((item) => {
+                  // Strip HTML tags for plain text copy
+                  const plainText = item.content.replace(/<[^>]*>/g, '');
+                  return `[${item.role?.toUpperCase() || 'SYSTEM'}]\n${plainText}`;
+                })
+                .join('\n\n---\n\n');
+            } else if (parsed && typeof parsed === 'object' && parsed.content) {
+              const plainText = parsed.content.replace(/<[^>]*>/g, '');
+              textToCopy = `[${parsed.role?.toUpperCase() || 'SYSTEM'}]\n${plainText}`;
+            }
+          } catch {
+            // Keep original if not JSON
+          }
+        }
+        
+        await navigator.clipboard.writeText(textToCopy);
+        setCopied(true);
+        setCopyType(type);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy context:', err);
+      }
+    }
+  };
+
+  // Render content - handles both HTML and plain text
+  const renderContent = (content: string) => {
+    // Check if content contains HTML tags
+    const hasHtml = /<[^>]+>/.test(content);
+    
+    if (hasHtml) {
+      // Render HTML content directly
+      return <div className="context-content-body" dangerouslySetInnerHTML={{ __html: content }} />;
+    } else {
+      // Use MarkdownRenderer for plain text/markdown
+      return (
+        <div className="context-content-body">
+          <MarkdownRenderer content={content} />
+        </div>
+      );
+    }
+  };
+
+  const parseContext = (context: string) => {
+    try {
+      // Try to parse as JSON first (for structured context)
+      const parsed = JSON.parse(context);
+      if (Array.isArray(parsed)) {
+        // Handle array of messages format
+        const validMessages = parsed
+          .filter((item) => item && typeof item === 'object' && item.content)
+          .map((item, index) => (
+            <div key={index} className="card mb-3">
+              <div className="card-header bg-light py-2 d-flex align-items-center">
+                <i className={`fas ${item.role === 'system' ? 'fa-cogs' : item.role === 'user' ? 'fa-user' : 'fa-robot'} mr-2 text-info`}></i>
+                <span className="font-weight-bold text-uppercase small">
+                  {item.role?.charAt(0).toUpperCase() + item.role?.slice(1) || 'System'}
+                </span>
+              </div>
+              <div className="card-body py-3">
+                {renderContent(item.content)}
+              </div>
+            </div>
+          ));
+
+        if (validMessages.length > 0) {
+          return validMessages;
+        }
+      } else if (parsed && typeof parsed === 'object' && parsed.content) {
+        // Handle single message format
+        return (
+          <div className="card">
+            <div className="card-header bg-light py-2 d-flex align-items-center">
+              <i className={`fas ${parsed.role === 'system' ? 'fa-cogs' : parsed.role === 'user' ? 'fa-user' : 'fa-robot'} mr-2 text-info`}></i>
+              <span className="font-weight-bold text-uppercase small">
+                {parsed.role?.charAt(0).toUpperCase() + parsed.role?.slice(1) || 'System'}
+              </span>
+            </div>
+            <div className="card-body py-3">
+              {renderContent(parsed.content)}
+            </div>
+          </div>
+        );
+      }
+    } catch {
+      // Not JSON, treat as plain text/markdown/HTML
+    }
+
+    // Default: treat as plain content (could be HTML or markdown)
+    return (
+      <div className="card">
+        <div className="card-header bg-light py-2 d-flex align-items-center">
+          <i className="fas fa-cogs mr-2 text-info"></i>
+          <span className="font-weight-bold text-uppercase small">System Context</span>
+        </div>
+        <div className="card-body py-3">
+          {renderContent(context)}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div ref={backdropRef} className="context-modal-backdrop">
+      <div className="context-modal bg-white rounded shadow-lg overflow-hidden">
+        {/* Modal Header */}
+        <div className="d-flex align-items-center justify-content-between p-3 bg-light border-bottom">
+          <div className="d-flex align-items-center">
+            <div className="bg-info text-white rounded d-flex align-items-center justify-content-center mr-3" style={{ width: '40px', height: '40px' }}>
+              <i className="fas fa-layer-group"></i>
+            </div>
+            <div>
+              <h5 className="mb-0 font-weight-bold">Context Sent to AI</h5>
+              <small className="text-muted">System instructions provided with this message</small>
+            </div>
+          </div>
+          <button 
+            className="btn btn-outline-secondary btn-sm" 
+            onClick={onHide} 
+            title="Close (Esc)"
+          >
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+        
+        {/* Modal Body */}
+        <div className="context-modal-body p-3">
+          {parseContext(message.sent_context)}
+        </div>
+        
+        {/* Modal Footer */}
+        <div className="d-flex align-items-center justify-content-between p-3 bg-light border-top">
+          <small className="text-muted">
+            <i className="fas fa-info-circle mr-1"></i>
+            This context was sent to the AI model along with the conversation history
+          </small>
+          <div className="btn-group">
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => handleCopy('raw')}
+              title="Copy raw JSON data"
+            >
+              <i className={`fas ${copied && copyType === 'raw' ? 'fa-check text-success' : 'fa-code'} mr-1`}></i>
+              {copied && copyType === 'raw' ? 'Copied!' : 'Copy Raw'}
+            </Button>
+            <Button
+              variant="info"
+              size="sm"
+              onClick={() => handleCopy('formatted')}
+              title="Copy formatted text"
+            >
+              <i className={`fas ${copied && copyType === 'formatted' ? 'fa-check' : 'fa-copy'} mr-1`}></i>
+              {copied && copyType === 'formatted' ? 'Copied!' : 'Copy Text'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Helper function to get today's date in YYYY-MM-DD format
 const getTodayDate = (): string => {
@@ -68,6 +288,11 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalConversations, setTotalConversations] = useState(0);
   const [showFilters, setShowFilters] = useState(true);
+  const [contextPopup, setContextPopup] = useState<{
+    show: boolean;
+    message: Message | null;
+    target: HTMLElement | null;
+  }>({ show: false, message: null, target: null });
 
   useEffect(() => {
     loadFilterOptions();
@@ -179,13 +404,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
       {/* Header Section */}
       <Row className="mb-3">
         <Col>
-          <div className="d-flex justify-content-between align-items-center">
-            <div className="d-flex align-items-center">
+          <div className="d-flex justify-content-between align-items-center flex-wrap admin-header">
+            <div className="d-flex align-items-center flex-wrap admin-header-title">
               <h4 className="text-dark mb-0 font-weight-bold">
                 <i className="fas fa-comments mr-2 text-secondary"></i>
                 {config.labels.heading}
               </h4>
-              <Badge variant="secondary" className="ml-3">
+              <Badge variant="secondary" className="ml-2">
                 {totalConversations.toLocaleString()} conversations
               </Badge>
               {hasActiveFilters && (
@@ -194,33 +419,30 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 </Badge>
               )}
             </div>
-            <div className="d-flex button-group">
+            <div className="admin-header-buttons">
               <Button
                 variant={showFilters ? 'secondary' : 'outline-secondary'}
-                size="sm"
                 onClick={() => setShowFilters(!showFilters)}
               >
-                <i className={`fas fa-filter mr-2`}></i>
-                {showFilters ? 'Hide Filters' : 'Show Filters'}
+                <i className="fas fa-filter"></i>
+                <span className="d-none d-sm-inline">{showFilters ? 'Hide' : 'Show'}</span>
+                <span className="d-sm-none">{showFilters ? 'Hide' : 'Filters'}</span>
               </Button>
               <Button
                 variant="primary"
-                size="sm"
                 onClick={() => loadConversations(currentPage)}
                 disabled={loading}
               >
-                <i className={`fas fa-sync-alt mr-2 ${loading ? 'fa-spin' : ''}`}></i>
-                {config.labels.refreshLabel}
+                <i className={`fas fa-sync-alt ${loading ? 'fa-spin' : ''}`}></i>
+                <span className="d-none d-sm-inline">Refresh</span>
               </Button>
               <Button
                 variant="outline-danger"
-                size="sm"
                 onClick={clearFilters}
                 disabled={!hasActiveFilters}
-                className="filter-clear-btn"
               >
-                <i className="fas fa-times mr-1"></i>
-                Clear
+                <i className="fas fa-times"></i>
+                <span className="d-none d-sm-inline">Clear</span>
               </Button>
             </div>
           </div>
@@ -245,19 +467,19 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
           <Col>
             <Card className="border">
               <Card.Body className="py-3">
-                <div className="filter-row">
+                <div className="filter-grid">
                   {/* Date Range Filter */}
-                  <div className="filter-col filter-date-range">
+                  <div className="filter-col filter-col-date">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-calendar-alt mr-1"></i>
                       Date Range
                     </Form.Label>
-                    <div className="d-flex filter-date-range">
+                    <div className="date-range-inputs">
                       <Form.Control
                         type="date"
                         value={filters.dateFrom}
                         onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
-                        className="filter-input mr-1"
+                        className="filter-input"
                       />
                       <Form.Control
                         type="date"
@@ -269,7 +491,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                   </div>
 
                   {/* User Filter */}
-                  <div className="filter-col filter-user">
+                  <div className="filter-col filter-col-half">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-user mr-1"></i>
                       {config.labels.userFilterLabel}
@@ -317,7 +539,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                   </div>
 
                   {/* Section Filter */}
-                  <div className="filter-col filter-section">
+                  <div className="filter-col filter-col-half">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-folder mr-1"></i>
                       {config.labels.sectionFilterLabel}
@@ -359,13 +581,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         singleValue: (provided) => ({
                           ...provided,
                           fontSize: '0.875rem'
-                          })
+                        })
                       }}
                     />
                   </div>
 
                   {/* Search Filter */}
-                  <div className="filter-col filter-search">
+                  <div className="filter-col filter-col-half">
                     <Form.Label className="small text-muted mb-1">
                       <i className="fas fa-search mr-1"></i>
                       Search
@@ -378,7 +600,6 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       className="filter-input"
                     />
                   </div>
-
                 </div>
               </Card.Body>
             </Card>
@@ -543,56 +764,83 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 </Card.Header>
 
                 {/* Messages Container */}
-                <Card.Body className="messages-container p-3 bg-light">
+                <Card.Body className="messages-container p-3">
                   {messages.length === 0 ? (
                     <div className="text-center py-5">
                       <i className="fas fa-comment-slash fa-2x text-muted mb-3"></i>
                       <div className="text-muted">No messages in this conversation</div>
                     </div>
                   ) : (
-                    messages.map(message => (
-                      <div
-                        key={message.id}
-                        className={`message-bubble mb-3 p-3 ${
-                          message.role === 'user'
-                            ? 'user-message'
-                            : 'assistant-message'
-                        }`}
-                      >
-                        <div className="message-header small font-weight-bold mb-2 text-uppercase">
-                          {message.role === 'user' ? (
-                            <><i className="fas fa-user mr-2"></i>User</>
-                          ) : (
-                            <><i className="fas fa-robot mr-2"></i>Assistant</>
-                          )}
-                        </div>
-                        <div className="message-content">
-                          {message.role === 'user' ? (
-                            <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                              {message.content}
-                            </div>
-                          ) : (
-                            <MarkdownRenderer content={message.content} />
-                          )}
-                        </div>
-                        {message.attachments && (
-                          <div className="message-attachments mt-2 small text-muted">
-                            <i className="fas fa-paperclip mr-2"></i>
-                            {JSON.parse(message.attachments).length} attachment{JSON.parse(message.attachments).length !== 1 ? 's' : ''}
+                    <div className="message-stack">
+                      {messages.map(message => (
+                        <div
+                          key={message.id}
+                          className={`message-wrapper ${message.role === 'user' ? 'user' : 'assistant'}`}
+                        >
+                          {/* Avatar */}
+                          <div className="message-avatar">
+                            <i className={`fas ${message.role === 'user' ? 'fa-user' : 'fa-robot'}`}></i>
                           </div>
-                        )}
-                        <div className="message-timestamp small mt-2 text-right text-muted">
-                          <i className="fas fa-clock mr-1"></i>
-                          {formatDate(message.timestamp)}
-                          {message.tokens_used && (
-                            <>
-                              <i className="fas fa-microchip ml-2 mr-1"></i>
-                              {message.tokens_used.toLocaleString()} tokens
-                            </>
-                          )}
+                          
+                          {/* Message Bubble */}
+                          <div className={`message-bubble ${message.role === 'user' ? 'user-message' : 'assistant-message'}`}>
+                            {/* Context button for assistant messages */}
+                            {message.sent_context && (
+                              <div className="d-flex justify-content-end mb-2">
+                                <button
+                                  className="btn btn-outline-info btn-sm py-0 px-2"
+                                  style={{ fontSize: '0.7rem' }}
+                                  onClick={() => {
+                                    setContextPopup({
+                                      show: true,
+                                      message,
+                                      target: null
+                                    });
+                                  }}
+                                  title="View context sent to AI"
+                                >
+                                  <i className="fas fa-layer-group mr-1"></i>
+                                  Context
+                                </button>
+                              </div>
+                            )}
+                            
+                            {/* Message Content */}
+                            <div className="message-content">
+                              {message.role === 'user' ? (
+                                <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+                                  {message.content}
+                                </div>
+                              ) : (
+                                <MarkdownRenderer content={message.content} />
+                              )}
+                            </div>
+                            
+                            {/* Attachments */}
+                            {message.attachments && (
+                              <div className="mt-2 small text-muted">
+                                <i className="fas fa-paperclip mr-1"></i>
+                                {JSON.parse(message.attachments).length} attachment{JSON.parse(message.attachments).length !== 1 ? 's' : ''}
+                              </div>
+                            )}
+                            
+                            {/* Message Meta */}
+                            <div className="message-meta mt-2">
+                              <span>
+                                <i className="fas fa-clock mr-1"></i>
+                                {formatDate(message.timestamp)}
+                              </span>
+                              {message.tokens_used && (
+                                <span className="tokens">
+                                  <i className="fas fa-microchip"></i>
+                                  {message.tokens_used.toLocaleString()} tokens
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+                    </div>
                   )}
                 </Card.Body>
               </>
@@ -600,6 +848,15 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
           </Card>
         </Col>
       </Row>
+
+      {/* Context Popup Modal */}
+      {contextPopup.show && contextPopup.message && (
+        <ContextPopup
+          message={contextPopup.message}
+          show={contextPopup.show}
+          onHide={() => setContextPopup({ show: false, message: null, target: null })}
+        />
+      )}
     </Container>
   );
 };
