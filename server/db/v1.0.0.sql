@@ -199,6 +199,14 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('auto_start_conversation'), '0', 'Automatically start a conversation when no active conversation exists. The AI will analyze the conversation context and send an intelligent, topic-specific initial message to engage the user.'),
 (get_style_id('llmChat'), get_field_id('auto_start_message'), 'Hello! I''m here to help you. What would you like to talk about?', 'Fallback message used when auto-starting conversations. When conversation context is configured, the system automatically generates a more engaging, context-aware message based on the topics and themes in your context. This field serves as a fallback for generic greetings.');
 
+-- Add strict conversation mode field (user visible, translatable)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'strict_conversation_mode', get_field_type_id('checkbox'), '0');
+
+-- Link strict conversation mode to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('strict_conversation_mode'), '0', 'When enabled, the AI will only respond to questions and topics that fit within the defined conversation context. If users ask about unrelated topics, the AI will politely redirect them back to the appropriate context with a brief description of what topics are available.');
+
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,

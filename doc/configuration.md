@@ -61,6 +61,126 @@ These settings override global defaults for specific chat instances.
 | `enable_conversations_list` | checkbox | `true` | Show conversation sidebar |
 | `enable_file_uploads` | checkbox | `true` | Allow file attachments |
 | `enable_full_page_reload` | checkbox | `false` | Reload page after streaming (vs. React refresh) |
+| `strict_conversation_mode` | checkbox | `false` | Enable strict conversation mode to keep AI focused on defined topics |
+
+### Strict Conversation Mode
+
+**Location:** CMS → Edit page → llmChat component settings → `strict_conversation_mode`
+
+When enabled, strict conversation mode enhances the system context with enforcement instructions that guide the LLM to stay within defined topics. This feature is particularly useful for:
+
+- **Educational modules** - Keep discussions focused on learning objectives
+- **Therapeutic applications** - Maintain therapeutic boundaries
+- **Research studies** - Ensure consistent experimental conditions
+
+#### How It Works
+
+1. **Context Enhancement**: The system automatically prepends enforcement instructions to your conversation context
+2. **Topic Analysis**: Key topics are extracted from your configured context to provide specific redirection examples
+3. **Natural Enforcement**: The AI itself enforces topic boundaries through polite redirection rather than separate processing
+
+#### Configuration Requirements
+
+Strict mode requires conversation context to be configured. Without context, the feature will be automatically disabled.
+
+#### Enforcement Behavior
+
+When users ask off-topic questions, the AI responds with polite redirection messages like:
+- "I'm here to help you with [topics]. Is there something specific about these topics I can assist you with?"
+- "That's outside my focus area for this conversation. I'm specialized in discussing [topics]. What would you like to know about that?"
+
+#### Example Configuration
+
+```markdown
+# Mental Health Education Context
+You are an AI assistant helping users learn about anxiety and stress management.
+
+## Key Topics
+- Anxiety symptoms and causes
+- Stress reduction techniques
+- Breathing exercises
+- Cognitive behavioral strategies
+- Professional help resources
+
+## Guidelines
+- Be empathetic and supportive
+- Provide evidence-based information
+- Encourage professional consultation when appropriate
+```
+
+With strict mode enabled, if a user asks "What's the weather like today?", the AI will redirect back to mental health topics.
+
+### Auto-Start Conversation
+
+**Location:** CMS → Edit page → llmChat component settings → `auto_start_conversation` and `auto_start_message`
+
+The auto-start conversation feature automatically initiates a conversation when no active conversation exists, providing an immediate and engaging user experience.
+
+#### How It Works
+
+1. **Automatic Detection**: When a user visits a page with the llmChat component, the system checks if they have any existing conversations
+2. **Context-Aware Messages**: If conversation context is configured, the AI analyzes the context and generates topic-specific initial messages
+3. **Fallback Messages**: If no context is configured or analysis fails, the system uses the configured fallback message
+4. **Session Tracking**: Auto-start happens only once per user per page section to prevent spam
+
+#### Configuration Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto_start_conversation` | checkbox | `false` | Enable automatic conversation initiation |
+| `auto_start_message` | markdown | `"Hello! I'm here to help you. What would you like to talk about?"` | Fallback message when context analysis isn't available |
+
+#### Smart Context Analysis
+
+When conversation context is configured, the system automatically generates engaging, topic-specific opening messages:
+
+**Example Context:**
+```markdown
+You are a fitness coach helping users with exercise routines and nutrition.
+
+Key topics:
+- Strength training programs
+- Cardiovascular exercises
+- Nutrition and meal planning
+- Injury prevention
+- Motivation and goal setting
+```
+
+**Generated Auto-Start Message:**
+*"Hi there! I'm your fitness coach, ready to help you with strength training, cardio routines, nutrition planning, and reaching your fitness goals. What aspect of fitness would you like to focus on today?"*
+
+#### Behavior Rules
+
+- **Single Auto-Start**: Occurs only once per user per page section
+- **No Override**: Won't auto-start if user already has conversations
+- **Context Integration**: Auto-start messages include the full conversation context
+- **Rate Limited**: Respects existing rate limiting rules
+- **Session-Based**: Uses session tracking to prevent duplicates
+
+#### Use Cases
+
+- **Educational Platforms**: Immediately engage learners with topic-specific introductions
+- **Customer Support**: Provide instant assistance with context-aware greetings
+- **Research Studies**: Ensure consistent initial interactions for experimental protocols
+- **Therapeutic Applications**: Start sessions with appropriate therapeutic framing
+
+#### Configuration Example
+
+For a mental health support chat:
+
+**auto_start_conversation:** ✅ Enabled
+**auto_start_message:** `"I'm here to support you with anxiety management, stress reduction, and emotional wellness. What's on your mind today?"`
+
+**Conversation Context:**
+```markdown
+You are a supportive AI companion for anxiety management.
+
+Focus areas:
+- Breathing techniques for anxiety
+- Cognitive strategies
+- Stress management tools
+- Professional resource guidance
+```
 
 ### Display Limits
 

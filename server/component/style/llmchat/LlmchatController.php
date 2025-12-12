@@ -8,6 +8,7 @@ require_once __DIR__ . "/../../../../../../component/BaseController.php";
 require_once __DIR__ . "/../../../service/LlmFileUploadService.php";
 require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStreamingService.php";
+require_once __DIR__ . "/../../../service/StrictConversationService.php";
 
 /**
  * The controller class for the LLM chat component.
@@ -19,6 +20,7 @@ class LlmchatController extends BaseController
     private $file_upload_service;
     private $api_formatter_service;
     private $streaming_service;
+    private $strict_conversation_service;
 
     /* Constructors ***********************************************************/
 
@@ -35,6 +37,7 @@ class LlmchatController extends BaseController
         $this->file_upload_service = new LlmFileUploadService($this->llm_service);
         $this->api_formatter_service = new LlmApiFormatterService();
         $this->streaming_service = new LlmStreamingService($this->llm_service);
+        $this->strict_conversation_service = new StrictConversationService($this->llm_service);
 
         $router = $model->get_services()->get_router();
         if(is_array($router->route['params']) && isset($router->route['params']['data'])){
@@ -199,6 +202,14 @@ class LlmchatController extends BaseController
 
         // Get conversation context if configured
         $context_messages = $this->model->getParsedConversationContext();
+
+        // Apply strict conversation mode if enabled
+        if ($this->model->shouldApplyStrictMode()) {
+            $context_messages = $this->strict_conversation_service->buildStrictModeContext(
+                $context_messages,
+                $this->model->getConversationContext()
+            );
+        }
 
         // Convert messages to API format with context prepended
         $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $conversation['model'], $context_messages);
@@ -487,7 +498,17 @@ class LlmchatController extends BaseController
             
             // Get conversation context if configured
             $context_messages = $this->model->getParsedConversationContext();
-            
+
+            // Apply strict conversation mode if enabled
+            // This embeds enforcement instructions directly into the context,
+            // allowing the LLM to naturally handle topic relevance without a separate API call
+            if ($this->model->shouldApplyStrictMode()) {
+                $context_messages = $this->strict_conversation_service->buildStrictModeContext(
+                    $context_messages,
+                    $this->model->getConversationContext()
+                );
+            }
+
             // Convert messages to API format with context prepended
             $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model, $context_messages);
 
@@ -755,6 +776,7 @@ class LlmchatController extends BaseController
                 'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
                 'isVisionModel' => $this->model->isVisionModel(),
                 'hasConversationContext' => $this->model->hasConversationContext(),
+                'strictConversationMode' => $this->model->isStrictConversationModeEnabled(),
                 'autoStartConversation' => $this->model->isAutoStartConversationEnabled(),
                 'autoStartMessage' => $this->model->getAutoStartMessage(),
                 // UI Labels

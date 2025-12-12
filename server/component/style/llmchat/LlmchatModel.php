@@ -86,6 +86,9 @@ class LlmchatModel extends StyleModel
     private $auto_start_conversation;
     private $auto_start_message;
 
+    // Strict conversation mode
+    private $strict_conversation_mode;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -191,6 +194,9 @@ class LlmchatModel extends StyleModel
         // Auto-start conversation settings
         $this->auto_start_conversation = $this->get_db_field('auto_start_conversation', '0');
         $this->auto_start_message = $this->get_db_field('auto_start_message', 'Hello! I\'m here to help you. What would you like to talk about?');
+
+        // Strict conversation mode
+        $this->strict_conversation_mode = $this->get_db_field('strict_conversation_mode', '0');
     }
 
     /* Private Methods *********************************************************/
@@ -947,7 +953,7 @@ class LlmchatModel extends StyleModel
         }
 
         // Extract specific topics from headings and structured content
-        if (preg_match_all('/(?:^|\n)#+\s*([^\n]+)/m', $text, $matches)) {
+        if (preg_match_all('/(?:^|\n)#+\s*([^\n]+)/m', $text, $matches) && isset($matches[1])) {
             foreach ($matches[1] as $heading) {
                 $cleanHeading = trim($heading, '#* ');
                 if (strlen($cleanHeading) > 3 && strlen($cleanHeading) < 50) {
@@ -957,7 +963,7 @@ class LlmchatModel extends StyleModel
         }
 
         // Extract topics from bullet points or numbered lists
-        if (preg_match_all('/(?:^|\n)[•\-\*]\s*([^\n]+)/m', $text, $matches)) {
+        if (preg_match_all('/(?:^|\n)[•\-\*]\s*([^\n]+)/m', $text, $matches) && isset($matches[1])) {
             foreach ($matches[1] as $item) {
                 $cleanItem = trim($item);
                 if (strlen($cleanItem) > 5 && strlen($cleanItem) < 40 && !preg_match('/^(what|how|why|when)/i', $cleanItem)) {
@@ -1013,6 +1019,28 @@ class LlmchatModel extends StyleModel
     public function isAutoStartConversationEnabled()
     {
         return $this->auto_start_conversation === '1';
+    }
+
+    /**
+     * Check if strict conversation mode is enabled
+     *
+     * @return bool True if strict conversation mode is enabled
+     */
+    public function isStrictConversationModeEnabled()
+    {
+        return $this->strict_conversation_mode === '1';
+    }
+
+    /**
+     * Check if strict conversation mode should be applied
+     * 
+     * Strict mode only makes sense when both enabled AND context is configured
+     *
+     * @return bool True if strict mode should be applied
+     */
+    public function shouldApplyStrictMode()
+    {
+        return $this->isStrictConversationModeEnabled() && $this->hasConversationContext();
     }
 
     /**

@@ -25,6 +25,8 @@
 - **Parsing Methods**: `getConversationContext()`, `getParsedConversationContext()`, `hasConversationContext()`
 - **API Integration**: Context prepended to API messages via `LlmApiFormatterService`
 - **Database Tracking**: New `sent_context` column in `llmMessages` table
+- **Strict Conversation Mode**: Optional topic enforcement that keeps AI focused on defined subjects
+- **Auto-Start Conversations**: Automatic conversation initiation with context-aware opening messages
 
 #### API Improvements
 - **Config API Endpoint**: New `?action=get_config` for React component initialization
@@ -36,6 +38,9 @@
 - `enable_conversations_list`: Show/hide conversations sidebar
 - `enable_file_uploads`: Enable/disable file upload capability
 - `enable_full_page_reload`: Use AJAX page reload instead of React refresh
+- `strict_conversation_mode`: Enable topic enforcement for focused conversations (checkbox)
+- `auto_start_conversation`: Automatically start conversations (checkbox)
+- `auto_start_message`: Fallback message for auto-start conversations (markdown)
 
 #### Admin Features
 - Comprehensive Admin Console for monitoring all user conversations
@@ -60,9 +65,24 @@
 - `LlmService`: Updated `addMessage()` accepts `$sent_context` parameter
 - `LlmchatController`: Context processing in both streaming and non-streaming paths
 
+#### Strict Conversation Mode Implementation
+- `StrictConversationService`: New service for topic enforcement and context enhancement
+- Context prepended with enforcement instructions for topic boundaries
+- Intelligent topic extraction from configured context
+- Polite redirection for off-topic questions
+
+#### Auto-Start Conversation Implementation
+- Context-aware message generation based on configured conversation topics
+- Session-based tracking to prevent duplicate auto-start messages
+- New `get_auto_started` API endpoint for frontend detection
+- Smart fallback to configured default messages
+
 #### Database Changes
 - New `conversation_context` field in `styles_fields` for llmChat style
 - New `sent_context` column in `llmMessages` table for context tracking
+- New `strict_conversation_mode` checkbox field for topic enforcement
+- New `auto_start_conversation` checkbox field for automatic conversation initiation
+- New `auto_start_message` markdown field for custom auto-start messages
 
 #### Architecture
 - **Streaming Architecture**: Event-driven SSE implementation with zero partial saves
@@ -77,7 +97,7 @@
 
 ### Files Created
 - Database schema (`server/db/v1.0.0.sql`)
-- Core services (`LlmService.php`, `LlmStreamingService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`)
+- Core services (`LlmService.php`, `LlmStreamingService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `StrictConversationService.php`)
 - MVC components (`LlmchatModel.php`, `LlmchatView.php`, `LlmchatController.php`)
 - Plugin hooks (`LlmHooks.php`)
 - Admin components (`moduleLlmAdminConsole/` - comprehensive admin console component with configurable pageType_fields)
