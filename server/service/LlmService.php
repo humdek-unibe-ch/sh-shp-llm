@@ -238,15 +238,16 @@ class LlmService
      */
     public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null)
     {
-        // First, try to find an existing conversation for this model
-        $existing_conversations = $this->getUserConversations($user_id, 1, $model);
+        // First, try to find an existing conversation for this model within the same section
+        // CRITICAL: Must pass section_id to ensure conversations are isolated per section
+        $existing_conversations = $this->getUserConversations($user_id, 1, $model, $section_id);
 
         if (!empty($existing_conversations)) {
-            // Return the most recent conversation for this model
+            // Return the most recent conversation for this model in this section
             return $existing_conversations[0]['id'];
         }
 
-        // No existing conversation found, create a new one
+        // No existing conversation found for this section, create a new one
         return $this->createConversation($user_id, null, $model, $temperature, $max_tokens, $section_id);
     }
 

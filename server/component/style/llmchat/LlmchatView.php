@@ -169,6 +169,12 @@ class LlmchatView extends StyleView
             'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
             'isVisionModel' => $this->model->isVisionModel(),
             'hasConversationContext' => $this->model->hasConversationContext(),
+            // Floating button configuration
+            'enableFloatingButton' => $this->model->isFloatingButtonEnabled(),
+            'floatingButtonPosition' => $this->model->getFloatingButtonPosition(),
+            'floatingButtonIcon' => $this->model->getFloatingButtonIcon(),
+            'floatingButtonLabel' => $this->model->getFloatingButtonLabel(),
+            'floatingChatTitle' => $this->model->getFloatingChatTitle(),
             // UI Labels
             'messagePlaceholder' => $this->model->getMessagePlaceholder(),
             'noConversationsMessage' => $this->model->getNoConversationsMessage(),

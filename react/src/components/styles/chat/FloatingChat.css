@@ -17,6 +17,21 @@
  * - Border: #dee2e6
  */
 
+/* ===== Floating Mode Container ===== */
+/* When floating button is enabled, the container should not show any regular chat UI */
+/* This prevents UI jumping on page load */
+.llm-floating-mode > .llm-chat-container,
+.llm-floating-mode > .llm-chat-shell,
+.llm-floating-mode > .container,
+.llm-floating-mode > .container-fluid {
+  display: none !important;
+}
+
+/* Only show the floating wrapper in floating mode */
+.llm-floating-mode > .llm-floating-chat-wrapper {
+  display: block !important;
+}
+
 /* ===== Wrapper ===== */
 .llm-floating-chat-wrapper {
   position: fixed;
