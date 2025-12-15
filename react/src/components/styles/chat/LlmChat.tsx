@@ -116,37 +116,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     forceScrollToBottom
   } = useSmartScroll(messagesContainerRef);
 
-  // Streaming state management (must come before chat state to provide stopStreaming)
-  const {
-    isStreaming,
-    streamingContent,
-    sendStreamingMessage,
-    stopStreaming,
-    clearStreamingContent
-  } = useStreaming({
-    config,
-    onChunk: useCallback(() => {
-      // Smart scroll - only scrolls if user was at bottom
-      scrollToBottom();
-    }, [scrollToBottom]),
-    onDone: useCallback(() => {
-      // Content clearing handled by hook
-    }, []),
-    onError: useCallback((err: string) => {
-      // Error handling will be done by chat state
-      console.error('Streaming error:', err);
-    }, []),
-    onStart: useCallback(() => {
-      // Content clearing handled by hook
-    }, []),
-    onRefreshMessages: useCallback(async (conversationId: string) => {
-      // Message refresh will be handled by the chat state after initialization
-      console.debug('Message refresh requested for conversation:', conversationId);
-    }, []),
-    getActiveModel: useCallback(() => config.configuredModel, [config.configuredModel])
-  });
-
-  // Chat state management
+  // Chat state management (must come first to provide functions)
   const {
     conversations,
     currentConversation,
@@ -162,8 +132,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     addUserMessage,
     clearError,
     setError,
+    setCurrentConversation,
     getActiveModel
-  } = useChatState(config, stopStreaming);
+  } = useChatState(config);
 
   // Set up proper error handling and message refresh for streaming
   const streamingErrorHandler = useCallback((err: string) => {
@@ -176,7 +147,47 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       await loadConversations();
     }
   }, [loadConversationMessages, loadConversations, config.enableConversationsList]);
-  
+
+  const newConversationHandler = useCallback((conversationId: string, model: string) => {
+    // Update current conversation for single conversation mode
+    if (!config.enableConversationsList) {
+      const newConversation = {
+        id: conversationId,
+        title: 'New Conversation',
+        model: model,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      setCurrentConversation(newConversation);
+    }
+  }, [config.enableConversationsList, setCurrentConversation]);
+
+  // Streaming state management (comes after chat state)
+  const {
+    isStreaming,
+    streamingContent,
+    sendStreamingMessage,
+    stopStreaming,
+    clearStreamingContent
+  } = useStreaming({
+    config,
+    onChunk: useCallback(() => {
+      // Smart scroll - only scrolls if user was at bottom
+      scrollToBottom();
+    }, [scrollToBottom]),
+    onDone: useCallback(() => {
+      // Content clearing handled by hook
+    }, []),
+    onError: streamingErrorHandler,
+    onStart: useCallback(() => {
+      // Content clearing handled by hook
+    }, []),
+    onRefreshMessages: messageRefreshHandler,
+    onNewConversation: newConversationHandler,
+    getActiveModel: useCallback(() => config.configuredModel, [config.configuredModel])
+  });
+
+
   /**
    * Initialize chat on mount
    */
@@ -240,17 +251,23 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     // Get current conversation ID
     const conversationId = currentConversation?.id || null;
     
-    if (config.streamingEnabled) {
-      // Use streaming mode
-      await sendStreamingMessage(message, conversationId, files);
-    } else {
-      // Use regular AJAX mode
-      setIsProcessing(true);
-      try {
-        await sendMessage(message, files);
-      } finally {
-        setIsProcessing(false);
+    try {
+      if (config.streamingEnabled) {
+        // Use streaming mode
+        await sendStreamingMessage(message, conversationId, files);
+      } else {
+        // Use regular AJAX mode
+        setIsProcessing(true);
+        try {
+          await sendMessage(message, files);
+        } finally {
+          setIsProcessing(false);
+        }
       }
+    } catch (error) {
+      // If sending fails, remove the user message from UI since it wasn't actually sent
+      console.error('Failed to send message:', error);
+      // The error will be shown via the error state
     }
   }, [
     isStreaming,

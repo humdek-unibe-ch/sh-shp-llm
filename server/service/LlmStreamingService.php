@@ -64,6 +64,8 @@ class LlmStreamingService
                 }
             );
         } catch (Exception $e) {
+            // Log the error for debugging
+            error_log('Streaming error: ' . $e->getMessage());
             $this->handleStreamingError($e, $streaming_buffer, $tokens_used);
         }
 
@@ -179,23 +181,47 @@ class LlmStreamingService
         }
 
         try {
+            // Convert technical error messages to user-friendly ones for display
+            $userFriendlyMessage = $this->getUserFriendlyErrorMessage($e->getMessage());
+
             $raw_response = [
                 'streaming' => true,
                 'model' => $this->model,
-                'error' => $e->getMessage(),
+                'error' => $e->getMessage(), // Keep original error for debugging
                 'partial_content' => $buffer->getContent(),
                 'usage' => ['total_tokens' => $tokens_used]
             ];
 
-            $buffer->emergencySave($e->getMessage(), $raw_response);
+            $buffer->emergencySave($userFriendlyMessage, $raw_response);
             $this->has_finalized = true;
-            $this->sendSSE(['type' => 'error', 'message' => $e->getMessage()]);
+            $this->sendSSE(['type' => 'error', 'message' => $userFriendlyMessage]);
             $this->sendSSE(['type' => 'close']);
         } catch (Exception $saveError) {
             $this->has_finalized = true;
             $this->sendSSE(['type' => 'error', 'message' => 'Critical error: ' . $e->getMessage()]);
             $this->sendSSE(['type' => 'close']);
         }
+    }
+
+    /**
+     * Convert technical error messages to user-friendly ones
+     */
+    private function getUserFriendlyErrorMessage($errorMessage)
+    {
+        if (strpos($errorMessage, 'HTTP 403') !== false || strpos($errorMessage, 'Access denied') !== false) {
+            return 'Access denied. Please check your API permissions.';
+        } elseif (strpos($errorMessage, 'HTTP 401') !== false || strpos($errorMessage, 'Authentication failed') !== false) {
+            return 'Authentication failed. Please check your API key.';
+        } elseif (strpos($errorMessage, 'HTTP 429') !== false || strpos($errorMessage, 'Too many requests') !== false) {
+            return 'Too many requests. Please wait and try again.';
+        } elseif (strpos($errorMessage, 'HTTP 5') !== false || strpos($errorMessage, 'Server error') !== false) {
+            return 'Server error. Please try again later.';
+        } elseif (strpos($errorMessage, 'HTTP 4') !== false) {
+            return 'Request error. Please check your input and try again.';
+        }
+
+        // Return original message if it doesn't match known patterns
+        return $errorMessage;
     }
 
     /**

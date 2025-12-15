@@ -62,14 +62,14 @@ function buildUrl(action: string, extraParams: Record<string, string> = {}): str
 
 /**
  * Make a GET request to the controller
- * 
+ *
  * @param action - The action to perform
  * @param params - Additional query parameters
  * @returns Promise resolving to JSON response
  */
 async function apiGet<T>(action: string, params: Record<string, string> = {}): Promise<T> {
   const url = buildUrl(action, params);
-  
+
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -78,18 +78,34 @@ async function apiGet<T>(action: string, params: Record<string, string> = {}): P
     },
     credentials: 'same-origin'
   });
-  
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (e) {
+    // If we can't parse JSON, fall back to status-based error
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    throw e;
+  }
+
   if (!response.ok) {
+    // If the response contains an error message, use it
+    if (data && typeof data === 'object' && 'error' in data) {
+      throw new Error(data.error);
+    }
+    // Otherwise use the HTTP status
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
-  
-  return response.json();
+
+  return data;
 }
 
 /**
  * Make a POST request to the controller
  * Supports both JSON and FormData payloads
- * 
+ *
  * @param formData - FormData object with request data
  * @returns Promise resolving to JSON response
  */
@@ -103,12 +119,28 @@ async function apiPost<T>(formData: FormData): Promise<T> {
     },
     credentials: 'same-origin'
   });
-  
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (e) {
+    // If we can't parse JSON, fall back to status-based error
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    throw e;
+  }
+
   if (!response.ok) {
+    // If the response contains an error message, use it
+    if (data && typeof data === 'object' && 'error' in data) {
+      throw new Error(data.error);
+    }
+    // Otherwise use the HTTP status
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
-  
-  return response.json();
+
+  return data;
 }
 
 // ============================================================================
@@ -445,25 +477,34 @@ export class StreamingApi {
   ): void {
     // Close any existing connection
     this.disconnect();
-    
+
     const url = this.buildStreamingUrl();
     this.eventSource = new EventSource(url);
-    
+
+    // Handle successful connection
+    this.eventSource.onopen = () => {
+      onMessage({ type: 'connected' });
+    };
+
     this.eventSource.onmessage = (event) => {
       try {
         const data: StreamingEvent = JSON.parse(event.data);
         onMessage(data);
-        
+
         // Auto-close on done or error
         if (data.type === 'done' || data.type === 'error' || data.type === 'close') {
           this.disconnect();
         }
       } catch (e) {
-        // Error parsing SSE data - silently ignore
+        console.error('Error parsing SSE data:', e);
+        // Send error event for parsing failures
+        onMessage({ type: 'error', message: 'Failed to parse streaming data' });
+        this.disconnect();
       }
     };
-    
+
     this.eventSource.onerror = (error) => {
+      console.error('EventSource error:', error);
       onError?.(error);
       this.disconnect();
     };

@@ -797,9 +797,29 @@ class LlmService
             throw new Exception('Curl error during streaming: ' . $error . ' (code: ' . $errno . ')');
         }
 
-        // If we got an HTTP error, throw an exception
+        // If we got an HTTP error, throw an exception with better error message
         if ($http_code >= 400) {
-            throw new Exception('LLM API returned HTTP ' . $http_code);
+            $error_message = 'LLM API request failed';
+            switch ($http_code) {
+                case 401:
+                    $error_message = 'Authentication failed. Please check your API key.';
+                    break;
+                case 403:
+                    $error_message = 'Access denied. Please check your API permissions.';
+                    break;
+                case 429:
+                    $error_message = 'Too many requests. Please wait and try again.';
+                    break;
+                case 500:
+                case 502:
+                case 503:
+                case 504:
+                    $error_message = 'Server error. Please try again later.';
+                    break;
+                default:
+                    $error_message = "Request failed with status $http_code";
+            }
+            throw new Exception($error_message);
         }
 
         // If we didn't receive any content and didn't get an explicit [DONE], something went wrong

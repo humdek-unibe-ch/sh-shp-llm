@@ -68,6 +68,8 @@ export interface UseChatStateReturn {
   clearError: () => void;
   /** Set error */
   setError: (error: string) => void;
+  /** Set current conversation (for internal use) */
+  setCurrentConversation: (conversation: Conversation | null) => void;
   /** Get the active model (conversation model or configured model) */
   getActiveModel: () => string;
 }
@@ -330,10 +332,23 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
       if (response.conversation_id) {
         const responseIdStr = String(response.conversation_id);
         const isNewConversation = !conversationId || response.is_new_conversation;
-        
+
         if (isNewConversation) {
           currentConversationIdRef.current = responseIdStr;
           updateUrl(responseIdStr, config);
+
+          // In single conversation mode, update the current conversation state
+          if (!config.enableConversationsList) {
+            // Create a minimal conversation object for single conversation mode
+            const newConversation = {
+              id: responseIdStr,
+              title: 'New Conversation',
+              model: activeModel,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            setCurrentConversation(newConversation);
+          }
         }
         
         // Add assistant message to UI
@@ -421,6 +436,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     clearCurrentConversation,
     clearError,
     setError,
+    setCurrentConversation,
     getActiveModel
   };
 }
