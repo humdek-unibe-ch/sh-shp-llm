@@ -154,22 +154,24 @@ async function apiPost<T>(formData: FormData): Promise<T> {
  */
 export const configApi = {
   /**
-   * Load chat configuration for the current user
-   * Calls: ?action=get_config
-   * 
+   * Load chat configuration for the current user and section
+   * Calls: ?action=get_config&section_id={sectionId}
+   *
+   * @param sectionId - The section ID to get configuration for
    * @returns Promise resolving to LlmChatConfig
    */
-  async get(): Promise<LlmChatConfig> {
-    const response = await apiGet<GetConfigResponse>('get_config');
-    
+  async get(sectionId?: string | number): Promise<LlmChatConfig> {
+    const params = sectionId ? { section_id: sectionId.toString() } : {};
+    const response = await apiGet<GetConfigResponse>('get_config', params);
+
     if (response.error) {
       throw new Error(response.error);
     }
-    
+
     if (!response.config) {
       throw new Error('No configuration returned');
     }
-    
+
     return response.config;
   }
 };

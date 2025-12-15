@@ -392,30 +392,40 @@ function parseConfig(container: HTMLElement) {
 }
 
 /**
- * Loading wrapper component that fetches config via API
+ * Loading wrapper component
+ * Uses the fallback config from data attributes directly to ensure each instance
+ * gets its own correct configuration (especially sectionId for multi-instance pages)
  */
 const LlmChatLoader: React.FC<{ fallbackConfig?: LlmChatConfig }> = ({ fallbackConfig }) => {
-  const [config, setConfig] = useState<LlmChatConfig | null>(fallbackConfig || null);
-  const [loading, setLoading] = useState(!fallbackConfig);
+  const [config, setConfig] = useState<LlmChatConfig | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // If we have fallback config, try to fetch fresh config from API in background
-    const loadConfig = async () => {
+    async function loadConfig() {
       try {
-        const apiConfig = await configApi.get();
-        setConfig(apiConfig);
-        setError(null);
-      } catch (err) {
-        // If API fails and we have fallback, use fallback
-        if (!fallbackConfig) {
-          setError(err instanceof Error ? err.message : 'Failed to load configuration');
+        // Try to load config from API if we have a sectionId from fallback config
+        if (fallbackConfig?.sectionId) {
+          const apiConfig = await configApi.get(fallbackConfig.sectionId);
+          setConfig(apiConfig);
+        } else if (fallbackConfig) {
+          // Use fallback config if no sectionId available
+          setConfig(fallbackConfig);
+        } else {
+          setError('Configuration not provided');
         }
-        console.debug('LLM Chat: API config fetch failed, using fallback', err);
+      } catch (err) {
+        console.warn('Failed to load config from API, using fallback:', err);
+        // Fall back to provided config if API fails
+        if (fallbackConfig) {
+          setConfig(fallbackConfig);
+        } else {
+          setError('Failed to load configuration');
+        }
       } finally {
         setLoading(false);
       }
-    };
+    }
 
     loadConfig();
   }, [fallbackConfig]);
