@@ -252,12 +252,21 @@ class LlmService
 
     /**
      * Get user conversations
+     * 
+     * @param int $user_id The user ID
+     * @param int $limit Maximum number of conversations to return
+     * @param string|null $model Filter by model name
+     * @param int|null $section_id Filter by section ID (for multi-section pages)
+     * @return array Array of conversation records
      */
-    public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null)
+    public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null, $section_id = null)
     {
         $cache_params = ['limit' => $limit];
         if ($model) {
             $cache_params['model'] = $model;
+        }
+        if ($section_id) {
+            $cache_params['section_id'] = $section_id;
         }
         $cache_key = $this->cache->generate_key(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
         $cached = $this->cache->get($cache_key);
@@ -266,7 +275,7 @@ class LlmService
             return $cached;
         }
 
-        $sql = "SELECT id, title, model, created_at, updated_at
+        $sql = "SELECT id, id_sections, title, model, created_at, updated_at
                 FROM llmConversations
                 WHERE id_users = :id_user AND deleted = 0";
         $params = array(':id_user' => $user_id);
@@ -274,6 +283,12 @@ class LlmService
         if ($model) {
             $sql .= " AND model = :model";
             $params[':model'] = $model;
+        }
+
+        // Filter by section ID when provided - ensures each llmChat section shows only its own conversations
+        if ($section_id) {
+            $sql .= " AND id_sections = :section_id";
+            $params[':section_id'] = $section_id;
         }
 
         $sql .= " ORDER BY updated_at DESC LIMIT " . $limit . ";";
@@ -286,14 +301,25 @@ class LlmService
 
     /**
      * Get a specific conversation
+     * 
+     * @param int $conversation_id The conversation ID
+     * @param int $user_id The user ID
+     * @param int|null $section_id Optional section ID to verify conversation belongs to this section
+     * @return array|null Conversation data or null if not found/not authorized
      */
-    public function getConversation($conversation_id, $user_id)
+    public function getConversation($conversation_id, $user_id, $section_id = null)
     {
-        $conversation = $this->db->query_db_first(
-            "SELECT * FROM llmConversations
-             WHERE id = ? AND id_users = ?",
-            [$conversation_id, $user_id]
-        );
+        $sql = "SELECT * FROM llmConversations WHERE id = ? AND id_users = ?";
+        $params = [$conversation_id, $user_id];
+
+        // If section_id is provided, verify the conversation belongs to this section
+        // This prevents accessing conversations from other llmChat instances on the same page
+        if ($section_id !== null) {
+            $sql .= " AND id_sections = ?";
+            $params[] = $section_id;
+        }
+
+        $conversation = $this->db->query_db_first($sql, $params);
 
         return $conversation ?: null;
     }

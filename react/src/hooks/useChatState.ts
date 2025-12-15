@@ -8,15 +8,19 @@
  * @module hooks/useChatState
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import type { Conversation, Message, LlmChatConfig, SelectedFile } from '../types';
-import { conversationsApi, messagesApi, autoStartApi, handleApiError } from '../utils/api';
+import { createConversationsApi, createMessagesApi, createAutoStartApi, handleApiError } from '../utils/api';
 
 /**
  * Check for auto-started conversation with timeout
  * Prevents UI from hanging if the API call takes too long
+ * 
+ * @param autoStartApi - The auto-start API instance (with section ID)
  */
-async function checkAutoStartedConversation(): Promise<{conversation: Conversation, messages: Message[]} | null> {
+async function checkAutoStartedConversation(
+  autoStartApi: ReturnType<typeof createAutoStartApi>
+): Promise<{conversation: Conversation, messages: Message[]} | null> {
   const TIMEOUT_MS = 5000; // 5 second timeout
 
   try {
@@ -96,6 +100,21 @@ export interface UseChatStateReturn {
  * @returns Chat state and actions
  */
 export function useChatState(config: LlmChatConfig, stopStreaming?: () => void): UseChatStateReturn {
+  // Create section-specific API instances
+  // These are memoized to avoid recreating on every render
+  const conversationsApi = useMemo(
+    () => createConversationsApi(config.sectionId),
+    [config.sectionId]
+  );
+  const messagesApi = useMemo(
+    () => createMessagesApi(config.sectionId),
+    [config.sectionId]
+  );
+  const autoStartApi = useMemo(
+    () => createAutoStartApi(config.sectionId),
+    [config.sectionId]
+  );
+
   // State
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
@@ -107,6 +126,17 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
   const currentConversationIdRef = useRef<string | null>(config.currentConversationId || null);
   
   /**
+   * Internal function to load messages (without setting loading state)
+   * Defined here to be available for loadConversations
+   */
+  const loadConversationMessagesInternal = useCallback(async (conversationId: string) => {
+    const { conversation, messages: msgs } = await messagesApi.getByConversation(conversationId);
+    setCurrentConversation(conversation);
+    setMessages(msgs);
+    return { conversation, messages: msgs };
+  }, [messagesApi]);
+
+  /**
    * Load all conversations for the current user
    */
   const loadConversations = useCallback(async () => {
@@ -115,7 +145,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
       setError(null);
 
       // First, check if there's an auto-started conversation
-      const autoStarted = await checkAutoStartedConversation();
+      const autoStarted = await checkAutoStartedConversation(autoStartApi);
       if (autoStarted) {
         // Stop any active streaming before loading auto-started conversation
         if (stopStreaming) {
@@ -184,17 +214,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     } finally {
       setIsLoading(false);
     }
-  }, [config]);
-  
-  /**
-   * Internal function to load messages (without setting loading state)
-   */
-  const loadConversationMessagesInternal = async (conversationId: string) => {
-    const { conversation, messages: msgs } = await messagesApi.getByConversation(conversationId);
-    setCurrentConversation(conversation);
-    setMessages(msgs);
-    return { conversation, messages: msgs };
-  };
+  }, [config, conversationsApi, autoStartApi, stopStreaming, loadConversationMessagesInternal]);
   
   /**
    * Load messages for a specific conversation
@@ -211,7 +231,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadConversationMessagesInternal]);
   
   /**
    * Create a new conversation
@@ -250,7 +270,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     } finally {
       setIsLoading(false);
     }
-  }, [config.configuredModel, loadConversations]);
+  }, [config.configuredModel, conversationsApi, loadConversations]);
   
   /**
    * Delete a conversation
@@ -278,7 +298,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     } finally {
       setIsLoading(false);
     }
-  }, [loadConversations]);
+  }, [conversationsApi, loadConversations]);
   
   /**
    * Select a conversation
@@ -391,7 +411,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
       setError(handleApiError(err));
       return null;
     }
-  }, [config.enableConversationsList, getActiveModel]);
+  }, [config.enableConversationsList, messagesApi, getActiveModel, loadConversations]);
   
   /**
    * Add user message to UI immediately

@@ -258,11 +258,13 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `tokens_used` int DEFAULT NULL,
     `raw_response` longtext DEFAULT NULL, -- Raw API response data (JSON)
     `sent_context` longtext DEFAULT NULL, -- JSON snapshot of context sent with this message for debugging/audit
+    `id_dataRows` int(10) UNSIGNED ZEROFILL DEFAULT NULL, -- Link to saved form data in dataRows table
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_conversation_time` (`id_llmConversations`, `timestamp`),
     KEY `idx_deleted` (`deleted`),
+    KEY `idx_dataRows` (`id_dataRows`),
 CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -375,3 +377,80 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_config, get_field_id('llm_max_tokens'), '0000000001', '2048'),
        (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '1'),
        (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '1');
+
+-- =====================================================
+-- FORM DATA SAVING FIELDS
+-- =====================================================
+
+-- Add data saving configuration fields
+-- is_log: When enabled (1), each form submission creates a new row (log mode)
+--         When disabled (0), updates user's existing record (record mode)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_data_saving', get_field_type_id('checkbox'), '0'),
+(NULL, 'data_table_name', get_field_type_id('text'), '0'),
+(NULL, 'is_log', get_field_type_id('checkbox'), '0');
+
+-- Link data saving fields to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_data_saving'), '0', 'Enable saving form data to SelfHelp UserInput system. When enabled, form submissions are stored in a dataTable linked to this section.'),
+(get_style_id('llmChat'), get_field_id('data_table_name'), '', 'Display name for the data table. This name appears in the data administration interface. The actual table name uses the section ID internally.'),
+(get_style_id('llmChat'), get_field_id('is_log'), '0', 'Data save mode:\n- **Enabled (Log Mode)**: Each form submission creates a new row, useful for tracking responses over time\n- **Disabled (Record Mode)**: Updates the users existing record or creates if not exists, useful for profiles/preferences');
+
+-- =====================================================
+-- MEDIA RENDERING SUPPORT
+-- =====================================================
+
+-- Add media-related configuration fields
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_media_rendering', get_field_type_id('checkbox'), '0'),
+(NULL, 'allowed_media_domains', get_field_type_id('textarea'), '0');
+
+-- Link media fields to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_media_rendering'), '1', 'Enable rendering of images and videos in chat responses. When enabled, markdown image/video syntax is rendered as actual media elements.'),
+(get_style_id('llmChat'), get_field_id('allowed_media_domains'), '', 'List of allowed external domains for media (one per line). Leave empty to allow all domains. SelfHelp assets (/assets/*) are always allowed.\n\nExample:\nimages.unsplash.com\nwww.youtube.com\nvimeo.com');
+
+-- =====================================================
+-- FLOATING CHAT BUTTON FEATURE
+-- =====================================================
+
+-- Add new field type for floating button position selection
+-- Hook naming convention: field-{type_without_select}-edit matches field type select-{type}
+-- So field type 'select-floating-button-position' triggers hook 'field-floating-button-position-edit'
+INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`) VALUES (NULL, 'select-floating-button-position', '8');
+
+-- Add floating chat button configuration fields
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_floating_button', get_field_type_id('checkbox'), '0'),
+(NULL, 'floating_button_position', get_field_type_id('select-floating-button-position'), '0'),
+(NULL, 'floating_button_icon', get_field_type_id('text'), '0'),
+(NULL, 'floating_button_label', get_field_type_id('text'), '1'),
+(NULL, 'floating_chat_title', get_field_type_id('text'), '1');
+
+-- Link floating button fields to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_floating_button'), '0', 'Enable floating chat button mode. When enabled, the chat interface is hidden and a floating button appears on the page. Clicking the button opens the chat in a modal/overlay.'),
+(get_style_id('llmChat'), get_field_id('floating_button_position'), 'bottom-right', 'Position of the floating chat button on the screen.'),
+(get_style_id('llmChat'), get_field_id('floating_button_icon'), 'fa-comments', 'Font Awesome icon class for the floating button (e.g., fa-comments, fa-robot, fa-headset). Default: fa-comments'),
+(get_style_id('llmChat'), get_field_id('floating_button_label'), 'Chat', 'Text label shown on the floating button. Leave empty for icon-only button.'),
+(get_style_id('llmChat'), get_field_id('floating_chat_title'), 'AI Assistant', 'Title shown in the floating chat modal header.');
+
+-- Register hooks for floating position field selection
+-- Hook name pattern: field-{type_without_select_prefix}-edit for field type select-{type}
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-floating-button-position-edit', 'Output select floating button position field - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldFloatingPositionEdit', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-floating-button-position-view', 'Output select floating button position field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldFloatingPositionView', 5);
+
+-- =====================================================
+-- FORM MODE CONTINUE BUTTON LABELS
+-- =====================================================
+
+-- Add continue button labels for form mode
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'continue_button_label', get_field_type_id('text'), '1');
+
+-- Link continue button label to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('continue_button_label'), 'Continue', 'Button label shown in form mode when the AI response does not contain a form. Clicking this button prompts the AI to continue the conversation.');

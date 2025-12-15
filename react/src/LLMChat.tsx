@@ -29,8 +29,9 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { LlmChat } from './components/styles/chat/LlmChat';
+import { FloatingChat } from './components/styles/chat/FloatingChat';
 import { configApi } from './utils/api';
-import type { LlmChatConfig, FileConfig } from './types';
+import type { LlmChatConfig, FileConfig, FloatingButtonPosition } from './types';
 import { DEFAULT_FILE_CONFIG, DEFAULT_CONFIG } from './types';
 
 /**
@@ -47,6 +48,9 @@ const defaultFileConfig: FileConfig = DEFAULT_FILE_CONFIG;
 function parseConfig(container: HTMLElement) {
   // Get user ID (required)
   const userId = parseInt(container.dataset.userId || '0', 10);
+  
+  // Get section ID (for multi-section support)
+  const sectionId = parseInt(container.dataset.sectionId || '0', 10) || undefined;
   
   // Try to parse JSON config from data-config attribute
   let jsonConfig: Partial<LlmChatConfig> = {};
@@ -111,6 +115,27 @@ function parseConfig(container: HTMLElement) {
     container.dataset.enableFormMode === '1' ||
     container.dataset.enableFormMode === 'true' ||
     jsonConfig.enableFormMode === true;
+
+  const enableFloatingButton =
+    container.dataset.enableFloatingButton === '1' ||
+    container.dataset.enableFloatingButton === 'true' ||
+    jsonConfig.enableFloatingButton === true;
+
+  const floatingButtonPosition = (container.dataset.floatingButtonPosition ||
+    jsonConfig.floatingButtonPosition ||
+    'bottom-right') as FloatingButtonPosition;
+
+  const floatingButtonIcon = container.dataset.floatingButtonIcon ||
+    jsonConfig.floatingButtonIcon ||
+    'fa-comments';
+
+  const floatingButtonLabel = container.dataset.floatingButtonLabel ||
+    jsonConfig.floatingButtonLabel ||
+    'Chat';
+
+  const floatingChatTitle = container.dataset.floatingChatTitle ||
+    jsonConfig.floatingChatTitle ||
+    'AI Assistant';
 
   const acceptedFileTypes = container.dataset.acceptedFileTypes ||
     jsonConfig.acceptedFileTypes || '';
@@ -293,6 +318,7 @@ function parseConfig(container: HTMLElement) {
   // Create minimal config first
   const baseConfig = {
     userId,
+    sectionId: sectionId || jsonConfig.sectionId,
     currentConversationId,
     configuredModel,
     enableConversationsList,
@@ -304,12 +330,17 @@ function parseConfig(container: HTMLElement) {
     hasConversationContext
   };
 
-  // Add auto-start and form mode fields
+  // Add auto-start, form mode, and floating button fields
   const autoStartConfig = {
     ...baseConfig,
     autoStartConversation,
     autoStartMessage,
-    enableFormMode
+    enableFormMode,
+    enableFloatingButton,
+    floatingButtonPosition,
+    floatingButtonIcon,
+    floatingButtonLabel,
+    floatingChatTitle
   };
 
   // Add remaining fields
@@ -426,24 +457,21 @@ const LlmChatLoader: React.FC<{ fallbackConfig?: LlmChatConfig }> = ({ fallbackC
     );
   }
 
+  // Render floating chat or regular chat based on configuration
+  if (config.enableFloatingButton) {
+    return <FloatingChat config={config} />;
+  }
+
   return <LlmChat config={config} />;
 };
 
 /**
- * Initialize the LLM Chat React application
- * Finds the container element and mounts the React component
+ * Initialize a single LLM Chat instance
+ * 
+ * @param container - The container element to mount the chat in
+ * @param instanceIndex - Index for logging purposes
  */
-function initializeLlmChat(): void {
-  // Find the container element
-  const container = document.getElementById('llm-chat-root');
-  
-  if (!container) {
-    // Container not found - this is not necessarily an error
-    // The page might not have the chat component
-    console.debug('LLM Chat: Container #llm-chat-root not found');
-    return;
-  }
-  
+function initializeSingleInstance(container: HTMLElement, instanceIndex: number): void {
   // Parse fallback configuration from data attributes (for initial render)
   let fallbackConfig: LlmChatConfig | undefined;
   
@@ -454,7 +482,7 @@ function initializeLlmChat(): void {
       fallbackConfig = undefined;
     }
   } catch (e) {
-    console.debug('LLM Chat: Could not parse fallback config from data attributes');
+    console.debug(`LLM Chat [${instanceIndex}]: Could not parse fallback config from data attributes`);
     fallbackConfig = undefined;
   }
   
@@ -467,16 +495,56 @@ function initializeLlmChat(): void {
       </React.StrictMode>
     );
     
-    console.debug('LLM Chat: Initialized successfully');
+    console.debug(`LLM Chat [${instanceIndex}]: Initialized successfully`);
   } catch (error) {
-    console.error('LLM Chat: Failed to initialize', error);
+    console.error(`LLM Chat [${instanceIndex}]: Failed to initialize`, error);
     container.innerHTML = `
       <div class="alert alert-danger m-3">
-        <i className="fas fa-exclamation-circle mr-2"></i>
+        <i class="fas fa-exclamation-circle mr-2"></i>
         Failed to load chat interface. Please refresh the page.
       </div>
     `;
   }
+}
+
+/**
+ * Initialize the LLM Chat React application
+ * Supports multiple chat instances on the same page using class selector
+ * Falls back to ID selector for backward compatibility
+ */
+function initializeLlmChat(): void {
+  // Find all containers with the llm-chat-root class (supports multiple instances)
+  const containersByClass = document.querySelectorAll('.llm-chat-root');
+  
+  // Also check for the legacy ID selector (backward compatibility)
+  const containerById = document.getElementById('llm-chat-root');
+  
+  // Combine containers, avoiding duplicates
+  const containers: HTMLElement[] = [];
+  
+  // Add class-based containers
+  containersByClass.forEach((el) => {
+    containers.push(el as HTMLElement);
+  });
+  
+  // Add ID-based container if not already included
+  if (containerById && !containers.includes(containerById)) {
+    containers.push(containerById);
+  }
+  
+  if (containers.length === 0) {
+    // No containers found - this is not necessarily an error
+    // The page might not have the chat component
+    console.debug('LLM Chat: No containers found (.llm-chat-root or #llm-chat-root)');
+    return;
+  }
+  
+  // Initialize each container as a separate React instance
+  containers.forEach((container, index) => {
+    initializeSingleInstance(container, index);
+  });
+  
+  console.log(`LLM Chat: Initialized ${containers.length} instance(s) successfully`);
 }
 
 /**
@@ -491,9 +559,9 @@ if (document.readyState === 'loading') {
 }
 
 /**
- * Export the LlmChat component for direct usage
- * This allows the component to be imported and used directly
+ * Export the LlmChat and FloatingChat components for direct usage
+ * This allows the components to be imported and used directly
  * in other React applications if needed
  */
-export { LlmChat };
+export { LlmChat, FloatingChat };
 export type { LlmChatConfig };

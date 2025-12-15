@@ -1,0 +1,415 @@
+/**
+ * Floating Chat - Component Styles
+ * ================================
+ * Clean, professional floating chat panel design.
+ * Uses Bootstrap 4.6 colors exclusively.
+ * 
+ * Bootstrap 4.6 Color Palette:
+ * - Primary: #007bff
+ * - Secondary: #6c757d
+ * - Success: #28a745
+ * - Danger: #dc3545
+ * - Warning: #ffc107
+ * - Info: #17a2b8
+ * - Light: #f8f9fa
+ * - Dark: #343a40
+ * - White: #ffffff
+ * - Border: #dee2e6
+ */
+
+/* ===== Wrapper ===== */
+.llm-floating-chat-wrapper {
+  position: fixed;
+  z-index: 1050;
+}
+
+/* ===== Floating Button ===== */
+.llm-float-btn {
+  position: fixed;
+  z-index: 1051;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 20px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+/* Button with label - pill shape */
+.llm-float-btn:has(.llm-float-btn-label) {
+  width: auto;
+  padding: 0 20px;
+  border-radius: 28px;
+}
+
+.llm-float-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4) !important;
+}
+
+.llm-float-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.5) !important;
+}
+
+.llm-float-btn:active {
+  transform: scale(0.98);
+}
+
+.llm-float-btn-active {
+  background-color: #6c757d !important;
+  border-color: #6c757d !important;
+}
+
+/* ===== Button Position Classes ===== */
+.llm-float-btn-bottom-right {
+  bottom: 24px;
+  right: 24px;
+}
+
+.llm-float-btn-bottom-left {
+  bottom: 24px;
+  left: 24px;
+}
+
+.llm-float-btn-top-right {
+  top: 24px;
+  right: 24px;
+}
+
+.llm-float-btn-top-left {
+  top: 24px;
+  left: 24px;
+}
+
+.llm-float-btn-bottom-center {
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.llm-float-btn-bottom-center:hover {
+  transform: translateX(-50%) scale(1.05);
+}
+
+.llm-float-btn-top-center {
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.llm-float-btn-top-center:hover {
+  transform: translateX(-50%) scale(1.05);
+}
+
+/* ===== Notification Badge ===== */
+.llm-float-btn-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  font-size: 10px;
+  line-height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+}
+
+/* ===== Chat Panel ===== */
+.llm-float-panel {
+  position: fixed;
+  z-index: 1050;
+  width: 380px;
+  height: 520px;
+  max-height: calc(100vh - 100px);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dee2e6;
+  animation: llm-float-panel-enter 0.2s ease-out;
+}
+
+@keyframes llm-float-panel-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ===== Panel Position Classes ===== */
+.llm-float-panel-bottom-right {
+  bottom: 90px;
+  right: 24px;
+}
+
+.llm-float-panel-bottom-left {
+  bottom: 90px;
+  left: 24px;
+}
+
+.llm-float-panel-top-right {
+  top: 90px;
+  right: 24px;
+}
+
+.llm-float-panel-top-left {
+  top: 90px;
+  left: 24px;
+}
+
+.llm-float-panel-bottom-center {
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.llm-float-panel-top-center {
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* ===== Panel Header ===== */
+.llm-float-panel-header {
+  flex-shrink: 0;
+  border-bottom: none;
+  border-radius: 12px 12px 0 0 !important;
+}
+
+.llm-float-panel-header h6 {
+  font-size: 0.95rem;
+}
+
+.llm-float-panel-header small {
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+
+/* Avatar circle */
+.llm-float-panel-avatar {
+  width: 36px;
+  height: 36px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+/* Online status dot */
+.llm-float-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Panel action buttons */
+.llm-float-panel-actions .btn {
+  font-size: 14px;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.llm-float-panel-actions .btn:hover {
+  opacity: 1;
+  text-decoration: none;
+}
+
+/* ===== Panel Body ===== */
+.llm-float-panel-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  min-height: 0; /* Important for flex children to scroll */
+}
+
+/* Override chat container styles for floating panel */
+.llm-float-panel-body .llm-chat-container {
+  min-height: auto !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.llm-float-panel-body .llm-chat-shell {
+  min-height: auto !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.llm-float-panel-body .llm-chat-panel {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+}
+
+.llm-float-panel-body .llm-chat-header {
+  display: none !important; /* Hide header - already in panel header */
+}
+
+/* Messages area - scrollable */
+.llm-float-panel-body .llm-messages-area,
+.llm-float-panel-body .llm-messages-container {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 12px !important;
+  min-height: 0 !important; /* Important for flex scroll */
+  max-height: none !important;
+}
+
+/* Input area - ALWAYS fixed at bottom, NEVER hidden */
+.llm-float-panel-body .llm-input-area,
+.llm-float-panel-body .llm-message-input-container {
+  flex-shrink: 0 !important;
+  border-top: 1px solid #dee2e6 !important;
+  padding: 10px 12px !important;
+  background-color: #ffffff !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+/* Ensure chat content area takes full height and scrolls */
+.llm-float-panel-body .llm-chat-content,
+.llm-float-panel-body .llm-chat-body {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Make sure card-body in floating panel behaves correctly */
+.llm-float-panel-body .card-body {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+/* Scrollable messages list inside card-body */
+.llm-float-panel-body .card-body > .llm-messages-area,
+.llm-float-panel-body .card-body > div:first-child {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  min-height: 0 !important;
+}
+
+/* Form input always at bottom */
+.llm-float-panel-body .card-body > form,
+.llm-float-panel-body .card-body > .llm-input-area {
+  flex-shrink: 0 !important;
+}
+
+/* ===== Mobile Backdrop ===== */
+.llm-float-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 1049;
+}
+
+/* ===== Responsive - Mobile ===== */
+@media (max-width: 576px) {
+  .llm-float-btn {
+    width: 50px;
+    height: 50px;
+    font-size: 18px;
+  }
+
+  .llm-float-btn-bottom-right,
+  .llm-float-btn-bottom-left,
+  .llm-float-btn-bottom-center {
+    bottom: 16px;
+  }
+
+  .llm-float-btn-bottom-right {
+    right: 16px;
+  }
+
+  .llm-float-btn-bottom-left {
+    left: 16px;
+  }
+
+  .llm-float-btn-top-right,
+  .llm-float-btn-top-left,
+  .llm-float-btn-top-center {
+    top: 16px;
+  }
+
+  .llm-float-btn-top-right {
+    right: 16px;
+  }
+
+  .llm-float-btn-top-left {
+    left: 16px;
+  }
+
+  /* Full screen panel on mobile */
+  .llm-float-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    z-index: 1052;
+  }
+
+  .llm-float-panel-header {
+    border-radius: 0 !important;
+  }
+
+  .llm-float-panel-body {
+    height: calc(100% - 56px);
+  }
+}
+
+/* ===== Responsive - Tablet ===== */
+@media (min-width: 577px) and (max-width: 768px) {
+  .llm-float-panel {
+    width: 340px;
+    height: 480px;
+  }
+}
+
+/* ===== Animations ===== */
+@keyframes llm-float-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(0, 123, 255, 0.6);
+  }
+}
+
+.llm-float-btn.has-notification {
+  animation: llm-float-pulse 2s infinite;
+}

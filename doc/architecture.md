@@ -206,16 +206,99 @@ React Component (MessageInput or FormRenderer)
                          SSE Events → React UI
 ```
 
+## Multi-Section Support
+
+### Overview
+
+Multiple llmChat sections can exist on the same page, each with independent:
+- Conversations (filtered by `id_sections`)
+- Model configurations
+- Context settings
+- Floating button positions
+
+### Section Isolation
+
+Each llmChat section is identified by its `section_id`. When:
+- Loading conversations: Only conversations with matching `id_sections` are returned
+- Creating conversations: The `section_id` is stored with the conversation
+- Loading messages: Section ownership is verified before returning data
+
+### Implementation
+
+```php
+// In LlmService::getUserConversations()
+$sql .= " AND id_sections = :section_id";
+
+// In LlmService::getConversation()
+$sql .= " AND id_sections = ?";
+```
+
+### Use Cases
+
+1. **Different AI assistants**: Support chat + FAQ bot on same page
+2. **A/B testing**: Compare different models or contexts
+3. **Role-based chat**: Different assistants for different user roles
+
+## Floating Chat Button
+
+### Architecture
+
+When `enable_floating_button` is enabled:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    LlmChatLoader                         │
+│                                                         │
+│  if (config.enableFloatingButton) {                     │
+│    return <FloatingChat config={config} />;             │
+│  } else {                                               │
+│    return <LlmChat config={config} />;                  │
+│  }                                                      │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                    FloatingChat.tsx                      │
+│  ┌──────────────┐                                       │
+│  │ Floating Btn │ ◄─── Position from config             │
+│  │ (Bootstrap)  │                                       │
+│  └──────────────┘                                       │
+│         │                                               │
+│         ▼ onClick                                       │
+│  ┌──────────────┐                                       │
+│  │ Modal        │                                       │
+│  │ ┌──────────┐ │                                       │
+│  │ │ LlmChat  │ │ ◄─── Full chat interface in modal    │
+│  │ └──────────┘ │                                       │
+│  └──────────────┘                                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Position Configuration
+
+The floating button position is stored as a select field with these options:
+- `bottom-right` (default)
+- `bottom-left`
+- `top-right`
+- `top-left`
+- `bottom-center`
+- `top-center`
+
+A custom hook (`LlmHooks::outputFieldFloatingPositionEdit`) renders the select dropdown in the CMS.
+
 ## Database Schema
 
 ### Tables
 
 | Table | Purpose |
 |-------|---------|
-| `llmConversations` | Stores conversation metadata |
-| `llmMessages` | Stores individual messages |
+| `llmConversations` | Stores conversation metadata (includes `id_sections`) |
+| `llmMessages` | Stores individual messages (includes `id_dataRows` for form data linking) |
 | `styles_fields` (llmChat) | Component configuration |
 | `pages_fields` (sh_module_llm) | Global LLM configuration |
+| `dataTables` | Form data tables (when data saving enabled) |
+| `dataRows` | Form submission records |
+| `dataCells` | Individual form field values |
 
 ### Key Relationships
 
@@ -224,9 +307,13 @@ users (SelfHelp Core)
     │
     └── llmConversations (1:many)
             │
+            ├── id_sections → sections (llmChat component)
+            │
             └── llmMessages (1:many)
                     │
-                    └── File attachments (optional)
+                    ├── File attachments (optional)
+                    │
+                    └── id_dataRows → dataRows (form submissions)
 ```
 
 ## Security

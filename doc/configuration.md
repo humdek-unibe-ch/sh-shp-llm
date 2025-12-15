@@ -63,6 +63,14 @@ These settings override global defaults for specific chat instances.
 | `enable_full_page_reload` | checkbox | `false` | Reload page after streaming (vs. React refresh) |
 | `strict_conversation_mode` | checkbox | `false` | Enable strict conversation mode to keep AI focused on defined topics |
 | `enable_form_mode` | checkbox | `false` | Enable Interactive Form Mode - LLM returns structured forms instead of text |
+| `enable_data_saving` | checkbox | `false` | Save form data to SelfHelp UserInput system (see [Form Data Saving](form-data-saving.md)) |
+| `is_log` | checkbox | `false` | Data save mode: Enabled = Log Mode (new entry per submission), Disabled = Record Mode (update existing) |
+| `enable_media_rendering` | checkbox | `true` | Enable rendering of images and videos in chat responses (see [Media Rendering](media-rendering.md)) |
+| `enable_floating_button` | checkbox | `false` | Enable floating chat button mode - shows a floating button that opens chat in a modal |
+| `floating_button_position` | select | `bottom-right` | Position of floating button: bottom-right, bottom-left, top-right, top-left, bottom-center, top-center |
+| `floating_button_icon` | text | `fa-comments` | Font Awesome icon class for the floating button |
+| `floating_button_label` | text | `Chat` | Label text shown on the floating button |
+| `floating_chat_title` | text | `AI Assistant` | Title shown in the floating chat modal header |
 
 ### Interactive Form Mode
 

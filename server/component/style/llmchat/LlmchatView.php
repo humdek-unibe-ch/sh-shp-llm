@@ -41,6 +41,7 @@ class LlmchatView extends StyleView
     public function output_content()
     {
         $user_id = $this->model->getUserId();
+        $section_id = $this->model->getSectionId();
         $chat_description = $this->model->getChatDescription();
 
         // Get conversation and message data
@@ -119,14 +120,13 @@ class LlmchatView extends StyleView
     public function get_css_includes($local = array())
     {
         if (empty($local)) {
+            $css_file = __DIR__ . "/../../../../css/ext/llm-chat.css";
             if (DEBUG) {
-                $local = array(
-                    __DIR__ . "/../../../../css/ext/llm-chat.css",
-                );
+                // Use file modification time for cache busting in debug mode
+                $version = filemtime($css_file) ?: time();
+                $local = array($css_file . "?v=" . $version);
             } else {
-                $local = array(
-                    __DIR__ . "/../../../../css/ext/llm-chat.css?v=" . rtrim(shell_exec("git describe --tags")),
-                );
+                $local = array($css_file . "?v=" . rtrim(shell_exec("git describe --tags")));
             }
         }
         return parent::get_css_includes($local);
@@ -138,14 +138,13 @@ class LlmchatView extends StyleView
     public function get_js_includes($local = array())
     {
         if (empty($local)) {
+            $js_file = __DIR__ . "/../../../../js/ext/llm-chat.umd.js";
             if (DEBUG) {
-                $local = array(
-                    __DIR__ . "/../../../../js/ext/llm-chat.umd.js",
-                );
+                // Use file modification time for cache busting in debug mode
+                $version = filemtime($js_file) ?: time();
+                $local = array($js_file . "?v=" . $version);
             } else {
-                $local = array(
-                    __DIR__ . "/../../../../js/ext/llm-chat.umd.js?v=" . rtrim(shell_exec("git describe --tags")),
-                );
+                $local = array($js_file . "?v=" . rtrim(shell_exec("git describe --tags")));
             }
         }
         return parent::get_js_includes($local);
@@ -158,6 +157,7 @@ class LlmchatView extends StyleView
     {
         return json_encode([
             'userId' => $this->model->getUserId(),
+            'sectionId' => $this->model->getSectionId(),
             'currentConversationId' => $this->model->getConversationId(),
             'configuredModel' => $this->model->getConfiguredModel(),
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,

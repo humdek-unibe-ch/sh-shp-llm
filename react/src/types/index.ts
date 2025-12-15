@@ -146,9 +146,22 @@ export interface FileValidationResult {
  * Passed from PHP via data attributes on the container element
  * Matches the data attributes set in llm_chat_main.php
  */
+/**
+ * Floating button position options
+ */
+export type FloatingButtonPosition = 
+  | 'bottom-right' 
+  | 'bottom-left' 
+  | 'top-right' 
+  | 'top-left'
+  | 'bottom-center'
+  | 'top-center';
+
 export interface LlmChatConfig {
   /** Current user ID */
   userId: number;
+  /** Section ID (for multi-section support) */
+  sectionId?: number;
   /** Current conversation ID (if any) */
   currentConversationId?: string;
   /** Configured LLM model */
@@ -177,8 +190,22 @@ export interface LlmChatConfig {
   formModeActiveTitle: string;
   /** Form mode active description (shown when text input is disabled) */
   formModeActiveDescription: string;
+  /** Continue button label for form mode when no form is pending */
+  continueButtonLabel: string;
   /** File configuration */
   fileConfig: FileConfig;
+  
+  // ===== Floating Button Configuration =====
+  /** Whether floating button mode is enabled */
+  enableFloatingButton: boolean;
+  /** Position of the floating button */
+  floatingButtonPosition: FloatingButtonPosition;
+  /** Font Awesome icon class for the floating button */
+  floatingButtonIcon: string;
+  /** Label text for the floating button */
+  floatingButtonLabel: string;
+  /** Title for the floating chat modal */
+  floatingChatTitle: string;
   
   // ===== UI Labels =====
   /** Message input placeholder text */
@@ -278,7 +305,14 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   enableFormMode: false,
   formModeActiveTitle: 'Form Mode Active',
   formModeActiveDescription: 'Please use the form above to respond.',
+  continueButtonLabel: 'Continue',
   fileConfig: DEFAULT_FILE_CONFIG,
+  // Floating button defaults
+  enableFloatingButton: false,
+  floatingButtonPosition: 'bottom-right',
+  floatingButtonIcon: 'fa-comments',
+  floatingButtonLabel: 'Chat',
+  floatingChatTitle: 'AI Assistant',
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',
   newConversationTitleLabel: 'New Conversation',

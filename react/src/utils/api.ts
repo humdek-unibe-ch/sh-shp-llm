@@ -179,265 +179,319 @@ export const configApi = {
 // ============================================================================
 
 /**
- * Conversations API namespace
- * Matches the controller actions: get_conversations, new_conversation, delete_conversation
+ * Create conversations API with section ID support
+ * Each chat instance should use its own API instance with its section ID
+ * 
+ * @param sectionId - The section ID for this chat instance
  */
-export const conversationsApi = {
-  /**
-   * Load all conversations for the current user
-   * Calls: ?action=get_conversations
-   * 
-   * @returns Promise resolving to array of conversations
-   */
-  async getAll(): Promise<Conversation[]> {
-    const response = await apiGet<GetConversationsResponse>('get_conversations');
+export function createConversationsApi(sectionId?: number) {
+  return {
+    /**
+     * Load all conversations for the current user
+     * Calls: ?action=get_conversations&section_id=XXX
+     * 
+     * @returns Promise resolving to array of conversations
+     */
+    async getAll(): Promise<Conversation[]> {
+      const params: Record<string, string> = {};
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+      const response = await apiGet<GetConversationsResponse>('get_conversations', params);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      return response.conversations || [];
+    },
     
-    if (response.error) {
-      throw new Error(response.error);
+    /**
+     * Create a new conversation
+     * Calls: POST action=new_conversation
+     * 
+     * @param title - Conversation title
+     * @param model - LLM model to use
+     * @returns Promise resolving to the new conversation ID
+     */
+    async create(title: string, model: string): Promise<string> {
+      const formData = new FormData();
+      formData.append('action', 'new_conversation');
+      formData.append('title', title);
+      formData.append('model', model);
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+      
+      const response = await apiPost<NewConversationResponse>(formData);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      if (!response.conversation_id) {
+        throw new Error('No conversation ID returned');
+      }
+      
+      return response.conversation_id;
+    },
+    
+    /**
+     * Delete a conversation
+     * Calls: POST action=delete_conversation
+     * 
+     * @param conversationId - ID of conversation to delete
+     */
+    async delete(conversationId: string): Promise<void> {
+      const formData = new FormData();
+      formData.append('action', 'delete_conversation');
+      formData.append('conversation_id', conversationId);
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+      
+      const response = await apiPost<DeleteConversationResponse>(formData);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
     }
-    
-    return response.conversations || [];
-  },
-  
-  /**
-   * Create a new conversation
-   * Calls: POST action=new_conversation
-   * 
-   * @param title - Conversation title
-   * @param model - LLM model to use
-   * @returns Promise resolving to the new conversation ID
-   */
-  async create(title: string, model: string): Promise<string> {
-    const formData = new FormData();
-    formData.append('action', 'new_conversation');
-    formData.append('title', title);
-    formData.append('model', model);
-    
-    const response = await apiPost<NewConversationResponse>(formData);
-    
-    if (response.error) {
-      throw new Error(response.error);
-    }
-    
-    if (!response.conversation_id) {
-      throw new Error('No conversation ID returned');
-    }
-    
-    return response.conversation_id;
-  },
-  
-  /**
-   * Delete a conversation
-   * Calls: POST action=delete_conversation
-   * 
-   * @param conversationId - ID of conversation to delete
-   */
-  async delete(conversationId: string): Promise<void> {
-    const formData = new FormData();
-    formData.append('action', 'delete_conversation');
-    formData.append('conversation_id', conversationId);
-    
-    const response = await apiPost<DeleteConversationResponse>(formData);
-    
-    if (response.error) {
-      throw new Error(response.error);
-    }
-  }
-};
+  };
+}
+
+/**
+ * Conversations API namespace (backward compatible, no section isolation)
+ * @deprecated Use createConversationsApi(sectionId) for section-isolated instances
+ */
+export const conversationsApi = createConversationsApi();
 
 // ============================================================================
 // MESSAGES API
 // ============================================================================
 
 /**
- * Messages API namespace
- * Handles message retrieval and sending
+ * Create messages API with section ID support
+ * Each chat instance should use its own API instance with its section ID
+ * 
+ * @param sectionId - The section ID for this chat instance
  */
-export const messagesApi = {
-  /**
-   * Load messages for a conversation
-   * Calls: ?action=get_conversation&conversation_id=XXX
-   * 
-   * @param conversationId - Conversation ID
-   * @returns Promise resolving to conversation and messages
-   */
-  async getByConversation(conversationId: string): Promise<{
-    conversation: Conversation;
-    messages: Message[];
-  }> {
-    const response = await apiGet<GetConversationResponse>('get_conversation', {
-      conversation_id: conversationId
-    });
+export function createMessagesApi(sectionId?: number) {
+  return {
+    /**
+     * Load messages for a conversation
+     * Calls: ?action=get_conversation&conversation_id=XXX&section_id=YYY
+     * 
+     * @param conversationId - Conversation ID
+     * @returns Promise resolving to conversation and messages
+     */
+    async getByConversation(conversationId: string): Promise<{
+      conversation: Conversation;
+      messages: Message[];
+    }> {
+      const params: Record<string, string> = { conversation_id: conversationId };
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+      const response = await apiGet<GetConversationResponse>('get_conversation', params);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      if (!response.conversation || !response.messages) {
+        throw new Error('Invalid response format');
+      }
+      
+      return {
+        conversation: response.conversation,
+        messages: response.messages
+      };
+    },
     
-    if (response.error) {
-      throw new Error(response.error);
-    }
-    
-    if (!response.conversation || !response.messages) {
-      throw new Error('Invalid response format');
-    }
-    
-    return {
-      conversation: response.conversation,
-      messages: response.messages
-    };
-  },
-  
-  /**
-   * Send a message (non-streaming)
-   * Calls: POST action=send_message
-   * 
-   * @param message - Message content
-   * @param conversationId - Conversation ID (optional, creates new if not provided)
-   * @param model - LLM model to use
-   * @param files - Array of files to attach
-   * @returns Promise resolving to send result
-   */
-  async send(
-    message: string,
-    conversationId: string | null,
-    model: string,
-    files: SelectedFile[] = []
-  ): Promise<SendMessageResponse> {
-    const formData = new FormData();
-    formData.append('action', 'send_message');
-    formData.append('message', message);
-    formData.append('model', model);
+    /**
+     * Send a message (non-streaming)
+     * Calls: POST action=send_message
+     * 
+     * @param message - Message content
+     * @param conversationId - Conversation ID (optional, creates new if not provided)
+     * @param model - LLM model to use
+     * @param files - Array of files to attach
+     * @returns Promise resolving to send result
+     */
+    async send(
+      message: string,
+      conversationId: string | null,
+      model: string,
+      files: SelectedFile[] = []
+    ): Promise<SendMessageResponse> {
+      const formData = new FormData();
+      formData.append('action', 'send_message');
+      formData.append('message', message);
+      formData.append('model', model);
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
 
-    if (conversationId) {
-      formData.append('conversation_id', conversationId);
+      if (conversationId) {
+        formData.append('conversation_id', conversationId);
+      }
+
+      // Add files to FormData
+      files.forEach((item) => {
+        formData.append('uploaded_files[]', item.file, item.file.name);
+      });
+
+      return apiPost<SendMessageResponse>(formData);
+    },
+    
+    /**
+     * Prepare for streaming
+     * Calls: POST action=send_message with prepare_streaming=1
+     * Saves the user message and prepares for SSE connection
+     * 
+     * @param message - Message content
+     * @param conversationId - Conversation ID (optional)
+     * @param model - LLM model to use
+     * @param files - Array of files to attach
+     * @returns Promise resolving to preparation result with conversation ID
+     */
+    async prepareStreaming(
+      message: string,
+      conversationId: string | null,
+      model: string,
+      files: SelectedFile[] = []
+    ): Promise<PrepareStreamingResponse> {
+      const formData = new FormData();
+      formData.append('action', 'send_message');
+      formData.append('message', message);
+      formData.append('model', model);
+      formData.append('prepare_streaming', '1');
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+
+      if (conversationId) {
+        formData.append('conversation_id', conversationId);
+      }
+
+      // Add files to FormData
+      files.forEach((item) => {
+        formData.append('uploaded_files[]', item.file, item.file.name);
+      });
+      
+      // Check for test mode
+      const isTestMode = window.location.search.includes('test=1');
+      const url = window.location.pathname + (isTestMode ? '?test=1' : '');
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response.json();
     }
+  };
+}
 
-    // Add files to FormData
-    files.forEach((item) => {
-      formData.append('uploaded_files[]', item.file, item.file.name);
-    });
-
-    return apiPost<SendMessageResponse>(formData);
-  },
-  
-  /**
-   * Prepare for streaming
-   * Calls: POST action=send_message with prepare_streaming=1
-   * Saves the user message and prepares for SSE connection
-   * 
-   * @param message - Message content
-   * @param conversationId - Conversation ID (optional)
-   * @param model - LLM model to use
-   * @param files - Array of files to attach
-   * @returns Promise resolving to preparation result with conversation ID
-   */
-  async prepareStreaming(
-    message: string,
-    conversationId: string | null,
-    model: string,
-    files: SelectedFile[] = []
-  ): Promise<PrepareStreamingResponse> {
-    const formData = new FormData();
-    formData.append('action', 'send_message');
-    formData.append('message', message);
-    formData.append('model', model);
-    formData.append('prepare_streaming', '1');
-
-    if (conversationId) {
-      formData.append('conversation_id', conversationId);
-    }
-
-    // Add files to FormData
-    files.forEach((item) => {
-      formData.append('uploaded_files[]', item.file, item.file.name);
-    });
-    
-    // Check for test mode
-    const isTestMode = window.location.search.includes('test=1');
-    const url = window.location.pathname + (isTestMode ? '?test=1' : '');
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      credentials: 'same-origin'
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    return response.json();
-  }
-};
+/**
+ * Messages API namespace (backward compatible, no section isolation)
+ * @deprecated Use createMessagesApi(sectionId) for section-isolated instances
+ */
+export const messagesApi = createMessagesApi();
 
 // ============================================================================
 // FORM MODE API
 // ============================================================================
 
 /**
- * Form Mode API namespace
- * Handles form submission in form mode
+ * Create form API with section ID support
+ * Each chat instance should use its own API instance with its section ID
+ * 
+ * @param sectionId - The section ID for this chat instance
  */
-export const formApi = {
-  /**
-   * Submit form selections
-   * Calls: POST action=submit_form
-   * 
-   * @param formValues - Object mapping field IDs to selected values
-   * @param readableText - Human-readable text representation of selections
-   * @param conversationId - Conversation ID (optional, creates new if not provided)
-   * @param model - LLM model to use
-   * @returns Promise resolving to form submission result
-   */
-  async submit(
-    formValues: Record<string, string | string[]>,
-    readableText: string,
-    conversationId: string | null,
-    model: string
-  ): Promise<FormSubmissionResponse> {
-    const formData = new FormData();
-    formData.append('action', 'submit_form');
-    formData.append('form_values', JSON.stringify(formValues));
-    formData.append('readable_text', readableText);
-    formData.append('model', model);
+export function createFormApi(sectionId?: number) {
+  return {
+    /**
+     * Submit form selections
+     * Calls: POST action=submit_form
+     * 
+     * @param formValues - Object mapping field IDs to selected values
+     * @param readableText - Human-readable text representation of selections
+     * @param conversationId - Conversation ID (optional, creates new if not provided)
+     * @param model - LLM model to use
+     * @returns Promise resolving to form submission result
+     */
+    async submit(
+      formValues: Record<string, string | string[]>,
+      readableText: string,
+      conversationId: string | null,
+      model: string
+    ): Promise<FormSubmissionResponse> {
+      const formData = new FormData();
+      formData.append('action', 'submit_form');
+      formData.append('form_values', JSON.stringify(formValues));
+      formData.append('readable_text', readableText);
+      formData.append('model', model);
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
 
-    if (conversationId) {
-      formData.append('conversation_id', conversationId);
+      if (conversationId) {
+        formData.append('conversation_id', conversationId);
+      }
+
+      return apiPost<FormSubmissionResponse>(formData);
+    },
+
+    /**
+     * Submit form and prepare for streaming response
+     * Calls: POST action=submit_form with prepare_streaming=1
+     * 
+     * @param formValues - Object mapping field IDs to selected values
+     * @param readableText - Human-readable text representation of selections
+     * @param conversationId - Conversation ID (optional)
+     * @param model - LLM model to use
+     * @returns Promise resolving to preparation result with conversation ID
+     */
+    async submitAndPrepareStreaming(
+      formValues: Record<string, string | string[]>,
+      readableText: string,
+      conversationId: string | null,
+      model: string
+    ): Promise<PrepareStreamingResponse> {
+      const formData = new FormData();
+      formData.append('action', 'submit_form');
+      formData.append('form_values', JSON.stringify(formValues));
+      formData.append('readable_text', readableText);
+      formData.append('model', model);
+      formData.append('prepare_streaming', '1');
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+
+      if (conversationId) {
+        formData.append('conversation_id', conversationId);
+      }
+
+      return apiPost<PrepareStreamingResponse>(formData);
     }
+  };
+}
 
-    return apiPost<FormSubmissionResponse>(formData);
-  },
-
-  /**
-   * Submit form and prepare for streaming response
-   * Calls: POST action=submit_form with prepare_streaming=1
-   * 
-   * @param formValues - Object mapping field IDs to selected values
-   * @param readableText - Human-readable text representation of selections
-   * @param conversationId - Conversation ID (optional)
-   * @param model - LLM model to use
-   * @returns Promise resolving to preparation result with conversation ID
-   */
-  async submitAndPrepareStreaming(
-    formValues: Record<string, string | string[]>,
-    readableText: string,
-    conversationId: string | null,
-    model: string
-  ): Promise<PrepareStreamingResponse> {
-    const formData = new FormData();
-    formData.append('action', 'submit_form');
-    formData.append('form_values', JSON.stringify(formValues));
-    formData.append('readable_text', readableText);
-    formData.append('model', model);
-    formData.append('prepare_streaming', '1');
-
-    if (conversationId) {
-      formData.append('conversation_id', conversationId);
-    }
-
-    return apiPost<PrepareStreamingResponse>(formData);
-  }
-};
+/**
+ * Form Mode API namespace (backward compatible, no section isolation)
+ * @deprecated Use createFormApi(sectionId) for section-isolated instances
+ */
+export const formApi = createFormApi();
 
 // ============================================================================
 // ADMIN API
@@ -454,17 +508,34 @@ interface AutoStartedResponse {
   error?: string;
 }
 
-export const autoStartApi = {
-  /**
-   * Check if there's an auto-started conversation for the current session
-   * Calls: ?action=get_auto_started
-   *
-   * @returns Promise resolving to auto-start status and data
-   */
-  async check(): Promise<AutoStartedResponse> {
-    return apiGet<AutoStartedResponse>('get_auto_started');
-  }
-};
+/**
+ * Create auto-start API with section ID support
+ * 
+ * @param sectionId - The section ID for this chat instance
+ */
+export function createAutoStartApi(sectionId?: number) {
+  return {
+    /**
+     * Check if there's an auto-started conversation for the current session
+     * Calls: ?action=get_auto_started&section_id=XXX
+     *
+     * @returns Promise resolving to auto-start status and data
+     */
+    async check(): Promise<AutoStartedResponse> {
+      const params: Record<string, string> = {};
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+      return apiGet<AutoStartedResponse>('get_auto_started', params);
+    }
+  };
+}
+
+/**
+ * Auto-start API (backward compatible, no section isolation)
+ * @deprecated Use createAutoStartApi(sectionId) for section-isolated instances
+ */
+export const autoStartApi = createAutoStartApi();
 
 // ============================================================================
 // ADMIN API
@@ -514,14 +585,17 @@ export const adminApi = {
 export class StreamingApi {
   private eventSource: EventSource | null = null;
   private conversationId: string;
+  private sectionId?: number;
   
   /**
    * Create a new StreamingApi instance
    * 
    * @param conversationId - The conversation ID to stream
+   * @param sectionId - The section ID for this chat instance
    */
-  constructor(conversationId: string) {
+  constructor(conversationId: string, sectionId?: number) {
     this.conversationId = conversationId;
+    this.sectionId = sectionId;
   }
   
   /**
@@ -532,6 +606,9 @@ export class StreamingApi {
     const url = new URL(window.location.href);
     url.searchParams.set('streaming', '1');
     url.searchParams.set('conversation', this.conversationId);
+    if (this.sectionId !== undefined) {
+      url.searchParams.set('section_id', String(this.sectionId));
+    }
     return url.toString();
   }
   

@@ -10,6 +10,7 @@ require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStreamingService.php";
 require_once __DIR__ . "/../../../service/StrictConversationService.php";
 require_once __DIR__ . "/../../../service/LlmFormModeService.php";
+require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
 
 /**
  * The controller class for the LLM chat component.
@@ -23,6 +24,7 @@ class LlmchatController extends BaseController
     private $streaming_service;
     private $strict_conversation_service;
     private $form_mode_service;
+    private $data_saving_service;
 
     /** @var float Request start time for activity logging */
     private $request_start_time;
@@ -52,6 +54,7 @@ class LlmchatController extends BaseController
         $this->streaming_service = new LlmStreamingService($this->llm_service);
         $this->strict_conversation_service = new StrictConversationService($this->llm_service);
         $this->form_mode_service = new LlmFormModeService();
+        $this->data_saving_service = new LlmDataSavingService($this->model->get_services());
 
         $router = $model->get_services()->get_router();
         if(is_array($router->route['params']) && isset($router->route['params']['data'])){
@@ -87,6 +90,9 @@ class LlmchatController extends BaseController
                     break;
                 case 'submit_form':
                     $this->handleFormSubmission();
+                    break;
+                case 'continue_conversation':
+                    $this->handleContinueConversation();
                     break;
                 case 'new_conversation':
                     $this->handleNewConversation();
@@ -784,6 +790,16 @@ class LlmchatController extends BaseController
             $form_metadata = $this->form_mode_service->createFormMetadata($form_values);
             $messageId = $this->llm_service->addMessage($conversation_id, 'user', $readable_text, $form_metadata, $model);
 
+            // Save form data to SelfHelp UserInput if enabled
+            if ($this->model->isDataSavingEnabled()) {
+                $this->saveFormDataToUserInput(
+                    $form_values,
+                    $user_id,
+                    $messageId,
+                    $conversation_id
+                );
+            }
+
             // Update rate limiting with the current rate data
             $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
@@ -881,6 +897,121 @@ class LlmchatController extends BaseController
                     }
                     
                     throw new Exception('Invalid response from LLM API' . $error_detail);
+                }
+            }
+
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle "Continue" action in form mode
+     * 
+     * When the AI response doesn't contain a form (e.g., summary or conclusion),
+     * this action allows the user to prompt the AI to continue the conversation
+     * by generating the next form or response.
+     */
+    private function handleContinueConversation()
+    {
+        $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
+        $conversation_id = $_POST['conversation_id'] ?? null;
+        $model = $_POST['model'] ?? $this->model->getConfiguredModel();
+        $temperature = $_POST['temperature'] ?? $this->model->getLlmTemperature();
+        $max_tokens = $_POST['max_tokens'] ?? $this->model->getLlmMaxTokens();
+
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+
+        try {
+            // Verify conversation exists and belongs to user
+            $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
+            if (!$conversation) {
+                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                return;
+            }
+
+            // Check rate limiting
+            $rate_data = $this->llm_service->checkRateLimit($user_id);
+
+            // Create a system message to prompt the AI to continue
+            $continue_message = "Please continue with the next step or form.";
+            
+            // Save the continue request as a user message
+            $messageId = $this->llm_service->addMessage($conversation_id, 'user', $continue_message, null, $model);
+
+            // Update rate limiting
+            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
+            // Check if this is a streaming preparation request
+            $is_streaming_prep = isset($_POST['prepare_streaming']) && $_POST['prepare_streaming'] === '1';
+
+            if ($is_streaming_prep) {
+                $savedMessage = [
+                    'id' => $messageId,
+                    'role' => 'user',
+                    'content' => $continue_message,
+                    'attachments' => null,
+                    'model' => $model,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                $this->sendJsonResponse([
+                    'status' => 'prepared',
+                    'conversation_id' => $conversation_id,
+                    'is_new_conversation' => false,
+                    'user_message' => $savedMessage
+                ]);
+                return;
+            }
+
+            // Get conversation messages for LLM
+            $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+            
+            // Get conversation context if configured
+            $context_messages = $this->model->getParsedConversationContext();
+
+            // Apply form mode context if enabled
+            if ($this->model->isFormModeEnabled()) {
+                $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
+            }
+
+            // Convert messages to API format with context prepended
+            $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model, $context_messages);
+
+            // Check if streaming is enabled
+            $streaming_enabled = $this->model->isStreamingEnabled();
+
+            if ($streaming_enabled) {
+                $this->streaming_service->startStreamingResponse($conversation_id, $api_messages, $model, false, $context_messages);
+                return;
+            } else {
+                // Get complete response
+                $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
+
+                if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
+                    $assistant_message = $response['choices'][0]['message']['content'];
+                    $tokens_used = $response['usage']['total_tokens'] ?? null;
+
+                    $this->llm_service->addMessage($conversation_id, 'assistant', trim($assistant_message), null, $model, $tokens_used, $response, $context_messages);
+
+                    $this->sendJsonResponse([
+                        'conversation_id' => $conversation_id,
+                        'message' => $assistant_message,
+                        'streaming' => false,
+                        'is_new_conversation' => false
+                    ]);
+                } else {
+                    throw new Exception('Invalid response from LLM API');
                 }
             }
 
@@ -1141,6 +1272,7 @@ class LlmchatController extends BaseController
             // Build complete configuration for React component
             $config = [
                 'userId' => $user_id,
+                'sectionId' => $this->model->getSectionId(),
                 'currentConversationId' => $this->model->getConversationId(),
                 'configuredModel' => $this->model->getConfiguredModel(),
                 'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
@@ -1158,6 +1290,15 @@ class LlmchatController extends BaseController
                 'enableFormMode' => $this->model->isFormModeEnabled(),
                 'formModeActiveTitle' => $this->model->getFormModeActiveTitle(),
                 'formModeActiveDescription' => $this->model->getFormModeActiveDescription(),
+                'continueButtonLabel' => $this->model->getContinueButtonLabel(),
+                'enableDataSaving' => $this->model->isDataSavingEnabled(),
+                'enableMediaRendering' => $this->model->isMediaRenderingEnabled(),
+                // Floating button configuration
+                'enableFloatingButton' => $this->model->isFloatingButtonEnabled(),
+                'floatingButtonPosition' => $this->model->getFloatingButtonPosition(),
+                'floatingButtonIcon' => $this->model->getFloatingButtonIcon(),
+                'floatingButtonLabel' => $this->model->getFloatingButtonLabel(),
+                'floatingChatTitle' => $this->model->getFloatingChatTitle(),
                 // UI Labels
                 'messagePlaceholder' => $this->model->getMessagePlaceholder(),
                 'noConversationsMessage' => $this->model->getNoConversationsMessage(),
@@ -1218,6 +1359,7 @@ class LlmchatController extends BaseController
 
     /**
      * Get conversation data (AJAX)
+     * Verifies conversation belongs to this section to support multiple llmChat instances
      */
     public function getConversationData()
     {
@@ -1237,7 +1379,9 @@ class LlmchatController extends BaseController
         }
 
         try {
-            $conversation = $this->llm_service->getConversation($conversation_id, $user_id);
+            // Verify conversation belongs to this section (prevents cross-section access)
+            $section_id = $this->model->getSectionId();
+            $conversation = $this->llm_service->getConversation($conversation_id, $user_id, $section_id);
 
             if (!$conversation) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
@@ -1263,6 +1407,7 @@ class LlmchatController extends BaseController
 
     /**
      * Get conversations list data
+     * Filters by section_id to support multiple llmChat instances on the same page
      */
     public function getConversationsData()
     {
@@ -1281,16 +1426,19 @@ class LlmchatController extends BaseController
             // Use configured model from model getter for consistency
             $configured_model = $this->model->getConfiguredModel();
             $conversation_limit = (int)$this->model->getConversationLimit();
+            $section_id = $this->model->getSectionId();
             
             // Ensure we have valid parameters
             if ($conversation_limit <= 0) {
                 $conversation_limit = 50;
             }
             
+            // Filter by section_id to ensure each llmChat section shows only its own conversations
             $conversations = $this->llm_service->getUserConversations(
                 $user_id, 
                 $conversation_limit, 
-                $configured_model
+                $configured_model,
+                $section_id
             );
             
             // Ensure we always return an array
@@ -1302,6 +1450,48 @@ class LlmchatController extends BaseController
         } catch (Exception $e) {
             error_log('LLM getConversationsData error for user ' . $user_id . ': ' . $e->getMessage());
             $this->sendJsonResponse(['error' => 'Failed to load conversations'], 500);
+        }
+    }
+
+    /**
+     * Save form data to SelfHelp UserInput system
+     * 
+     * Uses the standard SelfHelp dataTables/dataRows/dataCells architecture
+     * via UserInput::save_data() for consistent data storage.
+     * 
+     * @param array $form_values The form field values (field_id => value)
+     * @param int $user_id The user ID
+     * @param int $message_id The message ID to link
+     * @param int $conversation_id The conversation ID
+     */
+    private function saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id)
+    {
+        try {
+            $section_id = $this->model->getSectionId();
+            $save_mode = $this->model->getDataSaveMode();
+
+            // Save using the refactored service that uses UserInput::save_data()
+            $record_id = $this->data_saving_service->saveFormData(
+                $section_id,
+                $user_id,
+                $form_values,
+                [], // form_definition - not needed for UserInput system
+                $message_id,
+                $conversation_id,
+                $save_mode
+            );
+
+            if ($record_id) {
+                // Update the message to link to the saved data record
+                $this->llm_service->updateMessage($message_id, [
+                    'id_dataRows' => $record_id
+                ]);
+                
+                error_log("LLM: Form data saved to dataRow {$record_id} for message {$message_id}");
+            }
+        } catch (Exception $e) {
+            // Log error but don't fail the form submission
+            error_log('LLM saveFormDataToUserInput error: ' . $e->getMessage());
         }
     }
 

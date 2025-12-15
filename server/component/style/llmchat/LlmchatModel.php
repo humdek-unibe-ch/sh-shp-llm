@@ -94,6 +94,25 @@ class LlmchatModel extends StyleModel
     private $form_mode_active_title;
     private $form_mode_active_description;
 
+    // Data saving - save form data to SelfHelp UserInput system
+    private $enable_data_saving;
+    private $data_table_name;
+    private $is_log;
+
+    // Floating chat button
+    private $enable_floating_button;
+    private $floating_button_position;
+    private $floating_button_icon;
+    private $floating_button_label;
+    private $floating_chat_title;
+
+    // Media rendering - enable images/videos in chat
+    private $enable_media_rendering;
+    private $allowed_media_domains;
+
+    // Continue button for form mode
+    private $continue_button_label;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -121,11 +140,13 @@ class LlmchatModel extends StyleModel
         }
 
         // If no conversation is specified, automatically select the last (most recent) conversation
+        // Filter by section_id to ensure each llmChat section shows only its own conversations
         if (!$this->conversation_id && $this->user_id) {
             $conversations = $this->llm_service->getUserConversations(
                 $this->user_id,
                 1, // Get only the most recent conversation
-                $this->getConfiguredModel()
+                $this->getConfiguredModel(),
+                $this->section_id // Filter by section
             );
             if (!empty($conversations)) {
                 $this->conversation_id = $conversations[0]['id'];
@@ -207,6 +228,49 @@ class LlmchatModel extends StyleModel
         $this->enable_form_mode = $this->get_db_field('enable_form_mode', '0');
         $this->form_mode_active_title = $this->get_db_field('form_mode_active_title', 'Form Mode Active');
         $this->form_mode_active_description = $this->get_db_field('form_mode_active_description', 'Please use the form above to respond.');
+
+        // Data saving - save form data to SelfHelp UserInput system
+        $this->enable_data_saving = $this->get_db_field('enable_data_saving', '0');
+        $this->data_table_name = $this->get_db_field('data_table_name', '');
+        $this->is_log = $this->get_db_field('is_log', '0');
+
+        // Floating chat button
+        $this->enable_floating_button = $this->get_db_field('enable_floating_button', '0');
+        $this->floating_button_position = $this->get_db_field('floating_button_position', 'bottom-right');
+        $this->floating_button_icon = $this->get_db_field('floating_button_icon', 'fa-comments');
+        $this->floating_button_label = $this->get_db_field('floating_button_label', 'Chat');
+        $this->floating_chat_title = $this->get_db_field('floating_chat_title', 'AI Assistant');
+
+        // Media rendering - enable images/videos in chat
+        $this->enable_media_rendering = $this->get_db_field('enable_media_rendering', '1');
+        $this->allowed_media_domains = $this->get_db_field('allowed_media_domains', '');
+
+        // Continue button for form mode
+        $this->continue_button_label = $this->get_db_field('continue_button_label', 'Continue');
+
+        // Initialize dataTable for this section if data saving is enabled
+        $this->initializeDataTableIfNeeded();
+    }
+
+    /**
+     * Initialize the dataTable for this section if data saving is enabled
+     * 
+     * This ensures the dataTable exists when the component is loaded,
+     * rather than waiting until the first form submission.
+     */
+    private function initializeDataTableIfNeeded()
+    {
+        if ($this->enable_data_saving === '1') {
+            require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
+            $data_saving_service = new LlmDataSavingService($this->services);
+            
+            // Use the configured display name or fallback to section name
+            $display_name = !empty($this->data_table_name) 
+                ? $this->data_table_name 
+                : "LLM Chat Data ({$this->section_id})";
+            
+            $data_saving_service->initializeDataTable($this->section_id, $display_name);
+        }
     }
 
     /* Private Methods *********************************************************/
@@ -214,7 +278,8 @@ class LlmchatModel extends StyleModel
     /* Public Methods *********************************************************/
 
     /**
-     * Get user conversations filtered by the configured model
+     * Get user conversations filtered by the configured model and section
+     * Each llmChat section only shows its own conversations
      */
     public function getUserConversations()
     {
@@ -227,7 +292,8 @@ class LlmchatModel extends StyleModel
         return $this->llm_service->getUserConversations(
             $this->user_id,
             (int)$this->getConversationLimit(),
-            $configured_model
+            $configured_model,
+            $this->section_id // Filter by section to support multiple llmChat instances on same page
         );
     }
 
@@ -1094,6 +1160,137 @@ class LlmchatModel extends StyleModel
     public function getFormModeActiveDescription()
     {
         return $this->form_mode_active_description;
+    }
+
+    // ===== Data Saving Methods =====
+
+    /**
+     * Check if data saving is enabled
+     * When enabled, form submissions are saved to SelfHelp UserInput system
+     *
+     * @return bool True if data saving is enabled
+     */
+    public function isDataSavingEnabled()
+    {
+        return $this->enable_data_saving === '1';
+    }
+
+    /**
+     * Get the data table display name
+     *
+     * @return string The display name for the data table
+     */
+    public function getDataTableName()
+    {
+        return $this->data_table_name;
+    }
+
+    /**
+     * Get the data save mode
+     * Returns 'log' when is_log is enabled, 'record' otherwise
+     *
+     * @return string 'log' or 'record'
+     */
+    public function getDataSaveMode()
+    {
+        return $this->is_log === '1' ? 'log' : 'record';
+    }
+
+    /**
+     * Check if log mode is enabled for data saving
+     *
+     * @return bool True if log mode is enabled
+     */
+    public function isLogModeEnabled()
+    {
+        return $this->is_log === '1';
+    }
+
+    // ===== Floating Chat Button Methods =====
+
+    /**
+     * Check if floating button mode is enabled
+     *
+     * @return bool True if floating button is enabled
+     */
+    public function isFloatingButtonEnabled()
+    {
+        return $this->enable_floating_button === '1';
+    }
+
+    /**
+     * Get floating button position
+     *
+     * @return string Position (bottom-right, bottom-left, top-right, top-left)
+     */
+    public function getFloatingButtonPosition()
+    {
+        return $this->floating_button_position;
+    }
+
+    /**
+     * Get floating button icon class
+     *
+     * @return string Font Awesome icon class
+     */
+    public function getFloatingButtonIcon()
+    {
+        return $this->floating_button_icon;
+    }
+
+    /**
+     * Get floating button label
+     *
+     * @return string Button label text
+     */
+    public function getFloatingButtonLabel()
+    {
+        return $this->floating_button_label;
+    }
+
+    /**
+     * Get floating chat modal title
+     *
+     * @return string Modal title
+     */
+    public function getFloatingChatTitle()
+    {
+        return $this->floating_chat_title;
+    }
+
+    // ===== Media Rendering Methods =====
+
+    /**
+     * Check if media rendering is enabled
+     *
+     * @return bool True if media rendering is enabled
+     */
+    public function isMediaRenderingEnabled()
+    {
+        return $this->enable_media_rendering === '1';
+    }
+
+    /**
+     * Get allowed media domains
+     *
+     * @return array Array of allowed domains
+     */
+    public function getAllowedMediaDomains()
+    {
+        if (empty($this->allowed_media_domains)) {
+            return [];
+        }
+        return array_filter(array_map('trim', explode("\n", $this->allowed_media_domains)));
+    }
+
+    /**
+     * Get continue button label for form mode
+     *
+     * @return string The continue button label
+     */
+    public function getContinueButtonLabel()
+    {
+        return $this->continue_button_label;
     }
 
     /**

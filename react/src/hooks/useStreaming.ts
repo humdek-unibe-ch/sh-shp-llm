@@ -8,8 +8,8 @@
  * @module hooks/useStreaming
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { StreamingApi, messagesApi, handleApiError } from '../utils/api';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { StreamingApi, createMessagesApi, handleApiError } from '../utils/api';
 import type { StreamingEvent, LlmChatConfig, SelectedFile } from '../types';
 
 /**
@@ -73,6 +73,12 @@ async function smoothPageReload(): Promise<void> {
 export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
   const { config, onChunk, onDone, onError, onStart, onRefreshMessages, getActiveModel, onNewConversation } = options;
   
+  // Create section-specific messages API
+  const messagesApi = useMemo(
+    () => createMessagesApi(config.sectionId),
+    [config.sectionId]
+  );
+
   // State
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -168,7 +174,8 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
       setIsStreaming(true);
       onStart?.();
       
-      streamingApiRef.current = new StreamingApi(streamConversationId);
+      // Create streaming API with section ID for proper isolation
+      streamingApiRef.current = new StreamingApi(streamConversationId, config.sectionId);
 
       let accumulatedContent = '';
 

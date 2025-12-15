@@ -45,6 +45,8 @@ interface MessageListProps {
   onFormSubmit?: (values: Record<string, string | string[]>, readableText: string) => void;
   /** Whether form submission is in progress */
   isFormSubmitting?: boolean;
+  /** Callback when Continue button is clicked (form mode only) */
+  onContinue?: () => void;
 }
 
 /**
@@ -318,6 +320,36 @@ const LoadingState: React.FC<{ config: LlmChatConfig }> = ({ config }) => (
 );
 
 /**
+ * Continue Button Component
+ * Shows when form mode is enabled but last assistant message has no form
+ */
+const ContinueButton: React.FC<{ 
+  label: string; 
+  onClick: () => void; 
+  disabled: boolean;
+}> = ({ label, onClick, disabled }) => (
+  <div className="continue-button-wrapper text-center py-4">
+    <button 
+      className="btn btn-primary btn-lg px-5"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {disabled ? (
+        <>
+          <span className="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>
+          {label}
+        </>
+      ) : (
+        <>
+          <i className="fas fa-arrow-right mr-2"></i>
+          {label}
+        </>
+      )}
+    </button>
+  </div>
+);
+
+/**
  * Message List Component
  * 
  * Main component that renders all messages in the conversation
@@ -330,7 +362,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   isProcessing = false,
   config,
   onFormSubmit,
-  isFormSubmitting = false
+  isFormSubmitting = false,
+  onContinue
 }) => {
   // Show loading state
   if (isLoading) {
@@ -368,6 +401,21 @@ export const MessageList: React.FC<MessageListProps> = ({
       }
     }
     return undefined;
+  };
+
+  // Determine if we should show the Continue button
+  // Show when: form mode is enabled, last message is from assistant, and it doesn't contain a form
+  const shouldShowContinueButton = () => {
+    if (!config.enableFormMode || !onContinue) return false;
+    if (isStreaming || isProcessing) return false;
+    if (messages.length === 0) return false;
+    
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role !== 'assistant') return false;
+    
+    // Check if last assistant message contains a form
+    const lastFormDef = parseFormDefinition(lastMsg.content);
+    return !lastFormDef;
   };
 
   return (
@@ -409,6 +457,15 @@ export const MessageList: React.FC<MessageListProps> = ({
       {/* Show thinking indicator */}
       {showThinking && (
         <ThinkingIndicator text={config.aiThinkingText} />
+      )}
+      
+      {/* Show Continue button in form mode when last assistant message has no form */}
+      {shouldShowContinueButton() && onContinue && (
+        <ContinueButton
+          label={config.continueButtonLabel}
+          onClick={onContinue}
+          disabled={isFormSubmitting || isProcessing}
+        />
       )}
     </div>
   );
