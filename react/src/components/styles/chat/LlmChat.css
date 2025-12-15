@@ -77,7 +77,7 @@
 }
 
 .conversation-row.active {
-  background: linear-gradient(90deg, #007bff 0%, #0069d9 100%);
+  background-color: #007bff;
   color: #ffffff;
 }
 

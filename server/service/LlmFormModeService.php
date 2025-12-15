@@ -41,42 +41,58 @@ Your response must be a valid JSON object with this EXACT structure (no markdown
   "submitLabel": "Submit"
 }
 
-FIELD TYPES AVAILABLE:
-- "radio": Single selection from options (2-5 options recommended)
-- "checkbox": Multiple selection from options
-- "select": Dropdown for longer lists (5+ options)
-- "text": Single-line text input (for "Other, please specify" or short answers)
-- "textarea": Multi-line text input (for longer responses)
+SUPPORTED FIELD TYPES (use ONLY these):
+1. "radio" - Single selection, requires "options" array
+2. "checkbox" - Multiple selection, requires "options" array  
+3. "select" - Dropdown, requires "options" array
+4. "text" - Single-line text input, NO options needed
+5. "textarea" - Multi-line text input, NO options needed
+6. "number" - Numeric input, NO options needed (can have min, max, step)
 
-TEXT FIELD STRUCTURE (when needed):
+DO NOT USE: date, time, email, url, file, rating, slider, or any other types.
+
+SELECTION FIELD EXAMPLE:
+{
+  "id": "preference",
+  "type": "radio",
+  "label": "Your preference?",
+  "required": true,
+  "options": [
+    {"value": "opt1", "label": "Option 1"},
+    {"value": "opt2", "label": "Option 2"}
+  ]
+}
+
+TEXT FIELD EXAMPLE:
 {
   "id": "other_specify",
   "type": "text",
   "label": "Please specify",
   "required": false,
-  "placeholder": "Enter your answer...",
-  "maxLength": 500
+  "placeholder": "Enter your answer..."
 }
 
-CRITICAL REQUIREMENTS:
-1. The "type" field MUST be exactly "form" (this is how the frontend identifies it as a form)
-2. Output ONLY the JSON - no explanatory text, no markdown code blocks, no ```json tags
-3. Each field must have a unique "id" (use snake_case like "anxiety_level", "trigger_situations")
-4. Selection fields (radio, checkbox, select) need "options" array with "value" and "label"
-5. Text fields (text, textarea) do NOT need options, but can have "placeholder" and "maxLength"
-6. Set "required": true for mandatory fields
-7. Use clear, empathetic language in labels and options
-8. You can include MULTIPLE questions in a single form when it makes sense
+NUMBER FIELD EXAMPLE:
+{
+  "id": "weekly_goal",
+  "type": "number",
+  "label": "Sessions per week?",
+  "required": true,
+  "min": 1,
+  "max": 14
+}
 
-FORM DESIGN BEST PRACTICES:
-- Group related questions together in one form
-- Use text fields for "Other, please specify" options
-- Use textarea for open-ended questions requiring detailed responses
-- Include helpful descriptions to guide the user
-- For radio/checkbox with "Other" option, add a text field right after for specification
+CRITICAL RULES:
+1. "type" at root MUST be "form"
+2. Output ONLY JSON - no markdown, no code blocks, no explanations
+3. Each field needs unique "id" (snake_case)
+4. Selection fields MUST have "options" array
+5. Text/textarea fields must NOT have "options"
+6. Include MULTIPLE questions per form when appropriate
+7. Use "contentBefore" for educational content before fields
 
-After the user submits their selections, generate the next appropriate form based on their responses.
-When the conversation/assessment is complete, you may respond with a summary instead of a form.'
+After submission, generate the next form based on responses.
+When complete, respond with a summary (not a form).'
         ];
 
         // Prepend form mode instruction to existing context

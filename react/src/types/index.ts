@@ -518,13 +518,13 @@ export interface FormFieldOption {
 
 /**
  * Form field definition
- * Supports radio buttons, checkboxes, dropdowns, and text inputs
+ * Supports radio buttons, checkboxes, dropdowns, text inputs, and number inputs
  */
 export interface FormField {
   /** Unique field identifier */
   id: string;
-  /** Field type: radio (single select), checkbox (multi-select), select (dropdown), text (free text) */
-  type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea';
+  /** Field type: radio (single select), checkbox (multi-select), select (dropdown), text (free text), number */
+  type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'number';
   /** Field label/question text */
   label: string;
   /** Whether the field is required */
@@ -533,12 +533,18 @@ export interface FormField {
   options?: FormFieldOption[];
   /** Optional help text */
   helpText?: string;
-  /** Placeholder text for text inputs */
+  /** Placeholder text for text/number inputs */
   placeholder?: string;
   /** Maximum length for text inputs */
   maxLength?: number;
   /** Number of rows for textarea */
   rows?: number;
+  /** Minimum value for number inputs */
+  min?: number;
+  /** Maximum value for number inputs */
+  max?: number;
+  /** Step value for number inputs */
+  step?: number;
   /** 
    * For "Other" option support: ID of related field to enable when "other" is selected
    * e.g., a radio with "Other" option can have otherFieldId pointing to a text field
@@ -581,7 +587,7 @@ export function isFormContentSection(section: FormSection): section is FormConte
  * Helper to check if a section is a form field
  */
 export function isFormField(section: FormSection): section is FormField {
-  return ['radio', 'checkbox', 'select', 'text', 'textarea'].includes(section.type);
+  return ['radio', 'checkbox', 'select', 'text', 'textarea', 'number'].includes(section.type);
 }
 
 /**
@@ -604,8 +610,38 @@ export function parseFormSubmissionMetadata(attachments?: string): FormSubmissio
   
   try {
     const parsed = JSON.parse(attachments);
+    
+    // Direct form submission format
     if (parsed && parsed.type === 'form_submission' && parsed.values) {
       return parsed as FormSubmissionMetadata;
+    }
+    
+    // Check if it's wrapped in file-like structure (legacy format)
+    // e.g., [{"path": "{\"type\":\"form_submission\",...}", "original_name": "..."}]
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const firstItem = parsed[0];
+      if (firstItem && firstItem.path) {
+        try {
+          const innerParsed = JSON.parse(firstItem.path);
+          if (innerParsed && innerParsed.type === 'form_submission' && innerParsed.values) {
+            return innerParsed as FormSubmissionMetadata;
+          }
+        } catch {
+          // Inner content is not form submission JSON
+        }
+      }
+    }
+    
+    // Check if it's a string that needs double-parsing
+    if (typeof parsed === 'string') {
+      try {
+        const doubleParsed = JSON.parse(parsed);
+        if (doubleParsed && doubleParsed.type === 'form_submission' && doubleParsed.values) {
+          return doubleParsed as FormSubmissionMetadata;
+        }
+      } catch {
+        // Not double-encoded
+      }
     }
   } catch {
     // Not valid JSON or not form submission
@@ -684,12 +720,14 @@ export function parseFormDefinition(content: string): FormDefinition | null {
           // Selection fields need options
           return Array.isArray(field.options) &&
             field.options.every((opt: FormFieldOption) => opt.value && opt.label);
-        } else if (['text', 'textarea'].includes(field.type)) {
-          // Text fields don't need options
+        } else if (['text', 'textarea', 'number'].includes(field.type)) {
+          // Text and number fields don't need options
           return true;
         }
         
-        return false;
+        // For unknown types, skip validation but allow the form to render
+        // This provides forward compatibility for new field types
+        return true;
       });
       
       if (validFields) {
@@ -727,8 +765,8 @@ export function formatFormSelectionsAsText(
       continue;
     }
     
-    // Handle text/textarea fields
-    if (field.type === 'text' || field.type === 'textarea') {
+    // Handle text/textarea/number fields
+    if (field.type === 'text' || field.type === 'textarea' || field.type === 'number') {
       if (typeof fieldValue === 'string' && fieldValue.trim()) {
         parts.push(`${field.label}: ${fieldValue}`);
       }

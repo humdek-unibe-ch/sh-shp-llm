@@ -23,7 +23,7 @@ import { parseFormDefinition, parseFormSubmissionMetadata } from '../../../types
 import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer } from './FormRenderer';
-import { FormDisplay, FormSummaryInline } from './FormDisplay';
+import { FormDisplay } from './FormDisplay';
 
 /**
  * Props for MessageList component
@@ -104,6 +104,7 @@ const AttachmentIndicator: React.FC<{ count: number; isUser: boolean; config: Ll
 /**
  * Render a historical form as a read-only display
  * Shows the form with the user's selections highlighted
+ * Uses the same FormDisplay component as admin for consistency
  * 
  * To find the user's selections, we look at the next user message's attachments
  * which contain the form_submission metadata
@@ -119,27 +120,29 @@ const HistoricalFormDisplay: React.FC<HistoricalFormDisplayProps> = ({
   submittedValues 
 }) => {
   // Use the FormDisplay component with submitted values
+  // compact=false to match admin view style
   return (
     <FormDisplay
       formDefinition={formDefinition}
       submittedValues={submittedValues}
-      compact={true}
+      compact={false}
     />
   );
 };
 
 /**
- * Render a user's form submission as a summary
- * Shows what the user selected in a clean format
+ * Render a user's form submission
+ * Uses the same FormDisplay component as admin for consistency
  */
 const UserFormSubmissionDisplay: React.FC<{
   formDefinition: FormDefinition;
   submittedValues: Record<string, string | string[]>;
 }> = ({ formDefinition, submittedValues }) => {
   return (
-    <FormSummaryInline
+    <FormDisplay
       formDefinition={formDefinition}
       submittedValues={submittedValues}
+      compact={false}
     />
   );
 };

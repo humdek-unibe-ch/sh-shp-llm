@@ -249,6 +249,38 @@ const TextareaField: React.FC<{
 };
 
 /**
+ * Number Input Field Component
+ */
+const NumberField: React.FC<{
+  field: FormField;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}> = ({ field, value, onChange, disabled }) => {
+  return (
+    <Form.Group className="mb-3">
+      <Form.Label className="font-weight-bold mb-2">
+        {field.label}
+        {field.required && <span className="text-danger ml-1">*</span>}
+      </Form.Label>
+      {field.helpText && (
+        <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
+      )}
+      <Form.Control
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={field.placeholder || ''}
+        min={field.min}
+        max={field.max}
+        step={field.step}
+      />
+    </Form.Group>
+  );
+};
+
+/**
  * Form Renderer Component
  * 
  * Renders a complete form based on JSON Schema definition
@@ -404,6 +436,14 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
         )}
         {field.type === 'textarea' && (
           <TextareaField
+            field={field}
+            value={formValues[field.id] as string}
+            onChange={(value) => updateFieldValue(field.id, value)}
+            disabled={isDisabled}
+          />
+        )}
+        {field.type === 'number' && (
+          <NumberField
             field={field}
             value={formValues[field.id] as string}
             onChange={(value) => updateFieldValue(field.id, value)}

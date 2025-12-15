@@ -54,14 +54,14 @@
 
 .message-wrapper.assistant .message-bubble,
 .message-bubble.assistant-message {
-  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+  background-color: #f8f9fa;
   margin-left: 0;
   margin-right: auto;
 }
 
 .message-wrapper.user .message-bubble,
 .message-bubble.user-message {
-  background: linear-gradient(135deg, #0d6efd 0%, #2563eb 100%);
+  background-color: #007bff;
   color: #ffffff;
   border: none;
   margin-left: auto;
@@ -293,8 +293,8 @@
   align-items: center;
   gap: 10px;
   padding: 12px 24px;
-  background: linear-gradient(to right, #e3f2fd, #ffffff);
-  border-top: 1px solid #66b0ff;
+  background-color: #e9ecef;
+  border-top: 1px solid #dee2e6;
   font-size: 14px;
   font-weight: 500;
   color: #007bff;

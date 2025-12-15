@@ -398,11 +398,24 @@ class LlmService
             if (is_array($attachments)) {
                 $attachmentsData = json_encode($attachments);
             } elseif (is_string($attachments)) {
-                // Backward compatibility - single path string
-                $attachmentsData = json_encode([[
-                    'path' => $attachments,
-                    'original_name' => basename($attachments)
-                ]]);
+                // Check if it's already JSON (e.g., form submission metadata)
+                $decoded = json_decode($attachments, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    // It's valid JSON - check if it's form submission or needs wrapping
+                    if (isset($decoded['type']) && $decoded['type'] === 'form_submission') {
+                        // Form submission - store as-is
+                        $attachmentsData = $attachments;
+                    } else {
+                        // Other JSON data - store as-is
+                        $attachmentsData = $attachments;
+                    }
+                } else {
+                    // Backward compatibility - single path string (file path)
+                    $attachmentsData = json_encode([[
+                        'path' => $attachments,
+                        'original_name' => basename($attachments)
+                    ]]);
+                }
             }
         }
 

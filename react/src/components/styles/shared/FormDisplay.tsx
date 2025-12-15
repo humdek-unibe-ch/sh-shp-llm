@@ -45,8 +45,8 @@ const FieldDisplay: React.FC<{
     });
   };
 
-  // For text fields, just show the value
-  if (field.type === 'text' || field.type === 'textarea') {
+  // For text/number fields, just show the value
+  if (field.type === 'text' || field.type === 'textarea' || field.type === 'number') {
     return (
       <div className={`mb-${compact ? '2' : '3'}`}>
         <div className="d-flex align-items-start">
@@ -180,7 +180,7 @@ export const FormSummaryInline: React.FC<{
     const value = submittedValues[field.id];
     if (!value) return '';
     
-    if (field.type === 'text' || field.type === 'textarea') {
+    if (field.type === 'text' || field.type === 'textarea' || field.type === 'number') {
       return value as string;
     }
     
