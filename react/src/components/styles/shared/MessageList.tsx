@@ -19,10 +19,11 @@
 
 import React from 'react';
 import type { Message, LlmChatConfig, FormDefinition } from '../../../types';
-import { parseFormDefinition } from '../../../types';
+import { parseFormDefinition, parseFormSubmissionMetadata } from '../../../types';
 import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer } from './FormRenderer';
+import { FormDisplay, FormSummaryInline } from './FormDisplay';
 
 /**
  * Props for MessageList component
@@ -62,6 +63,10 @@ interface MessageItemProps {
   onFormSubmit?: (values: Record<string, string | string[]>, readableText: string) => void;
   /** Whether form submission is in progress */
   isFormSubmitting?: boolean;
+  /** The next message (to find user's form submission for historical forms) */
+  nextMessage?: Message;
+  /** Previous assistant message (to find form definition for user submissions) */
+  previousAssistantFormDefinition?: FormDefinition;
 }
 
 /**
@@ -97,25 +102,45 @@ const AttachmentIndicator: React.FC<{ count: number; isUser: boolean; config: Ll
 };
 
 /**
- * Render a historical form as a read-only summary
- * Shows what form was presented without the interactive elements
+ * Render a historical form as a read-only display
+ * Shows the form with the user's selections highlighted
+ * 
+ * To find the user's selections, we look at the next user message's attachments
+ * which contain the form_submission metadata
  */
-const HistoricalFormSummary: React.FC<{ formDefinition: FormDefinition }> = ({ formDefinition }) => {
+interface HistoricalFormDisplayProps {
+  formDefinition: FormDefinition;
+  /** The user's submitted values (from next message's attachments) */
+  submittedValues?: Record<string, string | string[]>;
+}
+
+const HistoricalFormDisplay: React.FC<HistoricalFormDisplayProps> = ({ 
+  formDefinition, 
+  submittedValues 
+}) => {
+  // Use the FormDisplay component with submitted values
   return (
-    <div className="historical-form-summary bg-light rounded p-3 border">
-      <div className="d-flex align-items-center mb-2">
-        <i className="fas fa-list-ul text-primary mr-2"></i>
-        <strong className="text-primary">{formDefinition.title || 'Form'}</strong>
-        <span className="badge badge-secondary ml-2">Completed</span>
-      </div>
-      {formDefinition.description && (
-        <p className="text-muted small mb-2">{formDefinition.description}</p>
-      )}
-      <div className="small text-muted">
-        <i className="fas fa-check-circle text-success mr-1"></i>
-        {formDefinition.fields.length} question{formDefinition.fields.length !== 1 ? 's' : ''} answered
-      </div>
-    </div>
+    <FormDisplay
+      formDefinition={formDefinition}
+      submittedValues={submittedValues}
+      compact={true}
+    />
+  );
+};
+
+/**
+ * Render a user's form submission as a summary
+ * Shows what the user selected in a clean format
+ */
+const UserFormSubmissionDisplay: React.FC<{
+  formDefinition: FormDefinition;
+  submittedValues: Record<string, string | string[]>;
+}> = ({ formDefinition, submittedValues }) => {
+  return (
+    <FormSummaryInline
+      formDefinition={formDefinition}
+      submittedValues={submittedValues}
+    />
   );
 };
 
@@ -130,7 +155,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
   config,
   isLastMessage = false,
   onFormSubmit,
-  isFormSubmitting = false
+  isFormSubmitting = false,
+  nextMessage,
+  previousAssistantFormDefinition
 }) => {
   const isUser = message.role === 'user';
   const attachmentCount = getAttachmentCount(message.attachments);
@@ -140,12 +167,35 @@ const MessageItem: React.FC<MessageItemProps> = ({
   // This allows LLMs to return forms dynamically
   let formDefinition: FormDefinition | null = null;
   let isHistoricalForm = false;
+  let userSubmittedValues: Record<string, string | string[]> | undefined;
   
   if (!isUser && !isStreaming) {
     formDefinition = parseFormDefinition(message.content);
     // If it's a form but not the last message, it's historical
     if (formDefinition && !isLastMessage) {
       isHistoricalForm = true;
+      // Try to find the user's submission from the next message
+      if (nextMessage && nextMessage.role === 'user') {
+        const submissionMeta = parseFormSubmissionMetadata(nextMessage.attachments);
+        if (submissionMeta) {
+          userSubmittedValues = submissionMeta.values;
+        }
+      }
+    }
+  }
+  
+  // Check if this is a user message that's a form submission
+  let isUserFormSubmission = false;
+  let userFormDefinition: FormDefinition | null = null;
+  let userFormValues: Record<string, string | string[]> | undefined;
+  
+  if (isUser) {
+    const submissionMeta = parseFormSubmissionMetadata(message.attachments);
+    if (submissionMeta) {
+      isUserFormSubmission = true;
+      userFormValues = submissionMeta.values;
+      // Use the previous assistant's form definition if available
+      userFormDefinition = previousAssistantFormDefinition || null;
     }
   }
   
@@ -161,11 +211,23 @@ const MessageItem: React.FC<MessageItemProps> = ({
         {/* Message content */}
         <div className="message-content">
           {isUser ? (
-            // User messages: plain text with preserved whitespace
-            <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+            // User messages
+            isUserFormSubmission && userFormDefinition && userFormValues ? (
+              // User form submission: show as summary with selections
+              <UserFormSubmissionDisplay
+                formDefinition={userFormDefinition}
+                submittedValues={userFormValues}
+              />
+            ) : (
+              // Regular user message: plain text with preserved whitespace
+              <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+            )
           ) : formDefinition && isHistoricalForm ? (
-            // Historical form: show as completed summary
-            <HistoricalFormSummary formDefinition={formDefinition} />
+            // Historical form: show with user's selections
+            <HistoricalFormDisplay 
+              formDefinition={formDefinition} 
+              submittedValues={userSubmittedValues}
+            />
           ) : formDefinition ? (
             // Active form: render interactive form
             <FormRenderer
@@ -184,7 +246,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         </div>
         
         {/* Attachment indicator - hide for forms */}
-        {!formDefinition && (
+        {!formDefinition && !isUserFormSubmission && (
           <AttachmentIndicator count={attachmentCount} isUser={isUser} config={config} />
         )}
         
@@ -283,6 +345,28 @@ export const MessageList: React.FC<MessageListProps> = ({
   const showThinking = (isStreaming && !streamingContent && lastMessage?.role === 'user') ||
     (isProcessing && lastMessage?.role === 'user');
   
+  // Pre-compute form definitions for each assistant message
+  // This allows us to pass the previous form definition to user messages
+  const formDefinitionsMap = new Map<number, FormDefinition>();
+  messages.forEach((message, index) => {
+    if (message.role === 'assistant') {
+      const formDef = parseFormDefinition(message.content);
+      if (formDef) {
+        formDefinitionsMap.set(index, formDef);
+      }
+    }
+  });
+
+  // Find the previous assistant's form definition for a given index
+  const findPreviousAssistantFormDefinition = (currentIndex: number): FormDefinition | undefined => {
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        return formDefinitionsMap.get(i);
+      }
+    }
+    return undefined;
+  };
+
   return (
     <div className="message-stack">
       {/* Render all messages */}
@@ -296,6 +380,14 @@ export const MessageList: React.FC<MessageListProps> = ({
         // Check if this is the last message (for form rendering)
         const isLastMessage = index === messages.length - 1;
         
+        // Get next message (for finding user's form submission)
+        const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
+        
+        // Get previous assistant's form definition (for user form submissions)
+        const previousAssistantFormDefinition = message.role === 'user' 
+          ? findPreviousAssistantFormDefinition(index) 
+          : undefined;
+        
         return (
           <MessageItem
             key={message.id || `msg-${index}`}
@@ -305,6 +397,8 @@ export const MessageList: React.FC<MessageListProps> = ({
             isLastMessage={isLastMessage}
             onFormSubmit={onFormSubmit}
             isFormSubmitting={isFormSubmitting}
+            nextMessage={nextMessage}
+            previousAssistantFormDefinition={previousAssistantFormDefinition}
           />
         );
       })}

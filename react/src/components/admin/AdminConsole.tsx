@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination } from 'react-bootstrap';
 import Select from 'react-select';
 import { adminApi } from '../../utils/api';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
-import type { AdminConfig, AdminConversation, Message } from '../../types';
+import { FormDisplay } from '../styles/shared/FormDisplay';
+import type { AdminConfig, AdminConversation, Message, FormDefinition } from '../../types';
+import { parseFormDefinition, parseFormSubmissionMetadata } from '../../types';
 import './AdminConsole.css';
 
 interface AdminFilters {
@@ -265,6 +267,178 @@ const formatDateBadge = (dateString: string): string => {
     month: 'short', 
     day: 'numeric'
   });
+};
+
+/**
+ * Admin Message List Component
+ * Renders messages with proper form detection and display
+ */
+const AdminMessageList: React.FC<{
+  messages: Message[];
+  formatDate: (date: string) => string;
+  setContextPopup: (popup: { show: boolean; message: Message | null; target: HTMLElement | null }) => void;
+}> = ({ messages, formatDate, setContextPopup }) => {
+  // Pre-compute form definitions for each assistant message
+  const formDefinitionsMap = useMemo(() => {
+    const map = new Map<number, FormDefinition>();
+    messages.forEach((message, index) => {
+      if (message.role === 'assistant') {
+        const formDef = parseFormDefinition(message.content);
+        if (formDef) {
+          map.set(index, formDef);
+        }
+      }
+    });
+    return map;
+  }, [messages]);
+
+  // Find the previous assistant's form definition for a given index
+  const findPreviousAssistantFormDefinition = (currentIndex: number): FormDefinition | undefined => {
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') {
+        return formDefinitionsMap.get(i);
+      }
+    }
+    return undefined;
+  };
+
+  // Get attachment info
+  const getAttachmentInfo = (attachments?: string): { count: number; isFormSubmission: boolean } => {
+    if (!attachments) return { count: 0, isFormSubmission: false };
+    try {
+      const parsed = JSON.parse(attachments);
+      if (parsed && parsed.type === 'form_submission') {
+        return { count: 0, isFormSubmission: true };
+      }
+      return { count: Array.isArray(parsed) ? parsed.length : 1, isFormSubmission: false };
+    } catch {
+      return { count: 0, isFormSubmission: false };
+    }
+  };
+
+  return (
+    <div className="message-stack">
+      {messages.map((message, index) => {
+        const isUser = message.role === 'user';
+        const formDefinition = !isUser ? parseFormDefinition(message.content) : null;
+        const attachmentInfo = getAttachmentInfo(message.attachments);
+        
+        // Get user's submitted values for historical forms
+        let userSubmittedValues: Record<string, string | string[]> | undefined;
+        if (formDefinition && index < messages.length - 1) {
+          const nextMessage = messages[index + 1];
+          if (nextMessage && nextMessage.role === 'user') {
+            const submissionMeta = parseFormSubmissionMetadata(nextMessage.attachments);
+            if (submissionMeta) {
+              userSubmittedValues = submissionMeta.values;
+            }
+          }
+        }
+        
+        // Check if user message is a form submission
+        let isUserFormSubmission = false;
+        let userFormDefinition: FormDefinition | undefined;
+        let userFormValues: Record<string, string | string[]> | undefined;
+        
+        if (isUser) {
+          const submissionMeta = parseFormSubmissionMetadata(message.attachments);
+          if (submissionMeta) {
+            isUserFormSubmission = true;
+            userFormValues = submissionMeta.values;
+            userFormDefinition = findPreviousAssistantFormDefinition(index);
+          }
+        }
+
+        return (
+          <div
+            key={message.id}
+            className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}
+          >
+            {/* Avatar */}
+            <div className="message-avatar">
+              <i className={`fas ${isUser ? 'fa-user' : 'fa-robot'}`}></i>
+            </div>
+            
+            {/* Message Bubble */}
+            <div className={`message-bubble ${isUser ? 'user-message' : 'assistant-message'}`}>
+              {/* Context button for assistant messages */}
+              {message.sent_context && (
+                <div className="d-flex justify-content-end mb-2">
+                  <button
+                    className="btn btn-outline-info btn-sm py-0 px-2"
+                    style={{ fontSize: '0.7rem' }}
+                    onClick={() => {
+                      setContextPopup({
+                        show: true,
+                        message,
+                        target: null
+                      });
+                    }}
+                    title="View context sent to AI"
+                  >
+                    <i className="fas fa-layer-group mr-1"></i>
+                    Context
+                  </button>
+                </div>
+              )}
+              
+              {/* Message Content */}
+              <div className="message-content">
+                {isUser ? (
+                  // User messages
+                  isUserFormSubmission && userFormDefinition && userFormValues ? (
+                    // Form submission with selections
+                    <FormDisplay
+                      formDefinition={userFormDefinition}
+                      submittedValues={userFormValues}
+                      compact={false}
+                    />
+                  ) : (
+                    // Regular text message
+                    <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+                      {message.content}
+                    </div>
+                  )
+                ) : formDefinition ? (
+                  // Assistant form response - show with user's selections
+                  <FormDisplay
+                    formDefinition={formDefinition}
+                    submittedValues={userSubmittedValues}
+                    compact={false}
+                  />
+                ) : (
+                  // Regular assistant message
+                  <MarkdownRenderer content={message.content} />
+                )}
+              </div>
+              
+              {/* Attachments (only show for non-form submissions) */}
+              {attachmentInfo.count > 0 && !attachmentInfo.isFormSubmission && (
+                <div className="mt-2 small text-muted">
+                  <i className="fas fa-paperclip mr-1"></i>
+                  {attachmentInfo.count} attachment{attachmentInfo.count !== 1 ? 's' : ''}
+                </div>
+              )}
+              
+              {/* Message Meta */}
+              <div className="message-meta mt-2">
+                <span>
+                  <i className="fas fa-clock mr-1"></i>
+                  {formatDate(message.timestamp)}
+                </span>
+                {message.tokens_used && (
+                  <span className="tokens">
+                    <i className="fas fa-microchip"></i>
+                    {message.tokens_used.toLocaleString()} tokens
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 };
 
 export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
@@ -771,76 +945,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       <div className="text-muted">No messages in this conversation</div>
                     </div>
                   ) : (
-                    <div className="message-stack">
-                      {messages.map(message => (
-                        <div
-                          key={message.id}
-                          className={`message-wrapper ${message.role === 'user' ? 'user' : 'assistant'}`}
-                        >
-                          {/* Avatar */}
-                          <div className="message-avatar">
-                            <i className={`fas ${message.role === 'user' ? 'fa-user' : 'fa-robot'}`}></i>
-                          </div>
-                          
-                          {/* Message Bubble */}
-                          <div className={`message-bubble ${message.role === 'user' ? 'user-message' : 'assistant-message'}`}>
-                            {/* Context button for assistant messages */}
-                            {message.sent_context && (
-                              <div className="d-flex justify-content-end mb-2">
-                                <button
-                                  className="btn btn-outline-info btn-sm py-0 px-2"
-                                  style={{ fontSize: '0.7rem' }}
-                                  onClick={() => {
-                                    setContextPopup({
-                                      show: true,
-                                      message,
-                                      target: null
-                                    });
-                                  }}
-                                  title="View context sent to AI"
-                                >
-                                  <i className="fas fa-layer-group mr-1"></i>
-                                  Context
-                                </button>
-                              </div>
-                            )}
-                            
-                            {/* Message Content */}
-                            <div className="message-content">
-                              {message.role === 'user' ? (
-                                <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                                  {message.content}
-                                </div>
-                              ) : (
-                                <MarkdownRenderer content={message.content} />
-                              )}
-                            </div>
-                            
-                            {/* Attachments */}
-                            {message.attachments && (
-                              <div className="mt-2 small text-muted">
-                                <i className="fas fa-paperclip mr-1"></i>
-                                {JSON.parse(message.attachments).length} attachment{JSON.parse(message.attachments).length !== 1 ? 's' : ''}
-                              </div>
-                            )}
-                            
-                            {/* Message Meta */}
-                            <div className="message-meta mt-2">
-                              <span>
-                                <i className="fas fa-clock mr-1"></i>
-                                {formatDate(message.timestamp)}
-                              </span>
-                              {message.tokens_used && (
-                                <span className="tokens">
-                                  <i className="fas fa-microchip"></i>
-                                  {message.tokens_used.toLocaleString()} tokens
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <AdminMessageList messages={messages} formatDate={formatDate} setContextPopup={setContextPopup} />
                   )}
                 </Card.Body>
               </>

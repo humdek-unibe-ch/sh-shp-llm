@@ -128,15 +128,24 @@ The LLM returns forms conforming to this schema:
   "contentBefore": "Optional markdown content displayed before form fields",
   "fields": [
     {
-      "id": "unique_field_id",
+      "id": "selection_field",
       "type": "radio|checkbox|select",
-      "label": "Question or field label",
+      "label": "Selection question",
       "required": true,
       "options": [
         { "value": "option1", "label": "Option 1" },
         { "value": "option2", "label": "Option 2" }
       ],
       "helpText": "Optional help text"
+    },
+    {
+      "id": "text_field",
+      "type": "text|textarea",
+      "label": "Text input question",
+      "required": false,
+      "placeholder": "Enter your response...",
+      "maxLength": 500,
+      "rows": 3
     }
   ],
   "contentAfter": "Optional markdown content displayed after form fields",
@@ -145,6 +154,17 @@ The LLM returns forms conforming to this schema:
 ```
 
 **Important**: The `type` field must be `"form"` for the frontend to recognize it as a form definition.
+
+#### Form Data Storage
+
+When a user submits a form, the data is stored as follows:
+- **User message content**: Human-readable text representation of selections
+- **Message attachments**: JSON metadata with `type: "form_submission"` and `values` object
+
+This allows:
+- Clean display in chat history
+- Structured data retrieval in admin console
+- Form reconstruction with user selections highlighted
 
 #### Rich Content Support
 
@@ -179,18 +199,115 @@ For more complex layouts, use the `sections` array to interleave content and fie
 |------|-------------|----------|
 | `radio` | Single selection from options | Yes/No questions, single-choice |
 | `checkbox` | Multiple selections allowed | Multi-select preferences |
-| `select` | Single selection dropdown | Long option lists |
+| `select` | Single selection dropdown (uses react-select) | Long option lists |
+| `text` | Single-line text input | "Other, please specify", short answers |
+| `textarea` | Multi-line text input | Detailed responses, comments |
 
 #### Field Properties
 
-| Property | Required | Description |
-|----------|----------|-------------|
-| `id` | Yes | Unique identifier for the field |
-| `type` | Yes | One of: `radio`, `checkbox`, `select` |
-| `label` | Yes | Question or field label displayed to user |
-| `options` | Yes | Array of `{value, label}` pairs |
-| `required` | No | Whether field must be filled (default: false) |
-| `helpText` | No | Additional help text shown below the label |
+| Property | Required | Type | Description |
+|----------|----------|------|-------------|
+| `id` | Yes | All | Unique identifier for the field |
+| `type` | Yes | All | One of: `radio`, `checkbox`, `select`, `text`, `textarea` |
+| `label` | Yes | All | Question or field label displayed to user |
+| `options` | Yes* | Selection | Array of `{value, label}` pairs (*required for radio/checkbox/select) |
+| `required` | No | All | Whether field must be filled (default: false) |
+| `helpText` | No | All | Additional help text shown below the label |
+| `placeholder` | No | Text | Placeholder text for text/textarea fields |
+| `maxLength` | No | Text | Maximum character length for text/textarea |
+| `rows` | No | Textarea | Number of rows for textarea (default: 3) |
+
+#### Text Field Examples
+
+**Single-line text for "Other" option:**
+```json
+{
+  "id": "other_reason",
+  "type": "text",
+  "label": "Please specify",
+  "required": false,
+  "placeholder": "Enter your reason...",
+  "maxLength": 200
+}
+```
+
+**Multi-line textarea for detailed responses:**
+```json
+{
+  "id": "additional_comments",
+  "type": "textarea",
+  "label": "Any additional comments?",
+  "required": false,
+  "placeholder": "Share any additional thoughts...",
+  "rows": 4,
+  "maxLength": 1000
+}
+```
+
+#### Multiple Questions Per Form
+
+Forms can contain multiple questions when it makes sense to group them:
+
+```json
+{
+  "type": "form",
+  "title": "Personal Information",
+  "description": "Please provide the following details",
+  "fields": [
+    {
+      "id": "age_group",
+      "type": "select",
+      "label": "Age Group",
+      "required": true,
+      "options": [
+        {"value": "18-24", "label": "18-24"},
+        {"value": "25-34", "label": "25-34"},
+        {"value": "35-44", "label": "35-44"},
+        {"value": "45+", "label": "45 and above"}
+      ]
+    },
+    {
+      "id": "gender",
+      "type": "radio",
+      "label": "Gender",
+      "required": true,
+      "options": [
+        {"value": "male", "label": "Male"},
+        {"value": "female", "label": "Female"},
+        {"value": "other", "label": "Other"},
+        {"value": "prefer_not", "label": "Prefer not to say"}
+      ]
+    },
+    {
+      "id": "gender_other",
+      "type": "text",
+      "label": "If other, please specify",
+      "required": false,
+      "placeholder": "Enter your gender..."
+    }
+  ],
+  "submitLabel": "Continue"
+}
+```
+
+#### Controlling Text Fields via Context
+
+If you want to restrict the LLM from using text fields, include explicit instructions in your conversation context:
+
+```markdown
+## Form Restrictions
+- DO NOT use text or textarea fields
+- Only use radio, checkbox, and select field types
+- All user input must be through predefined options
+```
+
+Alternatively, to encourage text fields:
+```markdown
+## Form Guidelines
+- For questions with "Other" options, always add a text field for specification
+- Use textarea fields for open-ended questions requiring detailed responses
+- Text fields are encouraged for collecting personalized information
+```
 
 #### Example Context for Form Mode
 

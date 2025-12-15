@@ -41,21 +41,39 @@ Your response must be a valid JSON object with this EXACT structure (no markdown
   "submitLabel": "Submit"
 }
 
+FIELD TYPES AVAILABLE:
+- "radio": Single selection from options (2-5 options recommended)
+- "checkbox": Multiple selection from options
+- "select": Dropdown for longer lists (5+ options)
+- "text": Single-line text input (for "Other, please specify" or short answers)
+- "textarea": Multi-line text input (for longer responses)
+
+TEXT FIELD STRUCTURE (when needed):
+{
+  "id": "other_specify",
+  "type": "text",
+  "label": "Please specify",
+  "required": false,
+  "placeholder": "Enter your answer...",
+  "maxLength": 500
+}
+
 CRITICAL REQUIREMENTS:
 1. The "type" field MUST be exactly "form" (this is how the frontend identifies it as a form)
 2. Output ONLY the JSON - no explanatory text, no markdown code blocks, no ```json tags
 3. Each field must have a unique "id" (use snake_case like "anxiety_level", "trigger_situations")
-4. Field "type" must be one of: "radio" (single select), "checkbox" (multi-select), "select" (dropdown)
-5. Every field needs at least 2 options with both "value" and "label"
+4. Selection fields (radio, checkbox, select) need "options" array with "value" and "label"
+5. Text fields (text, textarea) do NOT need options, but can have "placeholder" and "maxLength"
 6. Set "required": true for mandatory fields
 7. Use clear, empathetic language in labels and options
+8. You can include MULTIPLE questions in a single form when it makes sense
 
 FORM DESIGN BEST PRACTICES:
-- Present one question at a time for better user experience
-- Use radio buttons for single-choice questions (2-5 options)
-- Use checkboxes when users can select multiple options
-- Use select/dropdown for long lists (5+ options)
+- Group related questions together in one form
+- Use text fields for "Other, please specify" options
+- Use textarea for open-ended questions requiring detailed responses
 - Include helpful descriptions to guide the user
+- For radio/checkbox with "Other" option, add a text field right after for specification
 
 After the user submits their selections, generate the next appropriate form based on their responses.
 When the conversation/assessment is complete, you may respond with a summary instead of a form.'

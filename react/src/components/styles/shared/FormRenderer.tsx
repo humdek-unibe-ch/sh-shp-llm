@@ -49,7 +49,7 @@ const RadioField: React.FC<{
         <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
       )}
       <div className="form-options-container">
-        {field.options.map((option: FormFieldOption) => (
+        {(field.options || []).map((option: FormFieldOption) => (
           <div
             key={option.value}
             className={`form-option-button ${value === option.value ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
@@ -102,7 +102,7 @@ const CheckboxField: React.FC<{
         <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
       )}
       <div className="form-options-container">
-        {field.options.map((option: FormFieldOption) => {
+        {(field.options || []).map((option: FormFieldOption) => {
           const isChecked = values.includes(option.value);
           return (
             <div
@@ -140,7 +140,7 @@ const SelectField: React.FC<{
   onChange: (value: string) => void;
   disabled?: boolean;
 }> = ({ field, value, onChange, disabled }) => {
-  const options = field.options.map((option: FormFieldOption) => ({
+  const options = (field.options || []).map((option: FormFieldOption) => ({
     value: option.value,
     label: option.label
   }));
@@ -182,6 +182,67 @@ const SelectField: React.FC<{
             }
           })
         }}
+      />
+    </Form.Group>
+  );
+};
+
+/**
+ * Text Input Field Component
+ */
+const TextField: React.FC<{
+  field: FormField;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}> = ({ field, value, onChange, disabled }) => {
+  return (
+    <Form.Group className="mb-3">
+      <Form.Label className="font-weight-bold mb-2">
+        {field.label}
+        {field.required && <span className="text-danger ml-1">*</span>}
+      </Form.Label>
+      {field.helpText && (
+        <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
+      )}
+      <Form.Control
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={field.placeholder || ''}
+        maxLength={field.maxLength}
+      />
+    </Form.Group>
+  );
+};
+
+/**
+ * Textarea Field Component
+ */
+const TextareaField: React.FC<{
+  field: FormField;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}> = ({ field, value, onChange, disabled }) => {
+  return (
+    <Form.Group className="mb-3">
+      <Form.Label className="font-weight-bold mb-2">
+        {field.label}
+        {field.required && <span className="text-danger ml-1">*</span>}
+      </Form.Label>
+      {field.helpText && (
+        <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
+      )}
+      <Form.Control
+        as="textarea"
+        rows={field.rows || 3}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={field.placeholder || ''}
+        maxLength={field.maxLength}
       />
     </Form.Group>
   );
@@ -327,6 +388,22 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
         )}
         {field.type === 'select' && (
           <SelectField
+            field={field}
+            value={formValues[field.id] as string}
+            onChange={(value) => updateFieldValue(field.id, value)}
+            disabled={isDisabled}
+          />
+        )}
+        {field.type === 'text' && (
+          <TextField
+            field={field}
+            value={formValues[field.id] as string}
+            onChange={(value) => updateFieldValue(field.id, value)}
+            disabled={isDisabled}
+          />
+        )}
+        {field.type === 'textarea' && (
+          <TextareaField
             field={field}
             value={formValues[field.id] as string}
             onChange={(value) => updateFieldValue(field.id, value)}

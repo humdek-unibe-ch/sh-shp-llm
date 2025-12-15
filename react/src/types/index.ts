@@ -518,21 +518,36 @@ export interface FormFieldOption {
 
 /**
  * Form field definition
- * Supports radio buttons, checkboxes, and dropdowns
+ * Supports radio buttons, checkboxes, dropdowns, and text inputs
  */
 export interface FormField {
   /** Unique field identifier */
   id: string;
-  /** Field type: radio (single select), checkbox (multi-select), select (dropdown) */
-  type: 'radio' | 'checkbox' | 'select';
+  /** Field type: radio (single select), checkbox (multi-select), select (dropdown), text (free text) */
+  type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea';
   /** Field label/question text */
   label: string;
   /** Whether the field is required */
   required?: boolean;
-  /** Available options for selection */
-  options: FormFieldOption[];
+  /** Available options for selection (for radio, checkbox, select) */
+  options?: FormFieldOption[];
   /** Optional help text */
   helpText?: string;
+  /** Placeholder text for text inputs */
+  placeholder?: string;
+  /** Maximum length for text inputs */
+  maxLength?: number;
+  /** Number of rows for textarea */
+  rows?: number;
+  /** 
+   * For "Other" option support: ID of related field to enable when "other" is selected
+   * e.g., a radio with "Other" option can have otherFieldId pointing to a text field
+   */
+  otherFieldId?: string;
+  /**
+   * Whether this field is an "other" text field that should only show when related option is selected
+   */
+  showWhenOtherSelected?: string; // ID of the field that triggers this
 }
 
 /**
@@ -566,7 +581,37 @@ export function isFormContentSection(section: FormSection): section is FormConte
  * Helper to check if a section is a form field
  */
 export function isFormField(section: FormSection): section is FormField {
-  return section.type === 'radio' || section.type === 'checkbox' || section.type === 'select';
+  return ['radio', 'checkbox', 'select', 'text', 'textarea'].includes(section.type);
+}
+
+/**
+ * Form submission metadata stored in message attachments
+ */
+export interface FormSubmissionMetadata {
+  /** Type identifier */
+  type: 'form_submission';
+  /** The values submitted by the user */
+  values: Record<string, string | string[]>;
+}
+
+/**
+ * Parse form submission metadata from message attachments
+ * @param attachments JSON string from message.attachments
+ * @returns FormSubmissionMetadata if valid, null otherwise
+ */
+export function parseFormSubmissionMetadata(attachments?: string): FormSubmissionMetadata | null {
+  if (!attachments) return null;
+  
+  try {
+    const parsed = JSON.parse(attachments);
+    if (parsed && parsed.type === 'form_submission' && parsed.values) {
+      return parsed as FormSubmissionMetadata;
+    }
+  } catch {
+    // Not valid JSON or not form submission
+  }
+  
+  return null;
 }
 
 export interface FormDefinition {
@@ -630,14 +675,22 @@ export function parseFormDefinition(content: string): FormDefinition | null {
     // Validate it's a form definition
     if (parsed && parsed.type === 'form' && Array.isArray(parsed.fields)) {
       // Validate each field has required properties
-      const validFields = parsed.fields.every((field: FormField) => 
-        field.id && 
-        field.type && 
-        ['radio', 'checkbox', 'select'].includes(field.type) &&
-        field.label &&
-        Array.isArray(field.options) &&
-        field.options.every((opt: FormFieldOption) => opt.value && opt.label)
-      );
+      const validFields = parsed.fields.every((field: FormField) => {
+        // Basic validation
+        if (!field.id || !field.type || !field.label) return false;
+        
+        // Type-specific validation
+        if (['radio', 'checkbox', 'select'].includes(field.type)) {
+          // Selection fields need options
+          return Array.isArray(field.options) &&
+            field.options.every((opt: FormFieldOption) => opt.value && opt.label);
+        } else if (['text', 'textarea'].includes(field.type)) {
+          // Text fields don't need options
+          return true;
+        }
+        
+        return false;
+      });
       
       if (validFields) {
         return parsed as FormDefinition;
@@ -674,11 +727,19 @@ export function formatFormSelectionsAsText(
       continue;
     }
     
-    // Get labels for selected values
+    // Handle text/textarea fields
+    if (field.type === 'text' || field.type === 'textarea') {
+      if (typeof fieldValue === 'string' && fieldValue.trim()) {
+        parts.push(`${field.label}: ${fieldValue}`);
+      }
+      continue;
+    }
+    
+    // Get labels for selected values (radio, checkbox, select)
     const selectedValues = Array.isArray(fieldValue) ? fieldValue : [fieldValue];
     const selectedLabels = selectedValues
       .map(val => {
-        const option = field.options.find(opt => opt.value === val);
+        const option = field.options?.find(opt => opt.value === val);
         return option?.label || val;
       })
       .filter(Boolean);
