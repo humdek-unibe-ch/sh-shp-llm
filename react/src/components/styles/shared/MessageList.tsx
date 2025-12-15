@@ -122,7 +122,7 @@ const HistoricalFormSummary: React.FC<{ formDefinition: FormDefinition }> = ({ f
 /**
  * Individual message item component
  * Renders a single message with avatar, content, and metadata
- * In form mode, renders forms from assistant messages
+ * Detects and renders forms from assistant messages (even when form mode is disabled)
  */
 const MessageItem: React.FC<MessageItemProps> = ({ 
   message, 
@@ -135,11 +135,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const isUser = message.role === 'user';
   const attachmentCount = getAttachmentCount(message.attachments);
   
-  // Check if this assistant message contains a form definition (form mode)
+  // Check if this assistant message contains a form definition
+  // Always try to detect forms, even when form mode is disabled
+  // This allows LLMs to return forms dynamically
   let formDefinition: FormDefinition | null = null;
   let isHistoricalForm = false;
   
-  if (!isUser && config.enableFormMode && !isStreaming) {
+  if (!isUser && !isStreaming) {
     formDefinition = parseFormDefinition(message.content);
     // If it's a form but not the last message, it's historical
     if (formDefinition && !isLastMessage) {

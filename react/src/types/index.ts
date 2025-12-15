@@ -173,6 +173,10 @@ export interface LlmChatConfig {
   autoStartMessage: string;
   /** Whether form mode is enabled (LLM returns only forms, text input disabled) */
   enableFormMode: boolean;
+  /** Form mode active title (shown when text input is disabled) */
+  formModeActiveTitle: string;
+  /** Form mode active description (shown when text input is disabled) */
+  formModeActiveDescription: string;
   /** File configuration */
   fileConfig: FileConfig;
   
@@ -272,6 +276,8 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   autoStartConversation: false,
   autoStartMessage: 'Hello! I\'m here to help you. What would you like to talk about?',
   enableFormMode: false,
+  formModeActiveTitle: 'Form Mode Active',
+  formModeActiveDescription: 'Please use the form above to respond.',
   fileConfig: DEFAULT_FILE_CONFIG,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',
@@ -533,6 +539,36 @@ export interface FormField {
  * Form definition returned by LLM in form mode
  * Uses JSON Schema-inspired format
  */
+/**
+ * Content section for displaying rich text in forms
+ * Allows LLM to return educational content alongside form fields
+ */
+export interface FormContentSection {
+  /** Type of content section */
+  type: 'content';
+  /** Markdown content to render */
+  content: string;
+}
+
+/**
+ * Union type for form sections (can be either a field or content)
+ */
+export type FormSection = FormField | FormContentSection;
+
+/**
+ * Helper to check if a section is a content section
+ */
+export function isFormContentSection(section: FormSection): section is FormContentSection {
+  return section.type === 'content';
+}
+
+/**
+ * Helper to check if a section is a form field
+ */
+export function isFormField(section: FormSection): section is FormField {
+  return section.type === 'radio' || section.type === 'checkbox' || section.type === 'select';
+}
+
 export interface FormDefinition {
   /** Must be "form" to identify as form response */
   type: 'form';
@@ -544,6 +580,12 @@ export interface FormDefinition {
   fields: FormField[];
   /** Submit button label */
   submitLabel?: string;
+  /** Optional content sections to display before/after fields */
+  contentBefore?: string;
+  /** Optional content sections to display after fields */
+  contentAfter?: string;
+  /** Mixed sections array (fields and content interleaved) - alternative to fields */
+  sections?: FormSection[];
 }
 
 /**

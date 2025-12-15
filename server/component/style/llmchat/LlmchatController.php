@@ -9,6 +9,7 @@ require_once __DIR__ . "/../../../service/LlmFileUploadService.php";
 require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStreamingService.php";
 require_once __DIR__ . "/../../../service/StrictConversationService.php";
+require_once __DIR__ . "/../../../service/LlmFormModeService.php";
 
 /**
  * The controller class for the LLM chat component.
@@ -21,6 +22,7 @@ class LlmchatController extends BaseController
     private $api_formatter_service;
     private $streaming_service;
     private $strict_conversation_service;
+    private $form_mode_service;
 
     /** @var float Request start time for activity logging */
     private $request_start_time;
@@ -49,6 +51,7 @@ class LlmchatController extends BaseController
         $this->api_formatter_service = new LlmApiFormatterService();
         $this->streaming_service = new LlmStreamingService($this->llm_service);
         $this->strict_conversation_service = new StrictConversationService($this->llm_service);
+        $this->form_mode_service = new LlmFormModeService();
 
         $router = $model->get_services()->get_router();
         if(is_array($router->route['params']) && isset($router->route['params']['data'])){
@@ -112,15 +115,6 @@ class LlmchatController extends BaseController
                     break;
                 case 'get_conversations':
                     $this->getConversationsData();
-                    break;
-                case 'admin_filters':
-                    $this->handleAdminFilters();
-                    break;
-                case 'admin_conversations':
-                    $this->handleAdminConversations();
-                    break;
-                case 'admin_messages':
-                    $this->handleAdminMessages();
                     break;
                 case 'get_auto_started':
                     $this->getAutoStartedConversation();
@@ -233,7 +227,7 @@ class LlmchatController extends BaseController
 
         // Apply form mode context if enabled (takes priority over strict mode)
         if ($this->model->isFormModeEnabled()) {
-            $context_messages = $this->buildFormModeContext($context_messages);
+            $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
         }
         // Apply strict conversation mode if enabled (only if not in form mode)
         elseif ($this->model->shouldApplyStrictMode()) {
@@ -379,7 +373,7 @@ class LlmchatController extends BaseController
     {
         try {
             // Build form mode context (includes JSON schema instructions)
-            $form_context = $this->buildFormModeContext($context_messages);
+            $form_context = $this->form_mode_service->buildFormModeContext($context_messages);
 
             // Create an initial "system" prompt to trigger form generation
             $initial_prompt = [
@@ -711,11 +705,8 @@ class LlmchatController extends BaseController
             return;
         }
 
-        // Check if form mode is enabled
-        if (!$this->model->isFormModeEnabled()) {
-            $this->sendJsonResponse(['error' => 'Form mode is not enabled'], 403);
-            return;
-        }
+        // Form submissions are now allowed even when form mode is disabled
+        // This allows LLMs to return forms dynamically and users to submit them
 
         $conversation_id = $_POST['conversation_id'] ?? null;
         $form_values_json = $_POST['form_values'] ?? '{}';
@@ -725,29 +716,21 @@ class LlmchatController extends BaseController
         $max_tokens = $_POST['max_tokens'] ?? $this->model->getLlmMaxTokens();
 
         // Validate form values
-        $form_values = json_decode($form_values_json, true);
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($form_values)) {
+        $form_values = $this->form_mode_service->parseFormValues($form_values_json);
+        if ($form_values === null) {
             $this->sendJsonResponse(['error' => 'Invalid form values'], 400);
             return;
         }
 
         // Check if form has any actual selections
-        $has_selections = false;
-        foreach ($form_values as $key => $value) {
-            if (!empty($value) || (is_array($value) && count($value) > 0)) {
-                $has_selections = true;
-                break;
-            }
-        }
-
-        if (!$has_selections) {
+        if (!$this->form_mode_service->hasSelections($form_values)) {
             $this->sendJsonResponse(['error' => 'Please select at least one option before submitting'], 400);
             return;
         }
 
         // Generate readable text from form values if not provided
         if (empty($readable_text)) {
-            $readable_text = $this->generateReadableTextFromFormValues($form_values);
+            $readable_text = $this->form_mode_service->generateReadableTextFromFormValues($form_values);
         }
 
         // Final check for readable text
@@ -798,10 +781,7 @@ class LlmchatController extends BaseController
 
             // Save user message with readable text (this is what the user sees)
             // Store the structured form values in attachments for reference
-            $form_metadata = json_encode([
-                'type' => 'form_submission',
-                'values' => $form_values
-            ]);
+            $form_metadata = $this->form_mode_service->createFormMetadata($form_values);
             $messageId = $this->llm_service->addMessage($conversation_id, 'user', $readable_text, $form_metadata, $model);
 
             // Update rate limiting with the current rate data
@@ -839,7 +819,7 @@ class LlmchatController extends BaseController
             $context_messages = $this->model->getParsedConversationContext();
 
             // Apply form mode system prompt to enforce JSON form responses
-            $context_messages = $this->buildFormModeContext($context_messages);
+            $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
 
             // Convert messages to API format with context prepended
             $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model, $context_messages);
@@ -910,62 +890,6 @@ class LlmchatController extends BaseController
     }
 
     /**
-     * Build form mode context to enforce JSON Schema form responses
-     * 
-     * @param array $existing_context Existing conversation context
-     * @return array Context with form mode instructions prepended
-     */
-    private function buildFormModeContext($existing_context = [])
-    {
-        $form_mode_instruction = [
-            'role' => 'system',
-            'content' => 'IMPORTANT: You are operating in FORM MODE. You MUST respond ONLY with valid JSON form definitions.
-
-Your response must be a valid JSON object with this EXACT structure (no markdown, no code blocks, just pure JSON):
-{
-  "type": "form",
-  "title": "Form Title",
-  "description": "Optional description or instructions",
-  "fields": [
-    {
-      "id": "unique_field_id",
-      "type": "radio",
-      "label": "Question text",
-      "required": true,
-      "options": [
-        {"value": "option_value", "label": "Option Label"}
-      ],
-      "helpText": "Optional help text"
-    }
-  ],
-  "submitLabel": "Submit"
-}
-
-CRITICAL REQUIREMENTS:
-1. The "type" field MUST be exactly "form" (this is how the frontend identifies it as a form)
-2. Output ONLY the JSON - no explanatory text, no markdown code blocks, no ```json tags
-3. Each field must have a unique "id" (use snake_case like "anxiety_level", "trigger_situations")
-4. Field "type" must be one of: "radio" (single select), "checkbox" (multi-select), "select" (dropdown)
-5. Every field needs at least 2 options with both "value" and "label"
-6. Set "required": true for mandatory fields
-7. Use clear, empathetic language in labels and options
-
-FORM DESIGN BEST PRACTICES:
-- Present one question at a time for better user experience
-- Use radio buttons for single-choice questions (2-5 options)
-- Use checkboxes when users can select multiple options
-- Use select/dropdown for long lists (5+ options)
-- Include helpful descriptions to guide the user
-
-After the user submits their selections, generate the next appropriate form based on their responses.
-When the conversation/assessment is complete, you may respond with a summary instead of a form.'
-        ];
-
-        // Prepend form mode instruction to existing context
-        return array_merge([$form_mode_instruction], $existing_context);
-    }
-
-    /**
      * Handle conversation creation
      */
     private function handleNewConversation()
@@ -1000,36 +924,6 @@ When the conversation/assessment is complete, you may respond with a summary ins
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
-    }
-
-    /**
-     * Generate readable text from form values when frontend doesn't provide it
-     * This is a fallback - the frontend should normally generate this
-     */
-    private function generateReadableTextFromFormValues($form_values)
-    {
-        if (empty($form_values)) {
-            return '';
-        }
-
-        $parts = [];
-        foreach ($form_values as $field_id => $value) {
-            if (empty($value)) {
-                continue;
-            }
-
-            // Format the field ID to be more readable
-            $readable_field = str_replace(['_', '-'], ' ', $field_id);
-            $readable_field = ucwords($readable_field);
-
-            if (is_array($value)) {
-                $parts[] = $readable_field . ': ' . implode(', ', $value);
-            } else {
-                $parts[] = $readable_field . ': ' . $value;
-            }
-        }
-
-        return implode("\n", $parts);
     }
 
     /**
@@ -1150,6 +1044,12 @@ When the conversation/assessment is complete, you may respond with a summary ins
      */
     private function logApiActivity()
     {
+        // Skip logging for frequent read-only operations to reduce DB load
+        $skip_logging_actions = ['get_conversations', 'get_conversation', 'get_config', 'get_auto_started'];
+        if (in_array($this->current_action, $skip_logging_actions)) {
+            return;
+        }
+        
         // Only log if we have a valid action and user
         if (empty($this->current_action)) {
             return;
@@ -1256,6 +1156,8 @@ When the conversation/assessment is complete, you may respond with a summary ins
                 'autoStartConversation' => $this->model->isAutoStartConversationEnabled(),
                 'autoStartMessage' => $this->model->getAutoStartMessage(),
                 'enableFormMode' => $this->model->isFormModeEnabled(),
+                'formModeActiveTitle' => $this->model->getFormModeActiveTitle(),
+                'formModeActiveDescription' => $this->model->getFormModeActiveDescription(),
                 // UI Labels
                 'messagePlaceholder' => $this->model->getMessagePlaceholder(),
                 'noConversationsMessage' => $this->model->getNoConversationsMessage(),
@@ -1364,6 +1266,9 @@ When the conversation/assessment is complete, you may respond with a summary ins
      */
     public function getConversationsData()
     {
+        // Set a timeout for this operation to prevent hanging
+        set_time_limit(10);
+        
         $user_id = $this->model->getUserId();
 
         // Check if user is authenticated
@@ -1377,90 +1282,28 @@ When the conversation/assessment is complete, you may respond with a summary ins
             $configured_model = $this->model->getConfiguredModel();
             $conversation_limit = (int)$this->model->getConversationLimit();
             
+            // Ensure we have valid parameters
+            if ($conversation_limit <= 0) {
+                $conversation_limit = 50;
+            }
+            
             $conversations = $this->llm_service->getUserConversations(
                 $user_id, 
-                $conversation_limit > 0 ? $conversation_limit : 50, 
+                $conversation_limit, 
                 $configured_model
             );
             
-            $this->sendJsonResponse(['conversations' => $conversations ?: []]);
-        } catch (Exception $e) {
-            error_log('LLM getConversationsData error: ' . $e->getMessage());
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Handle admin filters request (users and sections)
-     */
-    private function handleAdminFilters()
-    {
-        try {
-            // Import admin model for admin functionality
-            require_once __DIR__ . "/../../moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php";
-            $admin_model = new ModuleLlmAdminConsoleModel($this->model->get_services(), [], $this->model->getPageId());
-            $filters = $admin_model->getAdminFilters();
-
-            $this->sendJsonResponse([
-                'filters' => $filters
-            ]);
-        } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Handle admin conversations request
-     */
-    private function handleAdminConversations()
-    {
-        $page = (int)($_GET['page'] ?? 1);
-        $per_page = min((int)($_GET['per_page'] ?? 50), 100); // Max 100 per page
-
-        $filters = [];
-        if (!empty($_GET['user_id'])) $filters['user_id'] = $_GET['user_id'];
-        if (!empty($_GET['section_id'])) $filters['section_id'] = $_GET['section_id'];
-        if (!empty($_GET['q'])) $filters['query'] = $_GET['q'];
-
-        try {
-            // Import admin model for admin functionality
-            require_once __DIR__ . "/../../moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php";
-            $admin_model = new ModuleLlmAdminConsoleModel($this->model->get_services(), [], $this->model->getPageId());
-            $result = $admin_model->getAdminConversations($filters, $page, $per_page);
-
-            $this->sendJsonResponse($result);
-        } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Handle admin conversation messages request
-     */
-    private function handleAdminMessages()
-    {
-        $conversation_id = $_GET['conversation_id'] ?? null;
-
-        if (!$conversation_id) {
-            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
-            return;
-        }
-
-        try {
-            // Import admin model for admin functionality
-            require_once __DIR__ . "/../../moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php";
-            $admin_model = new ModuleLlmAdminConsoleModel($this->model->get_services(), [], $this->model->getPageId());
-            $result = $admin_model->getAdminConversationMessages($conversation_id);
-
-            if ($result === null) {
-                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
-                return;
+            // Ensure we always return an array
+            if (!is_array($conversations)) {
+                $conversations = [];
             }
-
-            $this->sendJsonResponse($result);
+            
+            $this->sendJsonResponse(['conversations' => $conversations]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            error_log('LLM getConversationsData error for user ' . $user_id . ': ' . $e->getMessage());
+            $this->sendJsonResponse(['error' => 'Failed to load conversations'], 500);
         }
     }
+
 }
 ?>

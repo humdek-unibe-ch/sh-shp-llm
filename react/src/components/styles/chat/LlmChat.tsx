@@ -519,7 +519,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 isLoading={isLoading && messages.length === 0}
                 isProcessing={isProcessing}
                 config={config}
-                onFormSubmit={config.enableFormMode ? handleFormSubmit : undefined}
+                onFormSubmit={handleFormSubmit}
                 isFormSubmitting={isFormSubmitting}
               />
             </Card.Body>

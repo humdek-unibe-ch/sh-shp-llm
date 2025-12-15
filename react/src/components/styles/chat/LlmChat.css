@@ -1,75 +1,45 @@
 /**
  * LLM Chat - Component-Specific Styles
  * =====================================
- * Imports shared message styles and adds chat-specific UI elements.
+ * Uses Bootstrap 4.6 classes where possible, custom styles only when needed.
  */
 
 /* Import shared message styles */
 @import '../shared/SharedMessages.css';
+
+/* ===== CSS Variables for consistency ===== */
+:root {
+  --llm-radius-small: 4px;
+  --llm-radius-medium: 8px;
+  --llm-radius-large: 12px;
+  --llm-radius-none: 0;
+  --llm-shadow-small: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --llm-shadow-medium: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --llm-shadow-large: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --llm-border: 1px solid #dee2e6;
+}
 
 /* ===== Main Container ===== */
 .llm-chat-container {
   width: 100%;
   height: 100%;
   min-height: calc(100vh - 140px);
-  padding: 12px;
-  background: linear-gradient(135deg, #f6f8fb 0%, #eef2f7 100%);
 }
 
 .llm-chat-shell {
   min-height: calc(100vh - 140px);
 }
 
-.llm-chat-grid {
-  row-gap: 12px;
-  column-gap: 12px;
-}
-
 .llm-chat-panel {
   border-radius: var(--llm-radius-large);
   overflow: hidden;
-  box-shadow: var(--llm-shadow-large);
-  background: #ffffff;
-  border: var(--llm-border);
 }
 
 .llm-chat-header {
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 16px 18px;
   min-height: 72px;
-  background: #ffffff;
-  border-bottom: 1px solid #eef2f7 !important;
-}
-
-.llm-chat-body {
-  background: linear-gradient(180deg, #f9fbff 0%, #f2f5fa 100%);
-  border-top: 1px solid #eef2f7;
-  border-bottom: 1px solid #eef2f7;
-}
-
-.llm-chat-footer {
-  border-top: 1px solid #eef2f7 !important;
-}
-
-.llm-model-badge {
-  font-weight: 600;
-  padding: 8px 10px;
-  border-radius: var(--llm-radius-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-@media (max-width: 768px) {
-  .llm-chat-container {
-    padding: 8px;
-    min-height: calc(100vh - 120px);
-  }
-
-  .llm-chat-header {
-    border-radius: var(--llm-radius-large) var(--llm-radius-large) 0 0;
-  }
 }
 
 /* ===== Conversation Sidebar ===== */
@@ -77,74 +47,38 @@
   width: 36px;
   height: 36px;
   min-width: 36px;
-  background: #007bff;
-  border-radius: var(--llm-radius-medium);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
   flex-shrink: 0;
-}
-
-.conversation-icon i {
-  color: white;
-  font-size: 14px;
 }
 
 .conversation-sidebar-card {
   border-radius: var(--llm-radius-large);
   overflow: hidden;
-  background: #ffffff;
-  border: var(--llm-border);
-  box-shadow: var(--llm-shadow-large);
 }
 
 .conversation-sidebar-header {
-  padding: 16px 18px;
   min-height: 72px;
-  background: #ffffff;
-  border-bottom: 1px solid #eef2f7 !important;
   position: sticky;
   top: 0;
   z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .conversation-list .list-group-item {
   border: none;
   margin: 0;
-  border-radius: var(--llm-radius-none) !important;
-  background: #f7f9fc;
-  box-shadow: inset 0 -1px 0 rgba(20, 40, 80, 0.06);
+  border-radius: 0 !important;
 }
 
 .conversation-row {
-  padding: 12px 14px;
-  border-radius: var(--llm-radius-none);
-  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease;
 }
 
 .conversation-row:hover {
-  background: #eef4ff;
-  box-shadow: var(--llm-shadow-medium);
-}
-
-.conversation-list .list-group-item:first-child .conversation-row {
-  border-top-left-radius: var(--llm-radius-large);
-  border-top-right-radius: var(--llm-radius-large);
-}
-
-.conversation-list .list-group-item:last-child .conversation-row {
-  border-bottom-left-radius: var(--llm-radius-large);
-  border-bottom-right-radius: var(--llm-radius-large);
+  background-color: #e9ecef;
 }
 
 .conversation-row.active {
-  background: linear-gradient(90deg, #0d6efd 0%, #1a8cff 100%);
+  background: linear-gradient(90deg, #007bff 0%, #0069d9 100%);
   color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
 }
 
 .conversation-row.active small,
@@ -152,9 +86,8 @@
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
-.conversation-new-btn {
-  border-radius: var(--llm-radius-medium);
-  font-weight: 600;
+.conversation-row.active .conversation-icon {
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .conversation-delete-btn {
@@ -167,40 +100,24 @@
   opacity: 1;
 }
 
-.conversation-row.active .conversation-icon {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.conversation-row.active .conversation-icon i {
-  color: #ffffff;
-}
-
 /* ===== Messages Container ===== */
 #messages-container {
   scroll-behavior: smooth;
-  background: rgba(255, 255, 255, 0.65);
-  padding: 10px;
-  box-shadow: var(--llm-shadow-large);
-  background: #ffffff;
 }
 
-/* ===== Drag and Drop ===== */
+/* ===== Message Input ===== */
+.message-input-container {
+  border-radius: var(--llm-radius-large);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
 .message-input-container.drag-over {
   border-color: #007bff;
   border-style: dashed;
   background: rgba(0, 123, 255, 0.05);
 }
 
-.message-input-container {
-  background: linear-gradient(180deg, #fdfefe 0%, #f4f7fb 100%);
-  border: 1px solid #dbe4f3;
-  border-radius: var(--llm-radius-large);
-  box-shadow: var(--llm-shadow-large), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
 .message-input-textarea {
-  padding: 14px 16px;
   font-size: 15px;
   background: transparent;
 }
@@ -209,54 +126,11 @@
   box-shadow: none;
 }
 
-.message-input-actions {
-  border-top: 1px solid #e8edf5 !important;
-  background: #f6f8fb !important;
-}
-
-.message-action-btn {
-  border-radius: var(--llm-radius-medium);
-  font-weight: 600;
-  padding-left: 14px;
-  padding-right: 14px;
-  border-color: #d0d8e8 !important;
-  color: #2f3a4f;
-  background: #ffffff;
-  box-shadow: var(--llm-shadow-small);
-  transition: transform 0.1s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
-.message-action-btn:hover {
-  box-shadow: var(--llm-shadow-medium);
-  border-color: #c2cce0 !important;
-}
-
-.message-clear-btn {
-  background: #f7f9fc;
-}
-
-.message-send-btn {
-  background: linear-gradient(135deg, #0d6efd 0%, #3b82f6 100%);
-  color: #ffffff;
-  border: none !important;
-  box-shadow: var(--llm-shadow-medium);
-}
-
-.message-send-btn:hover {
-  box-shadow: var(--llm-shadow-large);
-}
-
 /* ===== File Attachments ===== */
 .attachment-thumbnail {
   width: 42px;
   height: 42px;
   object-fit: cover;
-  border-radius: var(--llm-radius-small);
-  border: 1px solid #dee2e6;
-}
-
-.attachment-preview-list {
-  gap: 12px;
 }
 
 /* ===== Loading State ===== */
@@ -267,12 +141,6 @@
   justify-content: center;
   height: 100%;
   min-height: 300px;
-  padding: 40px;
-  color: #6c757d;
-}
-
-.loading-spinner .spinner-border {
-  color: #007bff;
 }
 
 /* ===== Empty State ===== */
@@ -283,29 +151,12 @@
   justify-content: center;
   height: 100%;
   min-height: 300px;
-  padding: 40px;
   text-align: center;
-  color: #6c757d;
 }
 
 .empty-chat-state i {
   font-size: 64px;
-  margin-bottom: 20px;
   opacity: 0.3;
-  color: #6c757d;
-}
-
-.empty-chat-state h5 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #6c757d;
-  margin-bottom: 8px;
-}
-
-.empty-chat-state p {
-  font-size: 14px;
-  max-width: 300px;
-  color: #6c757d;
 }
 
 /* ===== Loading Overlay ===== */
@@ -320,156 +171,155 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  animation: fadeIn 0.2s ease-in;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* ===== Form Mode Styles ===== */
+/* ===== Form Mode Disabled Input ===== */
 .form-mode-input-disabled {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   border: 2px dashed #dee2e6;
   border-radius: var(--llm-radius-large);
 }
 
-.form-mode-input-disabled i {
-  color: #adb5bd;
-  display: block;
-}
-
-/* Form Card Styling */
+/* ===== Form Card ===== */
 .llm-form-card {
   border-radius: var(--llm-radius-large);
   overflow: hidden;
-  background: #ffffff;
-  border: 1px solid #e8edf5;
-}
-
-.llm-form-card .card-header {
-  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-  border-bottom: 1px solid #e8edf5;
-  padding: 16px 20px;
-}
-
-.llm-form-card .card-header h5 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #0d6efd;
-}
-
-.llm-form-card .card-body {
-  padding: 20px;
-}
-
-/* Form Field Styling */
-.form-radio-option,
-.form-checkbox-option {
-  padding: 10px 14px;
-  margin-bottom: 8px;
-  background: #f8f9fa;
-  border-radius: var(--llm-radius-medium);
-  border: 1px solid transparent;
-  transition: all 0.15s ease;
-}
-
-.form-radio-option:hover,
-.form-checkbox-option:hover {
-  background: #e9ecef;
-  border-color: #dee2e6;
-}
-
-.form-radio-option .custom-control-label,
-.form-checkbox-option .custom-control-label {
-  cursor: pointer;
-  font-size: 14px;
-  color: #495057;
-}
-
-.form-radio-option .custom-control-input:checked ~ .custom-control-label,
-.form-checkbox-option .custom-control-input:checked ~ .custom-control-label {
-  font-weight: 600;
-  color: #0d6efd;
-}
-
-.form-radio-option:has(.custom-control-input:checked),
-.form-checkbox-option:has(.custom-control-input:checked) {
-  background: linear-gradient(135deg, #e8f4fd 0%, #f0f7ff 100%);
-  border-color: #0d6efd;
-}
-
-/* Select Field Styling */
-.form-select-field {
-  border-radius: var(--llm-radius-medium);
-  padding: 10px 14px;
-  font-size: 14px;
-  border: 1px solid #dee2e6;
-  background: #ffffff;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.form-select-field:focus {
-  border-color: #0d6efd;
-  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
-}
-
-/* Validation Error Styling */
-.has-validation-error .form-radio-option,
-.has-validation-error .form-checkbox-option,
-.has-validation-error .form-select-field {
-  border-color: #dc3545;
-}
-
-/* Form Submit Button */
-.llm-form-card .btn-primary {
-  background: linear-gradient(135deg, #0d6efd 0%, #3b82f6 100%);
-  border: none;
-  border-radius: var(--llm-radius-medium);
-  font-weight: 600;
-  padding: 10px 24px;
-  box-shadow: var(--llm-shadow-medium);
-  transition: transform 0.1s ease, box-shadow 0.2s ease;
-}
-
-.llm-form-card .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--llm-shadow-large);
-}
-
-.llm-form-card .btn-primary:disabled {
-  opacity: 0.7;
-  transform: none;
 }
 
 /* ===== Historical Form Summary ===== */
-/* Displays completed forms in conversation history */
-
 .historical-form-summary {
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  border: 1px solid #dee2e6;
   border-radius: var(--llm-radius-medium);
-  margin-top: 4px;
 }
 
-.historical-form-summary .badge {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 4px 8px;
-  border-radius: 10px;
+/* ===== Form Option Buttons ===== */
+/* Full-width clickable option buttons for radio/checkbox fields */
+.form-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.historical-form-summary .badge-secondary {
-  background-color: #6c757d;
+.form-option-button {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: #ffffff;
+  border: 2px solid #dee2e6;
+  border-radius: var(--llm-radius-medium);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.form-option-button:hover:not(.disabled) {
+  border-color: #007bff;
+  background: #f8f9fa;
+}
+
+.form-option-button:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.form-option-button.selected {
+  border-color: #007bff;
+  background: #e7f1ff;
+}
+
+.form-option-button.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f8f9fa;
+}
+
+/* Radio button indicator */
+.form-option-radio {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border: 2px solid #adb5bd;
+  border-radius: 50%;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.form-option-button.selected .form-option-radio {
+  border-color: #007bff;
+}
+
+.form-option-radio-inner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.form-option-radio-inner.checked {
+  background: #007bff;
+}
+
+/* Checkbox indicator */
+.form-option-checkbox {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border: 2px solid #adb5bd;
+  border-radius: 4px;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  font-size: 12px;
   color: #ffffff;
 }
 
-.historical-form-summary strong {
-  font-size: 14px;
+.form-option-button.selected .form-option-checkbox {
+  border-color: #007bff;
+  background: #007bff;
 }
 
-.historical-form-summary .fa-check-circle {
-  font-size: 12px;
+/* Option label */
+.form-option-label {
+  flex: 1;
+  font-size: 14px;
+  color: #212529;
+  line-height: 1.4;
+}
+
+/* ===== Form Content Sections ===== */
+.form-content-section {
+  border-radius: var(--llm-radius-medium);
+}
+
+.form-content-section .markdown-content {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.form-content-section .markdown-content h1 {
+  font-size: 1.5rem;
+}
+
+.form-content-section .markdown-content h2 {
+  font-size: 1.25rem;
+}
+
+.form-content-section .markdown-content h3 {
+  font-size: 1.1rem;
+}
+
+.form-content-section .markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .llm-chat-container {
+    min-height: calc(100vh - 120px);
+  }
 }

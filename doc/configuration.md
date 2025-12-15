@@ -96,6 +96,26 @@ Form Mode works best when combined with:
 | `conversation_context` | **Recommended** | Provides guidance on what forms to generate |
 | `strict_conversation_mode` | **Optional** | Keeps form topics focused |
 
+#### UI Labels (Translatable)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `form_mode_active_title` | "Form Mode Active" | Title shown when text input is disabled |
+| `form_mode_active_description` | "Please use the form above to respond." | Description shown when text input is disabled |
+
+#### Dynamic Form Detection
+
+**NEW**: Forms are now detected and rendered automatically, even when `enable_form_mode` is disabled. This allows LLMs to dynamically return forms when appropriate. The key differences:
+
+| Feature | Form Mode Enabled | Form Mode Disabled |
+|---------|-------------------|---------------------|
+| Text input | Hidden | Visible |
+| Form detection | Always | Always |
+| Form rendering | Always | When LLM returns form JSON |
+| Form submission | Works | Works |
+
+This means you can create hybrid experiences where users can type freely, but the LLM can occasionally present structured forms for specific interactions.
+
 #### JSON Schema Format
 
 The LLM returns forms conforming to this schema:
@@ -105,6 +125,7 @@ The LLM returns forms conforming to this schema:
   "type": "form",
   "title": "Form Title",
   "description": "Optional instructions for the user",
+  "contentBefore": "Optional markdown content displayed before form fields",
   "fields": [
     {
       "id": "unique_field_id",
@@ -118,11 +139,39 @@ The LLM returns forms conforming to this schema:
       "helpText": "Optional help text"
     }
   ],
+  "contentAfter": "Optional markdown content displayed after form fields",
   "submitLabel": "Submit Button Text"
 }
 ```
 
 **Important**: The `type` field must be `"form"` for the frontend to recognize it as a form definition.
+
+#### Rich Content Support
+
+Forms can include rich markdown content before and after form fields using `contentBefore` and `contentAfter` properties. This is useful for:
+
+- **Educational Content**: Explaining concepts before asking questions
+- **Instructions**: Providing detailed guidance
+- **Summaries**: Showing results or recommendations after form submission
+
+For more complex layouts, use the `sections` array to interleave content and fields:
+
+```json
+{
+  "type": "form",
+  "title": "Learning Module",
+  "sections": [
+    { "type": "content", "content": "## Introduction\n\nWelcome to this module..." },
+    { "id": "q1", "type": "radio", "label": "Question 1", "options": [...] },
+    { "type": "content", "content": "### Important Note\n\nBefore continuing..." },
+    { "id": "q2", "type": "checkbox", "label": "Question 2", "options": [...] }
+  ],
+  "fields": [],
+  "submitLabel": "Continue"
+}
+```
+
+**Note**: When using `sections`, you can leave `fields` as an empty array. The renderer will process sections in order.
 
 #### Field Types
 

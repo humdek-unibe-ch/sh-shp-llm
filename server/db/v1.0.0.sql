@@ -215,6 +215,16 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmChat'), get_field_id('enable_form_mode'), '0', 'When enabled, the LLM returns only JSON Schema-formatted forms instead of text responses. Text input is disabled and users interact exclusively through rendered form controls (radio buttons, checkboxes, dropdowns). Form submissions are displayed as readable user messages.');
 
+-- Add form mode UI labels (user visible, translatable)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'form_mode_active_title', get_field_type_id('text'), '1'),
+(NULL, 'form_mode_active_description', get_field_type_id('text'), '1');
+
+-- Link form mode UI labels to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('form_mode_active_title'), 'Form Mode Active', 'Title shown when form mode is enabled and text input is disabled'),
+(get_style_id('llmChat'), get_field_id('form_mode_active_description'), 'Please use the form above to respond.', 'Description shown when form mode is enabled and text input is disabled');
+
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,

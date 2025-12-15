@@ -10,8 +10,10 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { Form, Button, Card } from 'react-bootstrap';
-import type { FormDefinition, FormField, FormFieldOption } from '../../../types';
-import { formatFormSelectionsAsText } from '../../../types';
+import Select from 'react-select';
+import type { FormDefinition, FormField, FormFieldOption, FormSection, FormContentSection } from '../../../types';
+import { formatFormSelectionsAsText, isFormContentSection, isFormField } from '../../../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 /**
  * Props for FormRenderer component
@@ -29,6 +31,7 @@ interface FormRendererProps {
 
 /**
  * Radio Field Component
+ * Uses full-width clickable option buttons for better UX
  */
 const RadioField: React.FC<{
   field: FormField;
@@ -45,21 +48,26 @@ const RadioField: React.FC<{
       {field.helpText && (
         <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
       )}
-      <div className="pl-2">
+      <div className="form-options-container">
         {field.options.map((option: FormFieldOption) => (
-          <Form.Check
+          <div
             key={option.value}
-            type="radio"
-            id={`${field.id}-${option.value}`}
-            name={field.id}
-            label={option.label}
-            value={option.value}
-            checked={value === option.value}
-            onChange={(e) => onChange(e.target.value)}
-            disabled={disabled}
-            className="mb-2 form-radio-option"
-            custom
-          />
+            className={`form-option-button ${value === option.value ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
+            onClick={() => !disabled && onChange(option.value)}
+            role="button"
+            tabIndex={disabled ? -1 : 0}
+            onKeyDown={(e) => {
+              if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                onChange(option.value);
+              }
+            }}
+          >
+            <div className="form-option-radio">
+              <div className={`form-option-radio-inner ${value === option.value ? 'checked' : ''}`} />
+            </div>
+            <span className="form-option-label">{option.label}</span>
+          </div>
         ))}
       </div>
     </Form.Group>
@@ -68,6 +76,7 @@ const RadioField: React.FC<{
 
 /**
  * Checkbox Field Component
+ * Uses full-width clickable option buttons for better UX
  */
 const CheckboxField: React.FC<{
   field: FormField;
@@ -75,11 +84,11 @@ const CheckboxField: React.FC<{
   onChange: (values: string[]) => void;
   disabled?: boolean;
 }> = ({ field, values, onChange, disabled }) => {
-  const handleChange = useCallback((optionValue: string, checked: boolean) => {
-    if (checked) {
-      onChange([...values, optionValue]);
-    } else {
+  const handleToggle = useCallback((optionValue: string) => {
+    if (values.includes(optionValue)) {
       onChange(values.filter(v => v !== optionValue));
+    } else {
+      onChange([...values, optionValue]);
     }
   }, [values, onChange]);
 
@@ -92,20 +101,30 @@ const CheckboxField: React.FC<{
       {field.helpText && (
         <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
       )}
-      <div className="pl-2">
-        {field.options.map((option: FormFieldOption) => (
-          <Form.Check
-            key={option.value}
-            type="checkbox"
-            id={`${field.id}-${option.value}`}
-            label={option.label}
-            checked={values.includes(option.value)}
-            onChange={(e) => handleChange(option.value, e.target.checked)}
-            disabled={disabled}
-            className="mb-2 form-checkbox-option"
-            custom
-          />
-        ))}
+      <div className="form-options-container">
+        {field.options.map((option: FormFieldOption) => {
+          const isChecked = values.includes(option.value);
+          return (
+            <div
+              key={option.value}
+              className={`form-option-button ${isChecked ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
+              onClick={() => !disabled && handleToggle(option.value)}
+              role="button"
+              tabIndex={disabled ? -1 : 0}
+              onKeyDown={(e) => {
+                if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  handleToggle(option.value);
+                }
+              }}
+            >
+              <div className="form-option-checkbox">
+                {isChecked && <i className="fas fa-check" />}
+              </div>
+              <span className="form-option-label">{option.label}</span>
+            </div>
+          );
+        })}
       </div>
     </Form.Group>
   );
@@ -113,6 +132,7 @@ const CheckboxField: React.FC<{
 
 /**
  * Select/Dropdown Field Component
+ * Uses react-select for better UX
  */
 const SelectField: React.FC<{
   field: FormField;
@@ -120,6 +140,13 @@ const SelectField: React.FC<{
   onChange: (value: string) => void;
   disabled?: boolean;
 }> = ({ field, value, onChange, disabled }) => {
+  const options = field.options.map((option: FormFieldOption) => ({
+    value: option.value,
+    label: option.label
+  }));
+
+  const selectedOption = options.find(opt => opt.value === value) || null;
+
   return (
     <Form.Group className="mb-3">
       <Form.Label className="font-weight-bold mb-2">
@@ -129,21 +156,33 @@ const SelectField: React.FC<{
       {field.helpText && (
         <Form.Text className="text-muted d-block mb-2">{field.helpText}</Form.Text>
       )}
-      <Form.Control
-        as="select"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="form-select-field"
-        custom
-      >
-        <option value="">-- Select an option --</option>
-        {field.options.map((option: FormFieldOption) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </Form.Control>
+      <Select
+        value={selectedOption}
+        onChange={(option) => onChange(option?.value || '')}
+        options={options}
+        isDisabled={disabled}
+        placeholder="-- Select an option --"
+        isClearable={!field.required}
+        classNamePrefix="react-select"
+        styles={{
+          control: (base, state) => ({
+            ...base,
+            borderColor: state.isFocused ? '#80bdff' : '#ced4da',
+            boxShadow: state.isFocused ? '0 0 0 0.2rem rgba(0, 123, 255, 0.25)' : 'none',
+            '&:hover': {
+              borderColor: state.isFocused ? '#80bdff' : '#ced4da'
+            }
+          }),
+          option: (base, state) => ({
+            ...base,
+            backgroundColor: state.isSelected ? '#007bff' : state.isFocused ? '#e9ecef' : 'white',
+            color: state.isSelected ? 'white' : '#212529',
+            '&:active': {
+              backgroundColor: '#007bff'
+            }
+          })
+        }}
+      />
     </Form.Group>
   );
 };
@@ -262,6 +301,83 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
 
   const isDisabled = disabled || isSubmitting;
 
+  /**
+   * Render a form field
+   */
+  const renderField = (field: FormField) => {
+    const error = validationErrors[field.id];
+    
+    return (
+      <div key={field.id} className={error ? 'has-validation-error' : ''}>
+        {field.type === 'radio' && (
+          <RadioField
+            field={field}
+            value={formValues[field.id] as string}
+            onChange={(value) => updateFieldValue(field.id, value)}
+            disabled={isDisabled}
+          />
+        )}
+        {field.type === 'checkbox' && (
+          <CheckboxField
+            field={field}
+            values={formValues[field.id] as string[]}
+            onChange={(values) => updateFieldValue(field.id, values)}
+            disabled={isDisabled}
+          />
+        )}
+        {field.type === 'select' && (
+          <SelectField
+            field={field}
+            value={formValues[field.id] as string}
+            onChange={(value) => updateFieldValue(field.id, value)}
+            disabled={isDisabled}
+          />
+        )}
+        {error && (
+          <div className="text-danger small mb-2 mt-n2">
+            <i className="fas fa-exclamation-circle mr-1"></i>
+            {error}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /**
+   * Render a content section with markdown
+   */
+  const renderContentSection = (content: string, index: number) => (
+    <div key={`content-${index}`} className="form-content-section mb-4">
+      <MarkdownRenderer content={content} isStreaming={false} />
+    </div>
+  );
+
+  /**
+   * Render sections (mixed fields and content)
+   */
+  const renderSections = () => {
+    // If sections array is provided, use it for mixed content
+    if (formDefinition.sections && formDefinition.sections.length > 0) {
+      return formDefinition.sections.map((section, index) => {
+        if (isFormContentSection(section)) {
+          return renderContentSection(section.content, index);
+        } else if (isFormField(section)) {
+          return renderField(section);
+        }
+        return null;
+      });
+    }
+
+    // Otherwise, render contentBefore, fields, contentAfter
+    return (
+      <>
+        {formDefinition.contentBefore && renderContentSection(formDefinition.contentBefore, -1)}
+        {formDefinition.fields.map(field => renderField(field))}
+        {formDefinition.contentAfter && renderContentSection(formDefinition.contentAfter, 999)}
+      </>
+    );
+  };
+
   return (
     <Card className="llm-form-card border-0 shadow-sm mb-3">
       {(formDefinition.title || formDefinition.description) && (
@@ -279,65 +395,31 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
       )}
       <Card.Body>
         <Form onSubmit={handleSubmit}>
-          {formDefinition.fields.map((field: FormField) => {
-            const error = validationErrors[field.id];
-            
-            return (
-              <div key={field.id} className={error ? 'has-validation-error' : ''}>
-                {field.type === 'radio' && (
-                  <RadioField
-                    field={field}
-                    value={formValues[field.id] as string}
-                    onChange={(value) => updateFieldValue(field.id, value)}
-                    disabled={isDisabled}
-                  />
-                )}
-                {field.type === 'checkbox' && (
-                  <CheckboxField
-                    field={field}
-                    values={formValues[field.id] as string[]}
-                    onChange={(values) => updateFieldValue(field.id, values)}
-                    disabled={isDisabled}
-                  />
-                )}
-                {field.type === 'select' && (
-                  <SelectField
-                    field={field}
-                    value={formValues[field.id] as string}
-                    onChange={(value) => updateFieldValue(field.id, value)}
-                    disabled={isDisabled}
-                  />
-                )}
-                {error && (
-                  <div className="text-danger small mb-2 mt-n2">
-                    <i className="fas fa-exclamation-circle mr-1"></i>
-                    {error}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {renderSections()}
           
-          <div className="d-flex justify-content-end mt-4 pt-3 border-top">
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={isDisabled}
-              className="px-4"
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-paper-plane mr-2"></i>
-                  {formDefinition.submitLabel || 'Submit'}
-                </>
-              )}
-            </Button>
-          </div>
+          {/* Only show submit button if there are form fields */}
+          {formDefinition.fields.length > 0 && (
+            <div className="d-flex justify-content-end mt-4 pt-3 border-top">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isDisabled}
+                className="px-4"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-paper-plane mr-2"></i>
+                    {formDefinition.submitLabel || 'Submit'}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </Form>
       </Card.Body>
     </Card>

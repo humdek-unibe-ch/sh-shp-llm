@@ -37,6 +37,7 @@ Your responses MUST be valid JSON with this exact structure:
   "type": "form",
   "title": "Form Title",
   "description": "Instructions or context for the user",
+  "contentBefore": "Optional markdown content displayed BEFORE the form fields. Use this for educational content, explanations, or context.",
   "fields": [
     {
       "id": "unique_field_id",
@@ -49,7 +50,42 @@ Your responses MUST be valid JSON with this exact structure:
       "helpText": "Optional help text"
     }
   ],
+  "contentAfter": "Optional markdown content displayed AFTER the form fields. Use this for additional notes or instructions.",
   "submitLabel": "Next"
+}
+```
+
+### Rich Content with Sections
+
+For more complex layouts, use the `sections` array to interleave content and fields:
+
+```json
+{
+  "type": "form",
+  "title": "Educational Module",
+  "sections": [
+    {
+      "type": "content",
+      "content": "## Understanding Anxiety\n\nAnxiety is a natural response to stress. It can manifest in various ways:\n\n- **Physical symptoms**: Racing heart, sweating, trembling\n- **Mental symptoms**: Worry, fear, difficulty concentrating\n- **Behavioral symptoms**: Avoidance, restlessness\n\nLet's explore your experience with anxiety."
+    },
+    {
+      "id": "anxiety_experience",
+      "type": "radio",
+      "label": "How would you describe your experience with anxiety?",
+      "required": true,
+      "options": [
+        {"value": "mild", "label": "Mild - occasional worry that doesn't interfere with daily life"},
+        {"value": "moderate", "label": "Moderate - regular anxiety that sometimes affects my activities"},
+        {"value": "severe", "label": "Severe - frequent anxiety that significantly impacts my life"}
+      ]
+    },
+    {
+      "type": "content",
+      "content": "### Important Note\n\nRemember that anxiety exists on a spectrum, and your experience is valid regardless of where you fall."
+    }
+  ],
+  "fields": [],
+  "submitLabel": "Continue"
 }
 ```
 

@@ -91,6 +91,8 @@ class LlmchatModel extends StyleModel
 
     // Form mode - LLM returns only forms, text input disabled
     private $enable_form_mode;
+    private $form_mode_active_title;
+    private $form_mode_active_description;
 
     /* Constructors ***********************************************************/
 
@@ -203,6 +205,8 @@ class LlmchatModel extends StyleModel
 
         // Form mode - LLM returns only forms, text input disabled
         $this->enable_form_mode = $this->get_db_field('enable_form_mode', '0');
+        $this->form_mode_active_title = $this->get_db_field('form_mode_active_title', 'Form Mode Active');
+        $this->form_mode_active_description = $this->get_db_field('form_mode_active_description', 'Please use the form above to respond.');
     }
 
     /* Private Methods *********************************************************/
@@ -1068,6 +1072,28 @@ class LlmchatModel extends StyleModel
     public function isFormModeEnabled()
     {
         return $this->enable_form_mode === '1';
+    }
+
+    /**
+     * Get form mode active title
+     * Shown when form mode is enabled and text input is disabled
+     *
+     * @return string The form mode active title
+     */
+    public function getFormModeActiveTitle()
+    {
+        return $this->form_mode_active_title;
+    }
+
+    /**
+     * Get form mode active description
+     * Shown when form mode is enabled and text input is disabled
+     *
+     * @return string The form mode active description
+     */
+    public function getFormModeActiveDescription()
+    {
+        return $this->form_mode_active_description;
     }
 
     /**
