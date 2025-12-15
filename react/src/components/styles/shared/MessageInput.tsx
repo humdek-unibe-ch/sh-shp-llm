@@ -314,6 +314,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   // Character count
   const charCount = message.length;
   const isNearLimit = charCount > maxLength * 0.9;
+
+  // In form mode, hide the text input entirely
+  if (config.enableFormMode) {
+    return (
+      <div className="form-mode-input-disabled text-center py-4 px-3 bg-light rounded border">
+        <i className="fas fa-list-ul fa-2x text-muted mb-2"></i>
+        <p className="text-muted mb-0 small">
+          <strong>Form Mode Active</strong><br />
+          Please use the form above to respond.
+        </p>
+      </div>
+    );
+  }
   
   return (
     <Form onSubmit={handleSubmit}>

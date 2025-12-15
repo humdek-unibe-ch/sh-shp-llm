@@ -100,7 +100,35 @@ server/plugins/sh-shp-llm/
 │  ┌────────────────────────────────────────────────┐    │
 │  │              Sub-components                     │    │
 │  │  ConversationSidebar | MessageList | Input     │    │
+│  │  FormRenderer (Form Mode)                      │    │
 │  └────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Form Mode Architecture
+
+When Interactive Form Mode is enabled:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              Form Mode Data Flow                         │
+│                                                         │
+│  LLM Response (JSON Schema)                             │
+│       │                                                 │
+│       ▼                                                 │
+│  parseFormDefinition() - types/index.ts                 │
+│       │                                                 │
+│       ▼                                                 │
+│  FormRenderer.tsx - Renders Bootstrap 4.6 form         │
+│       │                                                 │
+│       ▼                                                 │
+│  User Selection → formatFormSelectionsAsText()         │
+│       │                                                 │
+│       ▼                                                 │
+│  formApi.submit() → LlmchatController                   │
+│       │                                                 │
+│       ▼                                                 │
+│  Readable text sent to LLM → Next form response        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -109,10 +137,27 @@ server/plugins/sh-shp-llm/
 ### Message Submission Flow
 
 ```
-User Input
+User Input (Text or Form)
     │
     ▼
-React Component (MessageInput)
+React Component (MessageInput or FormRenderer)
+    │
+    ├─[Form Mode]─────► formApi.submit()
+    │                        │
+    │                        ▼
+    │                   formatFormSelectionsAsText()
+    │                        │
+    │                        ▼
+    │                   LlmchatController::handleFormSubmission()
+    │                        │
+    │                        ▼
+    │                   LlmService::addMessage() (user - readable text)
+    │                        │
+    │                        ▼
+    │                   buildFormModeContext() (inject form schema)
+    │                        │
+    │                        ▼
+    │                   LLM API → JSON Form Response
     │
     ├─[Non-Streaming]─► messagesApi.send()
     │                        │

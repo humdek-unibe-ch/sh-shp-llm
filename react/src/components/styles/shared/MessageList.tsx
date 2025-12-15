@@ -12,14 +12,17 @@
  * - Markdown rendering with syntax highlighting
  * - Streaming message with typing cursor
  * - Thinking indicator
+ * - Form mode: renders JSON Schema forms from assistant messages
  * 
  * @module components/MessageList
  */
 
 import React from 'react';
-import type { Message, LlmChatConfig } from '../../../types';
+import type { Message, LlmChatConfig, FormDefinition } from '../../../types';
+import { parseFormDefinition } from '../../../types';
 import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { FormRenderer } from './FormRenderer';
 
 /**
  * Props for MessageList component
@@ -37,6 +40,10 @@ interface MessageListProps {
   isProcessing?: boolean;
   /** Component configuration */
   config: LlmChatConfig;
+  /** Callback when form is submitted (form mode only) */
+  onFormSubmit?: (values: Record<string, string | string[]>, readableText: string) => void;
+  /** Whether form submission is in progress */
+  isFormSubmitting?: boolean;
 }
 
 /**
@@ -49,6 +56,12 @@ interface MessageItemProps {
   isStreaming?: boolean;
   /** Configuration */
   config: LlmChatConfig;
+  /** Whether this is the last message (for form rendering) */
+  isLastMessage?: boolean;
+  /** Callback when form is submitted */
+  onFormSubmit?: (values: Record<string, string | string[]>, readableText: string) => void;
+  /** Whether form submission is in progress */
+  isFormSubmitting?: boolean;
 }
 
 /**
@@ -84,12 +97,55 @@ const AttachmentIndicator: React.FC<{ count: number; isUser: boolean; config: Ll
 };
 
 /**
+ * Render a historical form as a read-only summary
+ * Shows what form was presented without the interactive elements
+ */
+const HistoricalFormSummary: React.FC<{ formDefinition: FormDefinition }> = ({ formDefinition }) => {
+  return (
+    <div className="historical-form-summary bg-light rounded p-3 border">
+      <div className="d-flex align-items-center mb-2">
+        <i className="fas fa-list-ul text-primary mr-2"></i>
+        <strong className="text-primary">{formDefinition.title || 'Form'}</strong>
+        <span className="badge badge-secondary ml-2">Completed</span>
+      </div>
+      {formDefinition.description && (
+        <p className="text-muted small mb-2">{formDefinition.description}</p>
+      )}
+      <div className="small text-muted">
+        <i className="fas fa-check-circle text-success mr-1"></i>
+        {formDefinition.fields.length} question{formDefinition.fields.length !== 1 ? 's' : ''} answered
+      </div>
+    </div>
+  );
+};
+
+/**
  * Individual message item component
  * Renders a single message with avatar, content, and metadata
+ * In form mode, renders forms from assistant messages
  */
-const MessageItem: React.FC<MessageItemProps> = ({ message, isStreaming = false, config }) => {
+const MessageItem: React.FC<MessageItemProps> = ({ 
+  message, 
+  isStreaming = false, 
+  config,
+  isLastMessage = false,
+  onFormSubmit,
+  isFormSubmitting = false
+}) => {
   const isUser = message.role === 'user';
   const attachmentCount = getAttachmentCount(message.attachments);
+  
+  // Check if this assistant message contains a form definition (form mode)
+  let formDefinition: FormDefinition | null = null;
+  let isHistoricalForm = false;
+  
+  if (!isUser && config.enableFormMode && !isStreaming) {
+    formDefinition = parseFormDefinition(message.content);
+    // If it's a form but not the last message, it's historical
+    if (formDefinition && !isLastMessage) {
+      isHistoricalForm = true;
+    }
+  }
   
   return (
     <div className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
@@ -105,8 +161,19 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isStreaming = false,
           {isUser ? (
             // User messages: plain text with preserved whitespace
             <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+          ) : formDefinition && isHistoricalForm ? (
+            // Historical form: show as completed summary
+            <HistoricalFormSummary formDefinition={formDefinition} />
+          ) : formDefinition ? (
+            // Active form: render interactive form
+            <FormRenderer
+              formDefinition={formDefinition}
+              onSubmit={onFormSubmit || (() => {})}
+              isSubmitting={isFormSubmitting}
+              disabled={isStreaming}
+            />
           ) : (
-            // Assistant messages: render with markdown
+            // Regular assistant messages: render with markdown
             <MarkdownRenderer 
               content={message.content} 
               isStreaming={isStreaming}
@@ -114,19 +181,23 @@ const MessageItem: React.FC<MessageItemProps> = ({ message, isStreaming = false,
           )}
         </div>
         
-        {/* Attachment indicator */}
-        <AttachmentIndicator count={attachmentCount} isUser={isUser} config={config} />
+        {/* Attachment indicator - hide for forms */}
+        {!formDefinition && (
+          <AttachmentIndicator count={attachmentCount} isUser={isUser} config={config} />
+        )}
         
-        {/* Message metadata */}
-        <div className="message-meta">
-          <span>{formatTime(message.timestamp)}</span>
-          {message.tokens_used && (
-            <span className="tokens">
-              <i className="fas fa-coins fa-xs"></i>
-              {message.tokens_used}{config.tokensSuffix}
-            </span>
-          )}
-        </div>
+        {/* Message metadata - hide for active forms, show for historical */}
+        {(!formDefinition || isHistoricalForm) && (
+          <div className="message-meta">
+            <span>{formatTime(message.timestamp)}</span>
+            {message.tokens_used && (
+              <span className="tokens">
+                <i className="fas fa-coins fa-xs"></i>
+                {message.tokens_used}{config.tokensSuffix}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -190,7 +261,9 @@ export const MessageList: React.FC<MessageListProps> = ({
   streamingContent,
   isLoading,
   isProcessing = false,
-  config
+  config,
+  onFormSubmit,
+  isFormSubmitting = false
 }) => {
   // Show loading state
   if (isLoading) {
@@ -218,12 +291,18 @@ export const MessageList: React.FC<MessageListProps> = ({
           index === messages.length - 1 && 
           message.role === 'assistant');
         
+        // Check if this is the last message (for form rendering)
+        const isLastMessage = index === messages.length - 1;
+        
         return (
           <MessageItem
             key={message.id || `msg-${index}`}
             message={message}
             isStreaming={isStreamingMessage}
             config={config}
+            isLastMessage={isLastMessage}
+            onFormSubmit={onFormSubmit}
+            isFormSubmitting={isFormSubmitting}
           />
         );
       })}

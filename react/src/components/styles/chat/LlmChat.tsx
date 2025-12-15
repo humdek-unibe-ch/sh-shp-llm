@@ -20,6 +20,7 @@ import { ConversationSidebar } from '../shared/ConversationSidebar';
 import { StreamingIndicator } from '../shared/StreamingIndicator';
 import { useChatState } from '../../../hooks/useChatState';
 import { useStreaming } from '../../../hooks/useStreaming';
+import { formApi } from '../../../utils/api';
 import type { LlmChatConfig, SelectedFile, Message } from '../../../types';
 import './LlmChat.css';
 
@@ -105,6 +106,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
   // Local state for tracking non-streaming processing
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Local state for form submission (form mode)
+  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
   // Ref for messages container (for smooth scrolling)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -305,6 +309,107 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   }, [deleteConversation]);
   
   /**
+   * Handle form submission (form mode only)
+   */
+  const handleFormSubmit = useCallback(async (values: Record<string, string | string[]>, readableText: string) => {
+    // Prevent concurrent submissions
+    if (isStreaming || isFormSubmitting) {
+      setError(config.streamingActiveError);
+      return;
+    }
+
+    // Add user message to UI immediately with readable text
+    addUserMessage(readableText, 0);
+
+    // Force scroll to bottom
+    forceScrollToBottom();
+
+    // Get current conversation ID
+    const conversationId = currentConversation?.id || null;
+
+    setIsFormSubmitting(true);
+
+    try {
+      if (config.streamingEnabled) {
+        // Prepare for streaming and get conversation ID
+        const prepResult = await formApi.submitAndPrepareStreaming(
+          values,
+          readableText,
+          conversationId,
+          config.configuredModel
+        );
+
+        if (prepResult.error) {
+          throw new Error(prepResult.error);
+        }
+
+        if (!prepResult.conversation_id) {
+          throw new Error('No conversation ID returned');
+        }
+
+        // Handle new conversation
+        if (prepResult.is_new_conversation && !config.enableConversationsList) {
+          const newConversation = {
+            id: prepResult.conversation_id,
+            title: 'New Conversation',
+            model: config.configuredModel,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          setCurrentConversation(newConversation);
+        }
+
+        // Start streaming using the streaming hook
+        await sendStreamingMessage(readableText, prepResult.conversation_id, []);
+      } else {
+        // Non-streaming mode
+        setIsProcessing(true);
+        try {
+          const result = await formApi.submit(
+            values,
+            readableText,
+            conversationId,
+            config.configuredModel
+          );
+
+          if (result.error) {
+            throw new Error(result.error);
+          }
+
+          // Refresh messages
+          if (result.conversation_id) {
+            await loadConversationMessages(result.conversation_id);
+            if (config.enableConversationsList) {
+              await loadConversations();
+            }
+          }
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to submit form:', error);
+      setError(error instanceof Error ? error.message : 'Failed to submit form');
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  }, [
+    isStreaming,
+    isFormSubmitting,
+    currentConversation,
+    config.streamingEnabled,
+    config.configuredModel,
+    config.enableConversationsList,
+    addUserMessage,
+    sendStreamingMessage,
+    loadConversationMessages,
+    loadConversations,
+    setError,
+    setCurrentConversation,
+    forceScrollToBottom
+  ]);
+
+  /**
    * Handle file selection
    */
   const handleFilesChange = useCallback((files: SelectedFile[]) => {
@@ -414,6 +519,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 isLoading={isLoading && messages.length === 0}
                 isProcessing={isProcessing}
                 config={config}
+                onFormSubmit={config.enableFormMode ? handleFormSubmit : undefined}
+                isFormSubmitting={isFormSubmitting}
               />
             </Card.Body>
 

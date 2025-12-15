@@ -107,6 +107,11 @@ function parseConfig(container: HTMLElement) {
     jsonConfig.autoStartMessage ||
     'Hello! I\'m here to help you. What would you like to talk about?';
 
+  const enableFormMode =
+    container.dataset.enableFormMode === '1' ||
+    container.dataset.enableFormMode === 'true' ||
+    jsonConfig.enableFormMode === true;
+
   const acceptedFileTypes = container.dataset.acceptedFileTypes ||
     jsonConfig.acceptedFileTypes || '';
   
@@ -299,11 +304,12 @@ function parseConfig(container: HTMLElement) {
     hasConversationContext
   };
 
-  // Add auto-start fields
+  // Add auto-start and form mode fields
   const autoStartConfig = {
     ...baseConfig,
     autoStartConversation,
-    autoStartMessage
+    autoStartMessage,
+    enableFormMode
   };
 
   // Add remaining fields

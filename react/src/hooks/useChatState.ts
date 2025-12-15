@@ -13,15 +13,29 @@ import type { Conversation, Message, LlmChatConfig, SelectedFile } from '../type
 import { conversationsApi, messagesApi, autoStartApi, handleApiError } from '../utils/api';
 
 /**
- * Check for auto-started conversation
+ * Check for auto-started conversation with timeout
+ * Prevents UI from hanging if the API call takes too long
  */
 async function checkAutoStartedConversation(): Promise<{conversation: Conversation, messages: Message[]} | null> {
+  const TIMEOUT_MS = 5000; // 5 second timeout
+
   try {
-    const data = await autoStartApi.check();
-    if (data.auto_started && data.conversation && data.messages) {
+    // Create a timeout promise
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), TIMEOUT_MS);
+    });
+
+    // Race between the API call and timeout
+    const result = await Promise.race([
+      autoStartApi.check(),
+      timeoutPromise
+    ]);
+
+    // If we got a result and it indicates auto-start
+    if (result && 'auto_started' in result && result.auto_started && result.conversation && result.messages) {
       return {
-        conversation: data.conversation,
-        messages: data.messages
+        conversation: result.conversation,
+        messages: result.messages
       };
     }
 

@@ -207,6 +207,14 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmChat'), get_field_id('strict_conversation_mode'), '0', 'When enabled, the AI will only respond to questions and topics that fit within the defined conversation context. If users ask about unrelated topics, the AI will politely redirect them back to the appropriate context with a brief description of what topics are available.');
 
+-- Add form mode field (user visible, translatable)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_form_mode', get_field_type_id('checkbox'), '0');
+
+-- Link form mode to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_form_mode'), '0', 'When enabled, the LLM returns only JSON Schema-formatted forms instead of text responses. Text input is disabled and users interact exclusively through rendered form controls (radio buttons, checkboxes, dropdowns). Form submissions are displayed as readable user messages.');
+
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,

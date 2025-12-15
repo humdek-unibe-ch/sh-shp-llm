@@ -22,6 +22,12 @@ class LlmchatController extends BaseController
     private $streaming_service;
     private $strict_conversation_service;
 
+    /** @var float Request start time for activity logging */
+    private $request_start_time;
+
+    /** @var string|null Current API action being processed */
+    private $current_action;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -33,6 +39,11 @@ class LlmchatController extends BaseController
     public function __construct($model)
     {
         parent::__construct($model);
+
+        // Track request start time for activity logging
+        $this->request_start_time = microtime(true);
+        $this->current_action = null;
+
         $this->llm_service = new LlmService($this->model->get_services());
         $this->file_upload_service = new LlmFileUploadService($this->llm_service);
         $this->api_formatter_service = new LlmApiFormatterService();
@@ -57,6 +68,7 @@ class LlmchatController extends BaseController
     {
         // Check for streaming request first
         if (isset($_GET['streaming']) && $_GET['streaming'] === '1') {
+            $this->current_action = 'streaming';
             $this->handleStreamingRequest();
             return;
         }
@@ -64,10 +76,14 @@ class LlmchatController extends BaseController
         // Check for AJAX-like parameters that were previously handled by AjaxLlmChat
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $action = $_POST['action'] ?? '';
+            $this->current_action = $action ?: 'post_message';
 
             switch ($action) {
                 case 'send_message':
                     $this->handleMessageSubmission();
+                    break;
+                case 'submit_form':
+                    $this->handleFormSubmission();
                     break;
                 case 'new_conversation':
                     $this->handleNewConversation();
@@ -85,6 +101,7 @@ class LlmchatController extends BaseController
         } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // Handle GET requests for conversation data
             $action = $_GET['action'] ?? '';
+            $this->current_action = $action ?: null;
 
             switch ($action) {
                 case 'get_config':
@@ -136,24 +153,35 @@ class LlmchatController extends BaseController
         }
 
         // Check if there was an auto-started conversation in this session
+        // The session stores the conversation ID (not just a boolean flag)
         $session_key = 'llm_auto_started_' . $this->model->getSectionId();
-        if (!isset($_SESSION[$session_key])) {
+        if (!isset($_SESSION[$session_key]) || empty($_SESSION[$session_key])) {
             $this->sendJsonResponse(['auto_started' => false]);
             return;
         }
 
-        // Get the current conversation (should be the auto-started one)
-        $conversation = $this->model->getCurrentConversation();
+        $auto_started_conversation_id = $_SESSION[$session_key];
+
+        // Get the auto-started conversation directly by ID
+        // This is more reliable than using model->getCurrentConversation() which depends on URL params
+        $conversation = $this->llm_service->getConversation($auto_started_conversation_id, $user_id);
         if (!$conversation) {
+            // Clear invalid session data
+            unset($_SESSION[$session_key]);
             $this->sendJsonResponse(['auto_started' => false]);
             return;
         }
 
-        $messages = $this->model->getConversationMessages();
+        // Get messages for this specific conversation
+        $messages = $this->llm_service->getConversationMessages($auto_started_conversation_id, 50);
         if (empty($messages)) {
             $this->sendJsonResponse(['auto_started' => false]);
             return;
         }
+
+        // Clear the session flag after successfully returning the data
+        // This prevents the auto-start data from being returned on subsequent page loads
+        unset($_SESSION[$session_key]);
 
         $this->sendJsonResponse([
             'auto_started' => true,
@@ -203,8 +231,12 @@ class LlmchatController extends BaseController
         // Get conversation context if configured
         $context_messages = $this->model->getParsedConversationContext();
 
-        // Apply strict conversation mode if enabled
-        if ($this->model->shouldApplyStrictMode()) {
+        // Apply form mode context if enabled (takes priority over strict mode)
+        if ($this->model->isFormModeEnabled()) {
+            $context_messages = $this->buildFormModeContext($context_messages);
+        }
+        // Apply strict conversation mode if enabled (only if not in form mode)
+        elseif ($this->model->shouldApplyStrictMode()) {
             $context_messages = $this->strict_conversation_service->buildStrictModeContext(
                 $context_messages,
                 $this->model->getConversationContext()
@@ -272,6 +304,9 @@ class LlmchatController extends BaseController
 
     /**
      * Perform the auto-start conversation by creating a conversation and sending the initial message
+     * 
+     * In Form Mode: Calls the LLM API to generate the initial form based on context
+     * In Normal Mode: Uses a static context-aware greeting message
      */
     private function performAutoStartConversation()
     {
@@ -297,36 +332,118 @@ class LlmchatController extends BaseController
             $auto_start_title = $this->generateAutoStartTitle();
             $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $auto_start_title]);
 
-            // Get context-aware auto-start message and context
-            $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
+            // Get context messages
             $context_messages = $this->model->getParsedConversationContext();
 
-            // Create auto-start message with context
-            $message_id = $this->llm_service->addMessage(
-                $conversation_id,
-                'assistant', // AI sends the auto-start message
-                $auto_start_message,
-                null, // No file attachments for auto-start
-                $this->model->getConfiguredModel(),
-                null, // Tokens will be calculated when actually sent
-                null, // No raw response for auto-start
-                $context_messages // Include context for tracking
-            );
+            // Check if form mode is enabled - if so, we need to call the LLM to generate the initial form
+            if ($this->model->isFormModeEnabled()) {
+                $this->performFormModeAutoStart($conversation_id, $user_id, $context_messages, $rate_data);
+            } else {
+                // Normal mode: Use static context-aware greeting
+                $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
 
-            // Update rate limiting
-            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+                // Create auto-start message with context
+                $this->llm_service->addMessage(
+                    $conversation_id,
+                    'assistant', // AI sends the auto-start message
+                    $auto_start_message,
+                    null, // No file attachments for auto-start
+                    $this->model->getConfiguredModel(),
+                    null, // Tokens will be calculated when actually sent
+                    null, // No raw response for auto-start
+                    $context_messages // Include context for tracking
+                );
 
-            // Mark as auto-started in session to prevent duplicates
-            $session_key = 'llm_auto_started_' . $this->model->getSectionId();
-            $_SESSION[$session_key] = true;
+                // Update rate limiting
+                $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
-            // Auto-start setup complete - normal page rendering will continue
-            // Frontend will check for auto-started conversation via API
+                // Store auto-started conversation ID in session
+                $session_key = 'llm_auto_started_' . $this->model->getSectionId();
+                $_SESSION[$session_key] = $conversation_id;
+            }
 
         } catch (Exception $e) {
             // Log error but don't fail the page load - auto-start is optional
             error_log('LLM Auto-start failed: ' . $e->getMessage());
             // Don't send error response as this is called during normal page load
+        }
+    }
+
+    /**
+     * Perform auto-start in Form Mode by calling the LLM to generate the initial form
+     * 
+     * This method sends a system message to the LLM asking it to generate the first form
+     * based on the configured conversation context.
+     */
+    private function performFormModeAutoStart($conversation_id, $user_id, $context_messages, $rate_data)
+    {
+        try {
+            // Build form mode context (includes JSON schema instructions)
+            $form_context = $this->buildFormModeContext($context_messages);
+
+            // Create an initial "system" prompt to trigger form generation
+            $initial_prompt = [
+                [
+                    'role' => 'user',
+                    'content' => 'Please start the conversation by providing the first form for me to fill out.'
+                ]
+            ];
+
+            // Combine context with initial prompt
+            $api_messages = array_merge($form_context, $initial_prompt);
+
+            // Call LLM API to generate the initial form
+            $model = $this->model->getConfiguredModel();
+            $temperature = $this->model->getLlmTemperature();
+            $max_tokens = $this->model->getLlmMaxTokens();
+
+            $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
+
+            if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
+                $assistant_message = $response['choices'][0]['message']['content'];
+                $tokens_used = $response['usage']['total_tokens'] ?? null;
+
+                // Save the LLM-generated form as the assistant message
+                $this->llm_service->addMessage(
+                    $conversation_id,
+                    'assistant',
+                    $assistant_message,
+                    null,
+                    $model,
+                    $tokens_used,
+                    $response,
+                    $form_context
+                );
+
+                // Update rate limiting
+                $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
+                // Store auto-started conversation ID in session
+                $session_key = 'llm_auto_started_' . $this->model->getSectionId();
+                $_SESSION[$session_key] = $conversation_id;
+
+            } else {
+                // LLM didn't return a valid response - fall back to error message
+                error_log('LLM Form Mode Auto-start: Invalid LLM response');
+                $this->llm_service->addMessage(
+                    $conversation_id,
+                    'assistant',
+                    'I apologize, but I was unable to generate the initial form. Please try refreshing the page.',
+                    null,
+                    $model,
+                    null,
+                    null,
+                    $form_context
+                );
+
+                // Still store in session so the conversation is shown
+                $session_key = 'llm_auto_started_' . $this->model->getSectionId();
+                $_SESSION[$session_key] = $conversation_id;
+            }
+
+        } catch (Exception $e) {
+            error_log('LLM Form Mode Auto-start failed: ' . $e->getMessage());
+            throw $e; // Re-throw to be caught by parent
         }
     }
 
@@ -581,6 +698,274 @@ class LlmchatController extends BaseController
     }
 
     /**
+     * Handle form submission in form mode
+     * Processes form selections and sends them to the LLM
+     */
+    private function handleFormSubmission()
+    {
+        $user_id = $this->model->getUserId();
+
+        // Check if user is authenticated
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
+        // Check if form mode is enabled
+        if (!$this->model->isFormModeEnabled()) {
+            $this->sendJsonResponse(['error' => 'Form mode is not enabled'], 403);
+            return;
+        }
+
+        $conversation_id = $_POST['conversation_id'] ?? null;
+        $form_values_json = $_POST['form_values'] ?? '{}';
+        $readable_text = trim($_POST['readable_text'] ?? '');
+        $model = $_POST['model'] ?? $this->model->getConfiguredModel();
+        $temperature = $_POST['temperature'] ?? $this->model->getLlmTemperature();
+        $max_tokens = $_POST['max_tokens'] ?? $this->model->getLlmMaxTokens();
+
+        // Validate form values
+        $form_values = json_decode($form_values_json, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($form_values)) {
+            $this->sendJsonResponse(['error' => 'Invalid form values'], 400);
+            return;
+        }
+
+        // Check if form has any actual selections
+        $has_selections = false;
+        foreach ($form_values as $key => $value) {
+            if (!empty($value) || (is_array($value) && count($value) > 0)) {
+                $has_selections = true;
+                break;
+            }
+        }
+
+        if (!$has_selections) {
+            $this->sendJsonResponse(['error' => 'Please select at least one option before submitting'], 400);
+            return;
+        }
+
+        // Generate readable text from form values if not provided
+        if (empty($readable_text)) {
+            $readable_text = $this->generateReadableTextFromFormValues($form_values);
+        }
+
+        // Final check for readable text
+        if (empty($readable_text)) {
+            $this->sendJsonResponse(['error' => 'Could not generate form submission text'], 400);
+            return;
+        }
+
+        try {
+            // Check if this is a streaming preparation request
+            $is_streaming_prep = isset($_POST['prepare_streaming']) && $_POST['prepare_streaming'] === '1';
+
+            // Check rate limiting and get current rate data
+            $rate_data = $this->llm_service->checkRateLimit($user_id);
+
+            // Create conversation if needed
+            $is_new_conversation = false;
+            if (!$conversation_id) {
+                // For new conversations, check if we can add one more concurrent conversation
+                if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
+                    throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
+                }
+                // Get or create conversation for the specific model
+                $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens, $this->model->getSectionId());
+                $is_new_conversation = true;
+            } else {
+                // Check if existing conversation matches the requested model
+                $existing_conversation = $this->llm_service->getConversation($conversation_id, $user_id);
+                if (!$existing_conversation) {
+                    throw new Exception('Conversation not found');
+                }
+
+                // If model changed, create new conversation for the new model
+                if ($existing_conversation['model'] !== $model) {
+                    if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
+                        throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
+                    }
+                    $conversation_id = $this->llm_service->getOrCreateConversationForModel($user_id, $model, $temperature, $max_tokens, $this->model->getSectionId());
+                    $is_new_conversation = true;
+                }
+            }
+
+            // Generate title for new conversations based on the form submission
+            if ($is_new_conversation) {
+                $generated_title = $this->generateConversationTitle($readable_text);
+                $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $generated_title]);
+            }
+
+            // Save user message with readable text (this is what the user sees)
+            // Store the structured form values in attachments for reference
+            $form_metadata = json_encode([
+                'type' => 'form_submission',
+                'values' => $form_values
+            ]);
+            $messageId = $this->llm_service->addMessage($conversation_id, 'user', $readable_text, $form_metadata, $model);
+
+            // Update rate limiting with the current rate data
+            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
+            if ($is_streaming_prep) {
+                // For streaming preparation, return the conversation ID
+                $savedMessage = [
+                    'id' => $messageId,
+                    'role' => 'user',
+                    'content' => $readable_text,
+                    'attachments' => $form_metadata,
+                    'model' => $model,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                // Store message data in session for streaming
+                $_SESSION['streaming_conversation_id'] = $conversation_id;
+                $_SESSION['streaming_message'] = $readable_text;
+                $_SESSION['streaming_model'] = $model;
+
+                $this->sendJsonResponse([
+                    'status' => 'prepared',
+                    'conversation_id' => $conversation_id,
+                    'is_new_conversation' => $is_new_conversation,
+                    'user_message' => $savedMessage
+                ]);
+                return;
+            }
+
+            // Get conversation messages for LLM
+            $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+            
+            // Get conversation context if configured
+            $context_messages = $this->model->getParsedConversationContext();
+
+            // Apply form mode system prompt to enforce JSON form responses
+            $context_messages = $this->buildFormModeContext($context_messages);
+
+            // Convert messages to API format with context prepended
+            $api_messages = $this->api_formatter_service->convertToApiFormat($messages, $model, $context_messages);
+
+            // Call LLM API - check if streaming is enabled in the style configuration
+            $streaming_enabled = $this->model->isStreamingEnabled();
+
+            if ($streaming_enabled) {
+                // Start streaming response with context tracking
+                $this->streaming_service->startStreamingResponse($conversation_id, $api_messages, $model, $is_new_conversation, $context_messages);
+                return;
+            } else {
+                // Get complete response
+                $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
+
+                // Check for API error responses first
+                if (is_array($response) && isset($response['error'])) {
+                    $error_message = 'LLM API error';
+                    if (is_array($response['error'])) {
+                        if (isset($response['error']['message'])) {
+                            $error_message = $response['error']['message'];
+                        } elseif (isset($response['error']['type'])) {
+                            $error_message = 'LLM API error: ' . $response['error']['type'];
+                        }
+                    } elseif (is_string($response['error'])) {
+                        $error_message = $response['error'];
+                    }
+                    
+                    throw new Exception($error_message);
+                }
+
+                // Check for valid success response
+                if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
+                    $assistant_message = $response['choices'][0]['message']['content'];
+                    $tokens_used = $response['usage']['total_tokens'] ?? null;
+
+                    // Ensure content is properly extracted and clean
+                    $clean_content = trim($assistant_message);
+
+                    // Save assistant message with full response and context for debugging
+                    $this->llm_service->addMessage($conversation_id, 'assistant', $clean_content, null, $model, $tokens_used, $response, $context_messages);
+
+                    $this->sendJsonResponse([
+                        'conversation_id' => $conversation_id,
+                        'message' => $assistant_message,
+                        'streaming' => false,
+                        'is_new_conversation' => $is_new_conversation
+                    ]);
+                } else {
+                    $error_detail = '';
+                    if (is_array($response)) {
+                        if (isset($response['message'])) {
+                            $error_detail = ': ' . $response['message'];
+                        } elseif (isset($response['detail'])) {
+                            $error_detail = ': ' . (is_string($response['detail']) ? $response['detail'] : json_encode($response['detail']));
+                        }
+                    } elseif (is_string($response)) {
+                        $error_detail = ': ' . substr($response, 0, 200);
+                    }
+                    
+                    throw new Exception('Invalid response from LLM API' . $error_detail);
+                }
+            }
+
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Build form mode context to enforce JSON Schema form responses
+     * 
+     * @param array $existing_context Existing conversation context
+     * @return array Context with form mode instructions prepended
+     */
+    private function buildFormModeContext($existing_context = [])
+    {
+        $form_mode_instruction = [
+            'role' => 'system',
+            'content' => 'IMPORTANT: You are operating in FORM MODE. You MUST respond ONLY with valid JSON form definitions.
+
+Your response must be a valid JSON object with this EXACT structure (no markdown, no code blocks, just pure JSON):
+{
+  "type": "form",
+  "title": "Form Title",
+  "description": "Optional description or instructions",
+  "fields": [
+    {
+      "id": "unique_field_id",
+      "type": "radio",
+      "label": "Question text",
+      "required": true,
+      "options": [
+        {"value": "option_value", "label": "Option Label"}
+      ],
+      "helpText": "Optional help text"
+    }
+  ],
+  "submitLabel": "Submit"
+}
+
+CRITICAL REQUIREMENTS:
+1. The "type" field MUST be exactly "form" (this is how the frontend identifies it as a form)
+2. Output ONLY the JSON - no explanatory text, no markdown code blocks, no ```json tags
+3. Each field must have a unique "id" (use snake_case like "anxiety_level", "trigger_situations")
+4. Field "type" must be one of: "radio" (single select), "checkbox" (multi-select), "select" (dropdown)
+5. Every field needs at least 2 options with both "value" and "label"
+6. Set "required": true for mandatory fields
+7. Use clear, empathetic language in labels and options
+
+FORM DESIGN BEST PRACTICES:
+- Present one question at a time for better user experience
+- Use radio buttons for single-choice questions (2-5 options)
+- Use checkboxes when users can select multiple options
+- Use select/dropdown for long lists (5+ options)
+- Include helpful descriptions to guide the user
+
+After the user submits their selections, generate the next appropriate form based on their responses.
+When the conversation/assessment is complete, you may respond with a summary instead of a form.'
+        ];
+
+        // Prepend form mode instruction to existing context
+        return array_merge([$form_mode_instruction], $existing_context);
+    }
+
+    /**
      * Handle conversation creation
      */
     private function handleNewConversation()
@@ -615,6 +1000,36 @@ class LlmchatController extends BaseController
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Generate readable text from form values when frontend doesn't provide it
+     * This is a fallback - the frontend should normally generate this
+     */
+    private function generateReadableTextFromFormValues($form_values)
+    {
+        if (empty($form_values)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($form_values as $field_id => $value) {
+            if (empty($value)) {
+                continue;
+            }
+
+            // Format the field ID to be more readable
+            $readable_field = str_replace(['_', '-'], ' ', $field_id);
+            $readable_field = ucwords($readable_field);
+
+            if (is_array($value)) {
+                $parts[] = $readable_field . ': ' . implode(', ', $value);
+            } else {
+                $parts[] = $readable_field . ': ' . $value;
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     /**
@@ -707,10 +1122,14 @@ class LlmchatController extends BaseController
     }
 
     /**
-     * Send JSON response
+     * Send JSON response and log user activity
      */
     private function sendJsonResponse($data, $status_code = 200)
     {
+        // Log user activity for API requests before exiting
+        // This ensures React API calls are tracked in user_activity table
+        $this->logApiActivity();
+
         // If headers have already been sent (e.g., for streaming), just send JSON
         if (!headers_sent()) {
             http_response_code($status_code);
@@ -721,6 +1140,63 @@ class LlmchatController extends BaseController
             uopz_allow_exit(true);
         }
         exit;
+    }
+
+    /**
+     * Log API request activity to user_activity table
+     * This captures React frontend API calls that would otherwise be missed
+     * because they exit early via sendJsonResponse() instead of completing
+     * the normal page rendering flow.
+     */
+    private function logApiActivity()
+    {
+        // Only log if we have a valid action and user
+        if (empty($this->current_action)) {
+            return;
+        }
+
+        $user_id = $this->model->getUserId();
+        if (!$user_id) {
+            return;
+        }
+
+        try {
+            $db = $this->model->get_services()->get_db();
+            $exec_time = microtime(true) - $this->request_start_time;
+
+            // Build params array for logging
+            $params = [];
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                // Log relevant POST params (exclude sensitive data)
+                if (isset($_POST['conversation_id'])) {
+                    $params['conversation_id'] = $_POST['conversation_id'];
+                }
+                if (isset($_POST['action'])) {
+                    $params['action'] = $_POST['action'];
+                }
+            } else {
+                // Log GET params
+                if (isset($_GET['conversation_id'])) {
+                    $params['conversation_id'] = $_GET['conversation_id'];
+                }
+                if (isset($_GET['action'])) {
+                    $params['action'] = $_GET['action'];
+                }
+            }
+
+            $db->insert("user_activity", [
+                "id_users" => $user_id,
+                "url" => $_SERVER['REQUEST_URI'],
+                "id_type" => 2, // API request type
+                "exec_time" => $exec_time,
+                "keyword" => 'llm_api_' . $this->current_action,
+                "params" => json_encode($params),
+                "mobile" => 0
+            ]);
+        } catch (Exception $e) {
+            // Don't fail the API response if logging fails
+            error_log('LLM API activity logging failed: ' . $e->getMessage());
+        }
     }
 
     /* Public Methods *********************************************************/
@@ -779,6 +1255,7 @@ class LlmchatController extends BaseController
                 'strictConversationMode' => $this->model->isStrictConversationModeEnabled(),
                 'autoStartConversation' => $this->model->isAutoStartConversationEnabled(),
                 'autoStartMessage' => $this->model->getAutoStartMessage(),
+                'enableFormMode' => $this->model->isFormModeEnabled(),
                 // UI Labels
                 'messagePlaceholder' => $this->model->getMessagePlaceholder(),
                 'noConversationsMessage' => $this->model->getNoConversationsMessage(),
@@ -896,9 +1373,19 @@ class LlmchatController extends BaseController
         }
 
         try {
-            $conversations = $this->llm_service->getUserConversations($user_id, 50, $this->model->get_db_field('llm_model'));
-            $this->sendJsonResponse(['conversations' => $conversations]);
+            // Use configured model from model getter for consistency
+            $configured_model = $this->model->getConfiguredModel();
+            $conversation_limit = (int)$this->model->getConversationLimit();
+            
+            $conversations = $this->llm_service->getUserConversations(
+                $user_id, 
+                $conversation_limit > 0 ? $conversation_limit : 50, 
+                $configured_model
+            );
+            
+            $this->sendJsonResponse(['conversations' => $conversations ?: []]);
         } catch (Exception $e) {
+            error_log('LLM getConversationsData error: ' . $e->getMessage());
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
     }

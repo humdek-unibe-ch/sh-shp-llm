@@ -171,6 +171,8 @@ export interface LlmChatConfig {
   autoStartConversation: boolean;
   /** Auto-start message content */
   autoStartMessage: string;
+  /** Whether form mode is enabled (LLM returns only forms, text input disabled) */
+  enableFormMode: boolean;
   /** File configuration */
   fileConfig: FileConfig;
   
@@ -269,6 +271,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   hasConversationContext: false,
   autoStartConversation: false,
   autoStartMessage: 'Hello! I\'m here to help you. What would you like to talk about?',
+  enableFormMode: false,
   fileConfig: DEFAULT_FILE_CONFIG,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',
@@ -492,6 +495,168 @@ export const INITIAL_CHAT_STATE: ChatState = {
   streamingContent: '',
   error: null
 };
+
+// ============================================================================
+// FORM MODE TYPES
+// ============================================================================
+
+/**
+ * Form field option (for radio, checkbox, select)
+ */
+export interface FormFieldOption {
+  /** Unique value for this option */
+  value: string;
+  /** Display label for this option */
+  label: string;
+}
+
+/**
+ * Form field definition
+ * Supports radio buttons, checkboxes, and dropdowns
+ */
+export interface FormField {
+  /** Unique field identifier */
+  id: string;
+  /** Field type: radio (single select), checkbox (multi-select), select (dropdown) */
+  type: 'radio' | 'checkbox' | 'select';
+  /** Field label/question text */
+  label: string;
+  /** Whether the field is required */
+  required?: boolean;
+  /** Available options for selection */
+  options: FormFieldOption[];
+  /** Optional help text */
+  helpText?: string;
+}
+
+/**
+ * Form definition returned by LLM in form mode
+ * Uses JSON Schema-inspired format
+ */
+export interface FormDefinition {
+  /** Must be "form" to identify as form response */
+  type: 'form';
+  /** Form title */
+  title?: string;
+  /** Optional form description */
+  description?: string;
+  /** Array of form fields */
+  fields: FormField[];
+  /** Submit button label */
+  submitLabel?: string;
+}
+
+/**
+ * Form submission data
+ * Maps field IDs to selected values
+ */
+export interface FormSubmission {
+  /** Field ID to value(s) mapping */
+  values: Record<string, string | string[]>;
+  /** Original form definition for reference */
+  formDefinition: FormDefinition;
+  /** Readable text representation of selections */
+  readableText: string;
+}
+
+/**
+ * Form submission response from backend
+ */
+export interface FormSubmissionResponse {
+  /** New conversation ID (if created) */
+  conversation_id?: string;
+  /** Whether this is a new conversation */
+  is_new_conversation?: boolean;
+  /** User message that was created */
+  user_message?: Message;
+  /** Error message if failed */
+  error?: string;
+}
+
+/**
+ * Parse message content to check if it contains a form definition
+ * @param content Message content to parse
+ * @returns FormDefinition if valid form, null otherwise
+ */
+export function parseFormDefinition(content: string): FormDefinition | null {
+  if (!content) return null;
+  
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(content.trim());
+    
+    // Validate it's a form definition
+    if (parsed && parsed.type === 'form' && Array.isArray(parsed.fields)) {
+      // Validate each field has required properties
+      const validFields = parsed.fields.every((field: FormField) => 
+        field.id && 
+        field.type && 
+        ['radio', 'checkbox', 'select'].includes(field.type) &&
+        field.label &&
+        Array.isArray(field.options) &&
+        field.options.every((opt: FormFieldOption) => opt.value && opt.label)
+      );
+      
+      if (validFields) {
+        return parsed as FormDefinition;
+      }
+    }
+  } catch {
+    // Not valid JSON, not a form
+  }
+  
+  return null;
+}
+
+/**
+ * Format form selections as readable text for display
+ * @param formDefinition The form definition
+ * @param values Selected values
+ * @returns Human-readable text representation
+ */
+export function formatFormSelectionsAsText(
+  formDefinition: FormDefinition,
+  values: Record<string, string | string[]>
+): string {
+  const parts: string[] = [];
+  
+  // Add form title if available
+  if (formDefinition.title) {
+    parts.push(`**${formDefinition.title}**`);
+    parts.push(''); // Empty line after title
+  }
+  
+  for (const field of formDefinition.fields) {
+    const fieldValue = values[field.id];
+    if (!fieldValue || (Array.isArray(fieldValue) && fieldValue.length === 0)) {
+      continue;
+    }
+    
+    // Get labels for selected values
+    const selectedValues = Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+    const selectedLabels = selectedValues
+      .map(val => {
+        const option = field.options.find(opt => opt.value === val);
+        return option?.label || val;
+      })
+      .filter(Boolean);
+    
+    if (selectedLabels.length > 0) {
+      if (selectedLabels.length === 1) {
+        parts.push(`${field.label}: ${selectedLabels[0]}`);
+      } else {
+        parts.push(`${field.label}: ${selectedLabels.join(', ')}`);
+      }
+    }
+  }
+  
+  // If no selections were made, return a default message
+  if (parts.length === 0 || (parts.length === 2 && parts[1] === '')) {
+    return 'Form submitted (no selections)';
+  }
+  
+  return parts.join('\n');
+}
 
 // ============================================================================
 // FILE ERROR MESSAGES

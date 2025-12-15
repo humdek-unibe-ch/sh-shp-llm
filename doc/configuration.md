@@ -62,6 +62,154 @@ These settings override global defaults for specific chat instances.
 | `enable_file_uploads` | checkbox | `true` | Allow file attachments |
 | `enable_full_page_reload` | checkbox | `false` | Reload page after streaming (vs. React refresh) |
 | `strict_conversation_mode` | checkbox | `false` | Enable strict conversation mode to keep AI focused on defined topics |
+| `enable_form_mode` | checkbox | `false` | Enable Interactive Form Mode - LLM returns structured forms instead of text |
+
+### Interactive Form Mode
+
+**Location:** CMS → Edit page → llmChat component settings → `enable_form_mode`
+
+Interactive Form Mode transforms the chat interface from free-text input to structured form interactions. When enabled, the LLM is instructed to return JSON Schema-based forms instead of plain text responses, and the text input field is disabled.
+
+#### When to Use Form Mode
+
+- **Guided Conversations**: When you want to guide users through a structured decision tree
+- **Questionnaires**: For collecting structured data through predefined questions
+- **Assessment Tools**: Mental health screenings, intake forms, or surveys
+- **Educational Modules**: Step-by-step learning with multiple-choice questions
+- **Research Studies**: Ensuring consistent data collection across participants
+
+#### How It Works
+
+1. **Form Generation**: The LLM receives a system prompt instructing it to return responses as JSON Schema forms
+2. **Form Rendering**: The frontend parses the JSON and renders Bootstrap 4.6 form components (radio buttons, checkboxes, dropdowns)
+3. **User Selection**: Users interact with form elements instead of typing
+4. **Readable Submission**: User selections are converted to human-readable text and displayed as their message
+5. **LLM Response**: The LLM receives the readable text and generates the next form or response
+
+#### Configuration Requirements
+
+Form Mode works best when combined with:
+
+| Setting | Requirement | Reason |
+|---------|-------------|--------|
+| `auto_start_conversation` | **Required** | LLM needs to initiate with a form since user cannot type |
+| `conversation_context` | **Recommended** | Provides guidance on what forms to generate |
+| `strict_conversation_mode` | **Optional** | Keeps form topics focused |
+
+#### JSON Schema Format
+
+The LLM returns forms conforming to this schema:
+
+```json
+{
+  "type": "form",
+  "title": "Form Title",
+  "description": "Optional instructions for the user",
+  "fields": [
+    {
+      "id": "unique_field_id",
+      "type": "radio|checkbox|select",
+      "label": "Question or field label",
+      "required": true,
+      "options": [
+        { "value": "option1", "label": "Option 1" },
+        { "value": "option2", "label": "Option 2" }
+      ],
+      "helpText": "Optional help text"
+    }
+  ],
+  "submitLabel": "Submit Button Text"
+}
+```
+
+**Important**: The `type` field must be `"form"` for the frontend to recognize it as a form definition.
+
+#### Field Types
+
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `radio` | Single selection from options | Yes/No questions, single-choice |
+| `checkbox` | Multiple selections allowed | Multi-select preferences |
+| `select` | Single selection dropdown | Long option lists |
+
+#### Field Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `id` | Yes | Unique identifier for the field |
+| `type` | Yes | One of: `radio`, `checkbox`, `select` |
+| `label` | Yes | Question or field label displayed to user |
+| `options` | Yes | Array of `{value, label}` pairs |
+| `required` | No | Whether field must be filled (default: false) |
+| `helpText` | No | Additional help text shown below the label |
+
+#### Example Context for Form Mode
+
+```markdown
+# Anxiety Assessment Module
+
+You are an AI assistant conducting an anxiety screening assessment.
+
+## Instructions
+- Always respond with a JSON form following the FormDefinition schema
+- Present one question at a time for better user experience
+- Use appropriate field types (radio for single-choice, checkbox for multi-select)
+- After collecting responses, provide a summary and recommendations
+
+## Assessment Questions
+1. How often do you feel nervous or anxious? (Never, Sometimes, Often, Always)
+2. What situations trigger your anxiety? (Work, Social, Health, Financial, Other)
+3. How does anxiety affect your daily life? (Sleep, Appetite, Concentration, Relationships)
+
+## Response Guidelines
+- Be empathetic in form descriptions
+- Use clear, non-clinical language in options
+- Provide helpful context in form descriptions
+```
+
+#### User Experience Flow
+
+1. **Page Load**: User visits page with Form Mode enabled
+2. **Auto-Start**: LLM automatically sends first form (requires `auto_start_conversation`)
+3. **Form Display**: User sees rendered form with radio/checkbox/dropdown options
+4. **Selection**: User makes selections and clicks "Submit"
+5. **Message Display**: User's selections appear as readable text in chat
+6. **Next Form**: LLM responds with next form or summary
+
+#### Example User Message Display
+
+When a user submits a form with selections, it appears as:
+
+```
+Form Submission: "Anxiety Assessment - Question 1"
+
+- How often do you feel nervous or anxious?: Sometimes
+- What triggers your anxiety most?: Work, Social situations
+```
+
+#### Combining with Auto-Start
+
+For Form Mode to work properly, `auto_start_conversation` should be enabled:
+
+```
+✅ Recommended Configuration:
+- enable_form_mode: true
+- auto_start_conversation: true
+- conversation_context: [detailed form instructions]
+
+❌ Not Recommended:
+- enable_form_mode: true
+- auto_start_conversation: false
+  (User cannot type, so conversation cannot start!)
+```
+
+#### Best Practices
+
+1. **Clear Instructions**: Provide detailed context about what forms to generate
+2. **One Question at a Time**: Guide LLM to present forms progressively
+3. **Meaningful Options**: Ensure form options are clear and comprehensive
+4. **Fallback Handling**: LLM may occasionally return text instead of forms
+5. **Testing**: Test form generation with your specific context before deployment
 
 ### Strict Conversation Mode
 

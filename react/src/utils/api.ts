@@ -25,7 +25,8 @@ import type {
   AdminConversationsResponse,
   AdminFiltersResponse,
   AdminMessagesResponse,
-  LlmChatConfig
+  LlmChatConfig,
+  FormSubmissionResponse
 } from '../types';
 
 // ============================================================================
@@ -366,6 +367,75 @@ export const messagesApi = {
     }
     
     return response.json();
+  }
+};
+
+// ============================================================================
+// FORM MODE API
+// ============================================================================
+
+/**
+ * Form Mode API namespace
+ * Handles form submission in form mode
+ */
+export const formApi = {
+  /**
+   * Submit form selections
+   * Calls: POST action=submit_form
+   * 
+   * @param formValues - Object mapping field IDs to selected values
+   * @param readableText - Human-readable text representation of selections
+   * @param conversationId - Conversation ID (optional, creates new if not provided)
+   * @param model - LLM model to use
+   * @returns Promise resolving to form submission result
+   */
+  async submit(
+    formValues: Record<string, string | string[]>,
+    readableText: string,
+    conversationId: string | null,
+    model: string
+  ): Promise<FormSubmissionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'submit_form');
+    formData.append('form_values', JSON.stringify(formValues));
+    formData.append('readable_text', readableText);
+    formData.append('model', model);
+
+    if (conversationId) {
+      formData.append('conversation_id', conversationId);
+    }
+
+    return apiPost<FormSubmissionResponse>(formData);
+  },
+
+  /**
+   * Submit form and prepare for streaming response
+   * Calls: POST action=submit_form with prepare_streaming=1
+   * 
+   * @param formValues - Object mapping field IDs to selected values
+   * @param readableText - Human-readable text representation of selections
+   * @param conversationId - Conversation ID (optional)
+   * @param model - LLM model to use
+   * @returns Promise resolving to preparation result with conversation ID
+   */
+  async submitAndPrepareStreaming(
+    formValues: Record<string, string | string[]>,
+    readableText: string,
+    conversationId: string | null,
+    model: string
+  ): Promise<PrepareStreamingResponse> {
+    const formData = new FormData();
+    formData.append('action', 'submit_form');
+    formData.append('form_values', JSON.stringify(formValues));
+    formData.append('readable_text', readableText);
+    formData.append('model', model);
+    formData.append('prepare_streaming', '1');
+
+    if (conversationId) {
+      formData.append('conversation_id', conversationId);
+    }
+
+    return apiPost<PrepareStreamingResponse>(formData);
   }
 };
 

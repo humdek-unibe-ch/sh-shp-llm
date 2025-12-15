@@ -89,6 +89,9 @@ class LlmchatModel extends StyleModel
     // Strict conversation mode
     private $strict_conversation_mode;
 
+    // Form mode - LLM returns only forms, text input disabled
+    private $enable_form_mode;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -197,6 +200,9 @@ class LlmchatModel extends StyleModel
 
         // Strict conversation mode
         $this->strict_conversation_mode = $this->get_db_field('strict_conversation_mode', '0');
+
+        // Form mode - LLM returns only forms, text input disabled
+        $this->enable_form_mode = $this->get_db_field('enable_form_mode', '0');
     }
 
     /* Private Methods *********************************************************/
@@ -1051,6 +1057,17 @@ class LlmchatModel extends StyleModel
     public function getAutoStartMessage()
     {
         return $this->auto_start_message;
+    }
+
+    /**
+     * Check if form mode is enabled
+     * When enabled, LLM returns only JSON Schema forms and text input is disabled
+     *
+     * @return bool True if form mode is enabled
+     */
+    public function isFormModeEnabled()
+    {
+        return $this->enable_form_mode === '1';
     }
 
     /**
