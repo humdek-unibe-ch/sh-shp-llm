@@ -22,32 +22,36 @@ Each day, ask the user to log their mood and any notes. Each submission creates 
 
 FORM:
 {
-  "form": {
-    "title": "Daily Mood Check-in",
-    "description": "How are you feeling today?",
-    "fields": [
-      {
-        "id": "mood",
-        "type": "select",
-        "label": "Current Mood",
-        "options": ["😊 Great", "🙂 Good", "😐 Okay", "😔 Down", "😢 Struggling"],
-        "required": true
-      },
-      {
-        "id": "energy_level",
-        "type": "number",
-        "label": "Energy Level (1-10)",
-        "min": 1,
-        "max": 10
-      },
-      {
-        "id": "notes",
-        "type": "textarea",
-        "label": "Any notes about today?"
-      }
-    ]
-  },
-  "message": "Welcome back! Let's log how you're feeling today."
+  "type": "form",
+  "title": "Daily Mood Check-in",
+  "description": "How are you feeling today?",
+  "fields": [
+    {
+      "id": "mood",
+      "type": "select",
+      "label": "Current Mood",
+      "options": [
+        {"value": "great", "label": "😊 Great"},
+        {"value": "good", "label": "🙂 Good"},
+        {"value": "okay", "label": "😐 Okay"},
+        {"value": "down", "label": "😔 Down"},
+        {"value": "struggling", "label": "😢 Struggling"}
+      ],
+      "required": true
+    },
+    {
+      "id": "energy_level",
+      "type": "number",
+      "label": "Energy Level (1-10)",
+      "min": 1,
+      "max": 10
+    },
+    {
+      "id": "notes",
+      "type": "textarea",
+      "label": "Any notes about today?"
+    }
+  ]
 }
 
 After submission, thank the user and offer to log again tomorrow.
@@ -73,29 +77,32 @@ Help users set up and update their profile. Each submission updates their single
 
 FORM:
 {
-  "form": {
-    "title": "Your Profile",
-    "description": "Update your profile information",
-    "fields": [
-      {
-        "id": "display_name",
-        "type": "text",
-        "label": "Display Name",
-        "required": true
-      },
-      {
-        "id": "bio",
-        "type": "textarea",
-        "label": "Bio"
-      },
-      {
-        "id": "notification_preference",
-        "type": "select",
-        "label": "Notification Preference",
-        "options": ["All", "Important Only", "None"]
-      }
-    ]
-  }
+  "type": "form",
+  "title": "Your Profile",
+  "description": "Update your profile information",
+  "fields": [
+    {
+      "id": "display_name",
+      "type": "text",
+      "label": "Display Name",
+      "required": true
+    },
+    {
+      "id": "bio",
+      "type": "textarea",
+      "label": "Bio"
+    },
+    {
+      "id": "notification_preference",
+      "type": "select",
+      "label": "Notification Preference",
+      "options": [
+        {"value": "all", "label": "All"},
+        {"value": "important_only", "label": "Important Only"},
+        {"value": "none", "label": "None"}
+      ]
+    }
+  ]
 }
 
 After submission, confirm the profile was updated.
