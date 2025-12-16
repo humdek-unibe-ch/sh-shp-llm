@@ -404,18 +404,10 @@ export const MessageList: React.FC<MessageListProps> = ({
   };
 
   // Determine if we should show the Continue button
-  // Show when: form mode is enabled, last message is from assistant, and it doesn't contain a form
+  // Always show when form mode is enabled and not streaming/processing
   const shouldShowContinueButton = () => {
-    if (!config.enableFormMode || !onContinue) return false;
-    if (isStreaming || isProcessing) return false;
-    if (messages.length === 0) return false;
-    
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg.role !== 'assistant') return false;
-    
-    // Check if last assistant message contains a form
-    const lastFormDef = parseFormDefinition(lastMsg.content);
-    return !lastFormDef;
+    // Always show continue button in form mode unless streaming or processing
+    return config.enableFormMode && onContinue && !isStreaming && !isProcessing && messages.length > 0;
   };
 
   return (
