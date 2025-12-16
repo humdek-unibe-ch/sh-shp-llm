@@ -164,6 +164,7 @@ const SelectField: React.FC<{
         placeholder="-- Select an option --"
         isClearable={!field.required}
         classNamePrefix="react-select"
+        menuPortalTarget={document.body}
         styles={{
           control: (base, state) => ({
             ...base,
@@ -180,6 +181,10 @@ const SelectField: React.FC<{
             '&:active': {
               backgroundColor: '#007bff'
             }
+          }),
+          menuPortal: (base) => ({
+            ...base,
+            zIndex: 9999
           })
         }}
       />

@@ -703,6 +703,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       placeholder="All users..."
                       className="react-select-container filter-select"
                       classNamePrefix="react-select"
+                      menuPortalTarget={document.body}
                       styles={{
                         control: (provided) => ({
                           ...provided,
@@ -731,6 +732,10 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         singleValue: (provided) => ({
                           ...provided,
                           fontSize: '0.875rem'
+                        }),
+                        menuPortal: (base) => ({
+                          ...base,
+                          zIndex: 9999
                         })
                       }}
                     />
@@ -751,6 +756,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       placeholder="All sections..."
                       className="react-select-container filter-select"
                       classNamePrefix="react-select"
+                      menuPortalTarget={document.body}
                       styles={{
                         control: (provided) => ({
                           ...provided,
@@ -779,6 +785,10 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         singleValue: (provided) => ({
                           ...provided,
                           fontSize: '0.875rem'
+                        }),
+                        menuPortal: (base) => ({
+                          ...base,
+                          zIndex: 9999
                         })
                       }}
                     />
