@@ -468,6 +468,10 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     target: HTMLElement | null;
   }>({ show: false, message: null, target: null });
 
+  // Scroll position preservation
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [preservedScrollTop, setPreservedScrollTop] = useState<number | null>(null);
+
   useEffect(() => {
     loadFilterOptions();
   }, []);
@@ -475,6 +479,14 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   useEffect(() => {
     loadConversations(1);
   }, [filters]);
+
+  // Restore scroll position after messages are loaded
+  useEffect(() => {
+    if (preservedScrollTop !== null && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = preservedScrollTop;
+      setPreservedScrollTop(null);
+    }
+  }, [messages, preservedScrollTop]);
 
   const loadFilterOptions = async () => {
     try {
@@ -511,8 +523,14 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     }
   };
 
-  const selectConversation = async (conversation: AdminConversation) => {
+  const selectConversation = async (conversation: AdminConversation, preserveScroll: boolean = false) => {
     setSelectedConversation(conversation);
+
+    // Save scroll position if preserving
+    if (preserveScroll && messagesContainerRef.current) {
+      setPreservedScrollTop(messagesContainerRef.current.scrollTop);
+    }
+
     setLoading(true);
 
     try {
@@ -604,7 +622,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
               </Button>
               <Button
                 variant="primary"
-                onClick={() => loadConversations(currentPage)}
+                onClick={() => {
+                  loadConversations(currentPage);
+                  // Also refresh messages for selected conversation while preserving scroll position
+                  if (selectedConversation) {
+                    selectConversation(selectedConversation, true);
+                  }
+                }}
                 disabled={loading}
               >
                 <i className={`fas fa-sync-alt ${loading ? 'fa-spin' : ''}`}></i>
@@ -938,7 +962,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 </Card.Header>
 
                 {/* Messages Container */}
-                <Card.Body className="messages-container p-3">
+                <Card.Body ref={messagesContainerRef} className="messages-container p-3" style={{ overflowY: 'auto', maxHeight: '600px' }}>
                   {messages.length === 0 ? (
                     <div className="text-center py-5">
                       <i className="fas fa-comment-slash fa-2x text-muted mb-3"></i>
