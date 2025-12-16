@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useMemo } from 'react';
-import type { Conversation, Message, LlmChatConfig, SelectedFile } from '../types';
+import type { Conversation, Message, LlmChatConfig, SelectedFile, SendMessageResponse } from '../types';
 import { createConversationsApi, createMessagesApi, createAutoStartApi, handleApiError } from '../utils/api';
 
 /**
@@ -77,7 +77,7 @@ export interface UseChatStateReturn {
   /** Select a conversation */
   selectConversation: (conversation: Conversation) => void;
   /** Send a message */
-  sendMessage: (message: string, files: SelectedFile[]) => Promise<string | null>;
+  sendMessage: (message: string, files: SelectedFile[]) => Promise<SendMessageResponse>;
   /** Add user message to UI */
   addUserMessage: (content: string, fileCount: number) => void;
   /** Clear current conversation */
@@ -340,7 +340,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
   const sendMessage = useCallback(async (
     message: string,
     files: SelectedFile[]
-  ): Promise<string | null> => {
+  ): Promise<SendMessageResponse> => {
     try {
       setError(null);
       
@@ -359,7 +359,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
       
       if (response.error) {
         setError(response.error);
-        return null;
+        return { error: response.error };
       }
       
       // Update conversation ID if new or changed
@@ -401,15 +401,23 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
           // Use loadConversations to properly load and select the new conversation
           await loadConversations();
         }
-        
-        return responseIdStr;
+
+        // Return the full response including progress data
+        return {
+          conversation_id: responseIdStr,
+          message: response.message,
+          is_new_conversation: isNewConversation,
+          streaming: false,
+          progress: response.progress
+        };
       }
-      
-      return null;
+
+      return { error: 'No conversation ID returned' };
     } catch (err) {
       console.error('Failed to send message:', err);
-      setError(handleApiError(err));
-      return null;
+      const errorMessage = handleApiError(err);
+      setError(errorMessage);
+      return { error: errorMessage };
     }
   }, [config.enableConversationsList, messagesApi, getActiveModel, loadConversations]);
   

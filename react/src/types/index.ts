@@ -407,6 +407,7 @@ export interface SendMessageResponse {
   message?: string;
   is_new_conversation?: boolean;
   streaming?: boolean;
+  progress?: ProgressData;
   error?: string;
 }
 
@@ -454,6 +455,8 @@ export interface StreamingEvent {
   conversation_id?: string;
   /** Tokens used for done events */
   tokens_used?: number;
+  /** Progress data for done events (when progress tracking is enabled) */
+  progress?: ProgressData;
   /** Error message for error events */
   message?: string;
   /** Model used for start events */

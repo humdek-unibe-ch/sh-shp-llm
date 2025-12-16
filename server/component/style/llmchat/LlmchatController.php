@@ -484,12 +484,20 @@ class LlmchatController extends BaseController
         // Check if streaming is enabled
         if ($this->context_service->isStreamingEnabled()) {
             $model = $this->context_service->getConfiguredModel();
+
+            // Prepare progress data if progress tracking is enabled
+            $progress_data = null;
+            if ($this->model->isProgressTrackingEnabled()) {
+                $progress_data = $this->calculateConversationProgress($conversation_id, $messages);
+            }
+
             $this->streaming_service->startStreamingResponse(
                 $conversation_id,
                 $api_messages,
                 $model,
                 $is_new_conversation,
-                $context_messages
+                $context_messages,
+                $progress_data
             );
             return;
         }
@@ -516,12 +524,19 @@ class LlmchatController extends BaseController
                 $context_messages
             );
 
-            $this->sendJsonResponse([
+            $response_data = [
                 'conversation_id' => $conversation_id,
                 'message' => $assistant_message,
                 'streaming' => false,
                 'is_new_conversation' => $is_new_conversation
-            ]);
+            ];
+
+            // Include progress data if progress tracking is enabled
+            if ($this->model->isProgressTrackingEnabled()) {
+                $response_data['progress'] = $this->calculateConversationProgress($conversation_id, $messages);
+            }
+
+            $this->sendJsonResponse($response_data);
         } else {
             throw new Exception('Invalid response from LLM API');
         }
@@ -592,12 +607,19 @@ class LlmchatController extends BaseController
         $context_messages = $this->context_service->getContextForTracking();
         $model = $this->context_service->getConfiguredModel();
 
+        // Prepare progress data if progress tracking is enabled
+        $progress_data = null;
+        if ($this->model->isProgressTrackingEnabled()) {
+            $progress_data = $this->calculateConversationProgress($conversation_id, $messages);
+        }
+
         $this->streaming_service->startStreamingResponse(
             $conversation_id,
             $api_messages,
             $model,
             false,
-            $context_messages
+            $context_messages,
+            $progress_data
         );
     }
 

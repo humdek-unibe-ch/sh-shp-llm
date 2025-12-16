@@ -10,7 +10,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { StreamingApi, createMessagesApi, handleApiError } from '../utils/api';
-import type { StreamingEvent, LlmChatConfig, SelectedFile } from '../types';
+import type { StreamingEvent, LlmChatConfig, SelectedFile, ProgressData } from '../types';
 
 /**
  * Options for useStreaming hook
@@ -21,7 +21,7 @@ export interface UseStreamingOptions {
   /** Callback when chunk is received */
   onChunk?: (content: string) => void;
   /** Callback when streaming is done */
-  onDone?: (tokensUsed: number) => void;
+  onDone?: (tokensUsed: number, progress?: ProgressData) => void;
   /** Callback when error occurs */
   onError?: (error: string) => void;
   /** Callback when streaming starts */
@@ -221,7 +221,7 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               clearTimeout(streamingTimeout);
               // Streaming completed - industry standard: single atomic save
               setIsStreaming(false);
-              onDone?.(event.tokens_used || 0);
+              onDone?.(event.tokens_used || 0, event.progress);
 
               // Clear streaming content immediately (server has saved complete message)
               setStreamingContent('');

@@ -17,6 +17,7 @@ class LlmStreamingService
     private $model;
     private $has_finalized = false;
     private $sent_context = null;
+    private $progress_data = null;
 
     public function __construct($llm_service)
     {
@@ -26,19 +27,21 @@ class LlmStreamingService
     /**
      * Start streaming response using Server-Sent Events
      * Industry-standard implementation with zero partial saves
-     * 
+     *
      * @param int $conversation_id The conversation ID
      * @param array $messages The formatted API messages
      * @param string $model The model to use
      * @param bool $is_new_conversation Whether this is a new conversation
      * @param array|null $sent_context Context messages that were sent (for tracking)
+     * @param array|null $progress_data Progress data to include in final response
      */
-    public function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation, $sent_context = null)
+    public function startStreamingResponse($conversation_id, $messages, $model, $is_new_conversation, $sent_context = null, $progress_data = null)
     {
         $this->conversation_id = $conversation_id;
         $this->model = $model;
         $this->has_finalized = false;
         $this->sent_context = $sent_context;
+        $this->progress_data = $progress_data;
 
         // Validate headers
         if (headers_sent()) {
@@ -140,7 +143,13 @@ class LlmStreamingService
         try {
             $raw_response = $this->buildRawResponse($buffer->getContent(), $tokens_used);
             $buffer->finalize($tokens_used, $raw_response);
-            $this->sendSSE(['type' => 'done', 'tokens_used' => $tokens_used]);
+
+            $done_data = ['type' => 'done', 'tokens_used' => $tokens_used];
+            if ($this->progress_data !== null) {
+                $done_data['progress'] = $this->progress_data;
+            }
+
+            $this->sendSSE($done_data);
             $this->sendSSE(['type' => 'close']);
         } catch (Exception $e) {
             $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);

@@ -220,9 +220,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     onChunk: useCallback(() => {
       // No auto-scroll during streaming - let user stay where they are to read the incoming response
     }, []),
-    onDone: useCallback(() => {
-      // Content clearing handled by hook
-    }, []),
+    onDone: useCallback((tokensUsed: number, progress?: ProgressData) => {
+      // Update progress immediately if provided
+      if (progress && config.enableProgressTracking) {
+        setProgress(progress);
+      }
+    }, [config.enableProgressTracking]),
     onError: streamingErrorHandler,
     onStart: useCallback(() => {
       // Content clearing handled by hook
@@ -308,7 +311,16 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         // Use regular AJAX mode
         setIsProcessing(true);
         try {
-          await sendMessage(message, files);
+          const result = await sendMessage(message, files);
+          if (result.error) {
+            setError(result.error);
+            return;
+          }
+
+          // Update progress if included in response
+          if (result.progress && config.enableProgressTracking) {
+            setProgress(result.progress);
+          }
         } finally {
           setIsProcessing(false);
         }
@@ -323,6 +335,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation,
     config.streamingEnabled,
     config.enableConversationsList,
+    config.emptyMessageError,
+    config.streamingActiveError,
+    config.enableProgressTracking,
     addUserMessage,
     sendMessage,
     sendStreamingMessage,

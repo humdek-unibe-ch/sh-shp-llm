@@ -405,10 +405,10 @@ export const MessageList: React.FC<MessageListProps> = ({
     return undefined;
   };
 
-  // Determine if we should show the Continue button
+  // Determine if we should show the Continue button or thinking state
   // Only show when we're at a dead end (no form to answer) in form mode
   const shouldShowContinueButton = () => {
-    if (!config.enableFormMode || !onContinue || isStreaming || isProcessing || messages.length === 0) {
+    if (!config.enableFormMode || !onContinue || isStreaming || messages.length === 0) {
       return false;
     }
 
@@ -419,6 +419,29 @@ export const MessageList: React.FC<MessageListProps> = ({
     }
 
     // Only show continue if the last assistant message has NO form (we're at a dead end)
+    const hasForm = parseFormDefinition(lastAssistantMessage.content) !== null;
+    return !hasForm;
+  };
+  
+  // Determine if we should show thinking indicator for Continue button area
+  // This shows when Continue was clicked and we're waiting for response
+  const shouldShowContinueThinking = () => {
+    if (!config.enableFormMode || isStreaming || messages.length === 0) {
+      return false;
+    }
+    
+    // Show thinking when processing in form mode
+    if (!isProcessing && !isFormSubmitting) {
+      return false;
+    }
+
+    // Find the last assistant message
+    const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
+    if (!lastAssistantMessage) {
+      return false;
+    }
+
+    // Only show thinking if the last assistant message has NO form (we clicked Continue)
     const hasForm = parseFormDefinition(lastAssistantMessage.content) !== null;
     return !hasForm;
   };
@@ -467,16 +490,17 @@ export const MessageList: React.FC<MessageListProps> = ({
         <ThinkingIndicator text={config.aiThinkingText} />
       )}
       
+      {/* Show thinking indicator for Continue button area when processing */}
+      {shouldShowContinueThinking() && (
+        <ThinkingIndicator text={config.aiThinkingText} />
+      )}
+      
       {/* Show Continue button in form mode when last assistant message has no form */}
-      {shouldShowContinueButton() && onContinue && (
+      {shouldShowContinueButton() && !isProcessing && !isFormSubmitting && onContinue && (
         <ContinueButton
-          label={
-            isFormSubmitting || isProcessing
-              ? (config.streamingEnabled ? config.aiStreamingText : config.aiThinkingText)
-              : config.continueButtonLabel
-          }
+          label={config.continueButtonLabel}
           onClick={onContinue}
-          disabled={isFormSubmitting || isProcessing}
+          disabled={false}
         />
       )}
     </div>
