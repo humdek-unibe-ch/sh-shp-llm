@@ -380,11 +380,11 @@ export function createMessagesApi(sectionId?: number) {
       files.forEach((item) => {
         formData.append('uploaded_files[]', item.file, item.file.name);
       });
-      
+
       // Check for test mode
       const isTestMode = window.location.search.includes('test=1');
       const url = window.location.pathname + (isTestMode ? '?test=1' : '');
-      
+
       const response = await fetch(url, {
         method: 'POST',
         body: formData,
@@ -394,11 +394,11 @@ export function createMessagesApi(sectionId?: number) {
         },
         credentials: 'same-origin'
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       return response.json();
     }
   };

@@ -10,6 +10,7 @@ require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStreamingService.php";
 require_once __DIR__ . "/../../../service/StrictConversationService.php";
 require_once __DIR__ . "/../../../service/LlmFormModeService.php";
+require_once __DIR__ . "/../../../service/LlmFloatingModeService.php";
 require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
 
 /**
@@ -24,6 +25,7 @@ class LlmchatController extends BaseController
     private $streaming_service;
     private $strict_conversation_service;
     private $form_mode_service;
+    private $floating_mode_service;
     private $data_saving_service;
 
     /** @var float Request start time for activity logging */
@@ -44,6 +46,12 @@ class LlmchatController extends BaseController
     {
         parent::__construct($model);
 
+        if($this->getRequestSectionId() != $this->model->getSectionId()){
+            // this is a different section, so we don't need to initialize the controller
+            // we need to return here to avoid initializing the controller for the wrong section
+            return;
+        }
+
         // Track request start time for activity logging
         $this->request_start_time = microtime(true);
         $this->current_action = null;
@@ -54,6 +62,7 @@ class LlmchatController extends BaseController
         $this->streaming_service = new LlmStreamingService($this->llm_service);
         $this->strict_conversation_service = new StrictConversationService($this->llm_service);
         $this->form_mode_service = new LlmFormModeService();
+        $this->floating_mode_service = new LlmFloatingModeService();
         $this->data_saving_service = new LlmDataSavingService($this->model->get_services());
 
         $router = $model->get_services()->get_router();
@@ -69,16 +78,26 @@ class LlmchatController extends BaseController
 
     /**
      * Get section_id from request parameters
-     * 
+     *
      * For multi-section support, each chat instance passes its section_id with API calls.
      * This ensures that API calls are processed for the correct section, not just the
      * first rendered section on the page.
-     * 
+     *
      * @return int|null The section ID from request or model fallback
      */
     private function getRequestSectionId()
     {
         return $_GET['section_id'] ?? $_POST['section_id'] ?? $this->model->getSectionId();
+    }
+
+    /**
+     * Check if floating button mode is enabled in the model configuration
+     *
+     * @return bool True if floating button mode is enabled
+     */
+    private function isFloatingMode()
+    {
+        return $this->model->isFloatingButtonEnabled();
     }
 
     /**
@@ -245,11 +264,15 @@ class LlmchatController extends BaseController
         // Get conversation context if configured
         $context_messages = $this->model->getParsedConversationContext();
 
-        // Apply form mode context if enabled (takes priority over strict mode)
+        // Apply form mode context if enabled (highest priority)
         if ($this->model->isFormModeEnabled()) {
             $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
         }
-        // Apply strict conversation mode if enabled (only if not in form mode)
+        // Apply floating mode context if in floating mode (only if not in form mode)
+        elseif ($this->isFloatingMode()) {
+            $context_messages = $this->floating_mode_service->buildFloatingModeContext($context_messages);
+        }
+        // Apply strict conversation mode if enabled (only if not in form mode or floating mode)
         elseif ($this->model->shouldApplyStrictMode()) {
             $context_messages = $this->strict_conversation_service->buildStrictModeContext(
                 $context_messages,
@@ -353,6 +376,18 @@ class LlmchatController extends BaseController
             if ($this->model->isFormModeEnabled()) {
                 $this->performFormModeAutoStart($conversation_id, $user_id, $context_messages, $rate_data);
             } else {
+                // Apply floating mode context if in floating mode
+                if ($this->isFloatingMode()) {
+                    $context_messages = $this->floating_mode_service->buildFloatingModeContext($context_messages);
+                }
+                // Apply strict conversation mode if enabled
+                elseif ($this->model->shouldApplyStrictMode()) {
+                    $context_messages = $this->strict_conversation_service->buildStrictModeContext(
+                        $context_messages,
+                        $this->model->getConversationContext()
+                    );
+                }
+
                 // Normal mode: Use static context-aware greeting
                 $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
 
@@ -630,10 +665,14 @@ class LlmchatController extends BaseController
             // Get conversation context if configured
             $context_messages = $this->model->getParsedConversationContext();
 
-            // Apply strict conversation mode if enabled
-            // This embeds enforcement instructions directly into the context,
-            // allowing the LLM to naturally handle topic relevance without a separate API call
-            if ($this->model->shouldApplyStrictMode()) {
+            // Apply context based on mode priority
+            if ($this->model->isFormModeEnabled()) {
+                $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
+            }
+            elseif ($this->isFloatingMode()) {
+                $context_messages = $this->floating_mode_service->buildFloatingModeContext($context_messages);
+            }
+            elseif ($this->model->shouldApplyStrictMode()) {
                 $context_messages = $this->strict_conversation_service->buildStrictModeContext(
                     $context_messages,
                     $this->model->getConversationContext()
@@ -994,9 +1033,18 @@ class LlmchatController extends BaseController
             // Get conversation context if configured
             $context_messages = $this->model->getParsedConversationContext();
 
-            // Apply form mode context if enabled
+            // Apply context based on mode priority
             if ($this->model->isFormModeEnabled()) {
                 $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
+            }
+            elseif ($this->isFloatingMode()) {
+                $context_messages = $this->floating_mode_service->buildFloatingModeContext($context_messages);
+            }
+            elseif ($this->model->shouldApplyStrictMode()) {
+                $context_messages = $this->strict_conversation_service->buildStrictModeContext(
+                    $context_messages,
+                    $this->model->getConversationContext()
+                );
             }
 
             // Convert messages to API format with context prepended

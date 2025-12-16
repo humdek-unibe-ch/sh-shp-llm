@@ -206,6 +206,8 @@ export interface LlmChatConfig {
   floatingButtonLabel: string;
   /** Title for the floating chat modal */
   floatingChatTitle: string;
+  /** Whether the chat is currently in floating mode */
+  isFloatingMode: boolean;
   
   // ===== UI Labels =====
   /** Message input placeholder text */
@@ -313,6 +315,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   floatingButtonIcon: 'fa-comments',
   floatingButtonLabel: 'Chat',
   floatingChatTitle: 'AI Assistant',
+  isFloatingMode: false,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',
   newConversationTitleLabel: 'New Conversation',

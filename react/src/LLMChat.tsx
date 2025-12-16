@@ -340,7 +340,8 @@ function parseConfig(container: HTMLElement) {
     floatingButtonPosition,
     floatingButtonIcon,
     floatingButtonLabel,
-    floatingChatTitle
+    floatingChatTitle,
+    isFloatingMode: false // Default to false, overridden by components
   };
 
   // Add remaining fields

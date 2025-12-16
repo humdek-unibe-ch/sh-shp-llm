@@ -78,12 +78,12 @@ class LlmAdminService extends LlmService
         }
 
         if (!empty($filters['date_from'])) {
-            $where[] = "DATE(lc.created_at) >= ?";
+            $where[] = "DATE(lc.updated_at) >= ?";
             $params[] = $filters['date_from'];
         }
 
         if (!empty($filters['date_to'])) {
-            $where[] = "DATE(lc.created_at) <= ?";
+            $where[] = "DATE(lc.updated_at) <= ?";
             $params[] = $filters['date_to'];
         }
 

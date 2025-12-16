@@ -4,7 +4,7 @@ VALUES ('llm', 'v1.0.0');
 
 -- Uncomment the following line to upgrade the database to utf8mb4,
 -- which is required for storing emojis and other extended Unicode characters:
--- ALTER DATABASE sb_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- ALTER DATABASE sb_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 
 -- add page type sh_module_llm for configuration
@@ -29,7 +29,7 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time response streaming');
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_streaming_enabled'), '0', 'Enable real-time response streaming');
 
 -- set variables for parent pages
 SET @id_page_modules = (SELECT id FROM pages WHERE keyword = 'sh_modules');
@@ -50,7 +50,7 @@ INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `he
 (@id_page_llm_config, get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
 (@id_page_llm_config, get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
 (@id_page_llm_config, get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
-(@id_page_llm_config, get_field_id('llm_streaming_enabled'), '1', 'Enable real-time response streaming');
+(@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0', 'Enable real-time response streaming');
 
 -- add translation for LLM config page
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
@@ -134,7 +134,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('llm_model'), '', 'Select AI model from dropdown. Admin can configure multiple llmChat components with different models if needed.'),
 (get_style_id('llmChat'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
 (get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
-(get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '1', 'Enable real-time streaming responses'),
+(get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '0', 'Enable real-time streaming responses'),
 (get_style_id('llmChat'), get_field_id('enable_conversations_list'), '0', 'Enable conversations list on the left side. When disabled, only one conversation is allowed.'),
 (get_style_id('llmChat'), get_field_id('enable_file_uploads'), '0', 'Enable file upload functionality. When enabled, users can attach files to their messages. File types accepted depend on the selected AI model.'),
 (get_style_id('llmChat'), get_field_id('enable_full_page_reload'), '0', 'When enabled, full page reloads after streaming completion instead of React component refresh. Use this if you need to reload other page elements after chat interaction.'),
@@ -376,7 +376,7 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_config, get_field_id('llm_timeout'), '0000000001', '30'),
        (@id_page_llm_config, get_field_id('llm_max_tokens'), '0000000001', '2048'),
        (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '1'),
-       (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '1');
+       (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '0');
 
 -- =====================================================
 -- FORM DATA SAVING FIELDS

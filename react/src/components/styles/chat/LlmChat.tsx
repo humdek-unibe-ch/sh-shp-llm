@@ -182,9 +182,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   } = useStreaming({
     config,
     onChunk: useCallback(() => {
-      // Smart scroll - only scrolls if user was at bottom
-      scrollToBottom();
-    }, [scrollToBottom]),
+      // No auto-scroll during streaming - let user stay where they are to read the incoming response
+    }, []),
     onDone: useCallback(() => {
       // Content clearing handled by hook
     }, []),
@@ -575,6 +574,19 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  /**
+   * Auto-scroll to bottom when component mounts or messages are first loaded
+   */
+  useEffect(() => {
+    if (messages.length > 0 && messagesContainerRef.current) {
+      // Small delay to ensure DOM is fully rendered
+      const timer = setTimeout(() => {
+        forceScrollToBottom();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length, forceScrollToBottom]); // Re-run when messages are loaded
   
   // Determine the active model for this conversation
   // - Use conversation's model if it exists
