@@ -1,0 +1,907 @@
+<?php
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/**
+ * LLM Progress Tracking Service
+ * 
+ * Handles progress calculation for context coverage in LLM conversations.
+ * 
+ * IMPORTANT: Progress is tracked based on USER QUESTIONS ONLY, not AI responses.
+ * This ensures that the AI mentioning topics doesn't count as "coverage" - only
+ * when the USER explicitly asks about a topic does it count.
+ * 
+ * The progress tracking system works as follows:
+ * 1. Context is parsed to extract "topics" using explicit [TOPIC] markers
+ * 2. Each USER message is analyzed to determine which topics were asked about
+ * 3. Progress is calculated as a percentage of topics the user has explored
+ * 4. Progress is ALWAYS incremental - can only increase, never decrease
+ * 
+ * Topic Definition Format (in conversation context):
+ * 
+ * [TOPIC:id="arsenal" name="Arsenal FC" keywords="arsenal,gunners,emirates"]
+ * Content about Arsenal...
+ * [/TOPIC]
+ * 
+ * Or simplified format:
+ * [TOPIC: Arsenal FC | arsenal, gunners, emirates]
+ * 
+ * Coverage Calculation:
+ * - A topic is "covered" when the USER asks about it (keyword match in user message)
+ * - Depth: Multiple user questions about the same topic increase coverage depth
+ * - The algorithm ensures monotonic progress (only increases)
+ * 
+ * @author SelfHelp Team
+ */
+class LlmProgressTrackingService
+{
+    private $services;
+    private $db;
+
+    /**
+     * Constructor
+     * 
+     * @param object $services The services object
+     */
+    public function __construct($services)
+    {
+        $this->services = $services;
+        $this->db = $services->get_db();
+    }
+
+    /**
+     * Extract topics from conversation context
+     * 
+     * Supports multiple formats:
+     * 
+     * 1. Explicit TOPIC markers (RECOMMENDED):
+     *    [TOPIC: Topic Name | keyword1, keyword2, keyword3]
+     *    or
+     *    [TOPIC:id="topic_id" name="Topic Name" keywords="kw1,kw2,kw3"]
+     * 
+     * 2. YAML-like format in a TOPICS section:
+     *    ## TRACKABLE_TOPICS
+     *    - name: Arsenal FC
+     *      keywords: arsenal, gunners, emirates
+     *    - name: Chelsea FC
+     *      keywords: chelsea, blues, stamford bridge
+     * 
+     * 3. Fallback: Bold text extraction (less reliable)
+     * 
+     * NOTE: Context may be in Markdown OR HTML format (converted by SelfHelp).
+     * We handle both cases by also checking for HTML tags.
+     * 
+     * @param string $context Raw conversation context
+     * @return array Array of topic objects
+     */
+    public function extractTopicsFromContext($context)
+    {
+        if (empty($context)) {
+            return [];
+        }
+
+        $topics = [];
+
+        // Method 1: Look for explicit [TOPIC: ...] markers (RECOMMENDED)
+        $topics = $this->extractExplicitTopicMarkers($context);
+        
+        if (!empty($topics)) {
+            return $topics;
+        }
+
+        // Method 2: Look for TRACKABLE_TOPICS section (Markdown format)
+        $topics = $this->extractFromTrackableTopicsSection($context);
+        
+        if (!empty($topics)) {
+            return $topics;
+        }
+
+        // Method 3: Look for TRACKABLE_TOPICS section (HTML format)
+        // SelfHelp converts markdown to HTML, so we need to handle this case
+        $topics = $this->extractFromHtmlTrackableTopicsSection($context);
+        
+        if (!empty($topics)) {
+            return $topics;
+        }
+
+        // Method 4: Look for plain text TRACKABLE_TOPICS section
+        // Handle case where TRACKABLE_TOPICS is just plain text without markdown/HTML heading
+        $topics = $this->extractFromPlainTextTrackableTopicsSection($context);
+        
+        if (!empty($topics)) {
+            return $topics;
+        }
+
+        // Method 5: Fallback to markdown extraction (less reliable)
+        // Only use if no explicit topics found
+        $topics = $this->extractTopicsFromMarkdownFallback($context);
+
+        return $topics;
+    }
+
+    /**
+     * Extract topics from explicit [TOPIC: ...] markers
+     * 
+     * Supported formats:
+     * [TOPIC: Topic Name | keyword1, keyword2, keyword3]
+     * [TOPIC:id="myid" name="Topic Name" keywords="kw1,kw2"]
+     * 
+     * @param string $context Context string
+     * @return array Array of topics
+     */
+    private function extractExplicitTopicMarkers($context)
+    {
+        $topics = [];
+
+        // Format 1: Simple format [TOPIC: Name | keywords]
+        // Example: [TOPIC: Arsenal FC | arsenal, gunners, emirates stadium]
+        if (preg_match_all('/\[TOPIC:\s*([^|\]]+)\s*\|\s*([^\]]+)\]/i', $context, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $name = trim($match[1]);
+                $keywordsStr = trim($match[2]);
+                $keywords = array_map('trim', explode(',', $keywordsStr));
+                
+                // Add the name itself as a keyword
+                $keywords[] = strtolower($name);
+                $keywords = array_unique(array_filter($keywords));
+                
+                $topics[] = [
+                    'id' => $this->generateTopicId($name),
+                    'title' => $name,
+                    'keywords' => $keywords,
+                    'weight' => 5,
+                    'content' => $name
+                ];
+            }
+        }
+
+        // Format 2: Attribute format [TOPIC:id="..." name="..." keywords="..."]
+        if (preg_match_all('/\[TOPIC:id="([^"]+)"\s+name="([^"]+)"\s+keywords="([^"]+)"\]/i', $context, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $id = trim($match[1]);
+                $name = trim($match[2]);
+                $keywordsStr = trim($match[3]);
+                $keywords = array_map('trim', explode(',', $keywordsStr));
+                
+                // Add the name itself as a keyword
+                $keywords[] = strtolower($name);
+                $keywords = array_unique(array_filter($keywords));
+                
+                $topics[] = [
+                    'id' => 'topic_' . $id,
+                    'title' => $name,
+                    'keywords' => $keywords,
+                    'weight' => 5,
+                    'content' => $name
+                ];
+            }
+        }
+
+        return $topics;
+    }
+
+    /**
+     * Extract topics from a TRACKABLE_TOPICS section
+     * 
+     * Supports multiple formats:
+     * 
+     * Format 1 (YAML-like):
+     * ## TRACKABLE_TOPICS
+     * - name: Arsenal FC
+     *   keywords: arsenal, gunners, emirates
+     * 
+     * Format 2 (Inline):
+     * ## TRACKABLE_TOPICS
+     * - Arsenal FC: arsenal, gunners, emirates
+     * - Chelsea FC: chelsea, blues, stamford bridge
+     * 
+     * @param string $context Context string
+     * @return array Array of topics
+     */
+    private function extractFromTrackableTopicsSection($context)
+    {
+        $topics = [];
+
+        // Find TRACKABLE_TOPICS section - be more flexible with heading levels
+        // Match # TRACKABLE_TOPICS, ## TRACKABLE_TOPICS, ### TRACKABLE_TOPICS
+        if (preg_match('/#{1,3}\s*TRACKABLE_TOPICS\s*\r?\n([\s\S]*?)(?=\r?\n#{1,3}\s|\Z)/i', $context, $sectionMatch)) {
+            $section = $sectionMatch[1];
+            
+            // Format 1: YAML-like entries
+            // - name: Topic Name
+            //   keywords: kw1, kw2, kw3
+            // Allow for \r\n or \n line endings and flexible whitespace
+            if (preg_match_all('/^-\s*name:\s*(.+?)[\r\n]+\s*keywords:\s*(.+?)(?=[\r\n]|$)/im', $section, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    $name = trim($match[1]);
+                    $keywordsStr = trim($match[2]);
+                    $keywords = array_map('trim', explode(',', $keywordsStr));
+                    
+                    // Add the name itself as a keyword (lowercase)
+                    $keywords[] = strtolower($name);
+                    $keywords = array_unique(array_filter($keywords));
+                    
+                    $topics[] = [
+                        'id' => $this->generateTopicId($name),
+                        'title' => $name,
+                        'keywords' => array_values($keywords),
+                        'weight' => 5,
+                        'content' => $name
+                    ];
+                }
+            }
+            
+            // Format 2: Inline format (simpler)
+            // - Topic Name: keyword1, keyword2, keyword3
+            if (empty($topics)) {
+                if (preg_match_all('/^-\s*([^:\r\n]+):\s*([^\r\n]+)/m', $section, $matches, PREG_SET_ORDER)) {
+                    foreach ($matches as $match) {
+                        $name = trim($match[1]);
+                        $keywordsStr = trim($match[2]);
+                        
+                        // Skip if this looks like YAML format (name: or keywords:)
+                        if (strtolower($name) === 'name' || strtolower($name) === 'keywords') {
+                            continue;
+                        }
+                        
+                        $keywords = array_map('trim', explode(',', $keywordsStr));
+                        $keywords[] = strtolower($name);
+                        $keywords = array_unique(array_filter($keywords));
+                        
+                        $topics[] = [
+                            'id' => $this->generateTopicId($name),
+                            'title' => $name,
+                            'keywords' => array_values($keywords),
+                            'weight' => 5,
+                            'content' => $name
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $topics;
+    }
+
+    /**
+     * Extract topics from HTML-formatted TRACKABLE_TOPICS section
+     * 
+     * SelfHelp converts Markdown to HTML, so the context might look like:
+     * <h2>TRACKABLE_TOPICS</h2>
+     * <p>name: Arsenal FC keywords: arsenal, gunners, emirates</p>
+     * 
+     * Or with list items:
+     * <h2>TRACKABLE_TOPICS</h2>
+     * <ul><li>name: Arsenal FC keywords: arsenal, gunners</li></ul>
+     * 
+     * @param string $context Context string (HTML)
+     * @return array Array of topics
+     */
+    private function extractFromHtmlTrackableTopicsSection($context)
+    {
+        $topics = [];
+
+        // Check if this looks like HTML content
+        if (strpos($context, '<h') === false && strpos($context, '<p') === false) {
+            return $topics;
+        }
+
+        // Find TRACKABLE_TOPICS section in HTML
+        // Pattern: <h1|h2|h3>TRACKABLE_TOPICS</h1|h2|h3> followed by content until next heading or end
+        if (preg_match('/<h[1-3][^>]*>\s*TRACKABLE_TOPICS\s*<\/h[1-3]>([\s\S]*?)(?=<h[1-3]|$)/i', $context, $sectionMatch)) {
+            $section = $sectionMatch[1];
+            
+            // Method 1: Extract from <p> tags containing "name:" and "keywords:"
+            // Pattern: <p>name: Arsenal FC keywords: arsenal, gunners</p>
+            if (preg_match_all('/<p[^>]*>([^<]*name:\s*[^<]+)<\/p>/i', $section, $pMatches)) {
+                foreach ($pMatches[1] as $pContent) {
+                    if (preg_match('/name:\s*(.+?)\s*keywords:\s*(.+)/i', $pContent, $match)) {
+                        $name = trim($match[1]);
+                        $keywordsStr = trim($match[2]);
+                        
+                        $keywords = array_map('trim', explode(',', $keywordsStr));
+                        $keywords[] = strtolower($name);
+                        $keywords = array_unique(array_filter($keywords));
+                        
+                        if (!empty($name) && count($keywords) > 1) {
+                            $topics[] = [
+                                'id' => $this->generateTopicId($name),
+                                'title' => $name,
+                                'keywords' => array_values($keywords),
+                                'weight' => 5,
+                                'content' => $name
+                            ];
+                        }
+                    }
+                }
+            }
+            
+            // Method 2: Strip HTML and look for patterns in plain text
+            if (empty($topics)) {
+                $plainSection = strip_tags($section);
+                // Normalize whitespace
+                $plainSection = preg_replace('/\s+/', ' ', $plainSection);
+                
+                // Look for patterns like "name: Arsenal FC keywords: arsenal, gunners"
+                if (preg_match_all('/name:\s*([^:]+?)\s*keywords:\s*([^:]+?)(?=\s*name:|$)/is', $plainSection, $matches, PREG_SET_ORDER)) {
+                    foreach ($matches as $match) {
+                        $name = trim($match[1]);
+                        $keywordsStr = trim($match[2]);
+                        
+                        // Clean up the name (remove any trailing "keywords" word)
+                        $name = preg_replace('/\s*keywords\s*$/i', '', $name);
+                        
+                        $keywords = array_map('trim', explode(',', $keywordsStr));
+                        $keywords[] = strtolower($name);
+                        $keywords = array_unique(array_filter($keywords));
+                        
+                        if (!empty($name) && count($keywords) > 1) {
+                            $topics[] = [
+                                'id' => $this->generateTopicId($name),
+                                'title' => $name,
+                                'keywords' => array_values($keywords),
+                                'weight' => 5,
+                                'content' => $name
+                            ];
+                        }
+                    }
+                }
+            }
+            
+            // Method 3: Extract from list items: <li>name: X keywords: Y</li>
+            if (empty($topics) && preg_match_all('/<li[^>]*>([^<]+)<\/li>/i', $section, $liMatches)) {
+                foreach ($liMatches[1] as $liContent) {
+                    if (preg_match('/name:\s*(.+?)\s*keywords:\s*(.+)/i', $liContent, $match)) {
+                        $name = trim($match[1]);
+                        $keywordsStr = trim($match[2]);
+                        
+                        $keywords = array_map('trim', explode(',', $keywordsStr));
+                        $keywords[] = strtolower($name);
+                        $keywords = array_unique(array_filter($keywords));
+                        
+                        if (!empty($name) && count($keywords) > 1) {
+                            $topics[] = [
+                                'id' => $this->generateTopicId($name),
+                                'title' => $name,
+                                'keywords' => array_values($keywords),
+                                'weight' => 5,
+                                'content' => $name
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return $topics;
+    }
+
+    /**
+     * Extract topics from plain text TRACKABLE_TOPICS section
+     * 
+     * Handles case where TRACKABLE_TOPICS is just plain text without markdown/HTML heading.
+     * Example:
+     * TRACKABLE_TOPICS
+     * name: Arsenal FC keywords: arsenal, gunners
+     * name: Chelsea FC keywords: chelsea, blues
+     * 
+     * @param string $context Context string
+     * @return array Array of topics
+     */
+    private function extractFromPlainTextTrackableTopicsSection($context)
+    {
+        $topics = [];
+
+        // Look for TRACKABLE_TOPICS as plain text (not markdown heading, not HTML)
+        // Match: "TRACKABLE_TOPICS" followed by content until another all-caps heading or end
+        if (preg_match('/(?:^|\n)\s*TRACKABLE_TOPICS\s*\n([\s\S]*?)(?=\n\s*[A-Z][A-Z\s_]+\n|$)/i', $context, $sectionMatch)) {
+            $section = $sectionMatch[1];
+            
+            // Look for "name: X keywords: Y" patterns
+            if (preg_match_all('/name:\s*([^\n]+?)\s*keywords:\s*([^\n]+)/i', $section, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    $name = trim($match[1]);
+                    $keywordsStr = trim($match[2]);
+                    
+                    $keywords = array_map('trim', explode(',', $keywordsStr));
+                    $keywords[] = strtolower($name);
+                    $keywords = array_unique(array_filter($keywords));
+                    
+                    if (!empty($name) && count($keywords) > 1) {
+                        $topics[] = [
+                            'id' => $this->generateTopicId($name),
+                            'title' => $name,
+                            'keywords' => array_values($keywords),
+                            'weight' => 5,
+                            'content' => $name
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $topics;
+    }
+
+    /**
+     * Fallback: Extract topics from markdown (less reliable)
+     * 
+     * This is used only when no explicit topic markers are found.
+     * It extracts from bold text but is less precise.
+     * 
+     * @param string $content Markdown content
+     * @return array Array of topics
+     */
+    private function extractTopicsFromMarkdownFallback($content)
+    {
+        $topics = [];
+
+        // Only extract from bold text that looks like a proper topic
+        // Pattern: **Name** - Description (common in list formats)
+        if (preg_match_all('/\*\*([^*]+)\*\*\s*[-–]\s*([^,\n]+)/', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $name = trim($match[1]);
+                $description = trim($match[2]);
+                
+                // Skip if too short or looks like a heading
+                if (strlen($name) < 3 || strlen($name) > 50) {
+                    continue;
+                }
+                
+                // Extract keywords from name and description
+                $keywords = $this->extractKeywords($name . ' ' . $description);
+                $keywords[] = strtolower($name);
+                $keywords = array_unique($keywords);
+                
+                $topics[] = [
+                    'id' => $this->generateTopicId($name),
+                    'title' => $name,
+                    'keywords' => $keywords,
+                    'weight' => 5,
+                    'content' => $name . ' - ' . $description
+                ];
+            }
+        }
+
+        return $topics;
+    }
+
+    /**
+     * Calculate progress for a conversation
+     * 
+     * IMPORTANT: Progress is based on USER messages only!
+     * The AI mentioning a topic does NOT count as coverage.
+     * Only when the USER asks about a topic does it count.
+     * 
+     * Progress is ALWAYS monotonically increasing - it can only go up.
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param array $topics Array of topics from context
+     * @param array $messages Array of conversation messages
+     * @param float $previous_progress Previous progress value (ensures monotonic increase)
+     * @return array Progress data including percentage and topic coverage
+     */
+    public function calculateProgress($conversation_id, $topics, $messages, $previous_progress = 0)
+    {
+        if (empty($topics)) {
+            return [
+                'percentage' => 0, // No topics defined = 0% (can't track without topics)
+                'topics_total' => 0,
+                'topics_covered' => 0,
+                'topic_coverage' => [],
+                'is_complete' => false,
+                'message' => 'No trackable topics defined in context. Use [TOPIC: Name | keywords] format.'
+            ];
+        }
+
+        // Build combined USER message text ONLY for analysis
+        // AI responses do NOT count toward progress
+        $userMessagesText = '';
+        $userMessageCount = 0;
+        foreach ($messages as $message) {
+            if (isset($message['role']) && $message['role'] === 'user') {
+                $userMessagesText .= ' ' . strtolower($message['content']);
+                $userMessageCount++;
+            }
+        }
+
+        // If no user messages yet, progress is 0
+        if ($userMessageCount === 0 || empty(trim($userMessagesText))) {
+            return [
+                'percentage' => max(0, $previous_progress),
+                'topics_total' => count($topics),
+                'topics_covered' => 0,
+                'topic_coverage' => $this->buildEmptyTopicCoverage($topics),
+                'is_complete' => false
+            ];
+        }
+
+        // Calculate coverage for each topic based on USER messages
+        $topicCoverage = [];
+        $totalTopics = count($topics);
+        $coveredTopics = 0;
+        $totalDepthScore = 0;
+
+        foreach ($topics as $topic) {
+            $coverage = $this->calculateTopicCoverageFromUserMessages($topic, $userMessagesText);
+            
+            $topicCoverage[$topic['id']] = [
+                'id' => $topic['id'],
+                'title' => $topic['title'],
+                'coverage' => $coverage['percentage'],
+                'depth' => $coverage['depth'],
+                'matches' => $coverage['matches'],
+                'is_covered' => $coverage['percentage'] > 0
+            ];
+
+            if ($coverage['percentage'] > 0) {
+                $coveredTopics++;
+                // Depth score: base 1 + depth bonus (up to 0.5 extra per topic)
+                $depthBonus = min($coverage['depth'] * 0.1, 0.5);
+                $totalDepthScore += 1 + $depthBonus;
+            }
+        }
+
+        // Calculate percentage:
+        // Base: (covered topics / total topics) * 100
+        // With depth bonus: each topic can contribute up to 1.5x its base value
+        $maxPossibleScore = $totalTopics * 1.5; // Max if all topics covered with full depth
+        $rawPercentage = ($totalDepthScore / $totalTopics) * 100;
+        
+        // Cap at 100%
+        $rawPercentage = min($rawPercentage, 100);
+
+        // CRITICAL: Ensure progress is monotonically increasing
+        $percentage = max($rawPercentage, $previous_progress);
+
+        // Round to 1 decimal place
+        $percentage = round($percentage, 1);
+
+        return [
+            'percentage' => $percentage,
+            'topics_total' => $totalTopics,
+            'topics_covered' => $coveredTopics,
+            'topic_coverage' => $topicCoverage,
+            'is_complete' => $percentage >= 100,
+            'user_messages_analyzed' => $userMessageCount
+        ];
+    }
+
+    /**
+     * Build empty topic coverage array
+     * 
+     * @param array $topics Array of topics
+     * @return array Topic coverage with all at 0
+     */
+    private function buildEmptyTopicCoverage($topics)
+    {
+        $coverage = [];
+        foreach ($topics as $topic) {
+            $coverage[$topic['id']] = [
+                'id' => $topic['id'],
+                'title' => $topic['title'],
+                'coverage' => 0,
+                'depth' => 0,
+                'matches' => [],
+                'is_covered' => false
+            ];
+        }
+        return $coverage;
+    }
+
+    /**
+     * Calculate coverage for a single topic from USER messages
+     * 
+     * @param array $topic Topic data
+     * @param string $userText Combined user message text (lowercase)
+     * @return array Coverage data with percentage, depth, and matches
+     */
+    private function calculateTopicCoverageFromUserMessages($topic, $userText)
+    {
+        $keywords = $topic['keywords'] ?? [];
+        if (empty($keywords)) {
+            return ['percentage' => 0, 'depth' => 0, 'matches' => []];
+        }
+
+        $matchedKeywords = [];
+        $totalOccurrences = 0;
+
+        foreach ($keywords as $keyword) {
+            $keyword = strtolower(trim($keyword));
+            if (empty($keyword)) continue;
+            
+            // Count occurrences of this keyword in user messages
+            $occurrences = substr_count($userText, $keyword);
+            
+            if ($occurrences > 0) {
+                $matchedKeywords[] = $keyword;
+                $totalOccurrences += $occurrences;
+            }
+        }
+
+        // If no keywords matched, topic is not covered
+        if (empty($matchedKeywords)) {
+            return ['percentage' => 0, 'depth' => 0, 'matches' => []];
+        }
+
+        // Topic is covered if at least one keyword matched
+        // Depth is based on number of unique keyword matches and total occurrences
+        $keywordCoverage = count($matchedKeywords) / count($keywords);
+        $depth = min($totalOccurrences, 5); // Cap depth at 5 interactions
+
+        return [
+            'percentage' => 100, // Topic is either covered or not
+            'depth' => $depth,
+            'matches' => $matchedKeywords
+        ];
+    }
+
+    /**
+     * Get or create progress record for a conversation
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @return array|null Progress record or null
+     */
+    public function getConversationProgress($conversation_id, $section_id)
+    {
+        return $this->db->query_db_first(
+            "SELECT * FROM llmConversationProgress 
+             WHERE id_llmConversations = ? AND id_sections = ?",
+            [$conversation_id, $section_id]
+        );
+    }
+
+    /**
+     * Update progress for a conversation
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @param float $percentage Progress percentage
+     * @param array $topic_coverage Topic coverage data
+     * @return bool Success
+     */
+    public function updateConversationProgress($conversation_id, $section_id, $percentage, $topic_coverage)
+    {
+        $existing = $this->getConversationProgress($conversation_id, $section_id);
+
+        // Ensure monotonic increase
+        if ($existing) {
+            $percentage = max($percentage, (float)$existing['progress_percentage']);
+        }
+
+        $data = [
+            'id_llmConversations' => $conversation_id,
+            'id_sections' => $section_id,
+            'progress_percentage' => $percentage,
+            'topic_coverage' => json_encode($topic_coverage)
+        ];
+
+        if ($existing) {
+            return $this->db->update_by_ids(
+                'llmConversationProgress',
+                $data,
+                ['id' => $existing['id']]
+            );
+        } else {
+            return $this->db->insert('llmConversationProgress', $data) > 0;
+        }
+    }
+
+    /**
+     * Build progress tracking context instructions
+     * 
+     * These instructions are added to the system context to help the AI
+     * understand and report on progress.
+     * 
+     * @param array $topics Array of topics
+     * @param float $current_progress Current progress percentage
+     * @return string Context instructions
+     */
+    public function buildProgressTrackingContext($topics, $current_progress)
+    {
+        if (empty($topics)) {
+            return '';
+        }
+
+        $topicList = array_map(function($t) {
+            return '- ' . $t['title'];
+        }, $topics);
+
+        $topicListStr = implode("\n", $topicList);
+
+        return <<<EOT
+
+PROGRESS TRACKING INSTRUCTIONS:
+You are guiding the user through the following topics/content:
+
+{$topicListStr}
+
+Current progress: {$current_progress}%
+
+Guidelines:
+1. Help the user explore each topic naturally through conversation
+2. When a topic is discussed, acknowledge it and suggest related topics
+3. Progress is tracked automatically based on topics covered
+4. Aim to cover all topics but follow the user's interests
+5. If the user asks about progress, you can mention which topics have been covered
+6. Do NOT force topics - let the conversation flow naturally
+EOT;
+    }
+
+    /**
+     * Generate a unique topic ID from content
+     * 
+     * @param string $content Content to hash
+     * @return string Topic ID
+     */
+    private function generateTopicId($content)
+    {
+        return 'topic_' . substr(md5(strtolower(trim($content))), 0, 8);
+    }
+
+    /**
+     * Format a JSON key as a human-readable title
+     * 
+     * @param string $key Key to format
+     * @return string Formatted title
+     */
+    private function formatKeyAsTitle($key)
+    {
+        // Convert snake_case or camelCase to Title Case
+        $title = preg_replace('/([a-z])([A-Z])/', '$1 $2', $key);
+        $title = str_replace(['_', '-'], ' ', $title);
+        return ucwords(strtolower($title));
+    }
+
+    /**
+     * Extract keywords from text
+     * 
+     * @param string $text Text to extract keywords from
+     * @return array Array of keywords
+     */
+    private function extractKeywords($text)
+    {
+        // Convert to lowercase and remove punctuation
+        $text = strtolower(preg_replace('/[^\w\s]/', '', $text));
+        
+        // Split into words
+        $words = preg_split('/\s+/', $text);
+        
+        // Filter out common stop words and short words
+        $stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+                      'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+                      'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+                      'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'this',
+                      'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+                      'what', 'which', 'who', 'whom', 'when', 'where', 'why', 'how', 'all',
+                      'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
+                      'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very'];
+        
+        $keywords = array_filter($words, function($word) use ($stopWords) {
+            return strlen($word) > 2 && !in_array($word, $stopWords);
+        });
+        
+        // Return unique keywords
+        return array_values(array_unique($keywords));
+    }
+
+    /**
+     * Debug method to help troubleshoot topic extraction
+     * 
+     * @param string $context The context to analyze
+     * @return array Debug information
+     */
+    public function debugTopicExtraction($context)
+    {
+        $debug = [
+            'context_length' => strlen($context),
+            'context_preview' => substr($context, 0, 500),
+            'has_trackable_topics_section' => false,
+            'has_trackable_topics_section_html' => false,
+            'has_topic_markers' => false,
+            'is_html_content' => false,
+            'extraction_method' => 'none',
+            'topics_found' => 0,
+            'topics' => []
+        ];
+
+        if (empty($context)) {
+            $debug['error'] = 'Context is empty';
+            return $debug;
+        }
+
+        // Check if content is HTML
+        if (strpos($context, '<h') !== false || strpos($context, '<p') !== false) {
+            $debug['is_html_content'] = true;
+        }
+
+        // Check for TRACKABLE_TOPICS section (Markdown format)
+        if (preg_match('/#{1,3}\s*TRACKABLE_TOPICS/i', $context)) {
+            $debug['has_trackable_topics_section'] = true;
+        }
+
+        // Check for TRACKABLE_TOPICS section (HTML format)
+        if (preg_match('/<h[1-3][^>]*>\s*TRACKABLE_TOPICS\s*<\/h[1-3]>/i', $context)) {
+            $debug['has_trackable_topics_section_html'] = true;
+        }
+
+        // Check for TRACKABLE_TOPICS section (plain text format)
+        if (preg_match('/(?:^|\n)\s*TRACKABLE_TOPICS\s*\n/i', $context)) {
+            $debug['has_trackable_topics_section_plain'] = true;
+        }
+
+        // Check for [TOPIC: ...] markers
+        if (preg_match('/\[TOPIC:/i', $context)) {
+            $debug['has_topic_markers'] = true;
+        }
+
+        // Try each extraction method and report
+        $topics = $this->extractExplicitTopicMarkers($context);
+        if (!empty($topics)) {
+            $debug['extraction_method'] = 'explicit_markers';
+            $debug['topics'] = $topics;
+            $debug['topics_found'] = count($topics);
+            return $debug;
+        }
+
+        $topics = $this->extractFromTrackableTopicsSection($context);
+        if (!empty($topics)) {
+            $debug['extraction_method'] = 'trackable_topics_section';
+            $debug['topics'] = $topics;
+            $debug['topics_found'] = count($topics);
+            return $debug;
+        }
+
+        // Try HTML extraction
+        $topics = $this->extractFromHtmlTrackableTopicsSection($context);
+        if (!empty($topics)) {
+            $debug['extraction_method'] = 'html_trackable_topics_section';
+            $debug['topics'] = $topics;
+            $debug['topics_found'] = count($topics);
+            return $debug;
+        }
+
+        // Try plain text extraction
+        $topics = $this->extractFromPlainTextTrackableTopicsSection($context);
+        if (!empty($topics)) {
+            $debug['extraction_method'] = 'plain_text_trackable_topics_section';
+            $debug['topics'] = $topics;
+            $debug['topics_found'] = count($topics);
+            return $debug;
+        }
+
+        $topics = $this->extractTopicsFromMarkdownFallback($context);
+        if (!empty($topics)) {
+            $debug['extraction_method'] = 'markdown_fallback';
+            $debug['topics'] = $topics;
+            $debug['topics_found'] = count($topics);
+            return $debug;
+        }
+
+        $debug['error'] = 'No topics could be extracted from context. Context appears to be ' . 
+                          ($debug['is_html_content'] ? 'HTML' : 'plain text/Markdown') . 
+                          '. Has TRACKABLE_TOPICS heading: ' . 
+                          ($debug['has_trackable_topics_section_html'] ? 'Yes (HTML)' : 
+                           ($debug['has_trackable_topics_section'] ? 'Yes (Markdown)' : 'No'));
+        return $debug;
+    }
+
+    /**
+     * Truncate string to specified length
+     * 
+     * @param string $str String to truncate
+     * @param int $length Maximum length
+     * @return string Truncated string
+     */
+    private function truncateString($str, $length)
+    {
+        if (strlen($str) <= $length) {
+            return $str;
+        }
+        return substr($str, 0, $length - 3) . '...';
+    }
+}
+?>
+

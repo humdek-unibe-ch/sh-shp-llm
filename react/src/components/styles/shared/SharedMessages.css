@@ -676,6 +676,108 @@
   color: #6c757d;
 }
 
+/* ===== Progress Indicator ===== */
+.progress-indicator-container {
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: var(--llm-radius-medium);
+  border: 1px solid #dee2e6;
+  margin-bottom: 16px;
+}
+
+.progress-indicator-container .progress-header {
+  margin-bottom: 8px;
+}
+
+.progress-indicator-container .progress-label {
+  font-size: 14px;
+  color: #343a40;
+}
+
+.progress-indicator-container .progress-percentage {
+  font-size: 16px;
+}
+
+.progress-indicator-container .progress {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-indicator-container .progress-bar {
+  border-radius: 4px;
+}
+
+.progress-indicator-container .progress-summary {
+  margin-top: 8px;
+}
+
+.progress-indicator-container .topic-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border-top: 1px solid #dee2e6;
+  padding-top: 12px;
+}
+
+.progress-indicator-container .topic-status {
+  font-size: 12px;
+  width: 20px;
+  text-align: center;
+}
+
+.progress-indicator-container .topic-title {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.progress-indicator-container .topic-coverage {
+  font-size: 11px;
+  min-width: 36px;
+  text-align: center;
+}
+
+.progress-indicator-container .list-group-item {
+  background: transparent;
+}
+
+.progress-indicator-container .list-group-item:hover {
+  background: rgba(0, 123, 255, 0.05);
+}
+
+/* Compact Progress */
+.compact-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-progress .progress {
+  border-radius: 2px;
+}
+
+/* Progress in Chat Header */
+.chat-header-progress {
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.chat-header-progress .progress-indicator-container {
+  padding: 12px;
+  margin-bottom: 0;
+  background: transparent;
+  border: none;
+}
+
+/* Progress Animation */
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.progress-indicator-container.updating .progress-bar {
+  animation: progressPulse 1s ease-in-out infinite;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 767.98px) {
   .message-bubble {

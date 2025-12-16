@@ -15,6 +15,7 @@ require_once __DIR__ . "/../../../service/LlmFloatingModeService.php";
 require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
 require_once __DIR__ . "/../../../service/LlmRequestService.php";
 require_once __DIR__ . "/../../../service/LlmContextService.php";
+require_once __DIR__ . "/../../../service/LlmProgressTrackingService.php";
 
 /**
  * LLM Chat Controller
@@ -58,6 +59,9 @@ class LlmchatController extends BaseController
     
     /** @var LlmDataSavingService Data saving service */
     private $data_saving_service;
+
+    /** @var LlmProgressTrackingService Progress tracking service */
+    private $progress_tracking_service;
 
     /** @var float Request start time for activity logging */
     private $request_start_time;
@@ -163,6 +167,9 @@ class LlmchatController extends BaseController
             $strict_conversation_service,
             $api_formatter_service
         );
+        
+        // Progress tracking service
+        $this->progress_tracking_service = new LlmProgressTrackingService($services);
     }
 
     /**
@@ -238,6 +245,12 @@ class LlmchatController extends BaseController
                 break;
             case 'get_auto_started':
                 $this->handleGetAutoStarted();
+                break;
+            case 'get_progress':
+                $this->handleGetProgress();
+                break;
+            case 'debug_progress':
+                $this->handleDebugProgress();
                 break;
             case 'streaming':
                 $this->handleStreaming();
@@ -681,13 +694,176 @@ class LlmchatController extends BaseController
             // Send raw markdown content - React will handle markdown rendering
             // Keep formatted_content for backward compatibility with vanilla JS implementation
 
-            $this->sendJsonResponse([
+            $response = [
                 'conversation' => $conversation,
                 'messages' => $messages
-            ]);
+            ];
+
+            // Include progress data if progress tracking is enabled
+            if ($this->model->isProgressTrackingEnabled()) {
+                $response['progress'] = $this->calculateConversationProgress($conversation_id, $messages);
+            }
+
+            $this->sendJsonResponse($response);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Handle get progress request
+     */
+    private function handleGetProgress()
+    {
+        $user_id = $this->validateUserOrFail();
+        
+        $conversation_id = $_GET['conversation_id'] ?? null;
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+
+        $section_id = $this->model->getSectionId();
+
+        try {
+            // Verify conversation ownership
+            $conversation = $this->request_service->getConversation($conversation_id, $user_id, $section_id);
+            if (!$conversation) {
+                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                return;
+            }
+
+            // Check if progress tracking is enabled
+            if (!$this->model->isProgressTrackingEnabled()) {
+                $this->sendJsonResponse(['error' => 'Progress tracking is not enabled'], 400);
+                return;
+            }
+
+            // Get messages for progress calculation
+            $messages = $this->request_service->getConversationMessages($conversation_id) ?: [];
+
+            // Calculate progress
+            $progress = $this->calculateConversationProgress($conversation_id, $messages);
+
+            $this->sendJsonResponse(['progress' => $progress]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle debug progress request - for troubleshooting topic extraction
+     * This endpoint doesn't require authentication for debugging purposes
+     */
+    private function handleDebugProgress()
+    {
+        $conversation_id = $_GET['conversation_id'] ?? null;
+        $section_id = $this->model->getSectionId();
+
+        try {
+            $context = $this->model->getConversationContext();
+            
+            // Get debug info from service
+            $debug = $this->progress_tracking_service->debugTopicExtraction($context);
+            
+            // Add additional info
+            $debug['progress_tracking_enabled'] = $this->model->isProgressTrackingEnabled();
+            $debug['section_id'] = $section_id;
+            $debug['conversation_id'] = $conversation_id;
+            $debug['raw_context_full'] = $context; // Show full context for debugging
+            
+            // If we have a conversation and user is logged in, get messages
+            if ($conversation_id) {
+                try {
+                    $user_id = $this->validateUserOrFail();
+                    $conversation = $this->request_service->getConversation($conversation_id, $user_id, $section_id);
+                    if ($conversation) {
+                        $messages = $this->request_service->getConversationMessages($conversation_id) ?: [];
+                        $userMessages = array_filter($messages, function($m) {
+                            return isset($m['role']) && $m['role'] === 'user';
+                        });
+                        $debug['total_messages'] = count($messages);
+                        $debug['user_messages'] = count($userMessages);
+                        $debug['user_message_contents'] = array_map(function($m) {
+                            return substr($m['content'], 0, 200);
+                        }, array_values($userMessages));
+                    }
+                } catch (Exception $e) {
+                    $debug['message_error'] = $e->getMessage();
+                }
+            }
+            
+            $this->sendJsonResponse(['debug' => $debug]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Calculate progress for a conversation
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param array $messages Conversation messages
+     * @param bool $include_debug Include debug information in response
+     * @return array Progress data
+     */
+    private function calculateConversationProgress($conversation_id, $messages, $include_debug = false)
+    {
+        $section_id = $this->model->getSectionId();
+        $context = $this->model->getConversationContext();
+
+        // Extract topics from context
+        $topics = $this->progress_tracking_service->extractTopicsFromContext($context);
+
+        // Get previous progress to ensure monotonic increase
+        $existing_progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
+        $previous_percentage = $existing_progress ? (float)$existing_progress['progress_percentage'] : 0;
+
+        // Calculate current progress
+        $progress = $this->progress_tracking_service->calculateProgress(
+            $conversation_id,
+            $topics,
+            $messages,
+            $previous_percentage
+        );
+
+        // Update progress in database (only if topics exist)
+        if (!empty($topics)) {
+            $this->progress_tracking_service->updateConversationProgress(
+                $conversation_id,
+                $section_id,
+                $progress['percentage'],
+                $progress['topic_coverage']
+            );
+        }
+
+        // Add configuration to response
+        $progress['config'] = $this->model->getProgressTrackingConfig();
+
+        // Add debug info if requested or if no topics found
+        if ($include_debug || empty($topics)) {
+            // Check for both markdown and HTML format
+            $hasMarkdownSection = (bool)preg_match('/#{1,3}\s*TRACKABLE_TOPICS/i', $context);
+            $hasHtmlSection = (bool)preg_match('/<h[1-3][^>]*>\s*TRACKABLE_TOPICS\s*<\/h[1-3]>/i', $context);
+            
+            $progress['debug'] = [
+                'context_length' => strlen($context),
+                'context_preview' => substr($context, 0, 500),
+                'topics_found' => count($topics),
+                'has_trackable_topics_section' => $hasMarkdownSection || $hasHtmlSection,
+                'has_trackable_topics_section_markdown' => $hasMarkdownSection,
+                'has_trackable_topics_section_html' => $hasHtmlSection,
+                'has_topic_markers' => (bool)preg_match('/\[TOPIC:/i', $context),
+                'user_messages_count' => count(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'user')),
+                'is_html_content' => strpos($context, '<h') !== false || strpos($context, '<p') !== false,
+            ];
+            
+            if (empty($topics)) {
+                $progress['debug']['error'] = 'No topics found in context. Use ## TRACKABLE_TOPICS section or [TOPIC: Name | keywords] markers.';
+            }
+        }
+
+        return $progress;
     }
 
     /**
@@ -1019,7 +1195,12 @@ class LlmchatController extends BaseController
                 'allowedCodeExtensions' => LLM_ALLOWED_CODE_EXTENSIONS,
                 'allowedExtensions' => LLM_ALLOWED_EXTENSIONS,
                 'visionModels' => LLM_VISION_MODELS
-            ]
+            ],
+            // Progress tracking config
+            'enableProgressTracking' => $this->model->isProgressTrackingEnabled(),
+            'progressBarLabel' => $this->model->getProgressBarLabel(),
+            'progressCompleteMessage' => $this->model->getProgressCompleteMessage(),
+            'progressShowTopics' => $this->model->shouldShowProgressTopics()
         ];
     }
 

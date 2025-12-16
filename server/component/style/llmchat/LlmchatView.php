@@ -224,7 +224,12 @@ class LlmchatView extends StyleView
                 'allowedCodeExtensions' => LLM_ALLOWED_CODE_EXTENSIONS,
                 'allowedExtensions' => LLM_ALLOWED_EXTENSIONS,
                 'visionModels' => LLM_VISION_MODELS
-            ]
+            ],
+            // Progress tracking config
+            'enableProgressTracking' => $this->model->isProgressTrackingEnabled(),
+            'progressBarLabel' => $this->model->getProgressBarLabel(),
+            'progressCompleteMessage' => $this->model->getProgressCompleteMessage(),
+            'progressShowTopics' => $this->model->shouldShowProgressTopics()
         ]);
     }
 

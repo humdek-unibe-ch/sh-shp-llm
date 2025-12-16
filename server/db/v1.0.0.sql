@@ -456,3 +456,37 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('continue_button_label'), 'Continue', 'Button label shown in form mode when the AI response does not contain a form. Clicking this button prompts the AI to continue the conversation.');
 
 INSERT INTO lookups (type_code, lookup_code, lookup_value, lookup_description) values ('transactionBy', 'by_llm_plugin', 'By LLM Plugin', 'The action was done by the LLM plugin');
+
+-- =====================================================
+-- PROGRESS TRACKING FEATURE
+-- =====================================================
+
+-- Add progress tracking configuration fields
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_progress_tracking', get_field_type_id('checkbox'), '0'),
+(NULL, 'progress_bar_label', get_field_type_id('text'), '1'),
+(NULL, 'progress_complete_message', get_field_type_id('text'), '1'),
+(NULL, 'progress_show_topics', get_field_type_id('checkbox'), '0');
+
+-- Link progress tracking fields to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_progress_tracking'), '0', 'Enable progress tracking to show how much of the conversation context has been covered. Progress is calculated based on topics extracted from the context and is always incremental (can only increase).'),
+(get_style_id('llmChat'), get_field_id('progress_bar_label'), 'Progress', 'Label shown next to the progress bar'),
+(get_style_id('llmChat'), get_field_id('progress_complete_message'), 'Great job! You have covered all topics.', 'Message shown when progress reaches 100%'),
+(get_style_id('llmChat'), get_field_id('progress_show_topics'), '0', 'Show the list of topics with their coverage status. When enabled, users can see which topics have been covered and which are pending.');
+
+-- Create progress tracking table
+CREATE TABLE IF NOT EXISTS `llmConversationProgress` (
+    `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llmConversations` int(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_sections` int(10) UNSIGNED ZEROFILL NOT NULL,
+    `progress_percentage` decimal(5,2) DEFAULT 0,
+    `topic_coverage` longtext DEFAULT NULL, -- JSON object with topic coverage details
+    `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_conversation_section` (`id_llmConversations`, `id_sections`),
+    KEY `idx_section` (`id_sections`),
+    CONSTRAINT `fk_llmConversationProgress_conversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_llmConversationProgress_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

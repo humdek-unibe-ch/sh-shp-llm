@@ -195,6 +195,16 @@ export interface LlmChatConfig {
   /** File configuration */
   fileConfig: FileConfig;
   
+  // ===== Progress Tracking Configuration =====
+  /** Whether progress tracking is enabled */
+  enableProgressTracking: boolean;
+  /** Label for the progress bar */
+  progressBarLabel: string;
+  /** Message shown when progress is complete */
+  progressCompleteMessage: string;
+  /** Whether to show the topic list */
+  progressShowTopics: boolean;
+  
   // ===== Floating Button Configuration =====
   /** Whether floating button mode is enabled */
   enableFloatingButton: boolean;
@@ -313,6 +323,11 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   formModeActiveDescription: 'Please use the form above to respond.',
   continueButtonLabel: 'Continue',
   fileConfig: DEFAULT_FILE_CONFIG,
+  // Progress tracking defaults
+  enableProgressTracking: false,
+  progressBarLabel: 'Progress',
+  progressCompleteMessage: 'Great job! You have covered all topics.',
+  progressShowTopics: false,
   // Floating button defaults
   enableFloatingButton: false,
   floatingButtonPosition: 'bottom-right',
@@ -840,6 +855,81 @@ export function formatFormSelectionsAsText(
   }
   
   return parts.join('\n');
+}
+
+// ============================================================================
+// PROGRESS TRACKING TYPES
+// ============================================================================
+
+/**
+ * Topic coverage data for a single topic
+ */
+export interface TopicCoverage {
+  /** Unique topic identifier */
+  id: string;
+  /** Human-readable topic title */
+  title: string;
+  /** Coverage percentage (0-100) */
+  coverage: number;
+  /** Topic weight/importance (1-10) */
+  weight: number;
+  /** Whether the topic has been covered (coverage > 0) */
+  is_covered: boolean;
+}
+
+/**
+ * Progress tracking configuration
+ */
+export interface ProgressTrackingConfig {
+  /** Whether progress tracking is enabled */
+  enabled: boolean;
+  /** Label for the progress bar */
+  barLabel: string;
+  /** Message shown when progress is complete */
+  completeMessage: string;
+  /** Whether to show the topic list */
+  showTopics: boolean;
+}
+
+/**
+ * Debug information for progress tracking
+ */
+export interface ProgressDebug {
+  context_length: number;
+  context_preview: string;
+  topics_found: number;
+  has_trackable_topics_section: boolean;
+  has_topic_markers: boolean;
+  user_messages_count: number;
+  error?: string;
+}
+
+/**
+ * Progress data returned from the API
+ */
+export interface ProgressData {
+  /** Overall progress percentage (0-100, always monotonically increasing) */
+  percentage: number;
+  /** Total number of topics extracted from context */
+  topics_total: number;
+  /** Number of topics that have been covered */
+  topics_covered: number;
+  /** Detailed coverage for each topic */
+  topic_coverage: Record<string, TopicCoverage>;
+  /** Whether all topics have been covered */
+  is_complete: boolean;
+  /** Progress tracking configuration */
+  config?: ProgressTrackingConfig;
+  /** Debug information (included when no topics found) */
+  debug?: ProgressDebug;
+}
+
+/**
+ * Response from get_progress API action
+ */
+export interface GetProgressResponse {
+  progress?: ProgressData;
+  error?: string;
 }
 
 // ============================================================================

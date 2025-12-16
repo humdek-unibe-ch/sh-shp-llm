@@ -26,7 +26,8 @@ import type {
   AdminFiltersResponse,
   AdminMessagesResponse,
   LlmChatConfig,
-  FormSubmissionResponse
+  FormSubmissionResponse,
+  GetProgressResponse
 } from '../types';
 
 // ============================================================================
@@ -599,6 +600,32 @@ export function createAutoStartApi(sectionId?: number) {
  * @deprecated Use createAutoStartApi(sectionId) for section-isolated instances
  */
 export const autoStartApi = createAutoStartApi();
+
+// ============================================================================
+// PROGRESS TRACKING API
+// ============================================================================
+
+/**
+ * Progress tracking API
+ * Fetches progress data for a conversation
+ */
+export const progressApi = {
+  /**
+   * Get progress data for a conversation
+   * Calls: ?action=get_progress&conversation_id=XXX&section_id=YYY
+   * 
+   * @param conversationId - The conversation ID
+   * @param sectionId - The section ID
+   * @returns Promise resolving to progress data
+   */
+  async get(conversationId: string, sectionId?: number): Promise<GetProgressResponse> {
+    const params: Record<string, string> = { conversation_id: conversationId };
+    if (sectionId !== undefined) {
+      params.section_id = String(sectionId);
+    }
+    return apiGet<GetProgressResponse>('get_progress', params);
+  }
+};
 
 // ============================================================================
 // ADMIN API

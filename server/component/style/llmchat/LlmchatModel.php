@@ -113,6 +113,12 @@ class LlmchatModel extends StyleModel
     // Continue button for form mode
     private $continue_button_label;
 
+    // Progress tracking - show context coverage progress
+    private $enable_progress_tracking;
+    private $progress_bar_label;
+    private $progress_complete_message;
+    private $progress_show_topics;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -253,6 +259,12 @@ class LlmchatModel extends StyleModel
 
         // Continue button for form mode
         $this->continue_button_label = $this->get_db_field('continue_button_label', 'Continue');
+
+        // Progress tracking - show context coverage progress
+        $this->enable_progress_tracking = $this->get_db_field('enable_progress_tracking', '0');
+        $this->progress_bar_label = $this->get_db_field('progress_bar_label', 'Progress');
+        $this->progress_complete_message = $this->get_db_field('progress_complete_message', 'Great job! You have covered all topics.');
+        $this->progress_show_topics = $this->get_db_field('progress_show_topics', '0');
 
         // Initialize dataTable for this section if data saving is enabled
         $this->initializeDataTableIfNeeded();
@@ -1342,6 +1354,65 @@ EOT;
     public function getContinueButtonLabel()
     {
         return $this->continue_button_label;
+    }
+
+    // ===== Progress Tracking Methods =====
+
+    /**
+     * Check if progress tracking is enabled
+     *
+     * @return bool True if progress tracking is enabled
+     */
+    public function isProgressTrackingEnabled()
+    {
+        return $this->enable_progress_tracking === '1';
+    }
+
+    /**
+     * Get progress bar label
+     *
+     * @return string The progress bar label
+     */
+    public function getProgressBarLabel()
+    {
+        return $this->progress_bar_label;
+    }
+
+    /**
+     * Get progress complete message
+     *
+     * @return string The message shown when progress is complete
+     */
+    public function getProgressCompleteMessage()
+    {
+        return $this->progress_complete_message;
+    }
+
+    /**
+     * Check if topic list should be shown
+     *
+     * @return bool True if topics should be displayed
+     */
+    public function shouldShowProgressTopics()
+    {
+        return $this->progress_show_topics === '1';
+    }
+
+    /**
+     * Get progress tracking configuration
+     * 
+     * Returns all progress-related settings as an array
+     *
+     * @return array Progress configuration
+     */
+    public function getProgressTrackingConfig()
+    {
+        return [
+            'enabled' => $this->isProgressTrackingEnabled(),
+            'barLabel' => $this->getProgressBarLabel(),
+            'completeMessage' => $this->getProgressCompleteMessage(),
+            'showTopics' => $this->shouldShowProgressTopics()
+        ];
     }
 
     /**

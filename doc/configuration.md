@@ -66,6 +66,7 @@ These settings override global defaults for specific chat instances.
 | `enable_data_saving` | checkbox | `false` | Save form data to SelfHelp UserInput system (see [Form Data Saving](form-data-saving.md)) |
 | `is_log` | checkbox | `false` | Data save mode: Enabled = Log Mode (new entry per submission), Disabled = Record Mode (update existing) |
 | `enable_media_rendering` | checkbox | `true` | Enable rendering of images and videos in chat responses (see [Media Rendering](media-rendering.md)) |
+| `enable_progress_tracking` | checkbox | `false` | Enable progress tracking to show context coverage (see [Progress Tracking](#progress-tracking)) |
 | `enable_floating_button` | checkbox | `false` | Enable floating chat button mode - shows a floating button that opens chat in a modal |
 | `floating_button_position` | select | `bottom-right` | Position of floating button: bottom-right, bottom-left, top-right, top-left, bottom-center, top-center |
 | `floating_button_icon` | text | `fa-comments` | Font Awesome icon class for the floating button |
@@ -384,6 +385,182 @@ For Form Mode to work properly, `auto_start_conversation` should be enabled:
 3. **Meaningful Options**: Ensure form options are clear and comprehensive
 4. **Fallback Handling**: LLM may occasionally return text instead of forms
 5. **Testing**: Test form generation with your specific context before deployment
+
+### Progress Tracking
+
+**Location:** CMS → Edit page → llmChat component settings → `enable_progress_tracking`
+
+Progress tracking shows users how much of the conversation context has been covered. This is useful for educational modules, guided conversations, or any scenario where you want users to explore all defined topics.
+
+#### How It Works
+
+**IMPORTANT**: Progress is tracked based on **USER QUESTIONS ONLY**, not AI responses. When the AI mentions a topic, it does NOT count as coverage. Only when the USER explicitly asks about a topic does it count toward progress.
+
+1. **Topic Definition**: Define trackable topics in your conversation context using one of these formats:
+   - **TRACKABLE_TOPICS section** (recommended for many topics)
+   - **Inline [TOPIC: ...] markers** (for embedding in content)
+
+2. **Coverage Calculation**: When a user asks about a topic (keyword match), that topic is marked as covered.
+
+3. **Monotonic Progress**: Progress can only increase, never decrease.
+
+4. **Depth Bonus**: Multiple user questions about the same topic add a small depth bonus (up to 50% extra per topic).
+
+#### Defining Topics
+
+**Method 1: TRACKABLE_TOPICS Section (Recommended)**
+
+```markdown
+## TRACKABLE_TOPICS
+
+- name: Arsenal FC
+  keywords: arsenal, gunners, emirates, arteta
+- name: Chelsea FC
+  keywords: chelsea, blues, stamford bridge
+- name: Liverpool FC
+  keywords: liverpool, reds, anfield, klopp
+```
+
+**Method 2: Inline Topic Markers**
+
+```markdown
+[TOPIC: Arsenal FC | arsenal, gunners, emirates, arteta]
+[TOPIC: Chelsea FC | chelsea, blues, stamford bridge]
+```
+
+**Method 3: Attribute Format**
+
+```markdown
+[TOPIC:id="arsenal" name="Arsenal FC" keywords="arsenal,gunners,emirates"]
+```
+
+#### Configuration Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enable_progress_tracking` | checkbox | `false` | Enable progress tracking |
+| `progress_bar_label` | text | `Progress` | Label shown next to the progress bar |
+| `progress_complete_message` | text | `Great job! You have covered all topics.` | Message shown when 100% is reached |
+| `progress_show_topics` | checkbox | `false` | Show expandable topic list with coverage status |
+
+#### Example Configuration
+
+For a Premier League teams educational module:
+
+**enable_progress_tracking:** ✅ Enabled
+**progress_bar_label:** `Learning Progress`
+**progress_complete_message:** `🎉 Congratulations! You've explored all 20 teams!`
+**progress_show_topics:** ✅ Enabled
+
+**Conversation Context:**
+```markdown
+# Premier League Teams Expert
+
+You are an expert on the English Premier League.
+
+## TRACKABLE_TOPICS
+
+- name: Arsenal FC
+  keywords: arsenal, gunners, emirates, arteta
+- name: Chelsea FC
+  keywords: chelsea, blues, stamford bridge
+- name: Tottenham Hotspur
+  keywords: tottenham, spurs, north london
+- name: Manchester United
+  keywords: manchester united, man united, red devils, old trafford
+- name: Liverpool FC
+  keywords: liverpool, reds, anfield
+
+## Team Information
+
+**Arsenal FC** - The Gunners
+- Stadium: Emirates Stadium
+- Founded: 1886
+...
+```
+
+#### Progress Calculation Example
+
+| User Action | Progress |
+|-------------|----------|
+| Conversation starts | 0% |
+| User asks: "Tell me about Arsenal" | 5% (1/20 topics) |
+| AI responds with Arsenal info | Still 5% (AI responses don't count) |
+| User asks: "What about Chelsea?" | 10% (2/20 topics) |
+| User asks: "More about Arsenal's history" | 12.5% (depth bonus for Arsenal) |
+| User asks about Man United and Liverpool | 20% (4/20 topics) |
+
+#### Use Cases
+
+- **Educational Modules**: Track which lessons or topics students have covered
+- **Product Tours**: Guide users through all features of a product
+- **Onboarding**: Ensure new users learn about all important aspects
+- **Research Studies**: Verify participants have engaged with all required content
+- **Guided Conversations**: Encourage users to explore all available topics
+
+#### API Response
+
+When progress tracking is enabled, the `get_conversation` and `get_progress` endpoints return:
+
+```json
+{
+  "progress": {
+    "percentage": 15.0,
+    "topics_total": 20,
+    "topics_covered": 3,
+    "is_complete": false,
+    "user_messages_analyzed": 5,
+    "topic_coverage": {
+      "topic_abc123": {
+        "id": "topic_abc123",
+        "title": "Arsenal FC",
+        "coverage": 100,
+        "depth": 2,
+        "matches": ["arsenal", "gunners"],
+        "is_covered": true
+      },
+      "topic_def456": {
+        "id": "topic_def456",
+        "title": "Chelsea FC",
+        "coverage": 0,
+        "depth": 0,
+        "matches": [],
+        "is_covered": false
+      }
+    },
+    "config": {
+      "enabled": true,
+      "barLabel": "Learning Progress",
+      "completeMessage": "Congratulations!",
+      "showTopics": true
+    }
+  }
+}
+```
+
+#### Best Practices
+
+1. **Define Topics Explicitly**: Use TRACKABLE_TOPICS section or [TOPIC: ...] markers for reliable tracking
+2. **Choose Good Keywords**: Include the topic name plus common variations, nicknames, and related terms
+3. **Avoid Keyword Overlap**: Make keywords distinct enough that unrelated questions don't trigger coverage
+4. **Appropriate Granularity**: 10-30 topics works well; too few = jumpy progress, too many = slow progress
+5. **Test Your Keywords**: Try sample user questions to ensure they trigger the right topics
+
+#### Troubleshooting
+
+**Progress jumps to 100% immediately**
+- Your topics aren't being parsed correctly
+- Use the TRACKABLE_TOPICS section format
+- Check that keywords are specific enough
+
+**Progress doesn't increase**
+- Keywords might not match user messages
+- Keywords are case-insensitive but must be substrings
+- Check the API response to see which keywords matched
+
+**Progress increases when AI responds**
+- This shouldn't happen - only USER messages count
+- If it does, please report the bug
 
 ### Strict Conversation Mode
 

@@ -116,6 +116,25 @@ function parseConfig(container: HTMLElement) {
     container.dataset.enableFormMode === 'true' ||
     jsonConfig.enableFormMode === true;
 
+  // Progress tracking configuration
+  const enableProgressTracking =
+    container.dataset.enableProgressTracking === '1' ||
+    container.dataset.enableProgressTracking === 'true' ||
+    jsonConfig.enableProgressTracking === true;
+
+  const progressBarLabel = container.dataset.progressBarLabel ||
+    jsonConfig.progressBarLabel ||
+    'Progress';
+
+  const progressCompleteMessage = container.dataset.progressCompleteMessage ||
+    jsonConfig.progressCompleteMessage ||
+    'Great job! You have covered all topics.';
+
+  const progressShowTopics =
+    container.dataset.progressShowTopics === '1' ||
+    container.dataset.progressShowTopics === 'true' ||
+    jsonConfig.progressShowTopics === true;
+
   const enableFloatingButton =
     container.dataset.enableFloatingButton === '1' ||
     container.dataset.enableFloatingButton === 'true' ||
@@ -334,12 +353,16 @@ function parseConfig(container: HTMLElement) {
     hasConversationContext
   };
 
-  // Add auto-start, form mode, and floating button fields
+  // Add auto-start, form mode, progress tracking, and floating button fields
   const autoStartConfig = {
     ...baseConfig,
     autoStartConversation,
     autoStartMessage,
     enableFormMode,
+    enableProgressTracking,
+    progressBarLabel,
+    progressCompleteMessage,
+    progressShowTopics,
     enableFloatingButton,
     floatingButtonPosition,
     floatingButtonIcon,

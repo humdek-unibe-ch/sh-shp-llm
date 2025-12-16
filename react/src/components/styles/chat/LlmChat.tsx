@@ -18,10 +18,11 @@ import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
 import { StreamingIndicator } from '../shared/StreamingIndicator';
+import { ProgressIndicator } from '../shared/ProgressIndicator';
 import { useChatState } from '../../../hooks/useChatState';
 import { useStreaming } from '../../../hooks/useStreaming';
-import { createFormApi, createContinueApi, StreamingApi } from '../../../utils/api';
-import type { LlmChatConfig, SelectedFile, Message } from '../../../types';
+import { createFormApi, createContinueApi, StreamingApi, progressApi } from '../../../utils/api';
+import type { LlmChatConfig, SelectedFile, Message, ProgressData } from '../../../types';
 import './LlmChat.css';
 
 /**
@@ -121,6 +122,10 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   // Local state for form submission (form mode)
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
+  // Local state for progress tracking
+  const [progress, setProgress] = useState<ProgressData | null>(null);
+  const [isProgressUpdating, setIsProgressUpdating] = useState(false);
+
   // Ref for messages container (for smooth scrolling)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -151,6 +156,28 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     getActiveModel
   } = useChatState(config);
 
+  /**
+   * Load progress data for a conversation
+   */
+  const loadProgress = useCallback(async (conversationId: string) => {
+    if (!config.enableProgressTracking || !config.sectionId) {
+      return;
+    }
+    
+    setIsProgressUpdating(true);
+    try {
+      const response = await progressApi.get(conversationId, config.sectionId);
+      if (response.progress) {
+        setProgress(response.progress);
+      }
+    } catch (err) {
+      console.error('Failed to load progress:', err);
+      // Don't set error - progress loading failure shouldn't block the chat
+    } finally {
+      setIsProgressUpdating(false);
+    }
+  }, [config.enableProgressTracking, config.sectionId]);
+
   // Set up proper error handling and message refresh for streaming
   const streamingErrorHandler = useCallback((err: string) => {
     setError(err);
@@ -161,7 +188,11 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     if (config.enableConversationsList) {
       await loadConversations();
     }
-  }, [loadConversationMessages, loadConversations, config.enableConversationsList]);
+    // Update progress after messages are refreshed
+    if (config.enableProgressTracking) {
+      await loadProgress(conversationId);
+    }
+  }, [loadConversationMessages, loadConversations, config.enableConversationsList, config.enableProgressTracking, loadProgress]);
 
   const newConversationHandler = useCallback((conversationId: string, model: string) => {
     // Update current conversation for single conversation mode
@@ -226,6 +257,10 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   const loadCurrentConversation = useCallback(async () => {
     if (config.currentConversationId) {
       await loadConversationMessages(config.currentConversationId);
+      // Load progress if enabled
+      if (config.enableProgressTracking) {
+        await loadProgress(config.currentConversationId);
+      }
     } else {
       // Try to load conversations to get the last one
       try {
@@ -235,7 +270,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         // No conversations - show empty state
       }
     }
-  }, [config.currentConversationId, loadConversationMessages, loadConversations]);
+  }, [config.currentConversationId, loadConversationMessages, loadConversations, config.enableProgressTracking, loadProgress]);
   
   /**
    * Handle sending a message
@@ -538,6 +573,17 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   }, []);
   
   /**
+   * Load progress when conversation changes
+   */
+  useEffect(() => {
+    if (config.enableProgressTracking && currentConversation?.id) {
+      loadProgress(currentConversation.id);
+    } else {
+      setProgress(null);
+    }
+  }, [currentConversation?.id, config.enableProgressTracking, loadProgress]);
+
+  /**
    * Auto-dismiss error after timeout
    */
   useEffect(() => {
@@ -651,6 +697,18 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 </span>
               </div>
             </Card.Header>
+
+            {/* Progress Indicator */}
+            {config.enableProgressTracking && progress && (
+              <div className={`chat-header-progress ${isProgressUpdating ? 'updating' : ''}`}>
+                <ProgressIndicator
+                  progress={progress}
+                  barLabel={config.progressBarLabel}
+                  completeMessage={config.progressCompleteMessage}
+                  showTopics={config.progressShowTopics}
+                />
+              </div>
+            )}
 
             {/* Messages Container */}
             <Card.Body
