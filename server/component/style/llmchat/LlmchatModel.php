@@ -122,10 +122,16 @@ class LlmchatModel extends StyleModel
      *  An associative array holding the different available services.
      * @param int $id
      *  The section id of the LLM chat component.
+     * @param array $params
+     *  The list of get parameters to propagate.
+     * @param number $id_page
+     *  The id of the parent page
+     * @param array $entry_record
+     *  An array that contains the entry record information.
      */
-    public function __construct($services, $id)
+    public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        parent::__construct($services, $id);
+        parent::__construct($services, $id, $params, $id_page, $entry_record);
         $this->llm_service = new LlmService($services);
         $this->user_id = $_SESSION['id_user'] ?? null;
         $this->conversation_id = $_GET['conversation'] ?? null;

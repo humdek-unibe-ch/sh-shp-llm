@@ -23,10 +23,16 @@ class LlmchatComponent extends BaseComponent
      *  An associative array holding the different available services.
      * @param int $id
      *  The section id of this component.
+     * @param array $params
+     *  The list of get parameters to propagate.
+     * @param number $id_page
+     *  The id of the parent page
+     * @param array $entry_record
+     *  An array that contains the entry record information.
      */
-    public function __construct($services, $id)
+    public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        $model = new LlmchatModel($services, $id);
+        $model = new LlmchatModel($services, $id, $params, $id_page, $entry_record);
         $controller = new LlmchatController($model);
         $view = new LlmchatView($model, $controller);
         parent::__construct($model, $view, $controller);

@@ -301,3 +301,4 @@ The chat component now supports both:
 2. **Raw HTML** (fallback) - `<img>`, `<video>`, `<p>` tags are also rendered
 
 However, instructing the LLM to use Markdown produces more consistent and predictable results.
+
