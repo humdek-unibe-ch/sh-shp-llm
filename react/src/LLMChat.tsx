@@ -431,6 +431,13 @@ const LlmChatLoader: React.FC<{ fallbackConfig?: LlmChatConfig }> = ({ fallbackC
     loadConfig();
   }, [fallbackConfig]);
 
+  // In floating mode, show the floating button immediately without loading state
+  if (fallbackConfig?.enableFloatingButton) {
+    // Use fallback config initially, will update when API config loads
+    const displayConfig = config || fallbackConfig;
+    return <FloatingChat config={displayConfig} />;
+  }
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center p-5">
