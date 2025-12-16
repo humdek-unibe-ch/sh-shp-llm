@@ -532,6 +532,150 @@
   box-shadow: var(--llm-shadow-medium);
 }
 
+/* ===== Raw HTML Support ===== */
+/* Styles for HTML tags that may come directly from LLM responses */
+.markdown-content img,
+.message-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--llm-radius-medium);
+  display: block;
+  margin: 12px 0;
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.markdown-content img:hover,
+.message-content img:hover {
+  transform: scale(1.02);
+  box-shadow: var(--llm-shadow-medium);
+}
+
+.markdown-content video,
+.message-content video {
+  max-width: 100%;
+  width: 100%;
+  max-height: 400px;
+  border-radius: var(--llm-radius-medium);
+  background: #000;
+  display: block;
+  margin: 12px 0;
+}
+
+/* Paragraph styling for raw HTML */
+.markdown-content p,
+.message-content p {
+  margin-bottom: 0.75em;
+}
+
+.markdown-content p:last-child,
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Strong/Bold text */
+.markdown-content strong,
+.markdown-content b,
+.message-content strong,
+.message-content b {
+  font-weight: 600;
+}
+
+/* Emphasis/Italic text */
+.markdown-content em,
+.markdown-content i:not(.fas):not(.far):not(.fab):not(.fal),
+.message-content em,
+.message-content i:not(.fas):not(.far):not(.fab):not(.fal) {
+  font-style: italic;
+}
+
+/* Horizontal rule */
+.markdown-content hr,
+.message-content hr {
+  border: none;
+  border-top: 1px solid #dee2e6;
+  margin: 1rem 0;
+}
+
+/* Preformatted text (not in code blocks) */
+.markdown-content pre:not(.code-block-wrapper pre),
+.message-content pre:not(.code-block-wrapper pre) {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: var(--llm-radius-medium);
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+}
+
+/* Definition lists */
+.markdown-content dl,
+.message-content dl {
+  margin: 0.75em 0;
+}
+
+.markdown-content dt,
+.message-content dt {
+  font-weight: 600;
+}
+
+.markdown-content dd,
+.message-content dd {
+  margin-left: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+/* Figure and figcaption */
+.markdown-content figure,
+.message-content figure {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.markdown-content figcaption,
+.message-content figcaption {
+  font-size: 0.875rem;
+  color: #6c757d;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+/* Subscript and superscript */
+.markdown-content sub,
+.message-content sub {
+  font-size: 0.75em;
+  vertical-align: sub;
+}
+
+.markdown-content sup,
+.message-content sup {
+  font-size: 0.75em;
+  vertical-align: super;
+}
+
+/* Abbreviations */
+.markdown-content abbr,
+.message-content abbr {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* Mark/highlight */
+.markdown-content mark,
+.message-content mark {
+  background-color: #ffc107;
+  padding: 0.1em 0.2em;
+  border-radius: 2px;
+}
+
+/* Small text */
+.markdown-content small,
+.message-content small {
+  font-size: 0.875em;
+  color: #6c757d;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 767.98px) {
   .message-bubble {
@@ -544,7 +688,11 @@
   }
   
   .chat-image,
-  .chat-video {
+  .chat-video,
+  .markdown-content img,
+  .message-content img,
+  .markdown-content video,
+  .message-content video {
     max-height: 300px;
   }
 }

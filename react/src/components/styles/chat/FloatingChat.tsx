@@ -240,7 +240,8 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
                 </h6>
                 <small className="d-flex align-items-center">
                   <span className="llm-float-status-dot bg-success mr-1"></span>
-                  Online
+                  <i className="fas fa-robot fa-xs mr-1"></i>
+                  {config.configuredModel}
                 </small>
               </div>
             </div>

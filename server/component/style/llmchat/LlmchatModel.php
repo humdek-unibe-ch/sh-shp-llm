@@ -870,41 +870,86 @@ class LlmchatModel extends StyleModel
      * 1. JSON array: [{"role": "system", "content": "..."}]
      * 2. Free text/markdown: Converted to single system message
      * 
+     * When media rendering is enabled, automatically appends media formatting instructions.
+     * 
      * @return array Array of message objects with 'role' and 'content' keys
      */
     public function getParsedConversationContext()
     {
         $context = trim($this->conversation_context);
+        $messages = [];
         
-        if (empty($context)) {
-            return [];
-        }
-        
-        // Try to parse as JSON first
-        if (substr($context, 0, 1) === '[') {
-            $parsed = json_decode($context, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
-                // Validate structure - each item should have role and content
-                $validated = [];
-                foreach ($parsed as $item) {
-                    if (isset($item['role']) && isset($item['content'])) {
-                        $validated[] = [
-                            'role' => $item['role'],
-                            'content' => $item['content']
-                        ];
+        if (!empty($context)) {
+            // Try to parse as JSON first
+            if (substr($context, 0, 1) === '[') {
+                $parsed = json_decode($context, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+                    // Validate structure - each item should have role and content
+                    foreach ($parsed as $item) {
+                        if (isset($item['role']) && isset($item['content'])) {
+                            $messages[] = [
+                                'role' => $item['role'],
+                                'content' => $item['content']
+                            ];
+                        }
                     }
+                } else {
+                    // Treat as free text - convert to single system message
+                    $messages[] = [
+                        'role' => 'system',
+                        'content' => $context
+                    ];
                 }
-                return $validated;
+            } else {
+                // Treat as free text - convert to single system message
+                $messages[] = [
+                    'role' => 'system',
+                    'content' => $context
+                ];
             }
         }
         
-        // Treat as free text - convert to single system message
-        return [
-            [
+        // Append media rendering instructions if enabled
+        if ($this->isMediaRenderingEnabled()) {
+            $messages[] = [
                 'role' => 'system',
-                'content' => $context
-            ]
-        ];
+                'content' => $this->getMediaRenderingInstructions()
+            ];
+        }
+        
+        return $messages;
+    }
+    
+    /**
+     * Get media rendering instructions for the LLM
+     * 
+     * These instructions tell the LLM how to format media content
+     * so that our UI can properly render images and videos.
+     * 
+     * @return string Media rendering instructions
+     */
+    private function getMediaRenderingInstructions()
+    {
+        return <<<EOT
+MEDIA RENDERING INSTRUCTIONS:
+When including images or videos in your responses, use these exact formats for proper rendering:
+
+FOR IMAGES - Use Markdown syntax:
+![Description of image](image_url)
+
+Example:
+![Beautiful sunset over mountains](https://example.com/sunset.jpg)
+
+FOR VIDEOS - Place the video URL on its own line (must end in .mp4, .webm, or .ogg):
+https://example.com/video.mp4
+
+IMPORTANT RULES:
+1. Never use HTML tags like <img>, <video>, <p>, <div>, etc.
+2. Always use Markdown syntax for formatting (bold: **text**, italic: *text*, headers: # text)
+3. For images, always include descriptive alt text in the brackets
+4. For videos, the URL must be on its own line and end with a video extension
+5. Images and videos will be rendered inline in the chat interface
+EOT;
     }
 
     /**

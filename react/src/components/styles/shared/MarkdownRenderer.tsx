@@ -15,6 +15,7 @@ import React, { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
 import type { Components } from 'react-markdown';
 
 /**
@@ -147,25 +148,6 @@ const PreBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
 };
 
 /**
- * Custom link component - opens in new tab for external links
- */
-const LinkComponent: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
-  const isExternal = href?.startsWith('http') || href?.startsWith('//');
-  
-  return (
-    <a 
-      href={href} 
-      target={isExternal ? '_blank' : undefined}
-      rel={isExternal ? 'noopener noreferrer' : undefined}
-      className="md-link"
-    >
-      {children}
-      {isExternal && <i className="fas fa-external-link-alt fa-xs ml-1"></i>}
-    </a>
-  );
-};
-
-/**
  * Resolve asset path to full URL
  * Handles SelfHelp assets, external URLs, and data URLs
  */
@@ -235,6 +217,60 @@ const parseVideoOptions = (alt: string): { controls: boolean; autoPlay: boolean;
   }
   
   return options;
+};
+
+/**
+ * Video Component for embedded videos
+ */
+const VideoComponent: React.FC<{ src: string; title?: string }> = ({ src, title }) => {
+  const resolvedSrc = resolveMediaPath(src);
+  const options = parseVideoOptions(title || '');
+  
+  return (
+    <figure className="chat-media-figure my-3">
+      <video
+        src={resolvedSrc}
+        controls={options.controls}
+        autoPlay={options.autoPlay}
+        muted={options.muted}
+        loop={options.loop}
+        poster={options.poster}
+        className="chat-video rounded"
+        style={{ maxWidth: '100%', maxHeight: '400px' }}
+        playsInline
+      >
+        Your browser does not support the video tag.
+      </video>
+      {title && !title.toLowerCase().startsWith('video') && (
+        <figcaption className="text-muted small mt-2 text-center">{title}</figcaption>
+      )}
+    </figure>
+  );
+};
+
+/**
+ * Custom link component - opens in new tab for external links
+ * Also handles video URLs by rendering them as video elements
+ */
+const LinkComponent: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
+  // Check if this is a video URL - render as video instead of link
+  if (href && isVideoUrl(href)) {
+    return <VideoComponent src={href} />;
+  }
+  
+  const isExternal = href?.startsWith('http') || href?.startsWith('//');
+  
+  return (
+    <a 
+      href={href} 
+      target={isExternal ? '_blank' : undefined}
+      rel={isExternal ? 'noopener noreferrer' : undefined}
+      className="md-link"
+    >
+      {children}
+      {isExternal && <i className="fas fa-external-link-alt fa-xs ml-1"></i>}
+    </a>
+  );
 };
 
 /**
@@ -366,7 +402,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={markdownComponents}
       >
         {content}

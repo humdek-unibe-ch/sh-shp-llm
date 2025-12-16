@@ -15,6 +15,7 @@ import React, { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import rehypeRaw from 'rehype-raw';
 import type { Components } from 'react-markdown';
 
 /**
@@ -148,8 +149,14 @@ const PreBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
 
 /**
  * Custom link component - opens in new tab for external links
+ * Also handles video URLs by rendering them as video elements
  */
 const LinkComponent: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
+  // Check if this is a video URL - render as video instead of link
+  if (href && isVideoUrl(href)) {
+    return <VideoComponent src={href} />;
+  }
+  
   const isExternal = href?.startsWith('http') || href?.startsWith('//');
   
   return (
@@ -424,7 +431,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={markdownComponents}
       >
         {content}
