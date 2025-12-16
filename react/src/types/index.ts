@@ -755,45 +755,140 @@ export interface FormSubmissionResponse {
 }
 
 /**
+ * Validate a parsed form definition object
+ * @param parsed The parsed JSON object
+ * @returns true if valid form definition, false otherwise
+ */
+function validateFormDefinition(parsed: unknown): parsed is FormDefinition {
+  if (!parsed || typeof parsed !== 'object') return false;
+  
+  const obj = parsed as Record<string, unknown>;
+  if (obj.type !== 'form' || !Array.isArray(obj.fields)) return false;
+  
+  // Validate each field has required properties
+  return (obj.fields as FormField[]).every((field: FormField) => {
+    // Basic validation
+    if (!field.id || !field.type || !field.label) return false;
+    
+    // Type-specific validation
+    if (['radio', 'checkbox', 'select'].includes(field.type)) {
+      // Selection fields need options
+      return Array.isArray(field.options) &&
+        field.options.every((opt: FormFieldOption) => opt.value && opt.label);
+    } else if (['text', 'textarea', 'number'].includes(field.type)) {
+      // Text and number fields don't need options
+      return true;
+    }
+    
+    // For unknown types, skip validation but allow the form to render
+    // This provides forward compatibility for new field types
+    return true;
+  });
+}
+
+/**
+ * Extract JSON object from mixed content (text + JSON)
+ * Handles cases where LLM returns text before/after the JSON form
+ * @param content The content to extract JSON from
+ * @returns Object with extracted JSON, text before, and text after, or null if no valid JSON found
+ */
+function extractJsonFromContent(content: string): { 
+  json: unknown; 
+  textBefore: string; 
+  textAfter: string;
+} | null {
+  // Find the first { that could start a JSON object
+  const firstBrace = content.indexOf('{');
+  if (firstBrace === -1) return null;
+  
+  // Find matching closing brace by counting braces
+  let braceCount = 0;
+  let lastBrace = -1;
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = firstBrace; i < content.length; i++) {
+    const char = content[i];
+    
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          lastBrace = i;
+          break;
+        }
+      }
+    }
+  }
+  
+  if (lastBrace === -1) return null;
+  
+  const jsonStr = content.substring(firstBrace, lastBrace + 1);
+  const textBefore = content.substring(0, firstBrace).trim();
+  const textAfter = content.substring(lastBrace + 1).trim();
+  
+  try {
+    const json = JSON.parse(jsonStr);
+    return { json, textBefore, textAfter };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Parse message content to check if it contains a form definition
+ * Handles both pure JSON and mixed content (text + JSON)
  * @param content Message content to parse
  * @returns FormDefinition if valid form, null otherwise
  */
 export function parseFormDefinition(content: string): FormDefinition | null {
   if (!content) return null;
   
+  // First, try direct JSON parsing (most common case)
   try {
-    // Try to parse as JSON
     const parsed = JSON.parse(content.trim());
-    
-    // Validate it's a form definition
-    if (parsed && parsed.type === 'form' && Array.isArray(parsed.fields)) {
-      // Validate each field has required properties
-      const validFields = parsed.fields.every((field: FormField) => {
-        // Basic validation
-        if (!field.id || !field.type || !field.label) return false;
-        
-        // Type-specific validation
-        if (['radio', 'checkbox', 'select'].includes(field.type)) {
-          // Selection fields need options
-          return Array.isArray(field.options) &&
-            field.options.every((opt: FormFieldOption) => opt.value && opt.label);
-        } else if (['text', 'textarea', 'number'].includes(field.type)) {
-          // Text and number fields don't need options
-          return true;
-        }
-        
-        // For unknown types, skip validation but allow the form to render
-        // This provides forward compatibility for new field types
-        return true;
-      });
-      
-      if (validFields) {
-        return parsed as FormDefinition;
-      }
+    if (validateFormDefinition(parsed)) {
+      return parsed;
     }
   } catch {
-    // Not valid JSON, not a form
+    // Not pure JSON, try to extract from mixed content
+  }
+  
+  // Try to extract JSON from mixed content (text before/after JSON)
+  const extracted = extractJsonFromContent(content);
+  if (extracted && validateFormDefinition(extracted.json)) {
+    const formDef = extracted.json as FormDefinition;
+    
+    // If there's text before the JSON, add it as contentBefore
+    // (only if contentBefore is not already set)
+    if (extracted.textBefore && !formDef.contentBefore) {
+      formDef.contentBefore = extracted.textBefore;
+    }
+    
+    // If there's text after the JSON, add it as contentAfter
+    // (only if contentAfter is not already set)
+    if (extracted.textAfter && !formDef.contentAfter) {
+      formDef.contentAfter = extracted.textAfter;
+    }
+    
+    return formDef;
   }
   
   return null;
