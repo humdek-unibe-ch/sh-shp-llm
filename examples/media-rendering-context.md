@@ -85,3 +85,4 @@ When in form mode, you can still include images in your responses alongside form
 4. **Video Controls**: Videos have native browser controls for play/pause/volume
 5. **Responsive**: Media automatically scales to fit the chat container
 
+

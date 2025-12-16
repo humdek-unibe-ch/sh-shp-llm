@@ -20,7 +20,7 @@ import { ConversationSidebar } from '../shared/ConversationSidebar';
 import { StreamingIndicator } from '../shared/StreamingIndicator';
 import { useChatState } from '../../../hooks/useChatState';
 import { useStreaming } from '../../../hooks/useStreaming';
-import { createFormApi } from '../../../utils/api';
+import { createFormApi, createContinueApi, StreamingApi } from '../../../utils/api';
 import type { LlmChatConfig, SelectedFile, Message } from '../../../types';
 import './LlmChat.css';
 
@@ -101,9 +101,14 @@ interface LlmChatProps {
  */
 export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   
-  // Create section-specific form API
+  // Create section-specific APIs
   const formApi = useMemo(
     () => createFormApi(config.sectionId),
+    [config.sectionId]
+  );
+  
+  const continueApi = useMemo(
+    () => createContinueApi(config.sectionId),
     [config.sectionId]
   );
 
@@ -338,32 +343,17 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     forceScrollToBottom();
 
     try {
-      // Build proper URL using current page path
-      const formData = new FormData();
-      formData.append('action', 'continue_conversation');
-      formData.append('conversation_id', conversationId);
-      formData.append('model', config.configuredModel);
-
       if (config.streamingEnabled) {
         // Use streaming mode for continue
         // The continue_conversation action with prepare_streaming=1 saves the continue message
         // Then we directly start the SSE connection (don't use sendStreamingMessage which would prepare again)
         setIsProcessing(true);
         
-        // Prepare streaming by sending continue action
-        formData.append('prepare_streaming', '1');
-        
-        const response = await fetch(window.location.pathname, {
-          method: 'POST',
-          body: formData,
-          headers: {
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          credentials: 'same-origin'
-        });
-        
-        const result = await response.json();
+        // Prepare streaming by sending continue action (with section_id)
+        const result = await continueApi.continueAndPrepareStreaming(
+          conversationId,
+          config.configuredModel
+        );
         
         if (result.error) {
           throw new Error(result.error);
@@ -371,56 +361,33 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         
         setIsProcessing(false);
         
-        // Directly start SSE streaming (don't call sendStreamingMessage which would prepare again)
-        // Build streaming URL
-        const streamUrl = new URL(window.location.href);
-        streamUrl.searchParams.set('streaming', '1');
-        streamUrl.searchParams.set('conversation', conversationId);
+        // Use StreamingApi for proper SSE handling with section_id
+        const streamingApi = new StreamingApi(conversationId, config.sectionId);
         
-        const eventSource = new EventSource(streamUrl.toString());
-        
-        eventSource.onmessage = async (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'done' || data.type === 'error' || data.type === 'close') {
-              eventSource.close();
+        streamingApi.connect(
+          async (event) => {
+            if (event.type === 'done' || event.type === 'error' || event.type === 'close') {
+              streamingApi.disconnect();
               
-              if (data.type === 'error') {
-                setError(data.message || 'Streaming error');
+              if (event.type === 'error') {
+                setError(event.message || 'Streaming error');
               }
               
               // Refresh messages after streaming completes
               await loadConversationMessages(conversationId);
             }
-          } catch (e) {
-            console.error('Error parsing SSE data:', e);
-            eventSource.close();
-            setError('Failed to parse streaming response');
+          },
+          () => {
+            setError('Streaming connection error');
+            // Refresh messages anyway to show any partial response
+            loadConversationMessages(conversationId);
           }
-        };
-        
-        eventSource.onerror = () => {
-          eventSource.close();
-          setError('Streaming connection error');
-          // Refresh messages anyway to show any partial response
-          loadConversationMessages(conversationId);
-        };
+        );
       } else {
         // Non-streaming mode
         setIsProcessing(true);
         try {
-          const response = await fetch(window.location.pathname, {
-            method: 'POST',
-            body: formData,
-            headers: {
-              'Accept': 'application/json',
-              'X-Requested-With': 'XMLHttpRequest'
-            },
-            credentials: 'same-origin'
-          });
-          
-          const result = await response.json();
+          const result = await continueApi.continue(conversationId, config.configuredModel);
           
           if (result.error) {
             throw new Error(result.error);
@@ -443,6 +410,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation,
     config.streamingEnabled,
     config.configuredModel,
+    config.sectionId,
+    continueApi,
     loadConversationMessages,
     setError,
     forceScrollToBottom

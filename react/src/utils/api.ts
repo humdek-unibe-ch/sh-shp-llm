@@ -500,6 +500,67 @@ export const formApi = createFormApi();
 // ============================================================================
 
 // ============================================================================
+// CONTINUE CONVERSATION API
+// ============================================================================
+
+/**
+ * Create continue conversation API with section ID support
+ * Used in form mode when the AI response doesn't contain a form
+ * 
+ * @param sectionId - The section ID for this chat instance
+ */
+export function createContinueApi(sectionId?: number) {
+  return {
+    /**
+     * Continue the conversation (triggers next LLM response)
+     * Calls: POST action=continue_conversation
+     * 
+     * @param conversationId - The conversation ID to continue
+     * @param model - The LLM model to use
+     * @returns Promise resolving to the response
+     */
+    async continue(
+      conversationId: string,
+      model: string
+    ): Promise<SendMessageResponse> {
+      const formData = new FormData();
+      formData.append('action', 'continue_conversation');
+      formData.append('conversation_id', conversationId);
+      formData.append('model', model);
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+
+      return apiPost<SendMessageResponse>(formData);
+    },
+
+    /**
+     * Continue conversation and prepare for streaming response
+     * Calls: POST action=continue_conversation with prepare_streaming=1
+     * 
+     * @param conversationId - The conversation ID to continue
+     * @param model - The LLM model to use
+     * @returns Promise resolving to preparation result
+     */
+    async continueAndPrepareStreaming(
+      conversationId: string,
+      model: string
+    ): Promise<PrepareStreamingResponse> {
+      const formData = new FormData();
+      formData.append('action', 'continue_conversation');
+      formData.append('conversation_id', conversationId);
+      formData.append('model', model);
+      formData.append('prepare_streaming', '1');
+      if (sectionId !== undefined) {
+        formData.append('section_id', String(sectionId));
+      }
+
+      return apiPost<PrepareStreamingResponse>(formData);
+    }
+  };
+}
+
+// ============================================================================
 // AUTO-START API
 // ============================================================================
 
