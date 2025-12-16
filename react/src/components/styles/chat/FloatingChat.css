@@ -324,7 +324,7 @@
 
 /* Make sure card-body in floating panel behaves correctly */
 .llm-float-panel-body .card-body {
-  flex: 1 1 0 !important;
+  /* flex: 1 1 0 !important; */
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
@@ -360,6 +360,86 @@
 .llm-float-panel-body .card-body > form,
 .llm-float-panel-body .card-body > .llm-input-area {
   flex-shrink: 0 !important;
+}
+
+/* ===== Form Rendering in Floating Mode ===== */
+/* Ensure forms stay inside message bubbles and are properly styled */
+
+/* Message bubbles in floating mode need to contain forms properly */
+.llm-float-panel-body .message-bubble {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: visible !important;
+}
+
+/* The message content should take full width */
+.llm-float-panel-body .message-bubble .message-content {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Form card styling inside message bubbles */
+.llm-float-panel-body .message-bubble .llm-form-card {
+  margin: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.llm-float-panel-body .message-bubble .llm-form-card .card-header {
+  padding: 0 0 0.75rem 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid #dee2e6 !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.llm-float-panel-body .message-bubble .llm-form-card .card-body {
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+/* Form options container */
+.llm-float-panel-body .form-options-container {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.llm-float-panel-body .form-option-button {
+  margin-bottom: 0.5rem !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  padding: 10px 12px !important;
+}
+
+.llm-float-panel-body .form-content-section {
+  margin-bottom: 1rem !important;
+}
+
+/* Ensure form fields are accessible and visible */
+.llm-float-panel-body .form-group,
+.llm-float-panel-body .mb-3 {
+  margin-bottom: 0.75rem !important;
+}
+
+.llm-float-panel-body .form-control {
+  width: 100% !important;
+}
+
+/* Submit button styling */
+.llm-float-panel-body .message-bubble .llm-form-card .d-flex.justify-content-end {
+  padding-top: 0.75rem !important;
+  border-top: 1px solid #dee2e6 !important;
+  margin-top: 0.75rem !important;
+}
+
+/* React-select dropdown should stay within bounds */
+.llm-float-panel-body .react-select__menu {
+  position: absolute !important;
+  z-index: 9999 !important;
 }
 
 /* Reduce footer padding in floating modal */

@@ -173,8 +173,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
   let formDefinition: FormDefinition | null = null;
   let isHistoricalForm = false;
   let userSubmittedValues: Record<string, string | string[]> | undefined;
-  
-  if (!isUser && !isStreaming) {
+
+  // Try to parse forms even during streaming for better UX
+  // This allows forms to render immediately when the JSON is complete
+  if (!isUser) {
     formDefinition = parseFormDefinition(message.content);
     // If it's a form but not the last message, it's historical
     if (formDefinition && !isLastMessage) {
@@ -415,10 +417,13 @@ export const MessageList: React.FC<MessageListProps> = ({
       {/* Render all messages */}
       {messages.map((message, index) => {
         // Check if this is a streaming message (last assistant message during streaming)
-        const isStreamingMessage = !!(isStreaming && 
-          streamingContent && 
-          index === messages.length - 1 && 
-          message.role === 'assistant');
+        // Don't treat as streaming if we have a valid form
+        const hasForm = message.role === 'assistant' && parseFormDefinition(message.content) !== null;
+        const isStreamingMessage = !!(isStreaming &&
+          streamingContent &&
+          index === messages.length - 1 &&
+          message.role === 'assistant' &&
+          !hasForm);
         
         // Check if this is the last message (for form rendering)
         const isLastMessage = index === messages.length - 1;

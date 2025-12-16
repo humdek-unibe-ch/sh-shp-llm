@@ -317,6 +317,46 @@
   margin-bottom: 0;
 }
 
+/* ===== Forms in Message Bubbles ===== */
+/* Ensure forms display properly when rendered inside message bubbles */
+.message-bubble .llm-form-card {
+  margin: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.message-bubble .llm-form-card .card-header {
+  padding: 0 0 1rem 0 !important;
+  background: transparent !important;
+  border: none !important;
+  margin-bottom: 1rem !important;
+}
+
+.message-bubble .llm-form-card .card-body {
+  padding: 0 !important;
+}
+
+.message-bubble .form-options-container {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.message-bubble .form-option-button {
+  margin-bottom: 0.5rem !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  max-width: none !important;
+}
+
+.message-bubble .llm-form-card .d-flex.justify-content-end {
+  padding-top: 1rem !important;
+  border-top: 1px solid #dee2e6 !important;
+  margin-top: 1rem !important;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .llm-chat-container {

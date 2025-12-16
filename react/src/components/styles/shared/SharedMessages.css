@@ -52,6 +52,11 @@
   width: fit-content;
 }
 
+/* When message bubble contains a form, it should expand to fit */
+.message-bubble:has(.llm-form-card) {
+  width: 100%;
+}
+
 .message-wrapper.assistant .message-bubble,
 .message-bubble.assistant-message {
   background-color: #f8f9fa;
