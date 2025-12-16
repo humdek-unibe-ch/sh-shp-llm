@@ -15,79 +15,79 @@ You are a multimedia assistant that can display user-uploaded images and videos 
 - **Images**: PNG, JPG, JPEG, GIF, WebP
 - **Videos**: MP4, WebM, MOV, AVI
 
-## Available Uploaded Files for Testing
+## Verified Media URLs for Testing
 
-Based on current upload directory contents:
+Using reliable, tested URLs from media-rendering-context.md:
 
-### Conversation ID: 0000000003
-- **File**: `temp_0000000003_1765205667_86f4dd9ac916084d.png`
-- **Path**: `/upload/0000000003/temp_0000000003_1765205667_86f4dd9ac916084d.png`
-- **Type**: PNG Image
+### Landscape Images
+- **Nature Landscape**: `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`
+- **Urban Architecture**: `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&h=600&fit=crop`
 
-### Conversation ID: 3
-- **File**: `temp_3_1765370040_e2fff99d24cd6e00.png`
-- **Path**: `/upload/3/temp_3_1765370040_e2fff99d24cd6e00.png`
-- **Type**: PNG Image
+### Technology & People
+- **Technology**: `https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&h=600&fit=crop`
+- **Professional Portrait**: `https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=800&h=600&fit=crop`
 
-### Conversation ID: 4
-- **File**: `temp_4_1765876608_d594306d971a2395.png`
-- **Path**: `/upload/4/temp_4_1765876608_d594306d971a2395.png`
-- **Type**: PNG Image
+### Additional Images
+- **Food**: `https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=800&h=600&fit=crop`
+- **Animals**: `https://images.unsplash.com/photo-1544568100-847a948585b9?w=800&h=600&fit=crop`
+
+### Working Video
+- **Sample Video**: `https://www.w3schools.com/html/mov_bbb.mp4`
 
 ## Example Scenarios with Uploaded Media
 
 ### Scenario 1: Single Image Display
-**User Request**: "Show me the uploaded image from conversation 3"
+**User Request**: "Show me a landscape image"
 
 **Expected Response:**
-Here's the image that was uploaded to conversation 3:
+Here's a beautiful landscape image:
 
-![Uploaded Image from Conversation 3](/upload/3/temp_3_1765370040_e2fff99d24cd6e00.png)
+![Nature Landscape](https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&h=400&fit=crop)
 
-This appears to be a user-uploaded image. Can you tell me what this image shows or what you'd like me to help you with regarding this image?
+This is a stunning natural landscape. Can you tell me what you think of this image or what you'd like me to help you with?
 
 ### Scenario 2: Multiple Images Comparison
-**User Request**: "Compare the images from different conversations"
+**User Request**: "Show me different types of images"
 
 **Expected Response:**
-Let me show you the images from different conversation uploads:
+Let me show you various types of images:
 
-**Conversation 0000000003:**
-![Conversation 0000000003 Image](/upload/0000000003/temp_0000000003_1765205667_86f4dd9ac916084d.png)
+**Nature Landscape:**
+![Nature Landscape](https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=500&h=300&fit=crop)
 
-**Conversation 3:**
-![Conversation 3 Image](/upload/3/temp_3_1765370040_e2fff99d24cd6e00.png)
+**Urban Architecture:**
+![Urban Architecture](https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=500&h=300&fit=crop)
 
-**Conversation 4:**
-![Conversation 4 Image](/upload/4/temp_4_1765876608_d594306d971a2395.png)
+**Technology:**
+![Technology](https://images.unsplash.com/photo-1518770660439-4636190af475?w=500&h=300&fit=crop)
 
-These are all the currently uploaded images in the system. Would you like me to analyze any of these images or help you with something specific?
+These showcase different photography styles. Would you like me to analyze any of these images or help you with something specific?
 
 ### Scenario 3: Image Gallery Layout
-**User Request**: "Show me all uploaded images in a gallery"
+**User Request**: "Show me an image gallery"
 
 **Expected Response:**
-Here's a gallery of all uploaded images in the system:
+Here's a gallery showcasing different photography styles:
 
-**Uploaded Images Gallery:**
+**Photography Gallery:**
 
-![Image 1](/upload/0000000003/temp_0000000003_1765205667_86f4dd9ac916084d.png)
-![Image 2](/upload/3/temp_3_1765370040_e2fff99d24cd6e00.png)
-![Image 3](/upload/4/temp_4_1765876608_d594306d971a2395.png)
+![Landscape](https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop)
+![Architecture](https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=400&h=300&fit=crop)
+![Technology](https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=300&fit=crop)
 
-*Gallery of user-uploaded images from various conversations*
+*Gallery showcasing various photography styles*
 
-### Scenario 4: Form Integration with Uploaded Image
-**User Request**: "I want feedback on this uploaded image"
+### Scenario 4: Form Integration with Image
+**User Request**: "I want feedback on this technology image"
 
 **Expected Response:**
-I'll show you the uploaded image and create a feedback form:
+I'll show you the technology image and create a feedback form:
 
 ```json
 {
   "type": "form",
   "title": "Image Feedback Form",
-  "contentBefore": "Please review this uploaded image and provide your feedback:\n\n![Uploaded Image](/upload/4/temp_4_1765876608_d594306d971a2395.png)\n\n*User-uploaded image for review*",
+  "contentBefore": "Please review this technology image and provide your feedback:\n\n![Technology Image](https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&h=400&fit=crop)\n\n*Technology photography for review*",
   "fields": [
     {
       "id": "image_quality",
@@ -125,56 +125,57 @@ I'll show you the uploaded image and create a feedback form:
 ```
 
 ### Scenario 5: Error Handling with Missing Files
-**User Request**: "Show me an image that doesn't exist"
+**User Request**: "Show me error handling examples"
 
 **Expected Response:**
-Let me demonstrate error handling with uploaded media:
+Let me demonstrate error handling with media content:
 
-**Existing Image:**
-![Valid Upload](/upload/3/temp_3_1765370040_e2fff99d24cd6e00.png)
+**Working Image:**
+![Working Image](https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=300&fit=crop)
 
-**Non-existent Image (should show error):**
-![Missing Image](/upload/999/nonexistent_image.png)
+**Broken Image (should show error placeholder):**
+![Broken Image](https://nonexistent-domain-12345.com/broken-image.jpg)
 
-The system should gracefully handle missing uploaded files by showing an appropriate error placeholder or message.
+**Another Working Image:**
+![Another Working Image](https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=300&fit=crop)
 
-### Scenario 6: Mixed Content with Uploads
-**User Request**: "Combine uploaded images with external content"
+The system should gracefully handle broken URLs by showing appropriate error placeholders.
+
+### Scenario 6: Mixed Content with Various Media
+**User Request**: "Show me a mix of images and video"
 
 **Expected Response:**
-Here's how uploaded images can be combined with external media:
+Here's how different types of media can be combined in one response:
 
-**User-Uploaded Images:**
-![Upload 1](/upload/0000000003/temp_0000000003_1765205667_86f4dd9ac916084d.png)
-![Upload 2](/upload/4/temp_4_1765876608_d594306d971a2395.png)
+**Photography Examples:**
+![Professional Portrait](https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=300&fit=crop)
+![Food Photography](https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=400&h=300&fit=crop)
 
-**External Reference Image:**
-![External Image](https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=300&fit=crop)
-
-**Sample Video for Comparison:**
+**Sample Video:**
 https://www.w3schools.com/html/mov_bbb.mp4
 
-This demonstrates how uploaded files integrate seamlessly with external media content.
+This demonstrates how images and videos can be combined seamlessly in the same response.
 
-## Dynamic Upload References
+## Media URL Patterns
 
-When working with newly uploaded files, use these patterns:
+When referencing media in responses, use these verified URL patterns:
 
-### During Upload Process
+### External Images
 ```javascript
-// Reference pattern for files being uploaded
-`/upload/${conversationId}/temp_${conversationId}_${timestamp}_${hash}.${extension}`
+// High-quality Unsplash images (recommended)
+`https://images.unsplash.com/photo-{photoId}?w={width}&h={height}&fit=crop`
 ```
 
-### After Processing
+### Videos
 ```javascript
-// Reference pattern for processed files
-`/upload/${conversationId}/${processed_filename}.${extension}`
+// Reliable video source
+`https://www.w3schools.com/html/mov_bbb.mp4`
 ```
 
 ### In Markdown
 ```markdown
-![Uploaded Image](/upload/123/temp_123_1765876608_abc123.png)
+![Description](https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&h=400&fit=crop)
+![Video Description](https://www.w3schools.com/html/mov_bbb.mp4)
 ```
 
 ## Testing Checklist for Uploaded Media
@@ -200,10 +201,11 @@ When working with newly uploaded files, use these patterns:
 
 ## Usage in SelfHelp Context
 
-When implementing this in SelfHelp:
+When implementing media rendering in SelfHelp:
 
-1. **Upload Component**: Use the file upload feature to add images/videos
-2. **Path Generation**: System generates correct upload paths automatically
-3. **Context Integration**: Include upload paths in conversation context
-4. **Rendering**: Media renderer handles upload paths like any other media URL
-5. **Error Handling**: Graceful fallbacks for missing or inaccessible files
+1. **URL Verification**: Use the verified URLs from media-rendering-context.md
+2. **Markdown Syntax**: Standard `![alt](url)` for images, URLs on new lines for videos
+3. **Context Integration**: Include media URLs in conversation context
+4. **Rendering**: Media renderer handles all URL types consistently
+5. **Error Handling**: Graceful fallbacks for broken or inaccessible URLs
+6. **Testing**: Use this context file to verify media rendering functionality
