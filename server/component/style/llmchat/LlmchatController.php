@@ -119,8 +119,8 @@ class LlmchatController extends BaseController
         if ($requested_section_id === null) {
             // Allow regular page loads - no API action
             $action = $_GET['action'] ?? $_POST['action'] ?? null;
-            $is_streaming = isset($_GET['streaming']) && $_GET['streaming'] === '1';
-            
+            $is_streaming = ($action === 'streaming');
+
             // If no action and not streaming, this is a page load - allow it
             if ($action === null && !$is_streaming) {
                 return true;
@@ -170,13 +170,6 @@ class LlmchatController extends BaseController
      */
     private function handleRequest()
     {
-        // Handle streaming request (GET with streaming=1)
-        if (isset($_GET['streaming']) && $_GET['streaming'] === '1') {
-            $this->current_action = 'streaming';
-            $this->handleStreaming();
-            return;
-        }
-
         // Handle POST requests
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $action = $_POST['action'] ?? 'send_message';
@@ -228,7 +221,7 @@ class LlmchatController extends BaseController
 
     /**
      * Handle GET requests
-     * 
+     *
      * @param string|null $action The action to perform
      */
     private function handleGetRequest($action)
@@ -245,6 +238,9 @@ class LlmchatController extends BaseController
                 break;
             case 'get_auto_started':
                 $this->handleGetAutoStarted();
+                break;
+            case 'streaming':
+                $this->handleStreaming();
                 break;
             default:
                 // Regular page load - check for auto-start
@@ -549,7 +545,7 @@ class LlmchatController extends BaseController
      */
     private function handleStreaming()
     {
-        $conversation_id = $_GET['conversation'] ?? null;
+        $conversation_id = $_GET['conversation_id'] ?? null;
         if (!$conversation_id) {
             $this->sendSSE(['type' => 'error', 'message' => 'Conversation ID required']);
             exit;

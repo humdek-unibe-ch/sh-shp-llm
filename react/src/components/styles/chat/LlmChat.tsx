@@ -348,37 +348,46 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         // The continue_conversation action with prepare_streaming=1 saves the continue message
         // Then we directly start the SSE connection (don't use sendStreamingMessage which would prepare again)
         setIsProcessing(true);
+        setIsFormSubmitting(true);
         
         // Prepare streaming by sending continue action (with section_id)
         const result = await continueApi.continueAndPrepareStreaming(
           conversationId,
           config.configuredModel
         );
-        
+
         if (result.error) {
           throw new Error(result.error);
         }
-        
-        setIsProcessing(false);
-        
+
+        // Refresh messages to show the continue message immediately
+        await loadConversationMessages(conversationId);
+
+        // Keep processing states active during streaming
+        // States will be reset when streaming completes or fails
+
         // Use StreamingApi for proper SSE handling with section_id
         const streamingApi = new StreamingApi(conversationId, config.sectionId);
-        
+
         streamingApi.connect(
           async (event) => {
             if (event.type === 'done' || event.type === 'error' || event.type === 'close') {
               streamingApi.disconnect();
-              
+
               if (event.type === 'error') {
                 setError(event.message || 'Streaming error');
               }
-              
-              // Refresh messages after streaming completes
+
+              // Reset states and refresh messages after streaming completes
+              setIsProcessing(false);
+              setIsFormSubmitting(false);
               await loadConversationMessages(conversationId);
             }
           },
           () => {
             setError('Streaming connection error');
+            setIsProcessing(false);
+            setIsFormSubmitting(false);
             // Refresh messages anyway to show any partial response
             loadConversationMessages(conversationId);
           }
@@ -386,6 +395,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       } else {
         // Non-streaming mode
         setIsProcessing(true);
+        setIsFormSubmitting(true);
         try {
           const result = await continueApi.continue(conversationId, config.configuredModel);
           
@@ -397,12 +407,14 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
           await loadConversationMessages(conversationId);
         } finally {
           setIsProcessing(false);
+          setIsFormSubmitting(false);
         }
       }
     } catch (error) {
       console.error('Failed to continue conversation:', error);
       setError(error instanceof Error ? error.message : 'Failed to continue conversation');
       setIsProcessing(false);
+      setIsFormSubmitting(false);
     }
   }, [
     isStreaming,
@@ -592,7 +604,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   }
   
   // Determine if model is mismatched
-  const isModelMismatch = currentConversation?.model && 
+  const isModelMismatch = currentConversation?.model &&
     currentConversation.model !== config.configuredModel;
 
   return (

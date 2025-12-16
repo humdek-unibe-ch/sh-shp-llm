@@ -325,13 +325,13 @@ const LoadingState: React.FC<{ config: LlmChatConfig }> = ({ config }) => (
  * Continue Button Component
  * Shows when form mode is enabled but last assistant message has no form
  */
-const ContinueButton: React.FC<{ 
-  label: string; 
-  onClick: () => void; 
+const ContinueButton: React.FC<{
+  label: string;
+  onClick: () => void;
   disabled: boolean;
 }> = ({ label, onClick, disabled }) => (
   <div className="continue-button-wrapper text-center py-4">
-    <button 
+    <button
       className="btn btn-primary btn-lg px-5"
       onClick={onClick}
       disabled={disabled}
@@ -406,10 +406,21 @@ export const MessageList: React.FC<MessageListProps> = ({
   };
 
   // Determine if we should show the Continue button
-  // Always show when form mode is enabled and not streaming/processing
+  // Only show when we're at a dead end (no form to answer) in form mode
   const shouldShowContinueButton = () => {
-    // Always show continue button in form mode unless streaming or processing
-    return config.enableFormMode && onContinue && !isStreaming && !isProcessing && messages.length > 0;
+    if (!config.enableFormMode || !onContinue || isStreaming || isProcessing || messages.length === 0) {
+      return false;
+    }
+
+    // Find the last assistant message
+    const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
+    if (!lastAssistantMessage) {
+      return false;
+    }
+
+    // Only show continue if the last assistant message has NO form (we're at a dead end)
+    const hasForm = parseFormDefinition(lastAssistantMessage.content) !== null;
+    return !hasForm;
   };
 
   return (
@@ -459,7 +470,11 @@ export const MessageList: React.FC<MessageListProps> = ({
       {/* Show Continue button in form mode when last assistant message has no form */}
       {shouldShowContinueButton() && onContinue && (
         <ContinueButton
-          label={config.continueButtonLabel}
+          label={
+            isFormSubmitting || isProcessing
+              ? (config.streamingEnabled ? config.aiStreamingText : config.aiThinkingText)
+              : config.continueButtonLabel
+          }
           onClick={onContinue}
           disabled={isFormSubmitting || isProcessing}
         />

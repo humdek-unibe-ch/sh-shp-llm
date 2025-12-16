@@ -236,6 +236,8 @@ export interface LlmChatConfig {
   tokensSuffix: string;
   /** AI thinking text */
   aiThinkingText: string;
+  /** AI streaming text */
+  aiStreamingText: string;
   /** Conversations sidebar heading */
   conversationsHeading: string;
   /** New chat button label */
@@ -331,6 +333,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   cancelDeleteButtonLabel: 'Cancel',
   tokensSuffix: ' tokens',
   aiThinkingText: 'AI is thinking...',
+  aiStreamingText: 'AI is streaming...',
   conversationsHeading: 'Conversations',
   newChatButtonLabel: 'New',
   selectConversationHeading: 'Select a conversation',

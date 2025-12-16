@@ -199,6 +199,10 @@ function parseConfig(container: HTMLElement) {
     jsonConfig.aiThinkingText ||
     DEFAULT_CONFIG.aiThinkingText!;
 
+  const aiStreamingText = container.dataset.aiStreamingText ||
+    jsonConfig.aiStreamingText ||
+    DEFAULT_CONFIG.aiStreamingText!;
+
   const conversationsHeading = container.dataset.conversationsHeading ||
     jsonConfig.conversationsHeading ||
     DEFAULT_CONFIG.conversationsHeading!;
@@ -360,6 +364,7 @@ function parseConfig(container: HTMLElement) {
     cancelDeleteButtonLabel,
     tokensSuffix,
     aiThinkingText,
+    aiStreamingText,
     conversationsHeading,
     newChatButtonLabel,
     selectConversationHeading,

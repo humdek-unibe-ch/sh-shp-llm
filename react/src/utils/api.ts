@@ -663,12 +663,12 @@ export class StreamingApi {
   
   /**
    * Build the streaming URL
-   * Uses current page URL with streaming parameters
+   * Uses current page URL with action and conversation_id parameters
    */
   private buildStreamingUrl(): string {
     const url = new URL(window.location.href);
-    url.searchParams.set('streaming', '1');
-    url.searchParams.set('conversation', this.conversationId);
+    url.searchParams.set('action', 'streaming');
+    url.searchParams.set('conversation_id', this.conversationId);
     if (this.sectionId !== undefined) {
       url.searchParams.set('section_id', String(this.sectionId));
     }

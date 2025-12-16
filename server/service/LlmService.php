@@ -528,11 +528,15 @@ class LlmService
         }
 
         $messages = $this->db->query_db(
-            "SELECT id, `role`, `content`, `attachments`, `model`, `tokens_used`, `timestamp`, `sent_context`
-             FROM llmMessages
-             WHERE id_llmConversations = :conversation_id AND deleted = 0
-             ORDER BY timestamp ASC
-             LIMIT " . $limit . ";",
+            "SELECT m.id, m.role, m.content, m.attachments, m.model, m.tokens_used, m.timestamp, m.sent_context
+             FROM llmMessages m
+             INNER JOIN (
+                 SELECT id FROM llmMessages
+                 WHERE id_llmConversations = :conversation_id AND deleted = 0
+                 ORDER BY timestamp DESC
+                 LIMIT " . $limit . "
+             ) recent ON m.id = recent.id
+             ORDER BY m.timestamp ASC;",
             [':conversation_id' => $conversation_id]
         );
 
