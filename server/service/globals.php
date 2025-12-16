@@ -10,6 +10,9 @@ define('LLM_ADMIN_PAGE_KEYWORD', 'moduleLlmAdminConsole');
 define('LLM_PLUGIN_NAME', 'sh-shp-llm');
 define('LLM_PLUGIN_VERSION', 'v1.0.0');
 
+// Transaction by lookup code
+define('TRANSACTION_BY_LLM_PLUGIN', 'by_llm_plugin');
+
 // Upload directories - relative to plugin root
 define('LLM_UPLOAD_FOLDER', 'upload');
 

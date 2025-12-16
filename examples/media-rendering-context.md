@@ -86,3 +86,4 @@ When in form mode, you can still include images in your responses alongside form
 5. **Responsive**: Media automatically scales to fit the chat container
 
 
+

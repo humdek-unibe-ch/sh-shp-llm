@@ -454,3 +454,5 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 -- Link continue button label to llmchat style
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmChat'), get_field_id('continue_button_label'), 'Continue', 'Button label shown in form mode when the AI response does not contain a form. Clicking this button prompts the AI to continue the conversation.');
+
+INSERT INTO lookups (type_code, lookup_code, lookup_value, lookup_description) values ('transactionBy', 'by_llm_plugin', 'By LLM Plugin', 'The action was done by the LLM plugin');

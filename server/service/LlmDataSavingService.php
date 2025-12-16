@@ -131,7 +131,7 @@ class LlmDataSavingService
 
             // Use SelfHelp's standard save_data function
             $result = $this->user_input->save_data(
-                self::TRANSACTION_BY,
+                TRANSACTION_BY_LLM_PLUGIN,
                 $table_name,
                 $data,
                 $updateBasedOn,
