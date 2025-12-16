@@ -2,17 +2,25 @@
 
 This example demonstrates a complete adaptive learning system for teaching German verb conjugation to children. The module uses strict conversation mode, progress tracking, and data logging to create a personalized learning experience.
 
+**Based on**: Swiss textbook "Richtig Deutsch!" for 5th/6th grade
+
 ---
 
 ## 🎯 Module Overview
 
-**Target Audience**: Children learning German grammar (ages 10-14)
+**Target Audience**: Children learning German grammar (5th-6th grade Switzerland, ages 10-12)
 **Learning Approach**: 
 - Present theory first (reading phase)
 - Ask questions to check understanding
 - Adapt based on answers (explain more if mistakes, advance if correct)
 - Only move to next topic after mastery (2-3 correct answers in a row)
 - Log all exercises for teacher/parent review
+
+**Content Includes**:
+- 100+ verbs (schwache, starke, gemischte, Hilfs- und Modalverben)
+- 14 trackable topics
+- Multiple exercise types (radio, checkbox, text input, dropdown)
+- Swiss German spelling (ss instead of ß)
 
 ---
 
@@ -53,9 +61,76 @@ Configure these settings in the llmChat component in the CMS:
 
 ## 📋 Conversation Context (conversation_context field)
 
-Copy the ENTIRE content below into the `conversation_context` field:
+**⚠️ IMPORTANT**: The context file has been significantly expanded! 
+
+Please use the separate file `german-verbs-context-only.md` which contains:
+- 100+ verbs suitable for 5th/6th grade Switzerland
+- 14 trackable topics (including new "Mittelwort/Partizip" topic)
+- Improved exercise formats:
+  - **No answers in placeholders** (was showing correct answer before!)
+  - **Checkbox questions** for multiple correct answers
+  - **4-6 options** per multiple choice (not just 3)
+  - **Similar/tricky options** to make questions harder
+- Exercise types matching "Richtig Deutsch!" textbook
+- Swiss German spelling (ss instead of ß)
+
+Copy the ENTIRE content from `german-verbs-context-only.md` into the `conversation_context` field.
 
 ---
+
+## Key Improvements in v2.0
+
+### 1. No Answers in Placeholders
+**Before (BAD):**
+```json
+"placeholder": "z.B.: ist ... gegangen"  // Shows the answer!
+```
+
+**After (GOOD):**
+```json
+"placeholder": "Schreibe die richtige Verbform..."  // No hint!
+```
+
+### 2. Checkbox for Multiple Answers
+```json
+{
+  "type": "checkbox",
+  "label": "Welche Wörter sind Verben? (Mehrere Antworten möglich)",
+  "options": [
+    {"value": "laufen", "label": "laufen"},
+    {"value": "schoen", "label": "schön"},
+    {"value": "tanzen", "label": "tanzen"},
+    {"value": "baum", "label": "Baum"}
+  ]
+}
+```
+
+### 3. More Options (4-6 instead of 3)
+```json
+{
+  "type": "radio",
+  "label": "Er ___ (fahren) mit dem Fahrrad.",
+  "options": [
+    {"value": "a", "label": "fahrt"},
+    {"value": "b", "label": "fährt"},
+    {"value": "c", "label": "fahrst"},
+    {"value": "d", "label": "fährst"},
+    {"value": "e", "label": "fahre"},
+    {"value": "f", "label": "fähre"}
+  ]
+}
+```
+
+### 4. Tricky Similar Options
+Options are now designed to be confusing (like real tests):
+- fahrt vs fährt vs fahrst vs fährst
+- gespielt vs gespielen vs gespielt vs gespielen
+
+---
+
+## Context File Reference
+
+See `german-verbs-context-only.md` for the full context. Here's a summary:
 
 ```markdown
 # DEUTSCHES VERBEN-LERNMODUL FÜR KINDER
