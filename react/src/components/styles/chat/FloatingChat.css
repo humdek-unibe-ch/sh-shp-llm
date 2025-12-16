@@ -254,17 +254,18 @@
 
 /* Override chat container styles for floating panel */
 .llm-float-panel-body .llm-chat-container {
-  min-height: auto !important;
-  height: 100% !important;
+  min-height: 100% !important;
+  height: auto !important;
   display: flex !important;
   flex-direction: column !important;
 }
 
 .llm-float-panel-body .llm-chat-shell {
-  min-height: auto !important;
-  height: 100% !important;
+  min-height: 100% !important;
+  height: auto !important;
   display: flex !important;
   flex-direction: column !important;
+  overflow: auto;;
 }
 
 .llm-float-panel-body .llm-chat-panel {
@@ -310,7 +311,8 @@
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
-  overflow: hidden !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 
 /* Make sure card-body in floating panel behaves correctly */
@@ -335,6 +337,13 @@
 .llm-float-panel-body .card-body > form,
 .llm-float-panel-body .card-body > .llm-input-area {
   flex-shrink: 0 !important;
+}
+
+/* Reduce footer padding in floating modal */
+.llm-float-panel-body .llm-chat-footer,
+.llm-float-panel-body .card-footer {
+  padding-left: 0px !important;
+  padding-right: 0px !important;
 }
 
 /* ===== Mobile Backdrop ===== */

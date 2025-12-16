@@ -602,7 +602,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation.model !== config.configuredModel;
 
   return (
-    <Container fluid className="llm-chat-container llm-chat-shell">
+    <Container fluid className="llm-chat-container llm-chat-shell p-3">
       {/* Error Alert */}
       {error && (
         <Alert variant="danger" dismissible onClose={clearError} className="mb-3">

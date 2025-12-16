@@ -1290,7 +1290,7 @@ class LlmchatController extends BaseController
             // to get the correct configuration for that section
             $config_model = $this->model;
             if ($section_id && $section_id !== $this->model->getSectionId()) {
-                $config_model = new LlmchatModel($this->services, $section_id);
+                $config_model = new LlmchatModel($this->model->get_services(), $section_id);
             }
 
             // Build complete configuration for React component

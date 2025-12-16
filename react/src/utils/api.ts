@@ -161,7 +161,7 @@ export const configApi = {
    * @returns Promise resolving to LlmChatConfig
    */
   async get(sectionId?: string | number): Promise<LlmChatConfig> {
-    const params = sectionId ? { section_id: sectionId.toString() } : {};
+    const params = sectionId ? { section_id: sectionId.toString() } : undefined;
     const response = await apiGet<GetConfigResponse>('get_config', params);
 
     if (response.error) {
