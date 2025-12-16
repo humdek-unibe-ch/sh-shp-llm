@@ -208,6 +208,8 @@ export interface LlmChatConfig {
   floatingChatTitle: string;
   /** Whether the chat is currently in floating mode */
   isFloatingMode: boolean;
+  /** Force scroll to bottom (used by floating chat when panel opens) */
+  forceScrollToBottom?: boolean;
   
   // ===== UI Labels =====
   /** Message input placeholder text */
@@ -316,6 +318,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   floatingButtonLabel: 'Chat',
   floatingChatTitle: 'AI Assistant',
   isFloatingMode: false,
+  forceScrollToBottom: false,
   messagePlaceholder: 'Type your message...',
   noConversationsMessage: 'No conversations yet',
   newConversationTitleLabel: 'New Conversation',

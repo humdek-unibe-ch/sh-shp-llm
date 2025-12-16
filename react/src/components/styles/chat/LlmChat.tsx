@@ -57,9 +57,13 @@ function useSmartScroll(containerRef: React.RefObject<HTMLDivElement>) {
   const scrollToBottom = useCallback((force = false) => {
     const container = containerRef.current;
     if (!container) return;
-    
+
+    console.log('scrollToBottom called with force:', force, 'isNearBottom:', isNearBottomRef.current);
+    console.log('scrollTop:', container.scrollTop, 'scrollHeight:', container.scrollHeight, 'clientHeight:', container.clientHeight);
+
     // Only scroll if user was already at bottom (or force is true)
     if (force || isNearBottomRef.current) {
+      console.log('Executing scrollTo with top:', container.scrollHeight);
       requestAnimationFrame(() => {
         container.scrollTo({
           top: container.scrollHeight,
@@ -67,11 +71,14 @@ function useSmartScroll(containerRef: React.RefObject<HTMLDivElement>) {
         });
         isNearBottomRef.current = true;
       });
+    } else {
+      console.log('Not scrolling because not near bottom and force is false');
     }
   }, [containerRef]);
   
   // Force scroll to bottom (for user-initiated messages)
   const forceScrollToBottom = useCallback(() => {
+    console.log('forceScrollToBottom called');
     scrollToBottom(true);
   }, [scrollToBottom]);
   
@@ -556,6 +563,25 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       return () => clearTimeout(timer);
     }
   }, [messages.length, forceScrollToBottom]); // Re-run when messages are loaded
+
+  /**
+   * Force scroll to bottom when requested (e.g., when floating panel opens)
+   */
+  useEffect(() => {
+    if (config.forceScrollToBottom && messages.length > 0) {
+      // Longer delay to ensure the panel is fully visible and rendered
+      const timer = setTimeout(() => {
+        console.log('forceScrollToBottom - executing scroll');
+        console.log('messagesContainerRef.current:', messagesContainerRef.current);
+        if (messagesContainerRef.current) {
+          console.log('scrollHeight:', messagesContainerRef.current.scrollHeight);
+          console.log('clientHeight:', messagesContainerRef.current.clientHeight);
+        }
+        forceScrollToBottom();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [config.forceScrollToBottom, forceScrollToBottom, messagesContainerRef, messages.length]);
   
   // Determine the active model for this conversation
   // - Use conversation's model if it exists
@@ -629,22 +655,26 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
             {/* Messages Container */}
             <Card.Body
-              ref={messagesContainerRef}
-              id="messages-container"
-              onScroll={handleScroll}
-              className="p-3 flex-grow-1 overflow-auto llm-chat-body"
+              className="p-0 llm-chat-body d-flex flex-column"
             >
-              <MessageList
-                messages={displayMessages}
-                isStreaming={isStreaming}
-                streamingContent={streamingContent}
-                isLoading={isLoading && messages.length === 0}
-                isProcessing={isProcessing}
-                config={config}
-                onFormSubmit={handleFormSubmit}
-                isFormSubmitting={isFormSubmitting}
-                onContinue={config.enableFormMode ? handleContinue : undefined}
-              />
+              <div
+                ref={messagesContainerRef}
+                id="messages-container"
+                onScroll={handleScroll}
+                className="flex-grow-1 overflow-auto p-3"
+              >
+                <MessageList
+                  messages={displayMessages}
+                  isStreaming={isStreaming}
+                  streamingContent={streamingContent}
+                  isLoading={isLoading && messages.length === 0}
+                  isProcessing={isProcessing}
+                  config={config}
+                  onFormSubmit={handleFormSubmit}
+                  isFormSubmitting={isFormSubmitting}
+                  onContinue={config.enableFormMode ? handleContinue : undefined}
+                />
+              </div>
             </Card.Body>
 
             {/* Streaming Indicator */}

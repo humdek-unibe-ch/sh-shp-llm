@@ -176,6 +176,19 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     zIndex: 1051 + zIndexOffset
   }), [zIndexOffset]);
 
+  // Memoize the config passed to LlmChat to ensure stability
+  const llmChatConfig = useMemo(() => ({
+    ...config,
+    // Override floating button setting to prevent recursion
+    enableFloatingButton: false,
+    // Disable conversations list in floating mode for cleaner UI
+    enableConversationsList: false,
+    // Indicate that we're in floating mode
+    isFloatingMode: true,
+    // Force scroll to bottom when panel opens
+    forceScrollToBottom: isOpen
+  }), [config, isOpen]);
+
   return (
     <div className="llm-floating-chat-wrapper" id={uniqueId}>
       {/* Floating Action Button */}
@@ -255,15 +268,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
 
           {/* Panel Body - Chat Interface */}
           <div className="llm-float-panel-body">
-            <LlmChat config={{
-              ...config,
-              // Override floating button setting to prevent recursion
-              enableFloatingButton: false,
-              // Disable conversations list in floating mode for cleaner UI
-              enableConversationsList: false,
-              // Indicate that we're in floating mode
-              isFloatingMode: true
-            }} />
+            <LlmChat config={llmChatConfig} />
           </div>
         </div>
       )}

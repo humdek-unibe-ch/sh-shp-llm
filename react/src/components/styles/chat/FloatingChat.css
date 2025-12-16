@@ -254,18 +254,19 @@
 
 /* Override chat container styles for floating panel */
 .llm-float-panel-body .llm-chat-container {
-  min-height: 100% !important;
-  height: auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
+  overflow: hidden !important;
 }
 
 .llm-float-panel-body .llm-chat-shell {
-  min-height: 100% !important;
-  height: auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
-  overflow: auto;;
+  overflow: hidden !important;
 }
 
 .llm-float-panel-body .llm-chat-panel {
@@ -276,10 +277,18 @@
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
+  overflow: hidden !important;
 }
 
 .llm-float-panel-body .llm-chat-header {
   display: none !important; /* Hide header - already in panel header */
+}
+
+/* Card body - flex container for messages and input */
+.llm-float-panel-body .llm-chat-body {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
 /* Messages area - scrollable */
@@ -305,19 +314,17 @@
 }
 
 /* Ensure chat content area takes full height and scrolls */
-.llm-float-panel-body .llm-chat-content,
-.llm-float-panel-body .llm-chat-body {
+.llm-float-panel-body .llm-chat-content {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
+  overflow: hidden !important;
 }
 
 /* Make sure card-body in floating panel behaves correctly */
 .llm-float-panel-body .card-body {
-  flex: 1 !important;
+  flex: 1 1 0 !important;
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
@@ -325,12 +332,28 @@
   padding: 0 !important;
 }
 
-/* Scrollable messages list inside card-body */
-.llm-float-panel-body .card-body > .llm-messages-area,
-.llm-float-panel-body .card-body > div:first-child {
+/* Ensure the row takes full height */
+.llm-float-panel-body .llm-chat-grid {
   flex: 1 !important;
-  overflow-y: auto !important;
   min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Ensure the column takes full height */
+.llm-float-panel-body .llm-chat-grid > [class*="col"] {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* The scrollable messages container inside card-body */
+.llm-float-panel-body #messages-container {
+  flex: 1 1 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
 }
 
 /* Form input always at bottom */
