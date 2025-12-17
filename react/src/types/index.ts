@@ -758,6 +758,8 @@ export interface FormSubmissionResponse {
   is_new_conversation?: boolean;
   /** User message that was created */
   user_message?: Message;
+  /** Progress data (if progress tracking is enabled) */
+  progress?: ProgressData;
   /** Error message if failed */
   error?: string;
 }
