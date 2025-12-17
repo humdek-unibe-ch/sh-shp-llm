@@ -401,6 +401,13 @@ class LlmchatController extends BaseController
                 $this->saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id);
             }
 
+            // Check if this is a topic confirmation form and handle progress tracking
+            // Topic confirmation forms have a field like "topic_confirmation" or "understanding_check"
+            // with values like "yes_understand", "need_more", "explain_again"
+            if ($this->model->isProgressTrackingEnabled()) {
+                $this->handleTopicConfirmationIfApplicable($form_values, $conversation_id, $section_id);
+            }
+
             // Update rate limiting
             $this->request_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
@@ -718,8 +725,12 @@ class LlmchatController extends BaseController
                 return;
             }
             
+            // Get all topics from context for proper percentage calculation
+            $context = $this->model->getConversationContext();
+            $all_topics = $this->progress_tracking_service->extractTopicsFromContext($context);
+            
             // Confirm the topic
-            $success = $this->progress_tracking_service->confirmTopic($conversation_id, $section_id, $topic_id);
+            $success = $this->progress_tracking_service->confirmTopic($conversation_id, $section_id, $topic_id, $all_topics);
             
             if ($success) {
                 // Return updated progress
@@ -908,12 +919,13 @@ class LlmchatController extends BaseController
         $existing_progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
         $previous_percentage = $existing_progress ? (float)$existing_progress['progress_percentage'] : 0;
 
-        // Calculate current progress
+        // Calculate current progress (confirmation-based - uses section_id to look up confirmed topics)
         $progress = $this->progress_tracking_service->calculateProgress(
             $conversation_id,
             $topics,
             $messages,
-            $previous_percentage
+            $previous_percentage,
+            $section_id  // Pass section_id for confirmation-based progress lookup
         );
 
         // Update progress in database (only if topics exist)
@@ -1341,6 +1353,137 @@ class LlmchatController extends BaseController
         } catch (Exception $e) {
             error_log('LLM saveFormDataToUserInput error: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Handle topic confirmation if the form submission is a topic confirmation form
+     * 
+     * Topic confirmation forms are detected by:
+     * 1. Having a field with id containing "topic_confirmation", "understanding_check", or "topic_id"
+     * 2. Having a value indicating confirmation like "yes", "understand", "ja", "verstehe"
+     * 
+     * This also supports forms WITHOUT explicit topic_id by detecting understanding-related
+     * questions and inferring the current topic from context.
+     * 
+     * @param array $form_values Form values
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     */
+    private function handleTopicConfirmationIfApplicable($form_values, $conversation_id, $section_id)
+    {
+        $topic_id = null;
+        $is_confirmed = false;
+        $understanding_level = null;
+
+        // Look for topic confirmation patterns in form values
+        foreach ($form_values as $field_id => $value) {
+            $field_id_lower = strtolower($field_id);
+            $value_lower = is_string($value) ? strtolower($value) : '';
+
+            // Check if this is an explicit topic ID field (highest priority)
+            if (strpos($field_id_lower, 'topic_id') !== false || 
+                strpos($field_id_lower, 'topic_confirmation_id') !== false ||
+                strpos($field_id_lower, 'thema_id') !== false) {
+                $topic_id = $value;
+                continue;
+            }
+
+            // Check if this is a confirmation/understanding field
+            $is_understanding_field = (
+                strpos($field_id_lower, 'confirmation') !== false || 
+                strpos($field_id_lower, 'understanding') !== false ||
+                strpos($field_id_lower, 'verstanden') !== false ||
+                strpos($field_id_lower, 'verstehe') !== false ||
+                strpos($field_id_lower, 'verständnis') !== false ||
+                strpos($field_id_lower, 'comprehension') !== false ||
+                strpos($field_id_lower, 'knowledge') !== false ||
+                strpos($field_id_lower, 'wissen') !== false
+            );
+            
+            if ($is_understanding_field) {
+                // Check if the value indicates strong understanding/confirmation
+                $strong_confirmation_values = [
+                    'yes', 'ja', 'oui', 'sí', 'si',
+                    'yes_understand', 'ja_verstehe', 'understand', 'verstehe', 'verstanden',
+                    'very_well', 'sehr_gut', 'excellent', 'ausgezeichnet', 'gut',
+                    'good', 'well', 'completely', 'vollständig', 'completely_understand',
+                    'i_understand', 'ich_verstehe', 'clear', 'klar'
+                ];
+                
+                foreach ($strong_confirmation_values as $confirm_val) {
+                    if (strpos($value_lower, $confirm_val) !== false) {
+                        $is_confirmed = true;
+                        $understanding_level = 'confirmed';
+                        break;
+                    }
+                }
+                
+                // Also check for numeric understanding levels (e.g., radio with values like "4" or "5" for high understanding)
+                if (!$is_confirmed && is_numeric($value)) {
+                    $numeric_value = (int)$value;
+                    // If value is 4 or 5 on a typical 1-5 scale, or 3+ on a 1-3 scale, consider it confirmed
+                    if ($numeric_value >= 4 || (strpos($field_id_lower, 'level') !== false && $numeric_value >= 3)) {
+                        $is_confirmed = true;
+                        $understanding_level = 'numeric_high';
+                    }
+                }
+            }
+        }
+
+        // If no explicit topic_id but we have confirmation, try to infer the topic
+        if (!$topic_id && $is_confirmed) {
+            $topic_id = $this->inferCurrentTopicFromContext($conversation_id, $section_id);
+        }
+
+        // If we have a topic_id and confirmation, update progress
+        if ($topic_id && $is_confirmed) {
+            $context = $this->model->getConversationContext();
+            $all_topics = $this->progress_tracking_service->extractTopicsFromContext($context);
+            
+            $this->progress_tracking_service->confirmTopic($conversation_id, $section_id, $topic_id, $all_topics);
+            error_log("LLM: Topic {$topic_id} confirmed for conversation {$conversation_id} (level: {$understanding_level})");
+        }
+    }
+
+    /**
+     * Infer the current topic from conversation context
+     * 
+     * When a form doesn't have an explicit topic_id, we try to determine
+     * which topic is currently being discussed by looking at:
+     * 1. The most recent messages
+     * 2. The first uncovered topic in sequence
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @return string|null Topic ID or null if cannot be determined
+     */
+    private function inferCurrentTopicFromContext($conversation_id, $section_id)
+    {
+        // Get the current progress to find uncovered topics
+        $progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
+        
+        if (!$progress || empty($progress['topic_coverage'])) {
+            // No progress data, get topics from context and return the first one
+            $context = $this->model->getConversationContext();
+            $topics = $this->progress_tracking_service->extractTopicsFromContext($context);
+            
+            if (!empty($topics)) {
+                return $topics[0]['id'];
+            }
+            return null;
+        }
+
+        $topic_coverage = json_decode($progress['topic_coverage'], true) ?: [];
+        
+        // Find the first uncovered topic (in order)
+        foreach ($topic_coverage as $topic_id => $topic_data) {
+            if (empty($topic_data['is_covered'])) {
+                return $topic_id;
+            }
+        }
+
+        // All topics covered, return null
+        return null;
     }
 
     /**

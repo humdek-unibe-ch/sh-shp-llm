@@ -286,6 +286,24 @@ const NumberField: React.FC<{
 };
 
 /**
+ * Hidden Field Component
+ * Used for passing metadata like topic_id in confirmation forms
+ */
+const HiddenField: React.FC<{
+  field: FormField;
+  value: string;
+}> = ({ field, value }) => {
+  return (
+    <input
+      type="hidden"
+      id={field.id}
+      name={field.id}
+      value={value}
+    />
+  );
+};
+
+/**
  * Form Renderer Component
  * 
  * Renders a complete form based on JSON Schema definition
@@ -302,6 +320,9 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
     for (const field of formDefinition.fields) {
       if (field.type === 'checkbox') {
         values[field.id] = [];
+      } else if (field.type === 'hidden' && field.value) {
+        // Hidden fields should be initialized with their default value
+        values[field.id] = field.value;
       } else {
         values[field.id] = '';
       }
@@ -404,6 +425,17 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
    */
   const renderField = (field: FormField) => {
     const error = validationErrors[field.id];
+    
+    // Hidden fields are rendered but not visible
+    if (field.type === 'hidden') {
+      return (
+        <HiddenField
+          key={field.id}
+          field={field}
+          value={(formValues[field.id] as string) || field.value || ''}
+        />
+      );
+    }
     
     return (
       <div key={field.id} className={error ? 'has-validation-error' : ''}>

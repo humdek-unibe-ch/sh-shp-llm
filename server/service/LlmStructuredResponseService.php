@@ -229,6 +229,15 @@ SCHEMA;
         // Get language-specific confirmation prompts
         $confirmationPrompts = $this->getConfirmationPrompts($context_language);
 
+        // Build topic IDs for reference
+        $topicIdsInfo = [];
+        foreach ($topics as $topic) {
+            if (!in_array($topic['id'], $confirmed_topics)) {
+                $topicIdsInfo[] = "- \"{$topic['title']}\" → topic_id: \"{$topic['id']}\"";
+            }
+        }
+        $topicIdsStr = !empty($topicIdsInfo) ? implode("\n", $topicIdsInfo) : "All topics confirmed!";
+
         return <<<EOT
 CURRENT PROGRESS STATUS:
 Topics to cover:
@@ -238,10 +247,42 @@ Legend: [✓] = Confirmed by user, [○] = Not yet confirmed
 Current progress: {$current_progress}%
 Topics remaining: {$uncoveredStr}
 
-CONFIRMATION-BASED PROGRESS:
-After discussing a topic sufficiently, ask the user to confirm understanding using a form:
-- Question: "{$confirmationPrompts['question']}"
-- Options: "{$confirmationPrompts['yes']}" / "{$confirmationPrompts['partial']}" / "{$confirmationPrompts['no']}"
+TOPIC IDs FOR CONFIRMATION FORMS (IMPORTANT):
+{$topicIdsStr}
+
+CONFIRMATION-BASED PROGRESS (CRITICAL - FOLLOW EXACTLY):
+After discussing a topic sufficiently, ask the user to confirm understanding using a form.
+
+REQUIRED FORM STRUCTURE for topic confirmation:
+```json
+{
+  "id": "topic_confirmation_form",
+  "title": "Bestätigung des Verständnisses",
+  "fields": [
+    {
+      "id": "topic_confirmation_id",
+      "type": "hidden",
+      "label": "",
+      "value": "TOPIC_ID_HERE"
+    },
+    {
+      "id": "understanding_confirmation",
+      "type": "radio",
+      "label": "{$confirmationPrompts['question']}",
+      "required": true,
+      "options": [
+        {"value": "yes_understand", "label": "{$confirmationPrompts['yes']}"},
+        {"value": "need_more", "label": "{$confirmationPrompts['partial']}"},
+        {"value": "explain_again", "label": "{$confirmationPrompts['no']}"}
+      ]
+    }
+  ],
+  "submit_label": "Submit"
+}
+```
+
+IMPORTANT: Replace "TOPIC_ID_HERE" with the actual topic_id from the list above!
+When user selects "yes_understand", the topic will be marked as confirmed and progress will update.
 
 Language for this session: {$context_language}
 ALL confirmation questions and forms must be in this language.

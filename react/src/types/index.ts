@@ -582,13 +582,13 @@ export interface FormFieldOption {
 
 /**
  * Form field definition
- * Supports radio buttons, checkboxes, dropdowns, text inputs, and number inputs
+ * Supports radio buttons, checkboxes, dropdowns, text inputs, number inputs, and hidden fields
  */
 export interface FormField {
   /** Unique field identifier */
   id: string;
-  /** Field type: radio (single select), checkbox (multi-select), select (dropdown), text (free text), number */
-  type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'number';
+  /** Field type: radio (single select), checkbox (multi-select), select (dropdown), text (free text), number, hidden */
+  type: 'radio' | 'checkbox' | 'select' | 'text' | 'textarea' | 'number' | 'hidden';
   /** Field label/question text */
   label: string;
   /** Whether the field is required */
@@ -609,6 +609,8 @@ export interface FormField {
   max?: number;
   /** Step value for number inputs */
   step?: number;
+  /** Default value (especially for hidden fields) */
+  value?: string;
   /** 
    * For "Other" option support: ID of related field to enable when "other" is selected
    * e.g., a radio with "Other" option can have otherFieldId pointing to a text field

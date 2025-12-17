@@ -1434,118 +1434,27 @@ EOT;
     /**
      * Get the context language for progress confirmation questions
      * 
-     * If set to 'auto', attempts to detect from conversation context.
+     * Uses $_SESSION["user_language_locale"] directly (e.g., "de-CH", "en-GB")
+     * and extracts the first 2 characters as the language code.
+     * 
      * Supported languages: en, de, fr, es, it, pt, nl
      *
      * @return string Language code (e.g., 'en', 'de', 'fr')
      */
     public function getContextLanguage()
     {
-        // If explicitly set, use that
+        // If explicitly set in CMS (not 'auto'), use that
         if ($this->context_language !== 'auto' && !empty($this->context_language)) {
             return $this->context_language;
         }
 
-        // Auto-detect from conversation context
-        return $this->detectLanguageFromContext();
-    }
-
-    /**
-     * Detect language from conversation context
-     * 
-     * Looks for language indicators in the context:
-     * - Explicit language markers: [LANGUAGE: de], LANGUAGE: German, etc.
-     * - Common German/French/Spanish words
-     * - Context content analysis
-     *
-     * @return string Detected language code or 'en' as default
-     */
-    private function detectLanguageFromContext()
-    {
-        $context = $this->conversation_context ?? '';
+        // Get language from session locale (e.g., "de-CH" -> "de", "en-GB" -> "en")
+        $locale = $_SESSION['user_language_locale'] ?? 'en-GB';
+        $lang = substr($locale, 0, 2);
         
-        if (empty($context)) {
-            return 'en';
-        }
-
-        // Check for explicit language markers
-        // Format: [LANGUAGE: de] or LANGUAGE: German or context_language: de
-        if (preg_match('/\[?LANGUAGE:\s*(\w+)\]?/i', $context, $matches)) {
-            $lang = strtolower(trim($matches[1]));
-            return $this->normalizeLanguageCode($lang);
-        }
-
-        // Check for language in context header
-        if (preg_match('/context_language:\s*(\w+)/i', $context, $matches)) {
-            return $this->normalizeLanguageCode(strtolower(trim($matches[1])));
-        }
-
-        // Detect based on common words (simple heuristic)
-        $contextLower = strtolower($context);
-        
-        // German indicators
-        $germanWords = ['und', 'der', 'die', 'das', 'ist', 'nicht', 'ich', 'du', 'wir', 'sie', 'haben', 'sein', 'können', 'müssen', 'werden', 'angst', 'lernen', 'verstehen', 'erklären', 'thema', 'frage'];
-        $germanCount = 0;
-        foreach ($germanWords as $word) {
-            $germanCount += substr_count($contextLower, ' ' . $word . ' ');
-        }
-        
-        // French indicators
-        $frenchWords = ['et', 'le', 'la', 'les', 'est', 'sont', 'nous', 'vous', 'ils', 'avoir', 'être', 'faire', 'pouvoir', 'vouloir', 'devoir', 'comprendre', 'expliquer', 'question'];
-        $frenchCount = 0;
-        foreach ($frenchWords as $word) {
-            $frenchCount += substr_count($contextLower, ' ' . $word . ' ');
-        }
-        
-        // Spanish indicators
-        $spanishWords = ['y', 'el', 'la', 'los', 'las', 'es', 'son', 'nosotros', 'ustedes', 'ellos', 'tener', 'ser', 'estar', 'poder', 'querer', 'deber', 'entender', 'explicar', 'pregunta'];
-        $spanishCount = 0;
-        foreach ($spanishWords as $word) {
-            $spanishCount += substr_count($contextLower, ' ' . $word . ' ');
-        }
-
-        // Return language with highest count (threshold: 3)
-        $threshold = 3;
-        if ($germanCount >= $threshold && $germanCount > $frenchCount && $germanCount > $spanishCount) {
-            return 'de';
-        }
-        if ($frenchCount >= $threshold && $frenchCount > $germanCount && $frenchCount > $spanishCount) {
-            return 'fr';
-        }
-        if ($spanishCount >= $threshold && $spanishCount > $germanCount && $spanishCount > $frenchCount) {
-            return 'es';
-        }
-
-        // Default to English
-        return 'en';
-    }
-
-    /**
-     * Normalize language code to supported format
-     * 
-     * @param string $lang Language string (e.g., 'german', 'de', 'deutsch')
-     * @return string Normalized language code
-     */
-    private function normalizeLanguageCode($lang)
-    {
-        $mapping = [
-            // English variations
-            'english' => 'en', 'en' => 'en', 'eng' => 'en',
-            // German variations
-            'german' => 'de', 'de' => 'de', 'deutsch' => 'de', 'ger' => 'de',
-            // French variations
-            'french' => 'fr', 'fr' => 'fr', 'français' => 'fr', 'francais' => 'fr', 'fra' => 'fr',
-            // Spanish variations
-            'spanish' => 'es', 'es' => 'es', 'español' => 'es', 'espanol' => 'es', 'spa' => 'es',
-            // Italian variations
-            'italian' => 'it', 'it' => 'it', 'italiano' => 'it', 'ita' => 'it',
-            // Portuguese variations
-            'portuguese' => 'pt', 'pt' => 'pt', 'português' => 'pt', 'portugues' => 'pt', 'por' => 'pt',
-            // Dutch variations
-            'dutch' => 'nl', 'nl' => 'nl', 'nederlands' => 'nl', 'nld' => 'nl'
-        ];
-
-        return $mapping[strtolower($lang)] ?? 'en';
+        // Validate it's a supported language, otherwise default to 'en'
+        $supported = ['en', 'de', 'fr', 'es', 'it', 'pt', 'nl'];
+        return in_array($lang, $supported) ? $lang : 'en';
     }
 
     /**

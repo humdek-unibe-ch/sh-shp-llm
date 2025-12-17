@@ -470,19 +470,20 @@ class LlmProgressTrackingService
     /**
      * Calculate progress for a conversation
      * 
-     * IMPORTANT: Progress is based on USER messages only!
-     * The AI mentioning a topic does NOT count as coverage.
-     * Only when the USER asks about a topic does it count.
+     * CONFIRMATION-BASED PROGRESS:
+     * Progress is tracked through EXPLICIT USER CONFIRMATION, not keyword detection.
+     * Topics are marked as covered when the user explicitly confirms understanding.
      * 
      * Progress is ALWAYS monotonically increasing - it can only go up.
      * 
      * @param int $conversation_id Conversation ID
      * @param array $topics Array of topics from context
-     * @param array $messages Array of conversation messages
+     * @param array $messages Array of conversation messages (unused in confirmation mode, kept for API compatibility)
      * @param float $previous_progress Previous progress value (ensures monotonic increase)
+     * @param int|null $section_id Section ID for looking up confirmed topics
      * @return array Progress data including percentage and topic coverage
      */
-    public function calculateProgress($conversation_id, $topics, $messages, $previous_progress = 0)
+    public function calculateProgress($conversation_id, $topics, $messages, $previous_progress = 0, $section_id = null)
     {
         if (empty($topics)) {
             return [
@@ -495,76 +496,67 @@ class LlmProgressTrackingService
             ];
         }
 
-        // Build combined USER message text ONLY for analysis
-        // AI responses do NOT count toward progress
-        $userMessagesText = '';
-        $userMessageCount = 0;
-        foreach ($messages as $message) {
-            if (isset($message['role']) && $message['role'] === 'user') {
-                $userMessagesText .= ' ' . strtolower($message['content']);
-                $userMessageCount++;
+        $totalTopics = count($topics);
+        
+        // Get existing progress from database (includes confirmed topics)
+        $existingProgress = null;
+        if ($section_id !== null) {
+            $existingProgress = $this->getConversationProgress($conversation_id, $section_id);
+        }
+        
+        // Get confirmed topics from database
+        $confirmedTopicIds = [];
+        $existingCoverage = [];
+        if ($existingProgress && !empty($existingProgress['topic_coverage'])) {
+            $existingCoverage = json_decode($existingProgress['topic_coverage'], true) ?: [];
+            foreach ($existingCoverage as $topicId => $topicData) {
+                if (!empty($topicData['is_covered'])) {
+                    $confirmedTopicIds[] = $topicId;
+                }
             }
         }
 
-        // If no user messages yet, progress is 0
-        if ($userMessageCount === 0 || empty(trim($userMessagesText))) {
-            return [
-                'percentage' => max(0, $previous_progress),
-                'topics_total' => count($topics),
-                'topics_covered' => 0,
-                'topic_coverage' => $this->buildEmptyTopicCoverage($topics),
-                'is_complete' => false
-            ];
-        }
-
-        // Calculate coverage for each topic based on USER messages
+        // Build topic coverage array, merging with existing confirmed data
         $topicCoverage = [];
-        $totalTopics = count($topics);
         $coveredTopics = 0;
-        $totalDepthScore = 0;
 
         foreach ($topics as $topic) {
-            $coverage = $this->calculateTopicCoverageFromUserMessages($topic, $userMessagesText);
+            $topicId = $topic['id'];
+            $isConfirmed = in_array($topicId, $confirmedTopicIds);
             
-            $topicCoverage[$topic['id']] = [
-                'id' => $topic['id'],
-                'title' => $topic['title'],
-                'coverage' => $coverage['percentage'],
-                'depth' => $coverage['depth'],
-                'matches' => $coverage['matches'],
-                'is_covered' => $coverage['percentage'] > 0
-            ];
+            // Use existing coverage data if available, otherwise create new entry
+            if (isset($existingCoverage[$topicId])) {
+                $topicCoverage[$topicId] = $existingCoverage[$topicId];
+                // Ensure title is up to date
+                $topicCoverage[$topicId]['title'] = $topic['title'];
+            } else {
+                $topicCoverage[$topicId] = [
+                    'id' => $topicId,
+                    'title' => $topic['title'],
+                    'coverage' => $isConfirmed ? 100 : 0,
+                    'depth' => $isConfirmed ? 1 : 0,
+                    'matches' => [],
+                    'is_covered' => $isConfirmed
+                ];
+            }
 
-            if ($coverage['percentage'] > 0) {
+            if ($topicCoverage[$topicId]['is_covered']) {
                 $coveredTopics++;
-                // Depth score: base 1 + depth bonus (up to 0.5 extra per topic)
-                $depthBonus = min($coverage['depth'] * 0.1, 0.5);
-                $totalDepthScore += 1 + $depthBonus;
             }
         }
 
-        // Calculate percentage:
-        // Base: (covered topics / total topics) * 100
-        // With depth bonus: each topic can contribute up to 1.5x its base value
-        $maxPossibleScore = $totalTopics * 1.5; // Max if all topics covered with full depth
-        $rawPercentage = ($totalDepthScore / $totalTopics) * 100;
-        
-        // Cap at 100%
-        $rawPercentage = min($rawPercentage, 100);
+        // Calculate percentage based on confirmed topics
+        $rawPercentage = $totalTopics > 0 ? round(($coveredTopics / $totalTopics) * 100, 1) : 0;
 
         // CRITICAL: Ensure progress is monotonically increasing
         $percentage = max($rawPercentage, $previous_progress);
-
-        // Round to 1 decimal place
-        $percentage = round($percentage, 1);
 
         return [
             'percentage' => $percentage,
             'topics_total' => $totalTopics,
             'topics_covered' => $coveredTopics,
             'topic_coverage' => $topicCoverage,
-            'is_complete' => $percentage >= 100,
-            'user_messages_analyzed' => $userMessageCount
+            'is_complete' => $percentage >= 100
         ];
     }
 
@@ -829,9 +821,10 @@ EOT;
      * @param int $conversation_id Conversation ID
      * @param int $section_id Section ID
      * @param string $topic_id Topic ID to mark as confirmed
+     * @param array $all_topics All topics from context (to ensure proper percentage calculation)
      * @return bool Success
      */
-    public function confirmTopic($conversation_id, $section_id, $topic_id)
+    public function confirmTopic($conversation_id, $section_id, $topic_id, $all_topics = [])
     {
         $existing = $this->getConversationProgress($conversation_id, $section_id);
         
@@ -840,23 +833,44 @@ EOT;
             $topic_coverage = json_decode($existing['topic_coverage'], true) ?: [];
         }
 
-        // Mark the topic as confirmed
+        // Initialize all topics in coverage if provided
+        // This ensures percentage is calculated correctly based on total topics
+        foreach ($all_topics as $topic) {
+            $tid = $topic['id'];
+            if (!isset($topic_coverage[$tid])) {
+                $topic_coverage[$tid] = [
+                    'id' => $tid,
+                    'title' => $topic['title'],
+                    'is_covered' => false,
+                    'coverage' => 0,
+                    'depth' => 0,
+                    'matches' => []
+                ];
+            }
+        }
+
+        // Mark the specific topic as confirmed
         if (!isset($topic_coverage[$topic_id])) {
             $topic_coverage[$topic_id] = [
                 'id' => $topic_id,
+                'title' => $topic_id, // Will be overwritten if topic found in all_topics
                 'is_covered' => true,
                 'confirmed_at' => date('Y-m-d H:i:s'),
                 'coverage' => 100,
-                'depth' => 1
+                'depth' => 1,
+                'matches' => []
             ];
         } else {
             $topic_coverage[$topic_id]['is_covered'] = true;
             $topic_coverage[$topic_id]['confirmed_at'] = date('Y-m-d H:i:s');
             $topic_coverage[$topic_id]['coverage'] = 100;
+            $topic_coverage[$topic_id]['depth'] = max(1, ($topic_coverage[$topic_id]['depth'] ?? 0) + 1);
         }
 
-        // Recalculate progress percentage based on confirmed topics
-        $total_topics = count($topic_coverage);
+        // Calculate total topics (use all_topics count if provided, otherwise count from coverage)
+        $total_topics = !empty($all_topics) ? count($all_topics) : count($topic_coverage);
+        
+        // Count confirmed topics
         $confirmed_count = 0;
         foreach ($topic_coverage as $topic) {
             if (!empty($topic['is_covered'])) {
