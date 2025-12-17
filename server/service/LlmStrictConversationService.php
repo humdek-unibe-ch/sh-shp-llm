@@ -18,7 +18,7 @@
  * - This approach is more efficient, maintains conversation flow, and leverages
  *   the LLM's understanding of context.
  */
-class StrictConversationService
+class LlmStrictConversationService
 {
     private $llm_service;
     
@@ -185,7 +185,7 @@ PROMPT;
 
         } catch (Exception $e) {
             // Fail-open: allow message if analysis fails
-            error_log('StrictConversationService: Analysis failed - ' . $e->getMessage());
+            error_log('LlmtrictConversationService: Analysis failed - ' . $e->getMessage());
             return ['is_on_topic' => true, 'confidence' => 0.5];
         }
     }

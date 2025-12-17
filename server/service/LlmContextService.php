@@ -33,7 +33,7 @@ class LlmContextService
      * @param LlmchatModel $model The model instance for configuration
      * @param LlmFormModeService $form_mode_service Form mode service
      * @param LlmFloatingModeService $floating_mode_service Floating mode service
-     * @param StrictConversationService $strict_conversation_service Strict mode service
+     * @param LlmStrictConversationService $strict_conversation_service Strict mode service
      * @param LlmApiFormatterService $api_formatter_service API formatter service
      * @param LlmStructuredResponseService $structured_response_service Structured response service
      * @param LlmProgressTrackingService $progress_tracking_service Progress tracking service (optional)

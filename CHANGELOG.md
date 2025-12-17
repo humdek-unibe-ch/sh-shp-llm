@@ -66,7 +66,7 @@
 - `LlmchatController`: Context processing in both streaming and non-streaming paths
 
 #### Strict Conversation Mode Implementation
-- `StrictConversationService`: New service for topic enforcement and context enhancement
+- `LlmStrictConversationService`: New service for topic enforcement and context enhancement
 - Context prepended with enforcement instructions for topic boundaries
 - Intelligent topic extraction from configured context
 - Polite redirection for off-topic questions
@@ -97,7 +97,7 @@
 
 ### Files Created
 - Database schema (`server/db/v1.0.0.sql`)
-- Core services (`LlmService.php`, `LlmStreamingService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `StrictConversationService.php`)
+- Core services (`LlmService.php`, `LlmStreamingService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `LlmStrictConversationService.php`)
 - MVC components (`LlmchatModel.php`, `LlmchatView.php`, `LlmchatController.php`)
 - Plugin hooks (`LlmHooks.php`)
 - Admin components (`moduleLlmAdminConsole/` - comprehensive admin console component with configurable pageType_fields)

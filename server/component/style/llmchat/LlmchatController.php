@@ -9,7 +9,7 @@ require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/LlmFileUploadService.php";
 require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStreamingService.php";
-require_once __DIR__ . "/../../../service/StrictConversationService.php";
+require_once __DIR__ . "/../../../service/LlmStrictConversationService.php";
 require_once __DIR__ . "/../../../service/LlmFormModeService.php";
 require_once __DIR__ . "/../../../service/LlmFloatingModeService.php";
 require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
@@ -154,7 +154,7 @@ class LlmchatController extends BaseController
         
         // Context and streaming services
         $floating_mode_service = new LlmFloatingModeService();
-        $strict_conversation_service = new StrictConversationService($this->llm_service);
+        $strict_conversation_service = new LlmStrictConversationService($this->llm_service);
         $api_formatter_service = new LlmApiFormatterService();
         
         $this->streaming_service = new LlmStreamingService($this->llm_service);

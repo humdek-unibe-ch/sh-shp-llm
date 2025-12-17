@@ -168,7 +168,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     try {
       const response = await progressApi.get(conversationId, config.sectionId);
       if (response.progress) {
-        console.log('[LlmChat] Progress loaded:', response.progress);
         setProgress(response.progress);
       }
     } catch (err) {
@@ -221,9 +220,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     }, []),
     onDone: useCallback((tokensUsed: number, progressData?: ProgressData) => {
       // Update progress immediately if provided
-      console.log('[LlmChat] onDone called, progressData:', progressData, 'enableProgressTracking:', config.enableProgressTracking);
       if (progressData && config.enableProgressTracking) {
-        console.log('[LlmChat] Setting progress to:', progressData);
         setProgress(progressData);
       }
     }, [config.enableProgressTracking]),
@@ -320,7 +317,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
           // Update progress if included in response
           if (result.progress && config.enableProgressTracking) {
-            console.log('[LlmChat] Setting progress to:', result.progress);
             setProgress(result.progress);
           }
         } finally {
@@ -457,7 +453,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
           
           // Update progress if included in response
           if (result.progress && config.enableProgressTracking) {
-            console.log('[LlmChat] Continue (non-streaming) - Setting progress to:', result.progress);
             setProgress(result.progress);
           }
           
@@ -558,7 +553,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
           // Update progress if included in response
           if (result.progress && config.enableProgressTracking) {
-            console.log('[LlmChat] Form submit (non-streaming) - Setting progress to:', result.progress);
             setProgress(result.progress);
           }
 
@@ -617,10 +611,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
    */
   useEffect(() => {
     if (config.enableProgressTracking && currentConversation?.id) {
-      console.log('[LlmChat] Loading progress for conversation:', currentConversation.id);
       loadProgress(currentConversation.id);
     } else {
-      console.log('[LlmChat] No conversation ID, setting progress to null');
       setProgress(null);
     }
   }, [currentConversation?.id, config.enableProgressTracking, loadProgress]);
