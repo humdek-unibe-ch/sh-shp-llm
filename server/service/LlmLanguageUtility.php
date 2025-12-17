@@ -13,6 +13,84 @@
 class LlmLanguageUtility
 {
     /**
+     * Supported languages mapping
+     */
+    private static $supportedLanguages = [
+        'en' => 'English',
+        'de' => 'Deutsch',
+        'fr' => 'Français',
+        'es' => 'Español',
+        'it' => 'Italiano',
+        'pt' => 'Português',
+        'nl' => 'Nederlands'
+    ];
+
+    /**
+     * Check if language is supported
+     *
+     * @param string $languageCode Language code
+     * @return bool True if supported
+     */
+    public static function isLanguageSupported($languageCode)
+    {
+        return isset(self::$supportedLanguages[$languageCode]);
+    }
+
+    /**
+     * Get language name from code
+     *
+     * @param string $languageCode Language code
+     * @return string Language name
+     */
+    public static function getLanguageName($languageCode)
+    {
+        return self::$supportedLanguages[$languageCode] ?? $languageCode;
+    }
+
+    /**
+     * Generate language instruction for AI
+     *
+     * @param string $languageCode Language code
+     * @return string Language instruction
+     */
+    public static function generateLanguageInstruction($languageCode)
+    {
+        $languageNames = [
+            'en' => 'English',
+            'de' => 'German (Deutsch)',
+            'fr' => 'French (Français)',
+            'es' => 'Spanish (Español)',
+            'it' => 'Italian (Italiano)',
+            'pt' => 'Portuguese (Português)',
+            'nl' => 'Dutch (Nederlands)'
+        ];
+
+        $languageName = $languageNames[$languageCode] ?? $languageCode;
+
+        $instructions = [
+            'en' => "Respond in English. Use proper English grammar and vocabulary.",
+            'de' => "Antworte auf Deutsch. Verwende korrekte deutsche Grammatik und Wortschatz.",
+            'fr' => "Répondez en français. Utilisez une grammaire et un vocabulaire français corrects.",
+            'es' => "Responde en español. Usa gramática y vocabulario español correctos.",
+            'it' => "Rispondi in italiano. Usa grammatica e vocabolario italiano corretti.",
+            'pt' => "Responda em português. Use gramática e vocabulário português corretos.",
+            'nl' => "Reageer in het Nederlands. Gebruik correcte Nederlandse grammatica en woordenschat."
+        ];
+
+        return $instructions[$languageCode] ?? "Respond in {$languageName}.";
+    }
+
+    /**
+     * Get all supported languages
+     *
+     * @return array Array of language codes and names
+     */
+    public static function getSupportedLanguages()
+    {
+        return self::$supportedLanguages;
+    }
+
+    /**
      * Get language-specific confirmation prompts
      *
      * @param string $language Language code (en, de, fr, es, it, etc.)

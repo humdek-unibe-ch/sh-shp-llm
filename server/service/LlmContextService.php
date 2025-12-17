@@ -58,14 +58,15 @@ class LlmContextService
 
     /**
      * Build the complete context messages based on configuration
-     * 
+     *
      * Priority order:
-     * 1. Structured response mode (highest) - if enabled, ensures all responses are JSON
-     * 2. Form mode - if enabled (legacy, use structured instead)
-     * 3. Floating mode - if floating button is enabled
-     * 4. Strict conversation mode - if enabled and has context
-     * 5. Basic context - just the parsed conversation context
-     * 
+     * 1. Language-specific context adaptation (always applied first)
+     * 2. Structured response mode (highest) - if enabled, ensures all responses are JSON
+     * 3. Form mode - if enabled (legacy, use structured instead)
+     * 4. Floating mode - if floating button is enabled
+     * 5. Strict conversation mode - if enabled and has context
+     * 6. Basic context - just the parsed conversation context
+     *
      * @param int|null $conversation_id Optional conversation ID for progress tracking
      * @param int|null $section_id Optional section ID for progress tracking
      * @return array Context messages array
@@ -75,34 +76,37 @@ class LlmContextService
         // Get base context from model configuration
         $context_messages = $this->model->getParsedConversationContext();
 
+        // Apply language-specific context adaptation first
+        $context_messages = $this->applyLanguageContext($context_messages);
+
         // Check if structured response mode is enabled (new approach)
         if ($this->model->isStructuredResponseEnabled()) {
             $include_progress = $this->model->isProgressTrackingEnabled();
-            
+
             // Build progress data if progress tracking is enabled and we have the required IDs
             $progress_data = [];
             if ($include_progress && $this->progress_tracking_service && $conversation_id && $section_id) {
                 $progress_data = $this->buildProgressData($conversation_id, $section_id);
             }
-            
+
             $context_messages = $this->structured_response_service->buildStructuredResponseContext(
                 $context_messages,
                 $include_progress,
                 $progress_data
             );
-            
+
             // Apply additional modes on top of structured response
             if ($this->model->isFloatingButtonEnabled()) {
                 return $this->floating_mode_service->buildFloatingModeContext($context_messages);
             }
-            
+
             if ($this->model->shouldApplyStrictMode()) {
                 return $this->strict_conversation_service->buildStrictModeContext(
                     $context_messages,
                     $this->model->getConversationContext()
                 );
             }
-            
+
             return $context_messages;
         }
 
@@ -110,11 +114,11 @@ class LlmContextService
         if ($this->model->isFormModeEnabled()) {
             return $this->form_mode_service->buildFormModeContext($context_messages);
         }
-        
+
         if ($this->model->isFloatingButtonEnabled()) {
             return $this->floating_mode_service->buildFloatingModeContext($context_messages);
         }
-        
+
         if ($this->model->shouldApplyStrictMode()) {
             return $this->strict_conversation_service->buildStrictModeContext(
                 $context_messages,
@@ -126,8 +130,38 @@ class LlmContextService
     }
 
     /**
+     * Apply language-specific context adaptations
+     *
+     * Adds a separate, critical system message for language instructions at the very beginning.
+     * This ensures language consistency and allows switching in form mode.
+     *
+     * @param array $context_messages Original context messages
+     * @return array Modified context messages with language instruction as first entry
+     */
+    private function applyLanguageContext($context_messages)
+    {
+        // Get user's language preference
+        $user_language = $this->model->getContextLanguage();
+
+        require_once __DIR__ . '/LlmLanguageUtility.php';
+        $language_name = LlmLanguageUtility::getLanguageName($user_language);
+        $language_instruction = LlmLanguageUtility::generateLanguageInstruction($user_language);
+
+        // Create a separate critical system message for language
+        $language_context = [
+            'role' => 'system',
+            'content' => "CRITICAL LANGUAGE INSTRUCTION: " . $language_instruction . " Use {$language_name} and ONLY {$language_name} for all responses unless the user specifically requests to switch to a different language later in the conversation. This is your primary language rule that overrides any other instructions."
+        ];
+
+        // Add as the very first context message
+        array_unshift($context_messages, $language_context);
+
+        return $context_messages;
+    }
+
+    /**
      * Build progress data for structured response context
-     * 
+     *
      * @param int $conversation_id Conversation ID
      * @param int $section_id Section ID
      * @return array Progress data array
@@ -136,18 +170,18 @@ class LlmContextService
     {
         $context = $this->model->getConversationContext();
         $topics = $this->progress_tracking_service->extractTopicsFromContext($context);
-        
+
         if (empty($topics)) {
             return [];
         }
 
         // Get confirmed topics
         $confirmed_topics = $this->progress_tracking_service->getConfirmedTopicIds($conversation_id, $section_id);
-        
+
         // Get current progress
         $existing_progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
         $current_progress = $existing_progress ? (float)$existing_progress['progress_percentage'] : 0;
-        
+
         // Get context language
         $context_language = $this->model->getContextLanguage();
 
