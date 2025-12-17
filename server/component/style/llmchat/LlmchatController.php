@@ -631,6 +631,7 @@ class LlmchatController extends BaseController
         $progress_data = null;
         if ($this->model->isProgressTrackingEnabled()) {
             $progress_data = $this->calculateConversationProgress($conversation_id, $messages);
+            error_log("LLM Streaming: Progress data calculated - percentage: " . ($progress_data['percentage'] ?? 'null') . ", topics_covered: " . ($progress_data['topics_covered'] ?? 'null'));
         }
 
         $this->streaming_service->startStreamingResponse(

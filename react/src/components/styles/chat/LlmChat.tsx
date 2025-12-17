@@ -188,11 +188,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     if (config.enableConversationsList) {
       await loadConversations();
     }
-    // Update progress after messages are refreshed
-    if (config.enableProgressTracking) {
-      await loadProgress(conversationId);
-    }
-  }, [loadConversationMessages, loadConversations, config.enableConversationsList, config.enableProgressTracking, loadProgress]);
+    // Note: Progress is already updated via onDone callback from streaming response
+    // No need to fetch again here - it would cause a redundant API call
+  }, [loadConversationMessages, loadConversations, config.enableConversationsList]);
 
   const newConversationHandler = useCallback((conversationId: string, model: string) => {
     // Update current conversation for single conversation mode
@@ -220,10 +218,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     onChunk: useCallback(() => {
       // No auto-scroll during streaming - let user stay where they are to read the incoming response
     }, []),
-    onDone: useCallback((tokensUsed: number, progress?: ProgressData) => {
+    onDone: useCallback((tokensUsed: number, progressData?: ProgressData) => {
       // Update progress immediately if provided
-      if (progress && config.enableProgressTracking) {
-        setProgress(progress);
+      console.log('[LlmChat] onDone called, progressData:', progressData, 'enableProgressTracking:', config.enableProgressTracking);
+      if (progressData && config.enableProgressTracking) {
+        console.log('[LlmChat] Setting progress to:', progressData);
+        setProgress(progressData);
       }
     }, [config.enableProgressTracking]),
     onError: streamingErrorHandler,

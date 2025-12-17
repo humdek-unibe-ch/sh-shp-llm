@@ -221,6 +221,7 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               clearTimeout(streamingTimeout);
               // Streaming completed - industry standard: single atomic save
               setIsStreaming(false);
+              console.log('[Streaming] Done event received, progress:', event.progress);
               onDone?.(event.tokens_used || 0, event.progress);
 
               // Clear streaming content immediately (server has saved complete message)
