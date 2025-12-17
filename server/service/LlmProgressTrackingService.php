@@ -5,7 +5,12 @@
 
 /**
  * LLM Progress Tracking Service
- * 
+ */
+
+// Include utility classes
+require_once __DIR__ . "/LlmLanguageUtility.php";
+
+/**
  * Handles progress calculation for context coverage in LLM conversations.
  * 
  * IMPORTANT: Progress is tracked based on USER QUESTIONS ONLY, not AI responses.
@@ -560,74 +565,7 @@ class LlmProgressTrackingService
         ];
     }
 
-    /**
-     * Build empty topic coverage array
-     * 
-     * @param array $topics Array of topics
-     * @return array Topic coverage with all at 0
-     */
-    private function buildEmptyTopicCoverage($topics)
-    {
-        $coverage = [];
-        foreach ($topics as $topic) {
-            $coverage[$topic['id']] = [
-                'id' => $topic['id'],
-                'title' => $topic['title'],
-                'coverage' => 0,
-                'depth' => 0,
-                'matches' => [],
-                'is_covered' => false
-            ];
-        }
-        return $coverage;
-    }
 
-    /**
-     * Calculate coverage for a single topic from USER messages
-     * 
-     * @param array $topic Topic data
-     * @param string $userText Combined user message text (lowercase)
-     * @return array Coverage data with percentage, depth, and matches
-     */
-    private function calculateTopicCoverageFromUserMessages($topic, $userText)
-    {
-        $keywords = $topic['keywords'] ?? [];
-        if (empty($keywords)) {
-            return ['percentage' => 0, 'depth' => 0, 'matches' => []];
-        }
-
-        $matchedKeywords = [];
-        $totalOccurrences = 0;
-
-        foreach ($keywords as $keyword) {
-            $keyword = strtolower(trim($keyword));
-            if (empty($keyword)) continue;
-            
-            // Count occurrences of this keyword in user messages
-            $occurrences = substr_count($userText, $keyword);
-            
-            if ($occurrences > 0) {
-                $matchedKeywords[] = $keyword;
-                $totalOccurrences += $occurrences;
-            }
-        }
-
-        // If no keywords matched, topic is not covered
-        if (empty($matchedKeywords)) {
-            return ['percentage' => 0, 'depth' => 0, 'matches' => []];
-        }
-
-        // Topic is covered if at least one keyword matched
-        // Depth is based on number of unique keyword matches and total occurrences
-        $keywordCoverage = count($matchedKeywords) / count($keywords);
-        $depth = min($totalOccurrences, 5); // Cap depth at 5 interactions
-
-        return [
-            'percentage' => 100, // Topic is either covered or not
-            'depth' => $depth,
-            'matches' => $matchedKeywords
-        ];
-    }
 
     /**
      * Get or create progress record for a conversation
@@ -720,7 +658,7 @@ class LlmProgressTrackingService
         $uncoveredStr = !empty($uncoveredTopics) ? implode(", ", array_slice($uncoveredTopics, 0, 3)) : 'None';
 
         // Get language-specific confirmation prompts
-        $confirmationPrompts = $this->getConfirmationPrompts($context_language);
+        $confirmationPrompts = LlmLanguageUtility::getConfirmationPrompts($context_language);
 
         return <<<EOT
 
@@ -759,61 +697,6 @@ Language for this session: {$context_language}
 EOT;
     }
 
-    /**
-     * Get language-specific confirmation prompts
-     * 
-     * @param string $language Language code (en, de, fr, es, it, etc.)
-     * @return array Prompts array with 'question', 'yes', 'partial', 'no' keys
-     */
-    public function getConfirmationPrompts($language)
-    {
-        $prompts = [
-            'en' => [
-                'question' => 'Do you feel you understand this topic well enough to continue?',
-                'yes' => 'Yes, I understand this topic',
-                'partial' => 'I need more explanation',
-                'no' => 'Please explain again from the beginning'
-            ],
-            'de' => [
-                'question' => 'Hast du das Gefühl, dass du dieses Thema gut genug verstehst, um fortzufahren?',
-                'yes' => 'Ja, ich verstehe dieses Thema',
-                'partial' => 'Ich brauche mehr Erklärung',
-                'no' => 'Bitte erkläre es noch einmal von Anfang an'
-            ],
-            'fr' => [
-                'question' => 'Pensez-vous comprendre suffisamment ce sujet pour continuer?',
-                'yes' => 'Oui, je comprends ce sujet',
-                'partial' => 'J\'ai besoin de plus d\'explications',
-                'no' => 'Veuillez expliquer à nouveau depuis le début'
-            ],
-            'es' => [
-                'question' => '¿Sientes que entiendes este tema lo suficiente para continuar?',
-                'yes' => 'Sí, entiendo este tema',
-                'partial' => 'Necesito más explicación',
-                'no' => 'Por favor explica de nuevo desde el principio'
-            ],
-            'it' => [
-                'question' => 'Senti di capire abbastanza questo argomento per continuare?',
-                'yes' => 'Sì, capisco questo argomento',
-                'partial' => 'Ho bisogno di più spiegazioni',
-                'no' => 'Per favore spiega di nuovo dall\'inizio'
-            ],
-            'pt' => [
-                'question' => 'Você sente que entende este tópico o suficiente para continuar?',
-                'yes' => 'Sim, eu entendo este tópico',
-                'partial' => 'Preciso de mais explicação',
-                'no' => 'Por favor, explique novamente desde o início'
-            ],
-            'nl' => [
-                'question' => 'Heb je het gevoel dat je dit onderwerp goed genoeg begrijpt om door te gaan?',
-                'yes' => 'Ja, ik begrijp dit onderwerp',
-                'partial' => 'Ik heb meer uitleg nodig',
-                'no' => 'Leg het alsjeblieft opnieuw uit vanaf het begin'
-            ]
-        ];
-
-        return $prompts[$language] ?? $prompts['en'];
-    }
 
     /**
      * Mark a topic as confirmed by the user
@@ -921,19 +804,6 @@ EOT;
         return 'topic_' . substr(md5(strtolower(trim($content))), 0, 8);
     }
 
-    /**
-     * Format a JSON key as a human-readable title
-     * 
-     * @param string $key Key to format
-     * @return string Formatted title
-     */
-    private function formatKeyAsTitle($key)
-    {
-        // Convert snake_case or camelCase to Title Case
-        $title = preg_replace('/([a-z])([A-Z])/', '$1 $2', $key);
-        $title = str_replace(['_', '-'], ' ', $title);
-        return ucwords(strtolower($title));
-    }
 
     /**
      * Extract keywords from text
@@ -1068,20 +938,6 @@ EOT;
         return $debug;
     }
 
-    /**
-     * Truncate string to specified length
-     * 
-     * @param string $str String to truncate
-     * @param int $length Maximum length
-     * @return string Truncated string
-     */
-    private function truncateString($str, $length)
-    {
-        if (strlen($str) <= $length) {
-            return $str;
-        }
-        return substr($str, 0, $length - 3) . '...';
-    }
 }
 ?>
 

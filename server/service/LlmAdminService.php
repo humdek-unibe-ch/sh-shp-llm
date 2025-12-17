@@ -236,17 +236,4 @@ class LlmAdminService extends LlmService
         ) ?: [];
     }
 
-    /**
-     * Get conversation by ID (admin only)
-     */
-    public function getConversationById($conversation_id)
-    {
-        return $this->db->query_db_first(
-            "SELECT c.*, u.name as user_name
-             FROM llmConversations c
-             INNER JOIN users u ON c.id_users = u.id
-             WHERE c.id = ?",
-            [$conversation_id]
-        );
-    }
 }

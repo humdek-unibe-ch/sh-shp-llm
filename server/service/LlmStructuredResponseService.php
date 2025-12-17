@@ -5,7 +5,12 @@
 
 /**
  * Service class for enforcing structured JSON responses from LLM.
- * 
+ */
+
+// Include utility classes
+require_once __DIR__ . "/LlmLanguageUtility.php";
+
+/**
  * This service adds context instructions that force the LLM to always return
  * responses in a specific JSON schema format. This enables:
  * - Consistent parsing of all responses
@@ -227,7 +232,7 @@ SCHEMA;
         $uncoveredStr = !empty($uncoveredTopics) ? implode(", ", array_slice($uncoveredTopics, 0, 3)) : 'None';
 
         // Get language-specific confirmation prompts
-        $confirmationPrompts = $this->getConfirmationPrompts($context_language);
+        $confirmationPrompts = LlmLanguageUtility::getConfirmationPrompts($context_language);
 
         // Build topic IDs for reference
         $topicIdsInfo = [];
@@ -289,61 +294,6 @@ ALL confirmation questions and forms must be in this language.
 EOT;
     }
 
-    /**
-     * Get language-specific confirmation prompts
-     * 
-     * @param string $language Language code (en, de, fr, es, it, etc.)
-     * @return array Prompts array with 'question', 'yes', 'partial', 'no' keys
-     */
-    private function getConfirmationPrompts($language)
-    {
-        $prompts = [
-            'en' => [
-                'question' => 'Do you feel you understand this topic well enough to continue?',
-                'yes' => 'Yes, I understand this topic',
-                'partial' => 'I need more explanation',
-                'no' => 'Please explain again from the beginning'
-            ],
-            'de' => [
-                'question' => 'Hast du das Gefühl, dass du dieses Thema gut genug verstehst, um fortzufahren?',
-                'yes' => 'Ja, ich verstehe dieses Thema',
-                'partial' => 'Ich brauche mehr Erklärung',
-                'no' => 'Bitte erkläre es noch einmal von Anfang an'
-            ],
-            'fr' => [
-                'question' => 'Pensez-vous comprendre suffisamment ce sujet pour continuer?',
-                'yes' => 'Oui, je comprends ce sujet',
-                'partial' => 'J\'ai besoin de plus d\'explications',
-                'no' => 'Veuillez expliquer à nouveau depuis le début'
-            ],
-            'es' => [
-                'question' => '¿Sientes que entiendes este tema lo suficiente para continuar?',
-                'yes' => 'Sí, entiendo este tema',
-                'partial' => 'Necesito más explicación',
-                'no' => 'Por favor explica de nuevo desde el principio'
-            ],
-            'it' => [
-                'question' => 'Senti di capire abbastanza questo argomento per continuare?',
-                'yes' => 'Sì, capisco questo argomento',
-                'partial' => 'Ho bisogno di più spiegazioni',
-                'no' => 'Per favore spiega di nuovo dall\'inizio'
-            ],
-            'pt' => [
-                'question' => 'Você sente que entende este tópico o suficiente para continuar?',
-                'yes' => 'Sim, eu entendo este tópico',
-                'partial' => 'Preciso de mais explicação',
-                'no' => 'Por favor, explique novamente desde o início'
-            ],
-            'nl' => [
-                'question' => 'Heb je het gevoel dat je dit onderwerp goed genoeg begrijpt om door te gaan?',
-                'yes' => 'Ja, ik begrijp dit onderwerp',
-                'partial' => 'Ik heb meer uitleg nodig',
-                'no' => 'Leg het alsjeblieft opnieuw uit vanaf het begin'
-            ]
-        ];
-
-        return $prompts[$language] ?? $prompts['en'];
-    }
 
     /**
      * Get simplified schema instruction without progress tracking
@@ -540,49 +490,7 @@ SCHEMA;
         return implode("\n\n", $output);
     }
 
-    /**
-     * Extract form from structured response (for compatibility with existing form mode)
-     * 
-     * @param array $structured The structured response
-     * @return array|null Form definition in legacy format, or null if no form
-     */
-    public function extractFormFromStructured($structured)
-    {
-        if (!isset($structured['content']['forms']) || empty($structured['content']['forms'])) {
-            return null;
-        }
-        
-        // Get the first form
-        $form = $structured['content']['forms'][0];
-        
-        // Convert to legacy format for backwards compatibility
-        return [
-            'type' => 'form',
-            'title' => $form['title'] ?? '',
-            'description' => $form['description'] ?? '',
-            'fields' => $form['fields'] ?? [],
-            'submitLabel' => $form['submit_label'] ?? 'Submit',
-            // Also include the content before the form as contentBefore
-            'contentBefore' => $this->structuredToMarkdown([
-                'content' => ['text_blocks' => $structured['content']['text_blocks'] ?? []]
-            ])
-        ];
-    }
 
-    /**
-     * Extract progress data from structured response
-     * 
-     * @param array $structured The structured response
-     * @return array|null Progress data or null if not present
-     */
-    public function extractProgressFromStructured($structured)
-    {
-        if (!isset($structured['meta']['progress'])) {
-            return null;
-        }
-        
-        return $structured['meta']['progress'];
-    }
 
     /**
      * Check if the content is a valid structured response

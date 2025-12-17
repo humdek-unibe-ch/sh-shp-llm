@@ -4,6 +4,9 @@
  * Handles message formatting and API conversion for LLM chat
  */
 
+// Include utility classes
+require_once __DIR__ . "/LlmFileUtility.php";
+
 class LlmApiFormatterService
 {
     private $model;
@@ -174,7 +177,7 @@ class LlmApiFormatterService
             return null;
         }
 
-        $mimeType = $attachment['type'] ?? $this->detectMimeType($fullPath) ?? 'image/jpeg';
+        $mimeType = $attachment['type'] ?? LlmFileUtility::detectMimeType($fullPath) ?? 'image/jpeg';
         $base64Data = base64_encode($imageData);
 
         return [
@@ -236,40 +239,6 @@ class LlmApiFormatterService
         return in_array($extension, LLM_ALLOWED_IMAGE_EXTENSIONS);
     }
 
-    /**
-     * Detect MIME type using finfo
-     * Falls back to file extension-based detection if finfo fails
-     *
-     * @param string $filePath Path to the file
-     * @return string|null Detected MIME type
-     */
-    private function detectMimeType($filePath)
-    {
-        if (!file_exists($filePath)) {
-            return null;
-        }
-
-        // Try finfo first (most reliable)
-        if (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = finfo_file($finfo, $filePath);
-            finfo_close($finfo);
-
-            if ($mimeType && $mimeType !== 'application/octet-stream') {
-                return $mimeType;
-            }
-        }
-
-        // Try mime_content_type as fallback
-        if (function_exists('mime_content_type')) {
-            $mimeType = mime_content_type($filePath);
-            if ($mimeType && $mimeType !== 'application/octet-stream') {
-                return $mimeType;
-            }
-        }
-
-        return null;
-    }
 
     /**
      * Get configured model from services

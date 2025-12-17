@@ -4,6 +4,9 @@
  * Handles file upload validation, processing, and management for LLM chat
  */
 
+// Include utility classes
+require_once __DIR__ . "/LlmFileUtility.php";
+
 class LlmFileUploadService
 {
     private $llm_service;
@@ -131,7 +134,7 @@ class LlmFileUploadService
         }
 
         // Validate MIME type using finfo (more reliable than browser-provided type)
-        $detectedMimeType = $this->detectMimeType($file['tmp_name']);
+        $detectedMimeType = LlmFileUtility::detectMimeType($file['tmp_name']);
         if (!llm_validate_mime_type($extension, $detectedMimeType)) {
             // Allow if browser-reported type matches (some systems have different finfo databases)
             if (!llm_validate_mime_type($extension, $file['type'])) {
@@ -255,40 +258,6 @@ class LlmFileUploadService
         return $filename ?: 'unnamed_file';
     }
 
-    /**
-     * Detect MIME type using finfo
-     * Falls back to file extension-based detection if finfo fails
-     *
-     * @param string $filePath Path to the file
-     * @return string|null Detected MIME type
-     */
-    private function detectMimeType($filePath)
-    {
-        if (!file_exists($filePath)) {
-            return null;
-        }
-
-        // Try finfo first (most reliable)
-        if (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mimeType = finfo_file($finfo, $filePath);
-            finfo_close($finfo);
-
-            if ($mimeType && $mimeType !== 'application/octet-stream') {
-                return $mimeType;
-            }
-        }
-
-        // Try mime_content_type as fallback
-        if (function_exists('mime_content_type')) {
-            $mimeType = mime_content_type($filePath);
-            if ($mimeType && $mimeType !== 'application/octet-stream') {
-                return $mimeType;
-            }
-        }
-
-        return null;
-    }
 
     /**
      * Format file size for human-readable display
