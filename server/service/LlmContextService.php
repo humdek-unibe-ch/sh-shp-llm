@@ -9,12 +9,13 @@
  * Handles context building for LLM API calls.
  * Centralizes the logic for:
  * - Building context messages from configuration
+ * - Applying structured response schema (always JSON output)
  * - Applying form mode context
  * - Applying floating mode context
  * - Applying strict conversation mode context
  * 
  * The service determines which context mode to apply based on
- * the model configuration (priority: form mode > floating mode > strict mode).
+ * the model configuration (priority: structured response > form mode > floating mode > strict mode).
  */
 class LlmContextService
 {
@@ -23,6 +24,7 @@ class LlmContextService
     private $floating_mode_service;
     private $strict_conversation_service;
     private $api_formatter_service;
+    private $structured_response_service;
 
     /**
      * Constructor
@@ -32,29 +34,33 @@ class LlmContextService
      * @param LlmFloatingModeService $floating_mode_service Floating mode service
      * @param StrictConversationService $strict_conversation_service Strict mode service
      * @param LlmApiFormatterService $api_formatter_service API formatter service
+     * @param LlmStructuredResponseService $structured_response_service Structured response service
      */
     public function __construct(
         $model,
         $form_mode_service,
         $floating_mode_service,
         $strict_conversation_service,
-        $api_formatter_service
+        $api_formatter_service,
+        $structured_response_service
     ) {
         $this->model = $model;
         $this->form_mode_service = $form_mode_service;
         $this->floating_mode_service = $floating_mode_service;
         $this->strict_conversation_service = $strict_conversation_service;
         $this->api_formatter_service = $api_formatter_service;
+        $this->structured_response_service = $structured_response_service;
     }
 
     /**
      * Build the complete context messages based on configuration
      * 
      * Priority order:
-     * 1. Form mode (highest) - if enabled
-     * 2. Floating mode - if floating button is enabled
-     * 3. Strict conversation mode - if enabled and has context
-     * 4. Basic context - just the parsed conversation context
+     * 1. Structured response mode (highest) - if enabled, ensures all responses are JSON
+     * 2. Form mode - if enabled (legacy, use structured instead)
+     * 3. Floating mode - if floating button is enabled
+     * 4. Strict conversation mode - if enabled and has context
+     * 5. Basic context - just the parsed conversation context
      * 
      * @return array Context messages array
      */
@@ -63,7 +69,30 @@ class LlmContextService
         // Get base context from model configuration
         $context_messages = $this->model->getParsedConversationContext();
 
-        // Apply context based on mode priority
+        // Check if structured response mode is enabled (new approach)
+        if ($this->model->isStructuredResponseEnabled()) {
+            $include_progress = $this->model->isProgressTrackingEnabled();
+            $context_messages = $this->structured_response_service->buildStructuredResponseContext(
+                $context_messages,
+                $include_progress
+            );
+            
+            // Apply additional modes on top of structured response
+            if ($this->model->isFloatingButtonEnabled()) {
+                return $this->floating_mode_service->buildFloatingModeContext($context_messages);
+            }
+            
+            if ($this->model->shouldApplyStrictMode()) {
+                return $this->strict_conversation_service->buildStrictModeContext(
+                    $context_messages,
+                    $this->model->getConversationContext()
+                );
+            }
+            
+            return $context_messages;
+        }
+
+        // Legacy: Apply context based on mode priority
         if ($this->model->isFormModeEnabled()) {
             return $this->form_mode_service->buildFormModeContext($context_messages);
         }

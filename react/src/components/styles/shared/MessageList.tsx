@@ -18,12 +18,13 @@
  */
 
 import React from 'react';
-import type { Message, LlmChatConfig, FormDefinition } from '../../../types';
-import { parseFormDefinition, parseFormSubmissionMetadata } from '../../../types';
+import type { Message, LlmChatConfig, FormDefinition, StructuredResponse } from '../../../types';
+import { parseFormDefinition, parseFormSubmissionMetadata, parseStructuredResponse, structuredResponseToMarkdown } from '../../../types';
 import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer } from './FormRenderer';
 import { FormDisplay } from './FormDisplay';
+import { StructuredResponseRenderer } from './StructuredResponseRenderer';
 
 /**
  * Props for MessageList component
@@ -152,7 +153,7 @@ const UserFormSubmissionDisplay: React.FC<{
 /**
  * Individual message item component
  * Renders a single message with avatar, content, and metadata
- * Detects and renders forms from assistant messages (even when form mode is disabled)
+ * Detects and renders structured responses, forms, or markdown from assistant messages
  */
 const MessageItem: React.FC<MessageItemProps> = ({ 
   message, 
@@ -167,25 +168,30 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const isUser = message.role === 'user';
   const attachmentCount = getAttachmentCount(message.attachments);
   
-  // Check if this assistant message contains a form definition
-  // Always try to detect forms, even when form mode is disabled
-  // This allows LLMs to return forms dynamically
+  // Check if this assistant message contains a structured response (new format)
+  // Priority: Structured Response > Legacy Form > Markdown
+  let structuredResponse: StructuredResponse | null = null;
   let formDefinition: FormDefinition | null = null;
   let isHistoricalForm = false;
   let userSubmittedValues: Record<string, string | string[]> | undefined;
 
-  // Try to parse forms even during streaming for better UX
-  // This allows forms to render immediately when the JSON is complete
+  // Try to parse responses even during streaming for better UX
   if (!isUser) {
-    formDefinition = parseFormDefinition(message.content);
-    // If it's a form but not the last message, it's historical
-    if (formDefinition && !isLastMessage) {
-      isHistoricalForm = true;
-      // Try to find the user's submission from the next message
-      if (nextMessage && nextMessage.role === 'user') {
-        const submissionMeta = parseFormSubmissionMetadata(nextMessage.attachments);
-        if (submissionMeta) {
-          userSubmittedValues = submissionMeta.values;
+    // First, try to parse as structured response (new format)
+    structuredResponse = parseStructuredResponse(message.content);
+    
+    // If not structured response, try legacy form format
+    if (!structuredResponse) {
+      formDefinition = parseFormDefinition(message.content);
+      // If it's a form but not the last message, it's historical
+      if (formDefinition && !isLastMessage) {
+        isHistoricalForm = true;
+        // Try to find the user's submission from the next message
+        if (nextMessage && nextMessage.role === 'user') {
+          const submissionMeta = parseFormSubmissionMetadata(nextMessage.attachments);
+          if (submissionMeta) {
+            userSubmittedValues = submissionMeta.values;
+          }
         }
       }
     }
@@ -205,6 +211,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
       userFormDefinition = previousAssistantFormDefinition || null;
     }
   }
+
+  // Determine if we should hide metadata (for structured responses and active forms)
+  const hideMetadata = structuredResponse || (formDefinition && !isHistoricalForm);
   
   return (
     <div className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
@@ -229,6 +238,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
               // Regular user message: plain text with preserved whitespace
               <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
             )
+          ) : structuredResponse ? (
+            // Structured response: render with StructuredResponseRenderer
+            <StructuredResponseRenderer
+              response={structuredResponse}
+              isLastMessage={isLastMessage}
+              onFormSubmit={onFormSubmit}
+              isFormSubmitting={isFormSubmitting}
+            />
           ) : formDefinition && isHistoricalForm ? (
             // Historical form: show with user's selections
             <HistoricalFormDisplay 
@@ -252,13 +269,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
           )}
         </div>
         
-        {/* Attachment indicator - hide for forms */}
-        {!formDefinition && !isUserFormSubmission && (
+        {/* Attachment indicator - hide for forms and structured responses */}
+        {!formDefinition && !structuredResponse && !isUserFormSubmission && (
           <AttachmentIndicator count={attachmentCount} isUser={isUser} config={config} />
         )}
         
-        {/* Message metadata - hide for active forms, show for historical */}
-        {(!formDefinition || isHistoricalForm) && (
+        {/* Message metadata - hide for active forms and structured responses */}
+        {!hideMetadata && (
           <div className="message-meta">
             <span>{formatTime(message.timestamp)}</span>
             {message.tokens_used && (

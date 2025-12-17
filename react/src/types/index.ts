@@ -190,6 +190,8 @@ export interface LlmChatConfig {
   formModeActiveTitle: string;
   /** Form mode active description (shown when text input is disabled) */
   formModeActiveDescription: string;
+  /** Whether structured response mode is enabled (LLM always returns JSON schema) */
+  enableStructuredResponse: boolean;
   /** Continue button label for form mode when no form is pending */
   continueButtonLabel: string;
   /** File configuration */
@@ -321,6 +323,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   enableFormMode: false,
   formModeActiveTitle: 'Form Mode Active',
   formModeActiveDescription: 'Please use the form above to respond.',
+  enableStructuredResponse: false,
   continueButtonLabel: 'Continue',
   fileConfig: DEFAULT_FILE_CONFIG,
   // Progress tracking defaults
@@ -1028,6 +1031,298 @@ export interface ProgressData {
 export interface GetProgressResponse {
   progress?: ProgressData;
   error?: string;
+}
+
+// ============================================================================
+// STRUCTURED RESPONSE TYPES
+// ============================================================================
+
+/**
+ * Text block types for structured responses
+ */
+export type TextBlockType = 
+  | 'paragraph' 
+  | 'heading' 
+  | 'list' 
+  | 'quote' 
+  | 'info' 
+  | 'warning' 
+  | 'success' 
+  | 'tip';
+
+/**
+ * Text block in structured response
+ */
+export interface TextBlock {
+  /** Block type for styling */
+  type: TextBlockType;
+  /** Markdown-formatted text content */
+  content: string;
+  /** Heading level (1-6), only for type='heading' */
+  level?: number;
+}
+
+/**
+ * Media item in structured response
+ */
+export interface MediaItem {
+  /** Media type */
+  type: 'image' | 'video' | 'audio';
+  /** URL or asset path */
+  src: string;
+  /** Alt text for accessibility */
+  alt?: string;
+  /** Optional caption */
+  caption?: string;
+}
+
+/**
+ * Form definition in structured response
+ * Similar to FormDefinition but with optional flag
+ */
+export interface StructuredForm {
+  /** Unique form identifier */
+  id: string;
+  /** Form title */
+  title?: string;
+  /** Form description */
+  description?: string;
+  /** Whether the form is optional (default: true) */
+  optional?: boolean;
+  /** Form fields */
+  fields: FormField[];
+  /** Submit button label */
+  submit_label?: string;
+}
+
+/**
+ * Next step guidance in structured response
+ */
+export interface NextStep {
+  /** Suggested next action or question */
+  prompt?: string;
+  /** Quick reply suggestions */
+  suggestions?: string[];
+  /** Whether the user can skip this step */
+  can_skip?: boolean;
+}
+
+/**
+ * Content section of structured response
+ */
+export interface StructuredContent {
+  /** Ordered list of text content to display */
+  text_blocks: TextBlock[];
+  /** Optional forms for structured input */
+  forms?: StructuredForm[];
+  /** Optional media items */
+  media?: MediaItem[];
+  /** Guidance on what to do next */
+  next_step?: NextStep;
+}
+
+/**
+ * Response type for context-aware rendering
+ */
+export type ResponseType = 
+  | 'educational' 
+  | 'conversational' 
+  | 'assessment' 
+  | 'summary' 
+  | 'error';
+
+/**
+ * Emotional tone of response
+ */
+export type EmotionType = 
+  | 'neutral' 
+  | 'encouraging' 
+  | 'celebratory' 
+  | 'supportive' 
+  | 'informative';
+
+/**
+ * Progress milestone types
+ */
+export type MilestoneType = '25%' | '50%' | '75%' | '100%' | null;
+
+/**
+ * Progress information in structured response meta
+ */
+export interface StructuredProgress {
+  /** Overall progress percentage (0-100) */
+  percentage: number;
+  /** List of topic IDs/names now covered */
+  covered_topics?: string[];
+  /** Topics covered in THIS message */
+  newly_covered?: string[];
+  /** How many topics remain */
+  remaining_topics?: number;
+  /** Milestone reached (if any) */
+  milestone?: MilestoneType;
+}
+
+/**
+ * Module state in structured response meta
+ */
+export interface ModuleState {
+  /** Current phase name */
+  current_phase?: string;
+  /** Current section/topic being covered */
+  current_section?: string;
+  /** Sections completed */
+  sections_completed?: number;
+  /** Total sections */
+  total_sections?: number;
+}
+
+/**
+ * Metadata section of structured response
+ */
+export interface StructuredMeta {
+  /** Type of response for context-aware rendering */
+  response_type: ResponseType;
+  /** Progress tracking information */
+  progress?: StructuredProgress;
+  /** Current position in educational module */
+  module_state?: ModuleState;
+  /** Emotional tone of this response */
+  emotion?: EmotionType;
+}
+
+/**
+ * Complete structured response from LLM
+ * This is the schema that all LLM responses should follow when structured response mode is enabled
+ */
+export interface StructuredResponse {
+  /** All displayable content */
+  content: StructuredContent;
+  /** Metadata about the response */
+  meta: StructuredMeta;
+}
+
+/**
+ * Check if content is a valid structured response
+ * @param content Message content to check
+ * @returns true if valid structured response
+ */
+export function isStructuredResponse(content: unknown): content is StructuredResponse {
+  if (!content || typeof content !== 'object') return false;
+  
+  const obj = content as Record<string, unknown>;
+  
+  // Must have content and meta objects
+  if (!obj.content || typeof obj.content !== 'object') return false;
+  if (!obj.meta || typeof obj.meta !== 'object') return false;
+  
+  const contentObj = obj.content as Record<string, unknown>;
+  const metaObj = obj.meta as Record<string, unknown>;
+  
+  // Content must have text_blocks array
+  if (!Array.isArray(contentObj.text_blocks)) return false;
+  
+  // Meta must have response_type
+  if (typeof metaObj.response_type !== 'string') return false;
+  
+  return true;
+}
+
+/**
+ * Parse message content to check if it's a structured response
+ * Handles both pure JSON and markdown code block wrapped JSON
+ * @param content Message content to parse
+ * @returns StructuredResponse if valid, null otherwise
+ */
+export function parseStructuredResponse(content: string): StructuredResponse | null {
+  if (!content) return null;
+  
+  let jsonContent = content.trim();
+  
+  // Remove markdown code block wrappers if present
+  if (jsonContent.startsWith('```json')) {
+    jsonContent = jsonContent.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+  } else if (jsonContent.startsWith('```')) {
+    jsonContent = jsonContent.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+  
+  try {
+    const parsed = JSON.parse(jsonContent);
+    if (isStructuredResponse(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Not valid JSON
+  }
+  
+  return null;
+}
+
+/**
+ * Convert structured response to markdown for display
+ * Used as fallback when structured rendering is not available
+ * @param response The structured response
+ * @returns Markdown string
+ */
+export function structuredResponseToMarkdown(response: StructuredResponse): string {
+  const parts: string[] = [];
+  
+  for (const block of response.content.text_blocks) {
+    switch (block.type) {
+      case 'heading': {
+        const level = block.level || 2;
+        const prefix = '#'.repeat(level);
+        parts.push(`${prefix} ${block.content}`);
+        break;
+      }
+      case 'quote':
+        parts.push(block.content.split('\n').map(l => `> ${l}`).join('\n'));
+        break;
+      case 'info':
+        parts.push(`ℹ️ **Info**: ${block.content}`);
+        break;
+      case 'warning':
+        parts.push(`⚠️ **Warning**: ${block.content}`);
+        break;
+      case 'success':
+        parts.push(`✅ ${block.content}`);
+        break;
+      case 'tip':
+        parts.push(`💡 **Tip**: ${block.content}`);
+        break;
+      default:
+        parts.push(block.content);
+    }
+  }
+  
+  return parts.join('\n\n');
+}
+
+/**
+ * Convert structured form to legacy FormDefinition for backwards compatibility
+ * @param structuredForm The structured form
+ * @returns Legacy FormDefinition
+ */
+export function structuredFormToFormDefinition(structuredForm: StructuredForm): FormDefinition {
+  return {
+    type: 'form',
+    title: structuredForm.title,
+    description: structuredForm.description,
+    fields: structuredForm.fields,
+    submitLabel: structuredForm.submit_label
+  };
+}
+
+/**
+ * Extract forms from structured response as legacy FormDefinitions
+ * @param response The structured response
+ * @returns Array of FormDefinitions
+ */
+export function extractFormsFromStructuredResponse(response: StructuredResponse): FormDefinition[] {
+  if (!response.content.forms || response.content.forms.length === 0) {
+    return [];
+  }
+  
+  return response.content.forms.map(structuredFormToFormDefinition);
 }
 
 // ============================================================================

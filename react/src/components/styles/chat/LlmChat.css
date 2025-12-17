@@ -357,9 +357,169 @@
   margin-top: 1rem !important;
 }
 
+/* ===== Structured Response Styles ===== */
+.structured-response {
+  width: 100%;
+}
+
+/* Text Block Styles */
+.structured-heading {
+  color: #343a40;
+  font-weight: 600;
+}
+
+.structured-heading h2 {
+  font-size: 1.25rem;
+}
+
+.structured-heading h3 {
+  font-size: 1.1rem;
+}
+
+.structured-heading h4 {
+  font-size: 1rem;
+}
+
+.structured-paragraph {
+  color: #212529;
+  line-height: 1.6;
+}
+
+.structured-list {
+  color: #212529;
+  line-height: 1.6;
+}
+
+.structured-list ul,
+.structured-list ol {
+  margin-bottom: 0;
+  padding-left: 1.5rem;
+}
+
+.structured-quote {
+  border-left: 3px solid #6c757d;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Alert/Callout Styles - Using Bootstrap 4.6 colors */
+.structured-info,
+.structured-warning,
+.structured-success,
+.structured-tip {
+  display: flex;
+  align-items: flex-start;
+}
+
+.structured-info i,
+.structured-warning i,
+.structured-success i,
+.structured-tip i {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.structured-info .markdown-content,
+.structured-warning .markdown-content,
+.structured-success .markdown-content,
+.structured-tip .markdown-content {
+  flex: 1;
+}
+
+/* Tip uses secondary color instead of custom purple (Bootstrap 4.6 compliance) */
+.structured-tip {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: #343a40;
+}
+
+/* Milestone Banner */
+.milestone-banner {
+  border-radius: var(--llm-radius-medium);
+}
+
+.milestone-icon {
+  font-size: 1.5rem;
+}
+
+/* Next Step Suggestions */
+.structured-next-step {
+  border-color: #dee2e6 !important;
+}
+
+.suggestion-buttons {
+  gap: 0.5rem;
+}
+
+.suggestion-btn {
+  border-radius: var(--llm-radius-medium);
+  white-space: nowrap;
+}
+
+.suggestion-btn:hover {
+  background-color: #007bff;
+  color: #ffffff;
+}
+
+/* Structured Forms */
+.structured-form-wrapper {
+  border: 1px solid #dee2e6;
+  border-radius: var(--llm-radius-medium);
+  padding: 1rem;
+  background: #f8f9fa;
+}
+
+.structured-form-historical {
+  background: #f8f9fa;
+}
+
+.structured-form-historical .card-header {
+  background: #e9ecef;
+  font-weight: 600;
+}
+
+/* Media Items */
+.structured-media .figure {
+  display: block;
+  text-align: center;
+}
+
+.structured-media .figure-img {
+  max-width: 100%;
+  height: auto;
+}
+
+.structured-media .figure-caption {
+  font-size: 0.875rem;
+  color: #6c757d;
+}
+
+.structured-media .video-wrapper {
+  max-width: 100%;
+}
+
+.structured-media video {
+  max-width: 100%;
+}
+
+/* Progress Update */
+.progress-update {
+  font-size: 0.875rem;
+  border-color: #dee2e6 !important;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .llm-chat-container {
     min-height: calc(100vh - 120px);
+  }
+
+  .suggestion-buttons {
+    flex-direction: column;
+  }
+
+  .suggestion-btn {
+    width: 100%;
+    text-align: left;
   }
 }

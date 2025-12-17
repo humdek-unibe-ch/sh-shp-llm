@@ -94,6 +94,10 @@ class LlmchatModel extends StyleModel
     private $form_mode_active_title;
     private $form_mode_active_description;
 
+    // Structured response mode - LLM always returns JSON schema
+    // This is the recommended mode for flexible forms + free text interaction
+    private $enable_structured_response;
+
     // Data saving - save form data to SelfHelp UserInput system
     private $enable_data_saving;
     private $data_table_name;
@@ -240,6 +244,10 @@ class LlmchatModel extends StyleModel
         $this->enable_form_mode = $this->get_db_field('enable_form_mode', '0');
         $this->form_mode_active_title = $this->get_db_field('form_mode_active_title', 'Form Mode Active');
         $this->form_mode_active_description = $this->get_db_field('form_mode_active_description', 'Please use the form above to respond.');
+
+        // Structured response mode - LLM always returns JSON with structured schema
+        // Enables flexible interaction: forms are optional guidance, users can always type free text
+        $this->enable_structured_response = $this->get_db_field('enable_structured_response', '0');
 
         // Data saving - save form data to SelfHelp UserInput system
         $this->enable_data_saving = $this->get_db_field('enable_data_saving', '0');
@@ -1223,6 +1231,23 @@ EOT;
     public function getFormModeActiveDescription()
     {
         return $this->form_mode_active_description;
+    }
+
+    /**
+     * Check if structured response mode is enabled
+     * When enabled, LLM always returns JSON following the RESPONSE_SCHEMA
+     * 
+     * This is the recommended mode for:
+     * - Flexible forms + free text interaction
+     * - Progress tracking integration
+     * - Rich content with text blocks, forms, media
+     * - Predictable parsing of all responses
+     *
+     * @return bool True if structured response mode is enabled
+     */
+    public function isStructuredResponseEnabled()
+    {
+        return $this->enable_structured_response === '1';
     }
 
     // ===== Data Saving Methods =====

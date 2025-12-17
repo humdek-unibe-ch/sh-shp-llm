@@ -455,8 +455,6 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmChat'), get_field_id('continue_button_label'), 'Continue', 'Button label shown in form mode when the AI response does not contain a form. Clicking this button prompts the AI to continue the conversation.');
 
-INSERT INTO lookups (type_code, lookup_code, lookup_value, lookup_description) values ('transactionBy', 'by_llm_plugin', 'By LLM Plugin', 'The action was done by the LLM plugin');
-
 -- =====================================================
 -- PROGRESS TRACKING FEATURE
 -- =====================================================
@@ -490,3 +488,17 @@ CREATE TABLE IF NOT EXISTS `llmConversationProgress` (
     CONSTRAINT `fk_llmConversationProgress_conversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_llmConversationProgress_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- STRUCTURED RESPONSE MODE FEATURE
+-- =====================================================
+
+-- Add structured response mode field
+-- When enabled, LLM always returns JSON following RESPONSE_SCHEMA
+-- This enables flexible forms + free text interaction
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_structured_response', get_field_type_id('checkbox'), '0');
+
+-- Link structured response field to llmchat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_structured_response'), '1', 'Enable structured response mode. When enabled, the LLM always returns responses in a standardized JSON schema format. This provides:\n\n- **Flexible interaction**: Forms are optional guidance, users can always type free text\n- **Progress tracking integration**: Automatic topic coverage detection\n- **Rich content**: Support for text blocks with different styles, optional forms, media, and navigation suggestions\n- **Predictable parsing**: All responses follow the same structure\n\nRecommended for educational modules and guided conversations where you want both structure and flexibility.');

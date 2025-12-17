@@ -229,7 +229,9 @@ class LlmchatView extends StyleView
             'enableProgressTracking' => $this->model->isProgressTrackingEnabled(),
             'progressBarLabel' => $this->model->getProgressBarLabel(),
             'progressCompleteMessage' => $this->model->getProgressCompleteMessage(),
-            'progressShowTopics' => $this->model->shouldShowProgressTopics()
+            'progressShowTopics' => $this->model->shouldShowProgressTopics(),
+            // Structured response mode - LLM always returns JSON schema
+            'enableStructuredResponse' => $this->model->isStructuredResponseEnabled()
         ]);
     }
 

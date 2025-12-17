@@ -16,6 +16,7 @@ require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
 require_once __DIR__ . "/../../../service/LlmRequestService.php";
 require_once __DIR__ . "/../../../service/LlmContextService.php";
 require_once __DIR__ . "/../../../service/LlmProgressTrackingService.php";
+require_once __DIR__ . "/../../../service/LlmStructuredResponseService.php";
 
 /**
  * LLM Chat Controller
@@ -157,6 +158,8 @@ class LlmchatController extends BaseController
         $api_formatter_service = new LlmApiFormatterService();
         
         $this->streaming_service = new LlmStreamingService($this->llm_service);
+
+        $structured_response_service = new LlmStructuredResponseService();
         
         // Composite services
         $this->request_service = new LlmRequestService($this->llm_service, $this->model);
@@ -165,7 +168,8 @@ class LlmchatController extends BaseController
             $this->form_mode_service,
             $floating_mode_service,
             $strict_conversation_service,
-            $api_formatter_service
+            $api_formatter_service,
+            $structured_response_service
         );
         
         // Progress tracking service
