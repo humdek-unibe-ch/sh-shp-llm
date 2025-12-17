@@ -688,7 +688,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation.model !== config.configuredModel;
 
   return (
-    <Container fluid className="llm-chat-container llm-chat-shell p-3">
+    <Container fluid className={`llm-chat-container llm-chat-shell ${config.isFloatingMode ? 'p-0' : 'p-3'}`}>
       {/* Error Alert */}
       {error && (
         <Alert variant="danger" dismissible onClose={clearError} className="mb-3">
@@ -734,12 +734,13 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
             {/* Progress Indicator */}
             {config.enableProgressTracking && progress && (
-              <div className={`chat-header-progress ${isProgressUpdating ? 'updating' : ''}`}>
+              <div className={`chat-header-progress ${isProgressUpdating ? 'updating' : ''} ${config.isFloatingMode ? 'chat-header-progress-compact' : ''}`}>
                 <ProgressIndicator
                   progress={progress}
                   barLabel={config.progressBarLabel}
                   completeMessage={config.progressCompleteMessage}
                   showTopics={config.progressShowTopics}
+                  compact={config.isFloatingMode}
                 />
               </div>
             )}

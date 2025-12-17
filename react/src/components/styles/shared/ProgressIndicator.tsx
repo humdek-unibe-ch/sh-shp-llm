@@ -10,6 +10,7 @@
  * - Optional topic list showing coverage status
  * - Completion message when 100% is reached
  * - Collapsible topic details
+ * - Compact mode for floating chat panels
  * 
  * @module components/ProgressIndicator
  */
@@ -31,7 +32,21 @@ interface ProgressIndicatorProps {
   showTopics?: boolean;
   /** Optional CSS class for the container */
   className?: string;
+  /** Whether to use compact mode (for floating panels) */
+  compact?: boolean;
 }
+
+/**
+ * Get progress bar color based on percentage
+ * Uses Bootstrap 4.6 colors
+ */
+const getProgressColor = (percentage: number): string => {
+  if (percentage >= 100) return '#28a745'; // success
+  if (percentage >= 75) return '#17a2b8';  // info
+  if (percentage >= 50) return '#007bff';  // primary
+  if (percentage >= 25) return '#ffc107';  // warning
+  return '#6c757d'; // secondary
+};
 
 /**
  * Progress Indicator Component
@@ -43,7 +58,8 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   barLabel = 'Progress',
   completeMessage = 'Great job! You have covered all topics.',
   showTopics = false,
-  className = ''
+  className = '',
+  compact = false
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
@@ -55,15 +71,80 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   // Check if no topics were found (configuration issue)
   const hasNoTopics = topics_total === 0;
   
-  // Get progress bar color based on percentage
-  const getProgressColor = (): string => {
-    if (percentage >= 100) return '#28a745'; // success
-    if (percentage >= 75) return '#17a2b8';  // info
-    if (percentage >= 50) return '#007bff';  // primary
-    if (percentage >= 25) return '#ffc107';  // warning
-    return '#6c757d'; // secondary
-  };
+  // Compact mode rendering - ultra-compact single line with percentage inside progress bar
+  if (compact) {
+    return (
+      <div className={`progress-indicator-compact ${className}`}>
+        <div className="d-flex align-items-center">
+          {/* Progress bar with percentage inside */}
+          <div 
+            className="progress flex-grow-1 position-relative" 
+            style={{ 
+              height: '18px', 
+              backgroundColor: '#e9ecef',
+              borderRadius: '9px',
+              overflow: 'hidden'
+            }}
+          >
+            <div 
+              className="progress-bar" 
+              role="progressbar" 
+              style={{ 
+                width: `${Math.min(percentage, 100)}%`,
+                backgroundColor: getProgressColor(percentage),
+                transition: 'width 0.5s ease-in-out'
+              }}
+              aria-valuenow={percentage} 
+              aria-valuemin={0} 
+              aria-valuemax={100}
+            />
+            {/* Percentage text overlay */}
+            <span 
+              className="position-absolute w-100 text-center font-weight-bold"
+              style={{ 
+                top: '50%', 
+                left: 0,
+                transform: 'translateY(-50%)',
+                fontSize: '10px',
+                color: percentage > 50 ? '#ffffff' : '#343a40',
+                textShadow: percentage > 50 ? '0 0 2px rgba(0,0,0,0.3)' : 'none',
+                lineHeight: 1
+              }}
+            >
+              {percentage.toFixed(0)}% · {topics_covered}/{topics_total}
+            </span>
+          </div>
+          
+          {/* Expand button */}
+          {showTopics && topicList.length > 0 && (
+            <button 
+              className="btn btn-link btn-sm p-0 ml-2 text-decoration-none"
+              onClick={() => setIsExpanded(!isExpanded)}
+              type="button"
+              title={isExpanded ? 'Hide topics' : 'Show topics'}
+              style={{ lineHeight: 1 }}
+            >
+              <i className={`fas fa-chevron-${isExpanded ? 'up' : 'down'} text-muted`} style={{ fontSize: '10px' }}></i>
+            </button>
+          )}
+        </div>
+        
+        {/* Expandable topic list in compact mode */}
+        {showTopics && isExpanded && topicList.length > 0 && (
+          <div className="topic-list-compact mt-2 pt-2 border-top" style={{ maxHeight: '120px', overflowY: 'auto' }}>
+            {topicList.map((topic) => (
+              <div key={topic.id} className="d-flex align-items-center py-1" style={{ fontSize: '10px' }}>
+                <i className={`fas ${topic.is_covered ? 'fa-check-circle text-success' : 'fa-circle text-muted'} mr-1`} style={{ fontSize: '8px' }}></i>
+                <span className={`flex-grow-1 ${topic.is_covered ? '' : 'text-muted'}`} style={{ lineHeight: 1.2 }}>{topic.title}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
+  // Standard mode rendering
   return (
     <div className={`progress-indicator-container ${className}`}>
       {/* Warning when no topics found */}
@@ -118,7 +199,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
           <i className="fas fa-chart-line mr-2 text-primary"></i>
           {barLabel}
         </span>
-        <span className="progress-percentage font-weight-bold" style={{ color: getProgressColor() }}>
+        <span className="progress-percentage font-weight-bold" style={{ color: getProgressColor(percentage) }}>
           {percentage.toFixed(1)}%
         </span>
       </div>
@@ -130,7 +211,7 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
           role="progressbar" 
           style={{ 
             width: `${Math.min(percentage, 100)}%`,
-            backgroundColor: getProgressColor(),
+            backgroundColor: getProgressColor(percentage),
             transition: 'width 0.5s ease-in-out, background-color 0.3s ease'
           }}
           aria-valuenow={percentage} 

@@ -743,6 +743,26 @@
   background: rgba(0, 123, 255, 0.05);
 }
 
+/* Compact Progress Indicator - for floating panels */
+.progress-indicator-compact {
+  padding: 0;
+  background: transparent;
+}
+
+.progress-indicator-compact .progress {
+  border-radius: 9px;
+}
+
+.progress-indicator-compact .progress-bar {
+  border-radius: 9px;
+}
+
+.progress-indicator-compact .topic-list-compact {
+  max-height: 120px;
+  overflow-y: auto;
+  border-color: #dee2e6 !important;
+}
+
 /* Compact Progress */
 .compact-progress {
   display: inline-flex;
@@ -768,13 +788,26 @@
   border: none;
 }
 
+/* Compact progress header for floating mode */
+.chat-header-progress-compact {
+  padding: 4px 10px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.chat-header-progress-compact .progress-indicator-compact {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
 /* Progress Animation */
 @keyframes progressPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
 
-.progress-indicator-container.updating .progress-bar {
+.progress-indicator-container.updating .progress-bar,
+.progress-indicator-compact.updating .progress-bar {
   animation: progressPulse 1s ease-in-out infinite;
 }
 
