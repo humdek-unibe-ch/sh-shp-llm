@@ -112,12 +112,21 @@ No plain text. No markdown. No explanations outside JSON.
 - Text fields (text, textarea, number) must NOT have `options`
 - Always provide text_blocks explaining the purpose before forms
 
-### PROGRESS TRACKING
+### PROGRESS TRACKING (CONFIRMATION-BASED)
 
-- Track topic coverage from both free text AND form responses
-- Update `covered_topics` when users demonstrate understanding
-- Set `newly_covered` to topics covered in THIS response
-- Celebrate milestones (25%, 50%, 75%, 100%) with `emotion: "celebratory"`
+Progress is tracked through EXPLICIT USER CONFIRMATION, not automatic keyword detection.
+
+When a topic has been sufficiently discussed:
+1. Ask the user if they feel they understand the topic
+2. Present a confirmation form with options:
+   - "Yes, I understand" → marks topic as covered
+   - "I need more explanation" → continue explaining
+   - "Please explain again" → restart topic
+3. Only update `newly_covered` when user explicitly confirms
+4. Celebrate milestones (25%, 50%, 75%, 100%) with `emotion: "celebratory"`
+
+IMPORTANT: Confirmation questions must be in the SAME LANGUAGE as the conversation context.
+The language will be provided in the context. Use the appropriate language for all questions.
 
 ### FAILURE CONDITIONS (NEVER DO)
 
@@ -152,9 +161,10 @@ SCHEMA;
      * 
      * @param array $existing_context Existing conversation context
      * @param bool $include_progress_tracking Whether to include progress tracking in schema
+     * @param array $progress_data Optional progress data (topics, current_progress, context_language, confirmed_topics)
      * @return array Context with structured response instructions prepended
      */
-    public function buildStructuredResponseContext($existing_context = [], $include_progress_tracking = true)
+    public function buildStructuredResponseContext($existing_context = [], $include_progress_tracking = true, $progress_data = [])
     {
         $instruction_content = self::SCHEMA_INSTRUCTION;
         
@@ -168,8 +178,130 @@ SCHEMA;
             'content' => $instruction_content
         ];
 
-        // Prepend structured response instruction to existing context
-        return array_merge([$structured_instruction], $existing_context);
+        $context_messages = array_merge([$structured_instruction], $existing_context);
+
+        // Add progress tracking context if data is provided
+        if ($include_progress_tracking && !empty($progress_data)) {
+            $progress_context = $this->buildProgressTrackingContextInstruction($progress_data);
+            if (!empty($progress_context)) {
+                $context_messages[] = [
+                    'role' => 'system',
+                    'content' => $progress_context
+                ];
+            }
+        }
+
+        return $context_messages;
+    }
+
+    /**
+     * Build progress tracking context instruction from progress data
+     * 
+     * @param array $progress_data Progress data array with keys: topics, current_progress, context_language, confirmed_topics
+     * @return string Progress tracking instruction
+     */
+    private function buildProgressTrackingContextInstruction($progress_data)
+    {
+        $topics = $progress_data['topics'] ?? [];
+        $current_progress = $progress_data['current_progress'] ?? 0;
+        $context_language = $progress_data['context_language'] ?? 'en';
+        $confirmed_topics = $progress_data['confirmed_topics'] ?? [];
+
+        if (empty($topics)) {
+            return '';
+        }
+
+        // Build topic list with confirmation status
+        $topicListItems = [];
+        $uncoveredTopics = [];
+        foreach ($topics as $topic) {
+            $isConfirmed = in_array($topic['id'], $confirmed_topics);
+            $status = $isConfirmed ? '✓' : '○';
+            $topicListItems[] = "- [{$status}] {$topic['title']}";
+            if (!$isConfirmed) {
+                $uncoveredTopics[] = $topic['title'];
+            }
+        }
+
+        $topicListStr = implode("\n", $topicListItems);
+        $uncoveredStr = !empty($uncoveredTopics) ? implode(", ", array_slice($uncoveredTopics, 0, 3)) : 'None';
+
+        // Get language-specific confirmation prompts
+        $confirmationPrompts = $this->getConfirmationPrompts($context_language);
+
+        return <<<EOT
+CURRENT PROGRESS STATUS:
+Topics to cover:
+{$topicListStr}
+
+Legend: [✓] = Confirmed by user, [○] = Not yet confirmed
+Current progress: {$current_progress}%
+Topics remaining: {$uncoveredStr}
+
+CONFIRMATION-BASED PROGRESS:
+After discussing a topic sufficiently, ask the user to confirm understanding using a form:
+- Question: "{$confirmationPrompts['question']}"
+- Options: "{$confirmationPrompts['yes']}" / "{$confirmationPrompts['partial']}" / "{$confirmationPrompts['no']}"
+
+Language for this session: {$context_language}
+ALL confirmation questions and forms must be in this language.
+EOT;
+    }
+
+    /**
+     * Get language-specific confirmation prompts
+     * 
+     * @param string $language Language code (en, de, fr, es, it, etc.)
+     * @return array Prompts array with 'question', 'yes', 'partial', 'no' keys
+     */
+    private function getConfirmationPrompts($language)
+    {
+        $prompts = [
+            'en' => [
+                'question' => 'Do you feel you understand this topic well enough to continue?',
+                'yes' => 'Yes, I understand this topic',
+                'partial' => 'I need more explanation',
+                'no' => 'Please explain again from the beginning'
+            ],
+            'de' => [
+                'question' => 'Hast du das Gefühl, dass du dieses Thema gut genug verstehst, um fortzufahren?',
+                'yes' => 'Ja, ich verstehe dieses Thema',
+                'partial' => 'Ich brauche mehr Erklärung',
+                'no' => 'Bitte erkläre es noch einmal von Anfang an'
+            ],
+            'fr' => [
+                'question' => 'Pensez-vous comprendre suffisamment ce sujet pour continuer?',
+                'yes' => 'Oui, je comprends ce sujet',
+                'partial' => 'J\'ai besoin de plus d\'explications',
+                'no' => 'Veuillez expliquer à nouveau depuis le début'
+            ],
+            'es' => [
+                'question' => '¿Sientes que entiendes este tema lo suficiente para continuar?',
+                'yes' => 'Sí, entiendo este tema',
+                'partial' => 'Necesito más explicación',
+                'no' => 'Por favor explica de nuevo desde el principio'
+            ],
+            'it' => [
+                'question' => 'Senti di capire abbastanza questo argomento per continuare?',
+                'yes' => 'Sì, capisco questo argomento',
+                'partial' => 'Ho bisogno di più spiegazioni',
+                'no' => 'Per favore spiega di nuovo dall\'inizio'
+            ],
+            'pt' => [
+                'question' => 'Você sente que entende este tópico o suficiente para continuar?',
+                'yes' => 'Sim, eu entendo este tópico',
+                'partial' => 'Preciso de mais explicação',
+                'no' => 'Por favor, explique novamente desde o início'
+            ],
+            'nl' => [
+                'question' => 'Heb je het gevoel dat je dit onderwerp goed genoeg begrijpt om door te gaan?',
+                'yes' => 'Ja, ik begrijp dit onderwerp',
+                'partial' => 'Ik heb meer uitleg nodig',
+                'no' => 'Leg het alsjeblieft opnieuw uit vanaf het begin'
+            ]
+        ];
+
+        return $prompts[$language] ?? $prompts['en'];
     }
 
     /**

@@ -25,6 +25,7 @@ class LlmContextService
     private $strict_conversation_service;
     private $api_formatter_service;
     private $structured_response_service;
+    private $progress_tracking_service;
 
     /**
      * Constructor
@@ -35,6 +36,7 @@ class LlmContextService
      * @param StrictConversationService $strict_conversation_service Strict mode service
      * @param LlmApiFormatterService $api_formatter_service API formatter service
      * @param LlmStructuredResponseService $structured_response_service Structured response service
+     * @param LlmProgressTrackingService $progress_tracking_service Progress tracking service (optional)
      */
     public function __construct(
         $model,
@@ -42,7 +44,8 @@ class LlmContextService
         $floating_mode_service,
         $strict_conversation_service,
         $api_formatter_service,
-        $structured_response_service
+        $structured_response_service,
+        $progress_tracking_service = null
     ) {
         $this->model = $model;
         $this->form_mode_service = $form_mode_service;
@@ -50,6 +53,7 @@ class LlmContextService
         $this->strict_conversation_service = $strict_conversation_service;
         $this->api_formatter_service = $api_formatter_service;
         $this->structured_response_service = $structured_response_service;
+        $this->progress_tracking_service = $progress_tracking_service;
     }
 
     /**
@@ -62,9 +66,11 @@ class LlmContextService
      * 4. Strict conversation mode - if enabled and has context
      * 5. Basic context - just the parsed conversation context
      * 
+     * @param int|null $conversation_id Optional conversation ID for progress tracking
+     * @param int|null $section_id Optional section ID for progress tracking
      * @return array Context messages array
      */
-    public function buildContextMessages()
+    public function buildContextMessages($conversation_id = null, $section_id = null)
     {
         // Get base context from model configuration
         $context_messages = $this->model->getParsedConversationContext();
@@ -72,9 +78,17 @@ class LlmContextService
         // Check if structured response mode is enabled (new approach)
         if ($this->model->isStructuredResponseEnabled()) {
             $include_progress = $this->model->isProgressTrackingEnabled();
+            
+            // Build progress data if progress tracking is enabled and we have the required IDs
+            $progress_data = [];
+            if ($include_progress && $this->progress_tracking_service && $conversation_id && $section_id) {
+                $progress_data = $this->buildProgressData($conversation_id, $section_id);
+            }
+            
             $context_messages = $this->structured_response_service->buildStructuredResponseContext(
                 $context_messages,
-                $include_progress
+                $include_progress,
+                $progress_data
             );
             
             // Apply additional modes on top of structured response
@@ -112,17 +126,53 @@ class LlmContextService
     }
 
     /**
+     * Build progress data for structured response context
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @return array Progress data array
+     */
+    private function buildProgressData($conversation_id, $section_id)
+    {
+        $context = $this->model->getConversationContext();
+        $topics = $this->progress_tracking_service->extractTopicsFromContext($context);
+        
+        if (empty($topics)) {
+            return [];
+        }
+
+        // Get confirmed topics
+        $confirmed_topics = $this->progress_tracking_service->getConfirmedTopicIds($conversation_id, $section_id);
+        
+        // Get current progress
+        $existing_progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
+        $current_progress = $existing_progress ? (float)$existing_progress['progress_percentage'] : 0;
+        
+        // Get context language
+        $context_language = $this->model->getContextLanguage();
+
+        return [
+            'topics' => $topics,
+            'current_progress' => $current_progress,
+            'context_language' => $context_language,
+            'confirmed_topics' => $confirmed_topics
+        ];
+    }
+
+    /**
      * Build API-ready messages array
      * 
      * Combines context messages with conversation messages and formats
      * them for the LLM API call.
      * 
      * @param array $conversation_messages Messages from the conversation
+     * @param int|null $conversation_id Optional conversation ID for progress tracking
+     * @param int|null $section_id Optional section ID for progress tracking
      * @return array Messages formatted for API
      */
-    public function buildApiMessages($conversation_messages)
+    public function buildApiMessages($conversation_messages, $conversation_id = null, $section_id = null)
     {
-        $context_messages = $this->buildContextMessages();
+        $context_messages = $this->buildContextMessages($conversation_id, $section_id);
         $model = $this->model->getConfiguredModel();
         
         return $this->api_formatter_service->convertToApiFormat(

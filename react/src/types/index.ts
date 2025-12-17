@@ -1078,7 +1078,8 @@ export interface MediaItem {
 
 /**
  * Form definition in structured response
- * Similar to FormDefinition but with optional flag
+ * UNIFIED: This extends FormDefinition to ensure consistency between form_mode and structured_mode
+ * Both modes use the exact same form structure with FormField[]
  */
 export interface StructuredForm {
   /** Unique form identifier */
@@ -1087,12 +1088,16 @@ export interface StructuredForm {
   title?: string;
   /** Form description */
   description?: string;
-  /** Whether the form is optional (default: true) */
+  /** Whether the form is optional (default: true in structured mode) */
   optional?: boolean;
-  /** Form fields */
+  /** Form fields - SAME structure as FormDefinition.fields */
   fields: FormField[];
   /** Submit button label */
   submit_label?: string;
+  /** Optional content sections to display before fields (for compatibility with FormDefinition) */
+  contentBefore?: string;
+  /** Optional content sections to display after fields (for compatibility with FormDefinition) */
+  contentAfter?: string;
 }
 
 /**
@@ -1308,8 +1313,50 @@ export function structuredFormToFormDefinition(structuredForm: StructuredForm): 
     title: structuredForm.title,
     description: structuredForm.description,
     fields: structuredForm.fields,
-    submitLabel: structuredForm.submit_label
+    submitLabel: structuredForm.submit_label,
+    contentBefore: structuredForm.contentBefore,
+    contentAfter: structuredForm.contentAfter
   };
+}
+
+/**
+ * Check if a message contains any form (either legacy FormDefinition or StructuredForm)
+ * Used for Continue button detection - shows Continue only when NO form is present
+ * @param content Message content to check
+ * @returns true if content contains a form
+ */
+export function messageHasForm(content: string): boolean {
+  // First check for legacy form definition
+  const legacyForm = parseFormDefinition(content);
+  if (legacyForm) return true;
+  
+  // Then check for structured response with forms
+  const structuredResponse = parseStructuredResponse(content);
+  if (structuredResponse && structuredResponse.content.forms && structuredResponse.content.forms.length > 0) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Extract form definition from any message format (legacy or structured)
+ * Returns the first form found, converted to FormDefinition format
+ * @param content Message content to parse
+ * @returns FormDefinition if found, null otherwise
+ */
+export function extractFormFromMessage(content: string): FormDefinition | null {
+  // First check for legacy form definition
+  const legacyForm = parseFormDefinition(content);
+  if (legacyForm) return legacyForm;
+  
+  // Then check for structured response with forms
+  const structuredResponse = parseStructuredResponse(content);
+  if (structuredResponse && structuredResponse.content.forms && structuredResponse.content.forms.length > 0) {
+    return structuredFormToFormDefinition(structuredResponse.content.forms[0]);
+  }
+  
+  return null;
 }
 
 /**

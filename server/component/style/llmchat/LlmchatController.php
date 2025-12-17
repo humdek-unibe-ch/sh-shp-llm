@@ -161,6 +161,9 @@ class LlmchatController extends BaseController
 
         $structured_response_service = new LlmStructuredResponseService();
         
+        // Progress tracking service - created before context service so it can be injected
+        $this->progress_tracking_service = new LlmProgressTrackingService($services);
+        
         // Composite services
         $this->request_service = new LlmRequestService($this->llm_service, $this->model);
         $this->context_service = new LlmContextService(
@@ -169,11 +172,9 @@ class LlmchatController extends BaseController
             $floating_mode_service,
             $strict_conversation_service,
             $api_formatter_service,
-            $structured_response_service
+            $structured_response_service,
+            $this->progress_tracking_service  // Pass progress tracking service for context building
         );
-        
-        // Progress tracking service
-        $this->progress_tracking_service = new LlmProgressTrackingService($services);
     }
 
     /**
@@ -220,6 +221,9 @@ class LlmchatController extends BaseController
                 break;
             case 'delete_conversation':
                 $this->handleDeleteConversation();
+                break;
+            case 'confirm_topic':
+                $this->handleConfirmTopic();
                 break;
             default:
                 // Legacy: handle direct message POST
@@ -477,7 +481,11 @@ class LlmchatController extends BaseController
             return;
         }
 
-        $api_messages = $this->context_service->buildApiMessages($messages);
+        // Get section ID for progress tracking context
+        $section_id = $this->model->getSectionId();
+        
+        // Build API messages with progress tracking context if enabled
+        $api_messages = $this->context_service->buildApiMessages($messages, $conversation_id, $section_id);
         if (empty($api_messages)) {
             $this->sendJsonResponse(['error' => 'No valid messages to send'], 400);
             return;
@@ -602,7 +610,8 @@ class LlmchatController extends BaseController
             exit;
         }
 
-        $api_messages = $this->context_service->buildApiMessages($messages);
+        // Build API messages with progress tracking context if enabled
+        $api_messages = $this->context_service->buildApiMessages($messages, $conversation_id, $section_id);
         if (empty($api_messages)) {
             $this->sendSSE(['type' => 'error', 'message' => 'No valid messages to send']);
             exit;
@@ -671,6 +680,60 @@ class LlmchatController extends BaseController
         try {
             $this->request_service->deleteConversation($conversation_id, $user_id);
             $this->sendJsonResponse(['success' => true]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle confirm topic request
+     * 
+     * Marks a topic as confirmed/understood by the user.
+     * This is part of the confirmation-based progress tracking system.
+     */
+    private function handleConfirmTopic()
+    {
+        $user_id = $this->validateUserOrFail();
+        
+        $conversation_id = $_POST['conversation_id'] ?? null;
+        $topic_id = $_POST['topic_id'] ?? null;
+        
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+        
+        if (!$topic_id) {
+            $this->sendJsonResponse(['error' => 'Topic ID required'], 400);
+            return;
+        }
+
+        try {
+            $section_id = $this->model->getSectionId();
+            
+            // Verify user owns this conversation
+            $conversation = $this->request_service->getConversation($conversation_id, $user_id, $section_id);
+            if (!$conversation) {
+                $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                return;
+            }
+            
+            // Confirm the topic
+            $success = $this->progress_tracking_service->confirmTopic($conversation_id, $section_id, $topic_id);
+            
+            if ($success) {
+                // Return updated progress
+                $messages = $this->request_service->getConversationMessages($conversation_id, 50);
+                $progress = $this->calculateConversationProgress($conversation_id, $messages);
+                
+                $this->sendJsonResponse([
+                    'success' => true,
+                    'topic_id' => $topic_id,
+                    'progress' => $progress
+                ]);
+            } else {
+                $this->sendJsonResponse(['error' => 'Failed to confirm topic'], 500);
+            }
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

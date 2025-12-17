@@ -21,9 +21,9 @@ import type {
   TextBlock,
   StructuredForm,
   NextStep,
-  structuredFormToFormDefinition,
   FormDefinition
 } from '../../../types';
+import { structuredFormToFormDefinition } from '../../../types';
 
 /**
  * Props for StructuredResponseRenderer
@@ -166,16 +166,7 @@ const MilestoneBanner: React.FC<{ milestone: string }> = ({ milestone }) => {
   );
 };
 
-/**
- * Convert StructuredForm to FormDefinition for backwards compatibility
- */
-const structuredFormToFormDefinitionLocal = (form: StructuredForm): FormDefinition => ({
-  type: 'form',
-  title: form.title,
-  description: form.description,
-  fields: form.fields,
-  submitLabel: form.submit_label
-});
+// structuredFormToFormDefinition is imported from types for unified form handling
 
 /**
  * Structured Response Renderer
@@ -249,7 +240,7 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
       {forms && forms.length > 0 && (
         <div className="structured-forms">
           {forms.map((form, index) => {
-            const formDefinition = structuredFormToFormDefinitionLocal(form);
+            const formDefinition = structuredFormToFormDefinition(form);
             
             if (isLastMessage && onFormSubmit) {
               // Interactive form

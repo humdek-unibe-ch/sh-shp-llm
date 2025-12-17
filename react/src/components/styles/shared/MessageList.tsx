@@ -19,7 +19,13 @@
 
 import React from 'react';
 import type { Message, LlmChatConfig, FormDefinition, StructuredResponse } from '../../../types';
-import { parseFormDefinition, parseFormSubmissionMetadata, parseStructuredResponse, structuredResponseToMarkdown } from '../../../types';
+import { 
+  parseFormDefinition, 
+  parseFormSubmissionMetadata, 
+  parseStructuredResponse, 
+  messageHasForm,
+  extractFormFromMessage
+} from '../../../types';
 import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer } from './FormRenderer';
@@ -402,10 +408,12 @@ export const MessageList: React.FC<MessageListProps> = ({
   
   // Pre-compute form definitions for each assistant message
   // This allows us to pass the previous form definition to user messages
+  // UNIFIED: Uses extractFormFromMessage() which extracts from BOTH legacy forms AND structured response forms
   const formDefinitionsMap = new Map<number, FormDefinition>();
   messages.forEach((message, index) => {
     if (message.role === 'assistant') {
-      const formDef = parseFormDefinition(message.content);
+      // UNIFIED: extractFormFromMessage checks both legacy FormDefinition AND StructuredResponse.forms
+      const formDef = extractFormFromMessage(message.content);
       if (formDef) {
         formDefinitionsMap.set(index, formDef);
       }
@@ -424,6 +432,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   // Determine if we should show the Continue button or thinking state
   // Only show when we're at a dead end (no form to answer) in form mode
+  // UNIFIED: Uses messageHasForm() which checks BOTH legacy forms AND structured response forms
   const shouldShowContinueButton = () => {
     if (!config.enableFormMode || !onContinue || isStreaming || messages.length === 0) {
       return false;
@@ -436,7 +445,8 @@ export const MessageList: React.FC<MessageListProps> = ({
     }
 
     // Only show continue if the last assistant message has NO form (we're at a dead end)
-    const hasForm = parseFormDefinition(lastAssistantMessage.content) !== null;
+    // UNIFIED: messageHasForm checks both legacy FormDefinition AND StructuredResponse.forms
+    const hasForm = messageHasForm(lastAssistantMessage.content);
     return !hasForm;
   };
   
@@ -459,7 +469,8 @@ export const MessageList: React.FC<MessageListProps> = ({
     }
 
     // Only show thinking if the last assistant message has NO form (we clicked Continue)
-    const hasForm = parseFormDefinition(lastAssistantMessage.content) !== null;
+    // UNIFIED: messageHasForm checks both legacy FormDefinition AND StructuredResponse.forms
+    const hasForm = messageHasForm(lastAssistantMessage.content);
     return !hasForm;
   };
 
@@ -469,7 +480,8 @@ export const MessageList: React.FC<MessageListProps> = ({
       {messages.map((message, index) => {
         // Check if this is a streaming message (last assistant message during streaming)
         // Don't treat as streaming if we have a valid form
-        const hasForm = message.role === 'assistant' && parseFormDefinition(message.content) !== null;
+        // UNIFIED: messageHasForm checks both legacy FormDefinition AND StructuredResponse.forms
+        const hasForm = message.role === 'assistant' && messageHasForm(message.content);
         const isStreamingMessage = !!(isStreaming &&
           streamingContent &&
           index === messages.length - 1 &&

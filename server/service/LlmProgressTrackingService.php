@@ -695,21 +695,40 @@ class LlmProgressTrackingService
      * These instructions are added to the system context to help the AI
      * understand and report on progress.
      * 
+     * IMPORTANT: Progress is now tracked through EXPLICIT USER CONFIRMATION.
+     * Instead of guessing from keywords, the LLM asks the user to confirm
+     * when they feel they understand a topic. This is more accurate and
+     * gives users control over their learning pace.
+     * 
      * @param array $topics Array of topics
      * @param float $current_progress Current progress percentage
+     * @param string $context_language Language code for confirmation questions (e.g., 'de', 'en', 'fr')
+     * @param array $confirmed_topics Array of topic IDs that user has confirmed as understood
      * @return string Context instructions
      */
-    public function buildProgressTrackingContext($topics, $current_progress)
+    public function buildProgressTrackingContext($topics, $current_progress, $context_language = 'en', $confirmed_topics = [])
     {
         if (empty($topics)) {
             return '';
         }
 
-        $topicList = array_map(function($t) {
-            return '- ' . $t['title'];
-        }, $topics);
+        // Build topic list with confirmation status
+        $topicListItems = [];
+        $uncoveredTopics = [];
+        foreach ($topics as $topic) {
+            $isConfirmed = in_array($topic['id'], $confirmed_topics);
+            $status = $isConfirmed ? '✓' : '○';
+            $topicListItems[] = "- [{$status}] {$topic['title']}";
+            if (!$isConfirmed) {
+                $uncoveredTopics[] = $topic['title'];
+            }
+        }
 
-        $topicListStr = implode("\n", $topicList);
+        $topicListStr = implode("\n", $topicListItems);
+        $uncoveredStr = !empty($uncoveredTopics) ? implode(", ", array_slice($uncoveredTopics, 0, 3)) : 'None';
+
+        // Get language-specific confirmation prompts
+        $confirmationPrompts = $this->getConfirmationPrompts($context_language);
 
         return <<<EOT
 
@@ -718,16 +737,163 @@ You are guiding the user through the following topics/content:
 
 {$topicListStr}
 
+Legend: [✓] = Confirmed by user, [○] = Not yet confirmed
 Current progress: {$current_progress}%
+Topics remaining: {$uncoveredStr}
+
+CONFIRMATION-BASED PROGRESS (IMPORTANT):
+Progress is tracked through EXPLICIT USER CONFIRMATION, not keyword detection.
+After discussing a topic sufficiently, ask the user to confirm their understanding.
+
+Use this confirmation approach:
+1. After covering a topic, ask: "{$confirmationPrompts['question']}"
+2. Present a simple form with options:
+   - "{$confirmationPrompts['yes']}" (marks topic as covered)
+   - "{$confirmationPrompts['partial']}" (continue explaining)
+   - "{$confirmationPrompts['no']}" (restart topic explanation)
+3. Only mark progress when user explicitly confirms understanding
+4. If user says they understand in free text, acknowledge and update progress
 
 Guidelines:
 1. Help the user explore each topic naturally through conversation
-2. When a topic is discussed, acknowledge it and suggest related topics
-3. Progress is tracked automatically based on topics covered
-4. Aim to cover all topics but follow the user's interests
-5. If the user asks about progress, you can mention which topics have been covered
-6. Do NOT force topics - let the conversation flow naturally
+2. When a topic is sufficiently discussed, ask for confirmation
+3. NEVER assume understanding - always ask for confirmation
+4. Celebrate milestones (25%, 50%, 75%, 100%)
+5. If the user asks about progress, show which topics are confirmed vs pending
+6. Do NOT force topics - follow the user's interests
+7. ALL confirmation questions must be in the SAME LANGUAGE as the context
+
+Language for this session: {$context_language}
 EOT;
+    }
+
+    /**
+     * Get language-specific confirmation prompts
+     * 
+     * @param string $language Language code (en, de, fr, es, it, etc.)
+     * @return array Prompts array with 'question', 'yes', 'partial', 'no' keys
+     */
+    public function getConfirmationPrompts($language)
+    {
+        $prompts = [
+            'en' => [
+                'question' => 'Do you feel you understand this topic well enough to continue?',
+                'yes' => 'Yes, I understand this topic',
+                'partial' => 'I need more explanation',
+                'no' => 'Please explain again from the beginning'
+            ],
+            'de' => [
+                'question' => 'Hast du das Gefühl, dass du dieses Thema gut genug verstehst, um fortzufahren?',
+                'yes' => 'Ja, ich verstehe dieses Thema',
+                'partial' => 'Ich brauche mehr Erklärung',
+                'no' => 'Bitte erkläre es noch einmal von Anfang an'
+            ],
+            'fr' => [
+                'question' => 'Pensez-vous comprendre suffisamment ce sujet pour continuer?',
+                'yes' => 'Oui, je comprends ce sujet',
+                'partial' => 'J\'ai besoin de plus d\'explications',
+                'no' => 'Veuillez expliquer à nouveau depuis le début'
+            ],
+            'es' => [
+                'question' => '¿Sientes que entiendes este tema lo suficiente para continuar?',
+                'yes' => 'Sí, entiendo este tema',
+                'partial' => 'Necesito más explicación',
+                'no' => 'Por favor explica de nuevo desde el principio'
+            ],
+            'it' => [
+                'question' => 'Senti di capire abbastanza questo argomento per continuare?',
+                'yes' => 'Sì, capisco questo argomento',
+                'partial' => 'Ho bisogno di più spiegazioni',
+                'no' => 'Per favore spiega di nuovo dall\'inizio'
+            ],
+            'pt' => [
+                'question' => 'Você sente que entende este tópico o suficiente para continuar?',
+                'yes' => 'Sim, eu entendo este tópico',
+                'partial' => 'Preciso de mais explicação',
+                'no' => 'Por favor, explique novamente desde o início'
+            ],
+            'nl' => [
+                'question' => 'Heb je het gevoel dat je dit onderwerp goed genoeg begrijpt om door te gaan?',
+                'yes' => 'Ja, ik begrijp dit onderwerp',
+                'partial' => 'Ik heb meer uitleg nodig',
+                'no' => 'Leg het alsjeblieft opnieuw uit vanaf het begin'
+            ]
+        ];
+
+        return $prompts[$language] ?? $prompts['en'];
+    }
+
+    /**
+     * Mark a topic as confirmed by the user
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @param string $topic_id Topic ID to mark as confirmed
+     * @return bool Success
+     */
+    public function confirmTopic($conversation_id, $section_id, $topic_id)
+    {
+        $existing = $this->getConversationProgress($conversation_id, $section_id);
+        
+        $topic_coverage = [];
+        if ($existing && !empty($existing['topic_coverage'])) {
+            $topic_coverage = json_decode($existing['topic_coverage'], true) ?: [];
+        }
+
+        // Mark the topic as confirmed
+        if (!isset($topic_coverage[$topic_id])) {
+            $topic_coverage[$topic_id] = [
+                'id' => $topic_id,
+                'is_covered' => true,
+                'confirmed_at' => date('Y-m-d H:i:s'),
+                'coverage' => 100,
+                'depth' => 1
+            ];
+        } else {
+            $topic_coverage[$topic_id]['is_covered'] = true;
+            $topic_coverage[$topic_id]['confirmed_at'] = date('Y-m-d H:i:s');
+            $topic_coverage[$topic_id]['coverage'] = 100;
+        }
+
+        // Recalculate progress percentage based on confirmed topics
+        $total_topics = count($topic_coverage);
+        $confirmed_count = 0;
+        foreach ($topic_coverage as $topic) {
+            if (!empty($topic['is_covered'])) {
+                $confirmed_count++;
+            }
+        }
+        
+        $percentage = $total_topics > 0 ? round(($confirmed_count / $total_topics) * 100, 1) : 0;
+
+        return $this->updateConversationProgress($conversation_id, $section_id, $percentage, $topic_coverage);
+    }
+
+    /**
+     * Get list of confirmed topic IDs for a conversation
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @return array Array of confirmed topic IDs
+     */
+    public function getConfirmedTopicIds($conversation_id, $section_id)
+    {
+        $progress = $this->getConversationProgress($conversation_id, $section_id);
+        
+        if (!$progress || empty($progress['topic_coverage'])) {
+            return [];
+        }
+
+        $topic_coverage = json_decode($progress['topic_coverage'], true) ?: [];
+        $confirmed = [];
+        
+        foreach ($topic_coverage as $topic_id => $topic) {
+            if (!empty($topic['is_covered'])) {
+                $confirmed[] = $topic_id;
+            }
+        }
+
+        return $confirmed;
     }
 
     /**
