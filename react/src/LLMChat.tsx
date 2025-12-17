@@ -590,7 +590,6 @@ function initializeLlmChat(): void {
     initializeSingleInstance(container, index);
   });
   
-  console.log(`LLM Chat: Initialized ${containers.length} instance(s) successfully`);
 }
 
 /**
