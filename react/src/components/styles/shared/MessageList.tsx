@@ -54,6 +54,8 @@ interface MessageListProps {
   isFormSubmitting?: boolean;
   /** Callback when Continue button is clicked (form mode only) */
   onContinue?: () => void;
+  /** Callback when a suggestion button is clicked (structured response mode) */
+  onSuggestionClick?: (suggestion: string) => void;
 }
 
 /**
@@ -76,6 +78,8 @@ interface MessageItemProps {
   nextMessage?: Message;
   /** Previous assistant message (to find form definition for user submissions) */
   previousAssistantFormDefinition?: FormDefinition;
+  /** Callback when a suggestion button is clicked */
+  onSuggestionClick?: (suggestion: string) => void;
 }
 
 /**
@@ -169,7 +173,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
   onFormSubmit,
   isFormSubmitting = false,
   nextMessage,
-  previousAssistantFormDefinition
+  previousAssistantFormDefinition,
+  onSuggestionClick
 }) => {
   const isUser = message.role === 'user';
   const attachmentCount = getAttachmentCount(message.attachments);
@@ -251,6 +256,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
               isLastMessage={isLastMessage}
               onFormSubmit={onFormSubmit}
               isFormSubmitting={isFormSubmitting}
+              onSuggestionClick={onSuggestionClick}
             />
           ) : formDefinition && isHistoricalForm ? (
             // Historical form: show with user's selections
@@ -388,7 +394,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   config,
   onFormSubmit,
   isFormSubmitting = false,
-  onContinue
+  onContinue,
+  onSuggestionClick
 }) => {
   // Show loading state
   if (isLoading) {
@@ -510,6 +517,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             isFormSubmitting={isFormSubmitting}
             nextMessage={nextMessage}
             previousAssistantFormDefinition={previousAssistantFormDefinition}
+            onSuggestionClick={onSuggestionClick}
           />
         );
       })}

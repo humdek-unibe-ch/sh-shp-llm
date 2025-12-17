@@ -586,6 +586,15 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   const handleFilesChange = useCallback((files: SelectedFile[]) => {
     setSelectedFiles(files);
   }, []);
+
+  /**
+   * Handle suggestion button click (structured response mode)
+   * Sends the suggestion text as a regular message
+   */
+  const handleSuggestionClick = useCallback((suggestion: string) => {
+    // Use the same flow as sending a regular message
+    handleSendMessage(suggestion, []);
+  }, [handleSendMessage]);
   
   /**
    * Load progress when conversation changes
@@ -745,6 +754,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                   onFormSubmit={handleFormSubmit}
                   isFormSubmitting={isFormSubmitting}
                   onContinue={config.enableFormMode ? handleContinue : undefined}
+                  onSuggestionClick={handleSuggestionClick}
                 />
               </div>
             </Card.Body>
