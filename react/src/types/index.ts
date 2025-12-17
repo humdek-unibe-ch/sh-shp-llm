@@ -276,6 +276,8 @@ export interface LlmChatConfig {
   emptyMessageError: string;
   /** Error message for streaming active */
   streamingActiveError: string;
+  /** Error message for streaming interruption */
+  streamingInterruptionError: string;
   /** Default chat title */
   defaultChatTitle: string;
   /** Delete button title/tooltip */
@@ -365,6 +367,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   submitButtonLabel: 'Send',
   emptyMessageError: 'Please enter a message',
   streamingActiveError: 'Please wait for the current response to complete',
+  streamingInterruptionError: 'The AI response was interrupted. Please try again.',
   defaultChatTitle: 'AI Chat',
   deleteButtonTitle: 'Delete conversation',
   conversationTitlePlaceholder: 'Enter conversation title (optional)',
@@ -1237,6 +1240,76 @@ export function isStructuredResponse(content: unknown): content is StructuredRes
 }
 
 /**
+ * Check if JSON content appears to be incomplete/truncated
+ * @param jsonContent The JSON string to check
+ * @returns true if content appears incomplete
+ */
+function isIncompleteJson(jsonContent: string): boolean {
+  // Check for obvious signs of truncation
+  const trimmed = jsonContent.trim();
+
+  // Check for incomplete objects/arrays (missing closing braces/brackets)
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    switch (char) {
+      case '{':
+        openBraces++;
+        break;
+      case '}':
+        openBraces--;
+        break;
+      case '[':
+        openBrackets++;
+        break;
+      case ']':
+        openBrackets--;
+        break;
+    }
+  }
+
+  // If we have unclosed braces or brackets, it's likely incomplete
+  if (openBraces > 0 || openBrackets > 0) {
+    return true;
+  }
+
+  // Check for trailing commas that suggest truncation
+  const lastNonWhitespace = trimmed.replace(/\s+$/, '');
+  if (lastNonWhitespace.endsWith(',')) {
+    return true;
+  }
+
+  // Check for incomplete key-value pairs
+  if (lastNonWhitespace.endsWith(':')) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Parse message content to check if it's a structured response
  * Handles both pure JSON and markdown code block wrapped JSON
  * @param content Message content to parse
@@ -1255,6 +1328,11 @@ export function parseStructuredResponse(content: string): StructuredResponse | n
   }
   
   try {
+    // Check if JSON appears incomplete before parsing
+    if (isIncompleteJson(jsonContent)) {
+      return null; // Don't parse incomplete JSON
+    }
+
     const parsed = JSON.parse(jsonContent);
     if (isStructuredResponse(parsed)) {
       return parsed;

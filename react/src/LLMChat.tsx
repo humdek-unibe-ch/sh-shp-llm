@@ -282,6 +282,10 @@ function parseConfig(container: HTMLElement) {
     jsonConfig.streamingActiveError ||
     DEFAULT_CONFIG.streamingActiveError!;
 
+  const streamingInterruptionError = container.dataset.streamingInterruptionError ||
+    jsonConfig.streamingInterruptionError ||
+    DEFAULT_CONFIG.streamingInterruptionError!;
+
   const defaultChatTitle = container.dataset.defaultChatTitle ||
     jsonConfig.defaultChatTitle ||
     DEFAULT_CONFIG.defaultChatTitle!;
@@ -401,6 +405,7 @@ function parseConfig(container: HTMLElement) {
     submitButtonLabel,
     emptyMessageError,
     streamingActiveError,
+    streamingInterruptionError,
     defaultChatTitle,
     deleteButtonTitle,
     conversationTitlePlaceholder,

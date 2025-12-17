@@ -186,13 +186,23 @@ const MessageItem: React.FC<MessageItemProps> = ({
   let isHistoricalForm = false;
   let userSubmittedValues: Record<string, string | string[]> | undefined;
 
+  // Check if content appears to be malformed structured response
+  const appearsToBeStructuredResponse = !isUser && (
+    message.content.trim().startsWith('{') &&
+    (message.content.includes('"content":') || message.content.includes('"text_blocks":') || message.content.includes('"forms":'))
+  );
+
   // Try to parse responses even during streaming for better UX
+  let isIncompleteStructuredResponse = false;
   if (!isUser) {
     // First, try to parse as structured response (new format)
     structuredResponse = parseStructuredResponse(message.content);
-    
+
+    // If parsing failed but content looks like structured response, it might be incomplete
+    isIncompleteStructuredResponse = appearsToBeStructuredResponse && !structuredResponse;
+
     // If not structured response, try legacy form format
-    if (!structuredResponse) {
+    if (!structuredResponse && !isIncompleteStructuredResponse) {
       formDefinition = parseFormDefinition(message.content);
       // If it's a form but not the last message, it's historical
       if (formDefinition && !isLastMessage) {
@@ -264,6 +274,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
               formDefinition={formDefinition} 
               submittedValues={userSubmittedValues}
             />
+          ) : isIncompleteStructuredResponse ? (
+            // Incomplete structured response: show error message
+            <div className="alert alert-warning">
+              <i className="fas fa-exclamation-triangle mr-2"></i>
+              {config.streamingInterruptionError}
+            </div>
           ) : formDefinition ? (
             // Active form: render interactive form
             <FormRenderer
@@ -274,8 +290,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
             />
           ) : (
             // Regular assistant messages: render with markdown
-            <MarkdownRenderer 
-              content={message.content} 
+            <MarkdownRenderer
+              content={message.content}
               isStreaming={isStreaming}
             />
           )}
@@ -408,10 +424,9 @@ export const MessageList: React.FC<MessageListProps> = ({
   }
   
   // Check if we need to show the thinking indicator
-  // Show for both streaming (when no content yet) and non-streaming processing
+  // Only show for non-streaming processing (streaming has its own footer indicator)
   const lastMessage = messages[messages.length - 1];
-  const showThinking = (isStreaming && !streamingContent && lastMessage?.role === 'user') ||
-    (isProcessing && lastMessage?.role === 'user');
+  const showThinking = !isStreaming && isProcessing && lastMessage?.role === 'user';
   
   // Pre-compute form definitions for each assistant message
   // This allows us to pass the previous form definition to user messages

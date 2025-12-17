@@ -201,6 +201,7 @@ class LlmchatView extends StyleView
             'submitButtonLabel' => $this->model->getSubmitButtonLabel(),
             'emptyMessageError' => $this->model->getEmptyMessageError(),
             'streamingActiveError' => $this->model->getStreamingActiveError(),
+            'streamingInterruptionError' => $this->model->getStreamingInterruptionError(),
             'defaultChatTitle' => $this->model->getDefaultChatTitle(),
             'deleteButtonTitle' => $this->model->getDeleteButtonTitle(),
             'conversationTitlePlaceholder' => $this->model->getConversationTitlePlaceholder(),

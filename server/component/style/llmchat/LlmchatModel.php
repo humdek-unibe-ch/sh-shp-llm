@@ -56,6 +56,7 @@ class LlmchatModel extends StyleModel
     // Error messages
     private $empty_message_error;
     private $streaming_active_error;
+    private $streaming_interruption_error;
     private $default_chat_title;
 
     // Additional UI labels
@@ -211,6 +212,7 @@ class LlmchatModel extends StyleModel
         // Error messages
         $this->empty_message_error = $this->get_db_field('empty_message_error', 'Please enter a message');
         $this->streaming_active_error = $this->get_db_field('streaming_active_error', 'Please wait for the current response to complete');
+        $this->streaming_interruption_error = $this->get_db_field('streaming_interruption_error', 'The AI response was interrupted. Please try again.');
         $this->default_chat_title = $this->get_db_field('default_chat_title', 'AI Chat');
 
         // Additional UI labels
@@ -798,6 +800,11 @@ class LlmchatModel extends StyleModel
     public function getStreamingActiveError()
     {
         return $this->streaming_active_error;
+    }
+
+    public function getStreamingInterruptionError()
+    {
+        return $this->streaming_interruption_error;
     }
 
     public function getDefaultChatTitle()
