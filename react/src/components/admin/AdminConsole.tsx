@@ -1,11 +1,15 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination } from 'react-bootstrap';
 import Select from 'react-select';
 import { adminApi } from '../../utils/api';
-import { MarkdownRenderer } from '../shared/MarkdownRenderer';
-import { FormDisplay } from '../styles/shared/FormDisplay';
+import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
+import { 
+  MessageContentRenderer, 
+  buildFormDefinitionsMap, 
+  findPreviousAssistantFormDefinition 
+} from '../shared/MessageContentRenderer';
 import type { AdminConfig, AdminConversation, Message, FormDefinition } from '../../types';
-import { parseFormDefinition, parseFormSubmissionMetadata } from '../../types';
+import { parseFormSubmissionMetadata } from '../../types';
 import './AdminConsole.css';
 
 interface AdminFilters {
@@ -272,35 +276,15 @@ const formatDateBadge = (dateString: string): string => {
 /**
  * Admin Message List Component
  * Renders messages with proper form detection and display
+ * Uses the shared MessageContentRenderer for consistent rendering with the chat view
  */
 const AdminMessageList: React.FC<{
   messages: Message[];
   formatDate: (date: string) => string;
   setContextPopup: (popup: { show: boolean; message: Message | null; target: HTMLElement | null }) => void;
 }> = ({ messages, formatDate, setContextPopup }) => {
-  // Pre-compute form definitions for each assistant message
-  const formDefinitionsMap = useMemo(() => {
-    const map = new Map<number, FormDefinition>();
-    messages.forEach((message, index) => {
-      if (message.role === 'assistant') {
-        const formDef = parseFormDefinition(message.content);
-        if (formDef) {
-          map.set(index, formDef);
-        }
-      }
-    });
-    return map;
-  }, [messages]);
-
-  // Find the previous assistant's form definition for a given index
-  const findPreviousAssistantFormDefinition = (currentIndex: number): FormDefinition | undefined => {
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant') {
-        return formDefinitionsMap.get(i);
-      }
-    }
-    return undefined;
-  };
+  // Pre-compute form definitions for each assistant message using shared utility
+  const formDefinitionsMap = useMemo(() => buildFormDefinitionsMap(messages), [messages]);
 
   // Get attachment info
   const getAttachmentInfo = (attachments?: string): { count: number; isFormSubmission: boolean } => {
@@ -320,34 +304,14 @@ const AdminMessageList: React.FC<{
     <div className="message-stack">
       {messages.map((message, index) => {
         const isUser = message.role === 'user';
-        const formDefinition = !isUser ? parseFormDefinition(message.content) : null;
         const attachmentInfo = getAttachmentInfo(message.attachments);
+        const isLastMessage = index === messages.length - 1;
+        const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
         
-        // Get user's submitted values for historical forms
-        let userSubmittedValues: Record<string, string | string[]> | undefined;
-        if (formDefinition && index < messages.length - 1) {
-          const nextMessage = messages[index + 1];
-          if (nextMessage && nextMessage.role === 'user') {
-            const submissionMeta = parseFormSubmissionMetadata(nextMessage.attachments);
-            if (submissionMeta) {
-              userSubmittedValues = submissionMeta.values;
-            }
-          }
-        }
-        
-        // Check if user message is a form submission
-        let isUserFormSubmission = false;
-        let userFormDefinition: FormDefinition | undefined;
-        let userFormValues: Record<string, string | string[]> | undefined;
-        
-        if (isUser) {
-          const submissionMeta = parseFormSubmissionMetadata(message.attachments);
-          if (submissionMeta) {
-            isUserFormSubmission = true;
-            userFormValues = submissionMeta.values;
-            userFormDefinition = findPreviousAssistantFormDefinition(index);
-          }
-        }
+        // Get previous assistant's form definition for user form submissions
+        const previousAssistantFormDef = isUser 
+          ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)
+          : undefined;
 
         return (
           <div
@@ -382,34 +346,15 @@ const AdminMessageList: React.FC<{
                 </div>
               )}
               
-              {/* Message Content */}
+              {/* Message Content - Using shared MessageContentRenderer */}
               <div className="message-content">
-                {isUser ? (
-                  // User messages
-                  isUserFormSubmission && userFormDefinition && userFormValues ? (
-                    // Form submission with selections
-                    <FormDisplay
-                      formDefinition={userFormDefinition}
-                      submittedValues={userFormValues}
-                      compact={false}
-                    />
-                  ) : (
-                    // Regular text message
-                    <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                      {message.content}
-                    </div>
-                  )
-                ) : formDefinition ? (
-                  // Assistant form response - show with user's selections
-                  <FormDisplay
-                    formDefinition={formDefinition}
-                    submittedValues={userSubmittedValues}
-                    compact={false}
-                  />
-                ) : (
-                  // Regular assistant message
-                  <MarkdownRenderer content={message.content} />
-                )}
+                <MessageContentRenderer
+                  message={message}
+                  isLastMessage={isLastMessage}
+                  readOnly={true}
+                  nextMessage={nextMessage}
+                  previousAssistantFormDefinition={previousAssistantFormDef}
+                />
               </div>
               
               {/* Attachments (only show for non-form submissions) */}
@@ -480,6 +425,53 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     loadConversations(1);
   }, [filters]);
 
+  // Handle conversation ID from URL on initial load
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const conversationId = url.searchParams.get('conversation');
+    if (conversationId && conversations.length > 0) {
+      // Find the conversation in the list
+      const conversation = conversations.find(c => c.id.toString() === conversationId);
+      if (conversation && (!selectedConversation || selectedConversation.id.toString() !== conversationId)) {
+        selectConversation(conversation);
+      }
+    }
+  }, [conversations]); // Re-run when conversations are loaded
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const url = new URL(window.location.href);
+      const conversationId = url.searchParams.get('conversation');
+      
+      if (conversationId) {
+        const conversation = conversations.find(c => c.id.toString() === conversationId);
+        if (conversation) {
+          // Don't update URL again since we're responding to URL change
+          setSelectedConversation(conversation);
+          setLoading(true);
+          adminApi.getMessages(conversationId)
+            .then(response => {
+              setMessages(response.messages || []);
+            })
+            .catch(err => {
+              setError((err as Error).message);
+            })
+            .finally(() => {
+              setLoading(false);
+            });
+        }
+      } else {
+        // No conversation in URL, clear selection
+        setSelectedConversation(null);
+        setMessages([]);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [conversations]);
+
   // Restore scroll position after messages are loaded
   useEffect(() => {
     if (preservedScrollTop !== null && messagesContainerRef.current) {
@@ -525,6 +517,11 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
 
   const selectConversation = async (conversation: AdminConversation, preserveScroll: boolean = false) => {
     setSelectedConversation(conversation);
+
+    // Update URL with conversation ID (without full page reload)
+    const url = new URL(window.location.href);
+    url.searchParams.set('conversation', conversation.id.toString());
+    window.history.pushState({ conversationId: conversation.id }, '', url.toString());
 
     // Save scroll position if preserving
     if (preserveScroll && messagesContainerRef.current) {
