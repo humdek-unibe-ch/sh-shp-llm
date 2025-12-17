@@ -373,3 +373,294 @@ $hasContext = $model->hasConversationContext();
 
 Note: The actual context content is never exposed to the frontend for security reasons.
 
+## Trackable Topics and Progress Tracking
+
+The Conversation Context Module supports **trackable topics** - a powerful feature that enables automatic progress tracking based on user engagement with defined topics. This is particularly valuable for educational modules, guided conversations, and research studies where you want to measure how thoroughly users explore content.
+
+### How Trackable Topics Work
+
+**🎯 Core Concept**: Trackable topics allow you to define specific learning objectives or discussion areas within your conversation context. The system automatically tracks when users engage with these topics through keyword detection in their messages.
+
+**📊 Progress Calculation**: Progress is calculated as `(covered_topics / total_trackable_topics) × 100%`, with bonus points for deeper engagement with individual topics.
+
+### Defining Trackable Topics
+
+#### Method 1: TRACKABLE_TOPICS Section (Recommended)
+
+The most comprehensive approach is to add a dedicated TRACKABLE_TOPICS section to your conversation context:
+
+```markdown
+# Your AI Assistant Context
+
+You are an educational AI assistant...
+
+## TRACKABLE_TOPICS
+
+- name: Anxiety Fundamentals
+  keywords: angst definition, was ist angst, normale angst, pathologische angst, angstauslöser
+
+- name: Physical Symptoms
+  keywords: körperliche symptome, physische ebene, sympathikus, parasympathikus, kampf flucht reaktion, herzrasen
+
+- name: Cognitive Behavioral Therapy
+  keywords: kognitive verhaltenstherapie, cbt, cognitive behavioral therapy, gedanken umstrukturierung
+
+# Rest of your context...
+```
+
+**Format Rules:**
+- Use `## TRACKABLE_TOPICS` heading (case-sensitive)
+- Each topic entry starts with `- name:`
+- Keywords follow on the next line with `keywords:`
+- Keywords are comma-separated and case-insensitive
+- The topic name itself is automatically included as a keyword
+
+#### Method 2: Inline Topic Markers
+
+For shorter contexts or when you want to embed topics within content:
+
+```markdown
+[TOPIC: Anxiety Fundamentals | angst definition, was ist angst, normale angst]
+[TOPIC: Physical Symptoms | körperliche symptome, physische ebene, sympathikus]
+[TOPIC: CBT | kognitive verhaltenstherapie, cbt, gedanken umstrukturierung]
+```
+
+#### Method 3: Attribute Format
+
+For more structured topic definitions:
+
+```markdown
+[TOPIC:id="fundamentals" name="Anxiety Fundamentals" keywords="angst definition, was ist angst, normale angst"]
+[TOPIC:id="symptoms" name="Physical Symptoms" keywords="körperliche symptome, physische ebene"]
+```
+
+### Progress Tracking Behavior
+
+#### Automatic Coverage Detection
+
+Topics are marked as "covered" when users mention relevant keywords in their messages:
+
+```
+User says: "Was ist der Unterschied zwischen normaler Angst und einer Angststörung?"
+→ Covers: "Anxiety Fundamentals" (matches "was ist angst")
+
+User says: "Mein sympathisches Nervensystem reagiert sehr stark"
+→ Covers: "Physical Symptoms" (matches "sympathikus")
+
+User says: "Kognitive Verhaltenstherapie klingt hilfreich"
+→ Covers: "CBT" (matches "kognitive verhaltenstherapie")
+```
+
+#### Key Rules
+
+1. **User Messages Only**: Only user questions and statements count toward progress - AI responses do NOT count
+2. **Monotonic Progress**: Progress can only increase, never decrease
+3. **Depth Bonus**: Multiple mentions of the same topic add engagement depth (up to 50% extra per topic)
+4. **Automatic Keywords**: Topic names are automatically included as keywords
+
+#### Progress Milestones
+
+The system provides visual feedback at key milestones:
+- **25% Complete**: Basic concepts covered
+- **50% Complete**: Intermediate topics explored
+- **75% Complete**: Advanced content engaged
+- **100% Complete**: Full topic coverage achieved
+
+### Integration with Progress Tracking System
+
+Trackable topics work seamlessly with the progress tracking feature (`enable_progress_tracking`):
+
+```json
+{
+  "progress": {
+    "percentage": 15.0,
+    "topics_total": 25,
+    "topics_covered": 4,
+    "is_complete": false,
+    "topic_coverage": {
+      "topic_abc123": {
+        "id": "topic_abc123",
+        "title": "Anxiety Fundamentals",
+        "coverage": 100,
+        "depth": 2,
+        "matches": ["was ist angst", "angst definition"],
+        "is_covered": true
+      },
+      "topic_def456": {
+        "id": "topic_def456",
+        "title": "Physical Symptoms",
+        "coverage": 0,
+        "depth": 0,
+        "matches": [],
+        "is_covered": false
+      }
+    }
+  }
+}
+```
+
+### Use Cases
+
+#### Educational Modules
+```markdown
+## TRACKABLE_TOPICS
+
+- name: Basic Algebra
+  keywords: algebra, equations, variables, solve for x
+- name: Quadratic Equations
+  keywords: quadratic, square root, discriminant, parabola
+- name: Word Problems
+  keywords: word problems, applied math, real world examples
+```
+
+#### Therapeutic Support
+```markdown
+## TRACKABLE_TOPICS
+
+- name: Anxiety Symptoms
+  keywords: symptoms, panic attacks, worry, physical sensations
+- name: Coping Strategies
+  keywords: coping, breathing techniques, mindfulness, relaxation
+- name: Professional Help
+  keywords: therapist, counseling, professional help, treatment options
+```
+
+#### Product Onboarding
+```markdown
+## TRACKABLE_TOPICS
+
+- name: Getting Started
+  keywords: setup, installation, first steps, basic features
+- name: Advanced Features
+  keywords: advanced, power user, automation, integrations
+- name: Troubleshooting
+  keywords: problems, issues, errors, support, help
+```
+
+### Best Practices for Trackable Topics
+
+#### Keyword Selection
+- **Include Variations**: Add common misspellings, synonyms, and related terms
+- **Topic Name First**: Always include the topic name as a primary keyword
+- **Context-Specific**: Choose keywords that naturally occur in user conversations
+- **Avoid Overlap**: Ensure keywords are distinct enough to avoid false positives
+
+#### Topic Granularity
+- **10-30 Topics**: Ideal range for most applications
+- **Logical Grouping**: Group related concepts together
+- **Progressive Difficulty**: Order from basic to advanced topics
+- **Measurable Objectives**: Each topic should represent a clear learning goal
+
+#### Context Integration
+- **Natural Flow**: Topics should emerge naturally from conversation
+- **Encouragement**: Guide users toward uncovered topics without pressure
+- **Flexible Navigation**: Allow users to explore topics in any order
+
+### Technical Implementation
+
+#### Topic Extraction Process
+
+1. **Context Parsing**: System scans for TRACKABLE_TOPICS sections or [TOPIC: ...] markers
+2. **Keyword Processing**: Keywords are normalized and stored with each topic
+3. **Message Analysis**: User messages are scanned for keyword matches
+4. **Coverage Calculation**: Topics are marked covered when matches are found
+5. **Progress Updates**: Database updated with current coverage status
+
+#### Database Schema
+
+Topics are stored with the following structure:
+```php
+[
+    'id' => 'topic_abc123',        // Auto-generated unique ID
+    'title' => 'Anxiety Fundamentals', // Display name
+    'keywords' => ['angst', 'definition', 'was ist angst'], // Match terms
+    'weight' => 5,                 // Importance weight
+    'content' => 'Anxiety Fundamentals' // Topic content
+]
+```
+
+#### API Integration
+
+Topics are automatically included in conversation responses when progress tracking is enabled:
+
+```json
+{
+  "conversation": {
+    "messages": [...],
+    "progress": {
+      "percentage": 20.0,
+      "topics_total": 25,
+      "topics_covered": 5,
+      "topic_coverage": {...}
+    }
+  }
+}
+```
+
+### Troubleshooting Trackable Topics
+
+#### Topics Not Being Detected
+
+**Symptoms**: Progress doesn't increase when users ask relevant questions
+
+**Solutions**:
+- Verify TRACKABLE_TOPICS section format (exact heading match)
+- Check keyword spelling and variations
+- Ensure keywords are comma-separated
+- Test with exact keyword matches first
+
+#### Progress Increases Too Quickly
+
+**Symptoms**: Progress jumps to 100% after few messages
+
+**Solutions**:
+- Review keywords for overlap or over-breadth
+- Add more specific keyword variations
+- Increase number of topics for finer granularity
+- Use more restrictive keyword matching
+
+#### Topics Not Parsing Correctly
+
+**Symptoms**: Topics don't appear in progress API responses
+
+**Solutions**:
+- Validate YAML-like format in TRACKABLE_TOPICS section
+- Check for proper indentation (name: and keywords: must align)
+- Ensure no special characters in topic names
+- Test context parsing with debug endpoint
+
+#### Performance Considerations
+
+- **Keyword Matching**: Case-insensitive substring matching is efficient
+- **Database Load**: Progress updates are batched to minimize database calls
+- **Memory Usage**: Topics are cached per conversation context
+- **Scalability**: System handles 50+ topics efficiently
+
+### Complete Example
+
+Here's a complete educational context with trackable topics:
+
+```markdown
+# German Language Learning Assistant
+
+You are a friendly German language tutor helping students learn German grammar and vocabulary.
+
+## TRACKABLE_TOPICS
+
+- name: Nomen (Substantive)
+  keywords: nomen, substantive, artikel, der die das, geschlecht, genus, deklinieren
+
+- name: Verben (Tätigkeitswörter)
+  keywords: verben, tätigkeitswörter, konjugation, infinitiv, präsens, präteritum, perfekt
+
+- name: Adjektive
+  keywords: adjektive, eigenschaftswörter, komparation, steigerung, komparativ, superlativ
+
+- name: Satzstruktur
+  keywords: satzstruktur, wortstellung, verb zweit, aussagesatz, fragesatz, nebensatz
+
+Learning German requires understanding these fundamental grammatical concepts. I'll help you master each one step by step.
+```
+
+This context will automatically track progress as students learn about German nouns, verbs, adjectives, and sentence structure.
+
