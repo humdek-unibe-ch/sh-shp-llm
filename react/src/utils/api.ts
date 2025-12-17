@@ -574,7 +574,7 @@ interface AutoStartedResponse {
 
 /**
  * Create auto-start API with section ID support
- * 
+ *
  * @param sectionId - The section ID for this chat instance
  */
 export function createAutoStartApi(sectionId?: number) {
@@ -591,6 +591,29 @@ export function createAutoStartApi(sectionId?: number) {
         params.section_id = String(sectionId);
       }
       return apiGet<AutoStartedResponse>('get_auto_started', params);
+    },
+
+    /**
+     * Initiate auto-start conversation from client-side
+     * Calls: ?action=start_auto_conversation&section_id=XXX
+     *
+     * @returns Promise resolving to success status
+     */
+    async start(): Promise<{success: boolean, error?: string}> {
+      const params: Record<string, string> = {};
+      if (sectionId !== undefined) {
+        params.section_id = String(sectionId);
+      }
+
+      try {
+        await apiGet<{success: boolean, error?: string}>('start_auto_conversation', params);
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to start auto conversation'
+        };
+      }
     }
   };
 }

@@ -142,6 +142,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     currentConversation,
     messages,
     isLoading,
+    isAutoStarting,
     error,
     loadConversations,
     loadConversationMessages,
@@ -775,13 +776,18 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
               <StreamingIndicator text={config.aiThinkingText} />
             )}
 
+            {/* Auto-start Indicator */}
+            {isAutoStarting && (
+              <StreamingIndicator text={config.loadingText || "Starting conversation..."} />
+            )}
+
             {/* Message Input */}
             <Card.Footer className="bg-white border-0 p-3 llm-chat-footer">
               <MessageInput
                 onSend={handleSendMessage}
                 selectedFiles={selectedFiles}
                 onFilesChange={handleFilesChange}
-                disabled={isStreaming || isLoading}
+                disabled={isStreaming || isLoading || isAutoStarting}
                 config={config}
               />
             </Card.Footer>

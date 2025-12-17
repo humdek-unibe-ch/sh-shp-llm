@@ -254,6 +254,9 @@ class LlmchatController extends BaseController
             case 'get_auto_started':
                 $this->handleGetAutoStarted();
                 break;
+            case 'start_auto_conversation':
+                $this->handleStartAutoConversation();
+                break;
             case 'get_progress':
                 $this->handleGetProgress();
                 break;
@@ -264,8 +267,8 @@ class LlmchatController extends BaseController
                 $this->handleStreaming();
                 break;
             default:
-                // Regular page load - check for auto-start
-                $this->checkAndAutoStartConversation();
+                // Regular page load - no auto-start logic here anymore
+                // Auto-start is now handled client-side after page load
                 break;
         }
     }
@@ -994,6 +997,53 @@ class LlmchatController extends BaseController
         } catch (Exception $e) {
             error_log('LLM getConversationsData error for user ' . $user_id . ': ' . $e->getMessage());
             $this->sendJsonResponse(['error' => 'Failed to load conversations'], 500);
+        }
+    }
+
+    /**
+     * Handle start auto conversation request (client-initiated auto-start)
+     */
+    private function handleStartAutoConversation()
+    {
+        $user_id = $this->model->getUserId();
+        if (!$user_id) {
+            $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
+            return;
+        }
+
+        if (!$this->model->isAutoStartConversationEnabled()) {
+            $this->sendJsonResponse(['error' => 'Auto-start conversation is not enabled'], 400);
+            return;
+        }
+
+        // Check if conversation already exists
+        if ($this->model->getCurrentConversation()) {
+            $this->sendJsonResponse(['error' => 'Conversation already exists'], 400);
+            return;
+        }
+
+        // Check existing conversations
+        if ($this->model->isConversationsListEnabled()) {
+            $user_conversations = $this->llm_service->getUserConversations(
+                $user_id,
+                1,
+                $this->model->getConfiguredModel()
+            );
+            if (!empty($user_conversations)) {
+                $this->sendJsonResponse(['error' => 'Conversations already exist'], 400);
+                return;
+            }
+        }
+
+        try {
+            // Perform the auto-start conversation logic
+            $this->performAutoStartConversation();
+
+            // Return success - the conversation should now be available via get_auto_started
+            $this->sendJsonResponse(['success' => true]);
+        } catch (Exception $e) {
+            error_log('Client-initiated auto-start failed: ' . $e->getMessage());
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
     }
 

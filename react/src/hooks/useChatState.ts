@@ -62,6 +62,8 @@ export interface UseChatStateReturn {
   messages: Message[];
   /** Loading state */
   isLoading: boolean;
+  /** Auto-start loading state */
+  isAutoStarting: boolean;
   /** Error message */
   error: string | null;
 
@@ -120,6 +122,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAutoStarting, setIsAutoStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // Refs to track current conversation ID for async operations
@@ -144,39 +147,56 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
       setIsLoading(true);
       setError(null);
 
-      // First, check if there's an auto-started conversation
-      const autoStarted = await checkAutoStartedConversation(autoStartApi);
-      if (autoStarted) {
-        // Stop any active streaming before loading auto-started conversation
-        if (stopStreaming) {
-          stopStreaming();
-        }
-
-        // Load the auto-started conversation directly
-        setCurrentConversation(autoStarted.conversation);
-        setMessages(autoStarted.messages);
-        currentConversationIdRef.current = String(autoStarted.conversation.id);
-
-        // Update URL to reflect the auto-started conversation
-        updateUrl(String(autoStarted.conversation.id), config);
-
-        // Load all conversations in background to populate the sidebar
-        try {
-          const convs = await conversationsApi.getAll();
-          setConversations(convs);
-        } catch (convError) {
-          // Don't fail if conversation loading fails
-          console.debug('Failed to load conversation list:', convError);
-          setConversations([]);
-        }
-
-        setIsLoading(false);
-        return;
-      }
-
       // Normal conversation loading logic
       const convs = await conversationsApi.getAll();
       setConversations(convs);
+
+      // Check if auto-start should be initiated
+      const shouldAutoStart = config.autoStartConversation &&
+                             convs.length === 0 &&
+                             !currentConversationIdRef.current;
+
+      if (shouldAutoStart) {
+        try {
+          setIsAutoStarting(true);
+          // Initiate auto-start conversation from client-side
+          const startResult = await autoStartApi.start();
+          if (startResult.success) {
+            // Wait a moment for the auto-start to complete, then check for the conversation
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Check if auto-start created a conversation
+            const autoStarted = await checkAutoStartedConversation(autoStartApi);
+            if (autoStarted) {
+              // Stop any active streaming before loading auto-started conversation
+              if (stopStreaming) {
+                stopStreaming();
+              }
+
+              // Load the auto-started conversation directly
+              setCurrentConversation(autoStarted.conversation);
+              setMessages(autoStarted.messages);
+              currentConversationIdRef.current = String(autoStarted.conversation.id);
+
+              // Update URL to reflect the auto-started conversation
+              updateUrl(String(autoStarted.conversation.id), config);
+
+              // Reload conversations to include the new auto-started one
+              const updatedConvs = await conversationsApi.getAll();
+              setConversations(updatedConvs);
+
+              setIsLoading(false);
+              setIsAutoStarting(false);
+              return;
+            }
+          }
+        } catch (autoStartError) {
+          console.debug('Auto-start failed, continuing with normal flow:', autoStartError);
+          // Continue with normal flow if auto-start fails
+        } finally {
+          setIsAutoStarting(false);
+        }
+      }
 
       // If we have a current conversation ID (from URL or config), load it
       if (currentConversationIdRef.current) {
@@ -467,6 +487,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     currentConversation,
     messages,
     isLoading,
+    isAutoStarting,
     error,
     loadConversations,
     loadConversationMessages,
