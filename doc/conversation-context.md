@@ -64,7 +64,7 @@ For multiple system messages or specific role assignments, use JSON array format
 
 1. **Configuration Load**: When the llmChat component initializes, it loads the `conversation_context` field from the database
 
-2. **Context Parsing**: The `getParsedConversationContext()` method in `LlmchatModel.php` parses the context:
+2. **Context Parsing**: The `getParsedConversationContext()` method in `LlmChatModel.php` parses the context:
    - If JSON array: Validates structure and returns array of message objects
    - If free text: Wraps in single system message object
 
@@ -75,7 +75,7 @@ For multiple system messages or specific role assignments, use JSON array format
 ### Code Flow
 
 ```php
-// In LlmchatController::handleMessageSubmission()
+// In LlmChatController::handleMessageSubmission()
 
 // Get parsed context
 $context_messages = $this->model->getParsedConversationContext();

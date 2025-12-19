@@ -32,7 +32,7 @@ For example, section ID `123` creates table `llmChat_123`.
 ### Data Flow
 
 ```
-User submits form → LlmchatController processes → LlmDataSavingService prepares data → 
+User submits form → LlmChatController processes → LlmDataSavingService prepares data → 
 UserInput::save_data() stores → Data saved to section's dataTable
 ```
 

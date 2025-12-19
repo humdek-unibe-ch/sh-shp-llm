@@ -61,7 +61,7 @@ server/plugins/sh-shp-llm/
 ┌─────────────────────────────────────────────────────────┐
 │                    Style Component                       │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│  │ LlmchatModel │ │LlmchatContrl │ │ LlmchatView  │    │
+│  │ LlmChatModel │ │LlmChatContrl │ │ LlmChatView  │    │
 │  │ - Config     │ │ - Requests   │ │ - Templates  │    │
 │  │ - Data       │ │ - API calls  │ │ - React init │    │
 │  └──────────────┘ └──────────────┘ └──────────────┘    │
@@ -125,7 +125,7 @@ When Interactive Form Mode is enabled:
 │  User Selection → formatFormSelectionsAsText()         │
 │       │                                                 │
 │       ▼                                                 │
-│  formApi.submit() → LlmchatController                   │
+│  formApi.submit() → LlmChatController                   │
 │       │                                                 │
 │       ▼                                                 │
 │  Readable text sent to LLM → Next form response        │
@@ -148,7 +148,7 @@ React Component (MessageInput or FormRenderer)
     │                   formatFormSelectionsAsText()
     │                        │
     │                        ▼
-    │                   LlmchatController::handleFormSubmission()
+    │                   LlmChatController::handleFormSubmission()
     │                        │
     │                        ▼
     │                   LlmService::addMessage() (user - readable text)
@@ -162,7 +162,7 @@ React Component (MessageInput or FormRenderer)
     ├─[Non-Streaming]─► messagesApi.send()
     │                        │
     │                        ▼
-    │                   LlmchatController::handleMessageSubmission()
+    │                   LlmChatController::handleMessageSubmission()
     │                        │
     │                        ▼
     │                   LlmService::addMessage() (user)
@@ -182,7 +182,7 @@ React Component (MessageInput or FormRenderer)
     └─[Streaming]──────► messagesApi.prepareStreaming()
                               │
                               ▼
-                         LlmchatController (prepare_streaming)
+                         LlmChatController (prepare_streaming)
                               │
                               ▼
                          LlmService::addMessage() (user)
@@ -194,7 +194,7 @@ React Component (MessageInput or FormRenderer)
                          StreamingApi.connect() (SSE)
                               │
                               ▼
-                         LlmchatController::handleStreamingRequest()
+                         LlmChatController::handleStreamingRequest()
                               │
                               ▼
                          LlmStreamingService::startStreamingResponse()

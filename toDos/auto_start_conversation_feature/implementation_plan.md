@@ -33,13 +33,13 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 
 ## Code Changes
 
-### 2. Update LlmchatModel.php
+### 2. Update LlmChatModel.php
 - Add `auto_start_conversation` property
 - Add `auto_start_message` property
 - Add getter methods `isAutoStartConversationEnabled()` and `getAutoStartMessage()`
 - Initialize properties in constructor
 
-### 3. Update LlmchatController.php
+### 3. Update LlmChatController.php
 - Add `checkAndAutoStartConversation()` method
 - Modify initialization logic to check for auto-start conditions
 - Add API endpoint for auto-start message sending
@@ -97,8 +97,8 @@ Display conversation with AI's initial message
 
 ### Files to Modify
 - `server/db/v1.0.0.sql` - Add new database fields
-- `server/component/style/llmchat/LlmchatModel.php` - Add field properties and getters
-- `server/component/style/llmchat/LlmchatController.php` - Add auto-start logic
+- `server/component/style/llmchat/LlmChatModel.php` - Add field properties and getters
+- `server/component/style/llmchat/LlmChatController.php` - Add auto-start logic
 - `server/service/LlmService.php` - Add auto-start message creation
 - `react/src/LlmChat.tsx` - Add config parsing
 - `react/src/hooks/useChatState.ts` - Add frontend auto-start handling

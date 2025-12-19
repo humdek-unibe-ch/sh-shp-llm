@@ -31,7 +31,7 @@ ALTER TABLE `llmMessages` ADD COLUMN `sent_context` longtext DEFAULT NULL;
 
 ## Code Changes
 
-### 3. Update LlmchatModel.php
+### 3. Update LlmChatModel.php
 - Add `conversation_context` property
 - Add getter method `getConversationContext()`
 - Initialize property in constructor
@@ -40,7 +40,7 @@ ALTER TABLE `llmMessages` ADD COLUMN `sent_context` longtext DEFAULT NULL;
 - Modify `addMessage()` method to accept `$sent_context` parameter
 - Store context as JSON in `sent_context` field
 
-### 5. Update LlmchatController.php
+### 5. Update LlmChatController.php
 - Add `prepareConversationContext()` method to handle JSON/text parsing
 - Modify `handleMessageSubmission()` to include context in API calls
 - Update both streaming and non-streaming message handling
@@ -84,19 +84,19 @@ You are guiding the user through this educational module. Provide helpful, struc
 ## Implementation Steps
 
 1. **Database Migration**: Add new fields and table column
-2. **Model Updates**: Add context handling to LlmchatModel
+2. **Model Updates**: Add context handling to LlmChatModel
 3. **Service Updates**: Update LlmService and LlmStreamingService for context tracking
-4. **Controller Updates**: Modify LlmchatController for context processing
+4. **Controller Updates**: Modify LlmChatController for context processing
 5. **Formatter Updates**: Update LlmApiFormatterService for context filtering
 6. **Testing**: Test both JSON and text formats
 7. **Documentation**: Update README with new features
 
 ## Files to Modify
 - `server/plugins/sh-shp-llm/server/db/v1.0.0.sql`
-- `server/plugins/sh-shp-llm/server/component/style/llmchat/LlmchatModel.php`
+- `server/plugins/sh-shp-llm/server/component/style/llmchat/LlmChatModel.php`
 - `server/plugins/sh-shp-llm/server/service/LlmService.php`
 - `server/plugins/sh-shp-llm/server/service/LlmStreamingService.php`
-- `server/plugins/sh-shp-llm/server/component/style/llmchat/LlmchatController.php`
+- `server/plugins/sh-shp-llm/server/component/style/llmchat/LlmChatController.php`
 - `server/plugins/sh-shp-llm/server/service/LlmApiFormatterService.php`
 - `server/plugins/sh-shp-llm/README.md`
 

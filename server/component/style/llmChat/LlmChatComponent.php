@@ -5,9 +5,9 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../../component/BaseComponent.php";
-require_once __DIR__ . "/LlmchatModel.php";
-require_once __DIR__ . "/LlmchatView.php";
-require_once __DIR__ . "/LlmchatController.php";
+require_once __DIR__ . "/LlmChatModel.php";
+require_once __DIR__ . "/LlmChatView.php";
+require_once __DIR__ . "/LlmChatController.php";
 
 /**
  * The LLM chat component for real-time conversations with AI models.
@@ -32,9 +32,9 @@ class LlmChatComponent extends BaseComponent
      */
     public function __construct($services, $id, $params = array(), $id_page = -1, $entry_record = array())
     {
-        $model = new LlmchatModel($services, $id, $params, $id_page, $entry_record);
-        $controller = new LlmchatController($model);
-        $view = new LlmchatView($model, $controller);
+        $model = new LlmChatModel($services, $id, $params, $id_page, $entry_record);
+        $controller = new LlmChatController($model);
+        $view = new LlmChatView($model, $controller);
         parent::__construct($model, $view, $controller);
     }
 

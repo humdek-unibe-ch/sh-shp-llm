@@ -59,11 +59,11 @@
 ### Technical Implementation
 
 #### Conversation Context Processing
-- `LlmchatModel`: New `conversation_context` property with JSON/text parsing
+- `LlmChatModel`: New `conversation_context` property with JSON/text parsing
 - `LlmApiFormatterService`: Updated `convertToApiFormat()` accepts context parameter
 - `LlmStreamingService`: Updated to track and store sent context
 - `LlmService`: Updated `addMessage()` accepts `$sent_context` parameter
-- `LlmchatController`: Context processing in both streaming and non-streaming paths
+- `LlmChatController`: Context processing in both streaming and non-streaming paths
 
 #### Strict Conversation Mode Implementation
 - `LlmStrictConversationService`: New service for topic enforcement and context enhancement
@@ -98,7 +98,7 @@
 ### Files Created
 - Database schema (`server/db/v1.0.0.sql`)
 - Core services (`LlmService.php`, `LlmStreamingService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `LlmStrictConversationService.php`)
-- MVC components (`LlmchatModel.php`, `LlmchatView.php`, `LlmchatController.php`)
+- MVC components (`LlmChatModel.php`, `LlmChatView.php`, `LlmChatController.php`)
 - Plugin hooks (`LlmHooks.php`)
 - Admin components (`moduleLlmAdminConsole/` - comprehensive admin console component with configurable pageType_fields)
 - React frontend with TypeScript (`react/` directory)

@@ -120,7 +120,7 @@ class DangerDetectionService {
 }
 ```
 
-### 5. Update LlmchatController.php
+### 5. Update LlmChatController.php
 Add danger word checking before AI processing:
 
 ```php
@@ -262,7 +262,7 @@ suicide,auto-mutilation,mal,tuer,mort,mourir
 
 1. **Database Setup**: Add danger keywords field and audit table
 2. **Core Services**: Create DangerDetectionService and DangerNotificationService
-3. **Controller Integration**: Add danger checking to LlmchatController
+3. **Controller Integration**: Add danger checking to LlmChatController
 4. **Hook Integration**: Add preprocessing hooks to LlmHooks
 5. **Admin Interface**: Add danger word management to admin settings
 6. **Notification System**: Implement notification triggers and templates
@@ -273,7 +273,7 @@ suicide,auto-mutilation,mal,tuer,mort,mourir
 - `server/plugins/sh-shp-llm/server/db/v1.0.0.sql` - Database schema
 - `server/plugins/sh-shp-llm/server/service/DangerDetectionService.php` - *NEW*
 - `server/plugins/sh-shp-llm/server/service/DangerNotificationService.php` - *NEW*
-- `server/plugins/sh-shp-llm/server/component/style/llmchat/LlmchatController.php`
+- `server/plugins/sh-shp-llm/server/component/style/llmchat/LlmChatController.php`
 - `server/plugins/sh-shp-llm/server/component/LlmHooks.php`
 - `server/plugins/sh-shp-llm/server/component/style/admin/AdminSettingsController.php` - *NEW/UPDATE*
 - `server/plugins/sh-shp-llm/README.md` - Documentation

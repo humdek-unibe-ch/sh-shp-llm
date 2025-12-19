@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LLM Chat plugin exposes several API endpoints through the `LlmchatController`. All requests require authentication and use the current page's URL.
+The LLM Chat plugin exposes several API endpoints through the `LlmChatController`. All requests require authentication and use the current page's URL.
 
 ## Base URL
 
