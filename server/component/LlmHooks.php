@@ -45,7 +45,7 @@ class LlmHooks extends BaseHooks
         try {
             $llmService = new LlmService($this->services);
             $models = $llmService->getAvailableModels();
-            
+
             // Transform models array to select format
             $items = array();
             foreach ($models as $model) {
@@ -54,7 +54,7 @@ class LlmHooks extends BaseHooks
                     'text' => $model['id']
                 );
             }
-            
+
             return new BaseStyleComponent("select", array(
                 "value" => $value,
                 "name" => $name,
@@ -93,18 +93,18 @@ class LlmHooks extends BaseHooks
     {
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
-        
+
         if ($field['name'] == 'llm_model' || $field['name'] == 'llm_default_model') {
             $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
             $selectField = $this->outputSelectLlmModelField($field['content'], $field_name_prefix . "[content]", $disabled);
-            
+
             if ($selectField && $res) {
                 $children = $res->get_view()->get_children();
                 $children[] = $selectField;
                 $res->get_view()->set_children($children);
             }
         }
-        
+
         return $res;
     }
 
@@ -157,20 +157,20 @@ class LlmHooks extends BaseHooks
     {
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
-        
+
         // This hook is triggered for all fields with type 'select-floating-button-position'
         // Check field name to ensure we're processing the right field
         if ($field['name'] === 'floating_button_position') {
             $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
             $selectField = $this->outputSelectFloatingPositionField($field['content'], $field_name_prefix . "[content]", $disabled);
-            
+
             if ($selectField && $res) {
                 $children = $res->get_view()->get_children();
                 $children[] = $selectField;
                 $res->get_view()->set_children($children);
             }
         }
-        
+
         return $res;
     }
 
@@ -262,5 +262,14 @@ class LlmHooks extends BaseHooks
         }
         return $res;
     }
+
+    /**
+     * Get the plugin version
+     */
+    public function get_plugin_db_version($plugin_name = 'llm')
+    {
+        return parent::get_plugin_db_version($plugin_name);
+    }
+
 }
 ?>
