@@ -40,6 +40,13 @@ class LlmChatView extends StyleView
      */
     public function output_content()
     {
+        if (
+            (method_exists($this->model, 'is_cms_page') && $this->model->is_cms_page()) &&
+            (method_exists($this->model, 'is_cms_page_editing') && $this->model->is_cms_page_editing())
+        ) {
+            // cms - do not load the survey
+            return;
+        }
         $user_id = $this->model->getUserId();
         $section_id = $this->model->getSectionId();
         $chat_description = $this->model->getChatDescription();
