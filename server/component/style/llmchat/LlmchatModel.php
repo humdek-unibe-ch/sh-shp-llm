@@ -11,7 +11,7 @@ require_once __DIR__ . "/../../../service/LlmService.php";
  * The model class for the LLM chat component.
  * Handles data retrieval and component configuration.
  */
-class LlmchatModel extends StyleModel
+class LlmChatModel extends StyleModel
 {
     private $llm_service;
     private $user_id;

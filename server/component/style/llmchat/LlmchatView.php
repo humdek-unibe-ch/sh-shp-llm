@@ -10,7 +10,7 @@ require_once __DIR__ . "/../../../../../../component/style/StyleView.php";
  * The view class for the LLM chat component.
  * Handles HTML rendering and template loading.
  */
-class LlmchatView extends StyleView
+class LlmChatView extends StyleView
 {
     /* Constructors ***********************************************************/
 

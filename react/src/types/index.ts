@@ -4,7 +4,7 @@
  * 
  * TypeScript type definitions for the LLM Chat React component.
  * These types match the data structures used by the SelfHelp backend
- * controller (LlmchatController.php) and the vanilla JS implementation.
+ * controller (LlmChatController.php) and the vanilla JS implementation.
  * 
  * @module types
  */

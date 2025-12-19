@@ -25,7 +25,7 @@ class LlmRequestService
      * Constructor
      * 
      * @param LlmService $llm_service The LLM service instance
-     * @param LlmchatModel $model The model instance for configuration
+     * @param LlmChatModel $model The model instance for configuration
      */
     public function __construct($llm_service, $model)
     {

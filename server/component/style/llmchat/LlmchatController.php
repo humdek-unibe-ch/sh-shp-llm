@@ -38,7 +38,7 @@ require_once __DIR__ . "/../../../service/LlmStructuredResponseService.php";
  * 
  * @author SelfHelp Team
  */
-class LlmchatController extends BaseController
+class LlmChatController extends BaseController
 {
     /** @var LlmService Core LLM service */
     private $llm_service;

@@ -30,7 +30,7 @@ class LlmContextService
     /**
      * Constructor
      * 
-     * @param LlmchatModel $model The model instance for configuration
+     * @param LlmChatModel $model The model instance for configuration
      * @param LlmFormModeService $form_mode_service Form mode service
      * @param LlmFloatingModeService $floating_mode_service Floating mode service
      * @param LlmStrictConversationService $strict_conversation_service Strict mode service

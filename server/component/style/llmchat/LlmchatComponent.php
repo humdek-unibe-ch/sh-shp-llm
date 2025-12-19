@@ -12,7 +12,7 @@ require_once __DIR__ . "/LlmchatController.php";
 /**
  * The LLM chat component for real-time conversations with AI models.
  */
-class LlmchatComponent extends BaseComponent
+class LlmChatComponent extends BaseComponent
 {
     /* Constructors ***********************************************************/
 
