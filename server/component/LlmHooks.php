@@ -60,7 +60,7 @@ class LlmHooks extends BaseHooks
                 "name" => $name,
                 "max" => 10,
                 "live_search" => 1,
-                "is_required" => 1,
+                "is_required" => 0,
                 "disabled" => $disabled,
                 "items" => $items
             ));
@@ -71,7 +71,7 @@ class LlmHooks extends BaseHooks
                 "name" => $name,
                 "max" => 10,
                 "live_search" => 0,
-                "is_required" => 1,
+                "is_required" => 0,
                 "disabled" => $disabled,
                 "items" => array(
                     array('value' => '', 'text' => 'Error loading models: ' . $e->getMessage())
