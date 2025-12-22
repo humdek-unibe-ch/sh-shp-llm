@@ -565,44 +565,47 @@ class LlmService
         ];
 
         $response = BaseModel::execute_curl_call($data);
+        error_log('LLM API response: ' . json_encode($response));
 
-        // If API call fails or returns no data, return filtered default model list
+        // If API call fails or returns no data, return default model list
         if (!$response || !is_array($response) || empty($response['data'])) {
-            $default_models = $this->getDefaultModelList()['data'];
-            return $this->filterTextGenerationModels($default_models);
+            return $this->getDefaultModelList()['data'];
         }
 
-        // Filter API response to only include text generation models
-        return $this->filterTextGenerationModels($response['data']);
+        // Normalize models to handle different provider structures
+        return $this->normalizeModels($response['data']);
     }
 
     /**
-     * Filter models to only include text generation models
+     * Normalize models from different providers to a consistent structure
      */
-    private function filterTextGenerationModels($models)
+    private function normalizeModels($models)
     {
-        // List of models that support text generation/chat
-        $text_generation_models = [
-            'qwen3-coder-30b-a3b-instruct',
-            'apertus-8b-instruct-2509',
-            'deepseek-r1-0528-qwen3-8b',
-            'internvl3-8b-instruct',
-            'qwen3-vl-8b-instruct',
-            'gpt-oss-120b',
-            'minimax-m2'
-        ];
+        return array_map(function($model) {
+            // Check if this is a new provider model with 'info' structure
+            if (isset($model['info'])) {
+                // For new provider, keep the original model id but normalize structure
+                return [
+                    'id' => $model['id'],
+                    'created' => $model['created'] ?? time(),
+                    'object' => $model['object'] ?? 'model',
+                    'owned_by' => $model['owned_by'] ?? 'unknown',
+                    'meta' => $model['info']['meta'] ?? null
+                ];
+            }
 
-        return array_filter($models, function($model) use ($text_generation_models) {
-            return in_array($model['id'], $text_generation_models);
-        });
+            // For GPUStack and other providers, return as-is
+            return $model;
+        }, $models);
     }
+
 
     /**
      * Get default model list when API is unavailable
      */
     private function getDefaultModelList()
     {
-        // Only include text generation models in the default list
+        // Return available models for fallback when API is unavailable
         return [
             "data" => [
                 [
