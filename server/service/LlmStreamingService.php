@@ -23,6 +23,16 @@ class LlmStreamingService
     {
         $this->llm_service = $llm_service;
     }
+    
+    /**
+     * Get the provider instance from LlmService
+     * 
+     * @return LlmProviderInterface
+     */
+    private function getProvider()
+    {
+        return $this->llm_service->getProvider();
+    }
 
     /**
      * Start streaming response using Server-Sent Events
@@ -284,7 +294,7 @@ class StreamingBuffer
     /**
      * Atomic final commit to database
      */
-    public function finalize($tokens_used, $raw_response = null)
+    public function finalize($tokens_used, $raw_response = null, $reasoning = null)
     {
         $this->llm_service->addMessage(
             $this->conversation_id,
@@ -294,14 +304,15 @@ class StreamingBuffer
             $this->model,
             $tokens_used,
             $raw_response,
-            $this->sent_context
+            $this->sent_context,
+            $reasoning
         );
     }
 
     /**
      * Emergency save on error
      */
-    public function emergencySave($error_message, $raw_response = null)
+    public function emergencySave($error_message, $raw_response = null, $reasoning = null)
     {
         $emergency_content = $this->buffer . "\n\n[Streaming interrupted: {$error_message}]";
 
@@ -313,7 +324,8 @@ class StreamingBuffer
             $this->model,
             null,
             $raw_response,
-            $this->sent_context
+            $this->sent_context,
+            $reasoning
         );
     }
 

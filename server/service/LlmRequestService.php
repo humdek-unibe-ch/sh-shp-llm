@@ -221,9 +221,10 @@ class LlmRequestService
      * @param int|null $tokens_used Tokens used
      * @param array|null $raw_response Raw API response
      * @param array|null $context_messages Context messages sent
+     * @param string|null $reasoning Optional reasoning content from LLM
      * @return int Message ID
      */
-    public function addAssistantMessage($conversation_id, $content, $tokens_used = null, $raw_response = null, $context_messages = null)
+    public function addAssistantMessage($conversation_id, $content, $tokens_used = null, $raw_response = null, $context_messages = null, $reasoning = null)
     {
         $model = $this->model->getConfiguredModel();
         return $this->llm_service->addMessage(
@@ -234,7 +235,8 @@ class LlmRequestService
             $model,
             $tokens_used,
             $raw_response,
-            $context_messages
+            $context_messages,
+            $reasoning
         );
     }
 

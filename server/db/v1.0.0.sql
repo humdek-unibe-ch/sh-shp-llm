@@ -4,7 +4,7 @@ VALUES ('llm', 'v1.0.0');
 
 -- Uncomment the following line to upgrade the database to utf8mb4,
 -- which is required for storing emojis and other extended Unicode characters:
--- ALTER DATABASE sb_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER DATABASE llm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 
 -- add page type sh_module_llm for configuration
@@ -260,6 +260,7 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `tokens_used` int DEFAULT NULL,
     `raw_response` longtext DEFAULT NULL, -- Raw API response data (JSON)
     `sent_context` longtext DEFAULT NULL, -- JSON snapshot of context sent with this message for debugging/audit
+    `reasoning` longtext DEFAULT NULL, -- Optional reasoning/thinking process from LLM (provider-specific)
     `id_dataRows` int(10) UNSIGNED ZEROFILL DEFAULT NULL, -- Link to saved form data in dataRows table
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,

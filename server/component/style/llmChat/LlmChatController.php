@@ -527,41 +527,40 @@ class LlmChatController extends BaseController
         // Non-streaming: call API and save response
         $response = $this->request_service->callLlmApi($api_messages);
         
-        // Handle API errors
-        if (is_array($response) && isset($response['error'])) {
-            $error_message = $this->extractApiErrorMessage($response);
-            throw new Exception($error_message);
+        // Response is now normalized by provider
+        // Structure: ['content', 'role', 'finish_reason', 'usage', 'reasoning', 'raw_response']
+        
+        if (!isset($response['content'])) {
+            throw new Exception('Invalid response from LLM API - missing content');
         }
 
-        // Handle successful response
-        if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
-            $assistant_message = $response['choices'][0]['message']['content'];
-            $tokens_used = $response['usage']['total_tokens'] ?? null;
+        $assistant_message = $response['content'];
+        $tokens_used = $response['usage']['total_tokens'] ?? null;
+        $reasoning = $response['reasoning'] ?? null;
+        $raw_response = $response['raw_response'] ?? $response;
 
-            $this->request_service->addAssistantMessage(
-                $conversation_id,
-                $assistant_message,
-                $tokens_used,
-                $response,
-                $context_messages
-            );
+        $this->request_service->addAssistantMessage(
+            $conversation_id,
+            $assistant_message,
+            $tokens_used,
+            $raw_response,
+            $context_messages,
+            $reasoning
+        );
 
-            $response_data = [
-                'conversation_id' => $conversation_id,
-                'message' => $assistant_message,
-                'streaming' => false,
-                'is_new_conversation' => $is_new_conversation
-            ];
+        $response_data = [
+            'conversation_id' => $conversation_id,
+            'message' => $assistant_message,
+            'streaming' => false,
+            'is_new_conversation' => $is_new_conversation
+        ];
 
-            // Include progress data if progress tracking is enabled
-            if ($this->model->isProgressTrackingEnabled()) {
-                $response_data['progress'] = $this->calculateConversationProgress($conversation_id, $messages);
-            }
-
-            $this->sendJsonResponse($response_data);
-        } else {
-            throw new Exception('Invalid response from LLM API');
+        // Include progress data if progress tracking is enabled
+        if ($this->model->isProgressTrackingEnabled()) {
+            $response_data['progress'] = $this->calculateConversationProgress($conversation_id, $messages);
         }
+
+        $this->sendJsonResponse($response_data);
     }
 
     /**
@@ -1201,9 +1200,12 @@ class LlmChatController extends BaseController
 
             $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
 
-            if (is_array($response) && isset($response['choices'][0]['message']['content'])) {
-                $assistant_message = $response['choices'][0]['message']['content'];
+            // Response is normalized by provider
+            if (isset($response['content'])) {
+                $assistant_message = $response['content'];
                 $tokens_used = $response['usage']['total_tokens'] ?? null;
+                $reasoning = $response['reasoning'] ?? null;
+                $raw_response = $response['raw_response'] ?? $response;
 
                 $this->llm_service->addMessage(
                     $conversation_id,
@@ -1212,8 +1214,9 @@ class LlmChatController extends BaseController
                     null,
                     $model,
                     $tokens_used,
-                    $response,
-                    $context_messages
+                    $raw_response,
+                    $context_messages,
+                    $reasoning
                 );
 
                 $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
@@ -1357,27 +1360,6 @@ class LlmChatController extends BaseController
         ];
     }
 
-    /**
-     * Extract error message from API response
-     * 
-     * @param array $response API response with error
-     * @return string Error message
-     */
-    private function extractApiErrorMessage($response)
-    {
-        if (is_array($response['error'])) {
-            if (isset($response['error']['message'])) {
-                return $response['error']['message'];
-            }
-            if (isset($response['error']['type'])) {
-                return 'LLM API error: ' . $response['error']['type'];
-            }
-        }
-        if (is_string($response['error'])) {
-            return $response['error'];
-        }
-        return 'LLM API error';
-    }
 
     /**
      * Save form data to SelfHelp UserInput system

@@ -12,6 +12,7 @@ A comprehensive LLM integration plugin for SelfHelp CMS, enabling real-time AI c
 - ⚡ **Rate Limiting** - Built-in protection (10 req/min, 3 concurrent conversations)
 - 🛡️ **Admin Console** - Monitor all user conversations
 - 🌐 **Multi-language UI** - Translatable interface labels
+- 🔌 **Multi-Provider Support** - Works with GPUStack, BFH, OpenAI, and more
 
 ### Advanced Features
 - 📋 **Conversation Context Module** - Configurable AI behavior per component
@@ -114,6 +115,8 @@ sh-shp-llm/
 | Document | Description |
 |----------|-------------|
 | [Architecture](doc/architecture.md) | System design and component interactions |
+| [Provider Abstraction](doc/provider-abstraction.md) | Multi-provider API support system |
+| [Provider Architecture Diagrams](doc/provider-architecture-diagram.md) | Visual architecture and flow diagrams |
 | [Conversation Context](doc/conversation-context.md) | Context module configuration guide |
 | [API Reference](doc/api-reference.md) | Controller actions and endpoints |
 | [Configuration](doc/configuration.md) | Complete configuration reference |
@@ -147,11 +150,24 @@ npm run dev
 npm run build
 ```
 
-## Supported Models
+## Supported Providers & Models
 
-The plugin works with any OpenAI-compatible API. Tested models include:
+The plugin uses a provider abstraction layer to support multiple LLM APIs seamlessly:
 
-- **Text Models**: qwen3-vl-8b-instruct, gpt-oss-120b, deepseek-r1-0528-qwen3-8b
+### Supported Providers
+
+| Provider | Base URL | Features |
+|----------|----------|----------|
+| **GPUStack (UniBE)** | `https://gpustack.unibe.ch/v1` | Standard OpenAI-compatible |
+| **BFH Inference API** | `https://inference.mlmp.ti.bfh.ch/api` | Enhanced with reasoning content |
+| **OpenAI** | Coming soon | Full API support |
+| **Anthropic** | Coming soon | Claude models |
+
+The system automatically detects the correct provider based on your `llm_base_url` configuration. See [Provider Abstraction](doc/provider-abstraction.md) for details.
+
+### Tested Models
+
+- **Text Models**: qwen3-vl-8b-instruct, gpt-oss-120b, deepseek-r1-0528-qwen3-8b, beechat-v3-gpt-oss
 - **Vision Models**: internvl3-8b-instruct, qwen3-vl-8b-instruct
 - **Coding Models**: qwen3-coder-30b-a3b-instruct
 

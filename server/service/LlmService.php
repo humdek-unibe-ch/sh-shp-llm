@@ -5,11 +5,14 @@
 ?>
 <?php
 
+require_once __DIR__ . '/provider/LlmProviderRegistry.php';
+
 class LlmService
 {
     protected $services;
     protected $db;
     protected $cache;
+    protected $provider;
 
     /* Constructors ***********************************************************/
 
@@ -21,6 +24,20 @@ class LlmService
         $this->services = $services;
         $this->db = $services->get_db();
         $this->cache = $this->db->get_cache();
+        
+        // Initialize provider based on configuration
+        $config = $this->getLlmConfig();
+        $this->provider = LlmProviderRegistry::getProviderForUrl($config['llm_base_url']);
+    }
+    
+    /**
+     * Get the current provider instance
+     * 
+     * @return LlmProviderInterface Current provider
+     */
+    public function getProvider()
+    {
+        return $this->provider;
     }
 
     /* Private Methods *********************************************************/
@@ -400,9 +417,10 @@ class LlmService
      * @param int|null $tokens_used Token count for the message
      * @param array|null $raw_response Raw API response data (will be JSON encoded)
      * @param array|null $sent_context Context messages that were sent with this message (for debugging/audit)
+     * @param string|null $reasoning Optional reasoning/thinking process from LLM (provider-specific)
      * @return int The message ID
      */
-    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null)
+    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null)
     {
         // Validate inputs to prevent corruption
         if (!is_string($content) || empty($content)) {
@@ -475,7 +493,8 @@ class LlmService
             'model' => $model,
             'tokens_used' => $tokens_used,
             'raw_response' => $rawResponseData,
-            'sent_context' => $sentContextData
+            'sent_context' => $sentContextData,
+            'reasoning' => $reasoning
         ];
 
 
@@ -565,7 +584,6 @@ class LlmService
         ];
 
         $response = BaseModel::execute_curl_call($data);
-        error_log('LLM API response: ' . json_encode($response));
 
         // If API call fails or returns no data, return default model list
         if (!$response || !is_array($response) || empty($response['data'])) {
@@ -664,12 +682,16 @@ class LlmService
 
     /**
      * Call LLM API for chat completion
+     * 
+     * Uses provider abstraction to handle different API formats.
+     * Returns normalized response structure.
      */
     public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null, $stream = false)
     {
         $config = $this->getLlmConfig();
 
-        $url = rtrim($config['llm_base_url'], '/') . LLM_API_CHAT_COMPLETIONS;
+        // Get API URL using provider
+        $url = $this->provider->getApiUrl($config['llm_base_url'], LLM_API_CHAT_COMPLETIONS);
 
         // Validate and clamp temperature to valid range (0.0 - 2.0)
         $temp_value = (float)($temperature ?: $config['llm_temperature']);
@@ -681,6 +703,7 @@ class LlmService
         if ($max_tokens_value < 1) $max_tokens_value = 2048;
         if ($max_tokens_value > 16384) $max_tokens_value = 16384;
 
+        // Build standard payload
         $payload = [
             'model' => $model,
             'messages' => $messages,
@@ -689,13 +712,17 @@ class LlmService
             'stream' => $stream
         ];
 
+        // Merge provider-specific parameters
+        $providerParams = $this->provider->getAdditionalRequestParams($payload);
+        $payload = array_merge($payload, $providerParams);
+
+        // Get authentication headers from provider
+        $headers = $this->provider->getAuthHeaders($config['llm_api_key']);
+
         $data = [
             'URL' => $url,
             'request_type' => 'POST',
-            'header' => [
-                'Authorization: Bearer ' . $config['llm_api_key'],
-                'Content-Type: application/json'
-            ],
+            'header' => $headers,
             'post_params' => json_encode($payload),
             'timeout' => $config['llm_timeout']
         ];
@@ -718,7 +745,14 @@ class LlmService
             }
         }
 
-        return $response;
+        // Normalize response using provider
+        try {
+            return $this->provider->normalizeResponse($response);
+        } catch (Exception $e) {
+            error_log('LLM Provider normalization error: ' . $e->getMessage());
+            error_log('Raw response: ' . json_encode($response));
+            throw new Exception('Failed to normalize LLM response: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -729,7 +763,8 @@ class LlmService
     {
         $config = $this->getLlmConfig();
 
-        $url = rtrim($config['llm_base_url'], '/') . LLM_API_CHAT_COMPLETIONS;
+        // Get API URL using provider
+        $url = $this->provider->getApiUrl($config['llm_base_url'], LLM_API_CHAT_COMPLETIONS);
 
         // Validate and clamp temperature to valid range (0.0 - 2.0)
         $temp_value = (float)($temperature ?: $config['llm_temperature']);
@@ -741,6 +776,7 @@ class LlmService
         if ($max_tokens_value < 1) $max_tokens_value = 2048;
         if ($max_tokens_value > 16384) $max_tokens_value = 16384;
 
+        // Build standard payload
         $payload = [
             'model' => $model,
             'messages' => $messages,
@@ -748,6 +784,15 @@ class LlmService
             'max_tokens' => $max_tokens_value,
             'stream' => true
         ];
+
+        // Merge provider-specific parameters
+        $providerParams = $this->provider->getAdditionalRequestParams($payload);
+        $payload = array_merge($payload, $providerParams);
+
+        // Get authentication headers from provider
+        $headers = $this->provider->getAuthHeaders($config['llm_api_key']);
+        $headers[] = 'Accept: text/event-stream';
+        $headers[] = 'Cache-Control: no-cache';
 
         // Track if we received any content
         $received_content = false;
@@ -761,12 +806,7 @@ class LlmService
             CURLOPT_CONNECTTIMEOUT => 10, // Connection timeout
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $config['llm_api_key'],
-                'Content-Type: application/json',
-                'Accept: text/event-stream',
-                'Cache-Control: no-cache'
-            ],
+            CURLOPT_HTTPHEADER => $headers,
             CURLOPT_SSL_VERIFYHOST => 0,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_FOLLOWLOCATION => true, // Follow redirects
@@ -780,53 +820,27 @@ class LlmService
                     $line = substr($chunk_buffer, 0, $pos);
                     $chunk_buffer = substr($chunk_buffer, $pos + 1);
                     
-                    $line = trim($line);
-                    if (empty($line)) continue;
-
-                    // Handle SSE format: "data: {...}"
-                    if (strpos($line, 'data: ') === 0) {
-                        $json_data = substr($line, 6);
-                    } else {
-                        // Assume direct JSON format
-                        $json_data = $line;
+                    // Use provider to normalize streaming chunk
+                    $normalizedChunk = $this->provider->normalizeStreamingChunk($line);
+                    
+                    if ($normalizedChunk === null) {
+                        continue; // Skip this chunk
                     }
-
-                    // Check for stream end marker
-                    if ($json_data === '[DONE]') {
+                    
+                    if ($normalizedChunk === '[DONE]') {
                         if ($callback) $callback('[DONE]');
                         return strlen($data);
                     }
-
-                    $parsed = json_decode($json_data, true);
-                    if ($parsed) {
-                        // Check for API error response
-                        if (isset($parsed['error'])) {
-                            if ($callback) $callback('[DONE]');
-                            return strlen($data);
-                        }
-
-                        // Check for content chunk
-                        if (isset($parsed['choices'][0]['delta']['content'])) {
-                            $content = $parsed['choices'][0]['delta']['content'];
-                            if ($callback && $content !== '') {
-                                $received_content = true;
-                                $callback($content);
-                            }
-                        }
-
-                        // Check for final usage data
-                        if (isset($parsed['usage']) && isset($parsed['usage']['total_tokens'])) {
-                            $tokens = $parsed['usage']['total_tokens'];
-                            if ($callback) {
-                                $callback('[USAGE:' . $tokens . ']');
-                            }
-                        }
-
-                        // Check for finish_reason (end of stream)
-                        if (isset($parsed['choices'][0]['finish_reason']) && $parsed['choices'][0]['finish_reason']) {
-                            if ($callback) $callback('[DONE]');
-                            return strlen($data);
-                        }
+                    
+                    if (strpos($normalizedChunk, '[USAGE:') === 0) {
+                        if ($callback) $callback($normalizedChunk);
+                        continue;
+                    }
+                    
+                    // Regular content chunk
+                    if ($callback && $normalizedChunk !== '') {
+                        $received_content = true;
+                        $callback($normalizedChunk);
                     }
                 }
                 return strlen($data);

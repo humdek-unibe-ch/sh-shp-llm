@@ -15,7 +15,8 @@ server/plugins/sh-shp-llm/
 │   ├── api-reference.md           # API documentation
 │   ├── configuration.md           # Configuration guide
 │   ├── conversation-context.md    # Context module documentation
-│   └── streaming.md               # Streaming implementation
+│   ├── provider-abstraction.md    # Provider system guide
+│   └── provider-architecture-diagram.md # Visual diagrams
 ├── gulp/                          # Build system
 │   ├── gulpfile.js
 │   └── package.json
@@ -37,7 +38,13 @@ server/plugins/sh-shp-llm/
 │   │   ├── LlmService.php        # Core service
 │   │   ├── LlmStreamingService.php
 │   │   ├── LlmApiFormatterService.php
-│   │   └── LlmFileUploadService.php
+│   │   ├── LlmFileUploadService.php
+│   │   └── provider/             # Provider abstraction
+│   │       ├── LlmProviderInterface.php
+│   │       ├── BaseProvider.php
+│   │       ├── GpuStackProvider.php
+│   │       ├── BfhProvider.php
+│   │       └── LlmProviderRegistry.php
 │   └── db/
 │       └── v1.0.0.sql            # Database schema
 ├── css/ext/                       # Built CSS
@@ -75,6 +82,15 @@ server/plugins/sh-shp-llm/
 │  │ - DB ops     │ │ - SSE        │ │ - Messages   │    │
 │  │ - API calls  │ │ - Buffering  │ │ - Multimodal │    │
 │  └──────────────┘ └──────────────┘ └──────────────┘    │
+│                           │                             │
+│                           ▼                             │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │          Provider Abstraction Layer             │   │
+│  │  ┌─────────────┐  ┌─────────────┐             │   │
+│  │  │ GPUStack    │  │ BFH API     │  + More     │   │
+│  │  │ Provider    │  │ Provider    │  providers  │   │
+│  │  └─────────────┘  └─────────────┘             │   │
+│  └─────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -131,6 +147,84 @@ When Interactive Form Mode is enabled:
 │  Readable text sent to LLM → Next form response        │
 └─────────────────────────────────────────────────────────┘
 ```
+
+## Provider Abstraction System
+
+### Overview
+
+The plugin uses a provider abstraction layer to support multiple LLM APIs seamlessly. This enables the system to work with different API providers (GPUStack, BFH, OpenAI, etc.) while maintaining a consistent internal interface.
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                   LlmService                              │
+│  - Manages conversations and messages                     │
+│  - Coordinates with provider for API communication        │
+└──────────────────┬───────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────────────────┐
+│            LlmProviderRegistry (Factory)                  │
+│  - Auto-detects provider from llm_base_url                │
+│  - Returns appropriate provider instance                  │
+└──────────────────┬───────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────────────────┐
+│              LlmProviderInterface                         │
+│  ┌─────────────────────────────────────────────────┐     │
+│  │ • normalizeResponse(rawResponse)                │     │
+│  │ • normalizeStreamingChunk(chunk)               │     │
+│  │ • getApiUrl(baseUrl, endpoint)                 │     │
+│  │ • getAuthHeaders(apiKey)                       │     │
+│  │ • canHandle(baseUrl)                           │     │
+│  └─────────────────────────────────────────────────┘     │
+└──────────────────┬───────────────────────────────────────┘
+                   │
+        ┌──────────┴──────────┬─────────────┐
+        ▼                     ▼             ▼
+  ┌────────────┐      ┌────────────┐  ┌────────────┐
+  │ GPUStack   │      │ BFH        │  │ Future     │
+  │ Provider   │      │ Provider   │  │ Providers  │
+  └────────────┘      └────────────┘  └────────────┘
+```
+
+### Automatic Provider Detection
+
+The system automatically selects the correct provider based on the `llm_base_url`:
+
+| Base URL | Provider | Features |
+|----------|----------|----------|
+| `https://gpustack.unibe.ch/v1` | GPUStack | Standard OpenAI-compatible |
+| `https://inference.mlmp.ti.bfh.ch/api` | BFH | Enhanced with reasoning content |
+
+### Response Normalization
+
+All providers normalize their responses to a standard format:
+
+```php
+[
+    'content' => string,           // Message content
+    'role' => 'assistant',         // Message role
+    'finish_reason' => 'stop',     // Completion reason
+    'usage' => [
+        'total_tokens' => int,
+        'completion_tokens' => int,
+        'prompt_tokens' => int
+    ],
+    'reasoning' => string|null,    // Optional reasoning (BFH)
+    'raw_response' => array        // Full original response
+]
+```
+
+### Database Storage
+
+The `reasoning` field in `llmMessages` table stores provider-specific reasoning content (optional, currently used by BFH API).
+
+**For more details**, see:
+- [Provider Abstraction Guide](provider-abstraction.md)
+- [Provider Architecture Diagrams](provider-architecture-diagram.md)
 
 ## Data Flow
 
