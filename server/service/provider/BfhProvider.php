@@ -8,7 +8,7 @@ require_once __DIR__ . '/BaseProvider.php';
 /**
  * BFH Provider
  * 
- * Handles communication with BFH Inference API (https://inference.mlmp.ti.bfh.ch/api)
+ * Handles communication with BFH Inference API (https://inference.mlmp.ti.bfh.ch/api/v1)
  * 
  * Response format includes additional metadata and reasoning content:
  * {

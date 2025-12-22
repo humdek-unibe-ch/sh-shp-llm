@@ -77,7 +77,7 @@ All providers return responses in this standard format:
 
 ### BFH Inference API
 
-- **Base URL**: `https://inference.mlmp.ti.bfh.ch/api`
+- **Base URL**: `https://inference.mlmp.ti.bfh.ch/api/v1`
 - **Provider ID**: `bfh`
 - **Format**: Enhanced with reasoning content
 - **Streaming**: Yes
@@ -289,7 +289,7 @@ Potential additions:
 Providers are selected automatically based on `llm_base_url` in the CMS configuration page:
 
 - `https://gpustack.unibe.ch/v1` → GPUStack Provider
-- `https://inference.mlmp.ti.bfh.ch/api` → BFH Provider
+- `https://inference.mlmp.ti.bfh.ch/api/v1` → BFH Provider
 - Other URLs → Default Provider (GPUStack)
 
 No additional configuration required!

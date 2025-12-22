@@ -16,7 +16,7 @@ $response = $llm_service->callLlmApi($messages, $model);
 | Provider | Base URL | Provider ID | Features |
 |----------|----------|-------------|----------|
 | GPUStack (UniBE) | `https://gpustack.unibe.ch/v1` | `gpustack` | Standard OpenAI-compatible API |
-| BFH Inference API | `https://inference.mlmp.ti.bfh.ch/api` | `bfh` | Enhanced with reasoning content |
+| BFH Inference API | `https://inference.mlmp.ti.bfh.ch/api/v1` | `bfh` | Enhanced with reasoning content |
 
 ## File Structure
 

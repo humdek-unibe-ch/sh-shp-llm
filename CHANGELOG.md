@@ -149,6 +149,12 @@
 - **Browser Compatibility**: Chrome/Edge, Firefox, Safari, mobile browsers
 - **Migration**: No breaking changes, scoped CSS to avoid conflicts
 
+### Changed (December 22, 2024)
+- **BFH Provider URL Update**: Updated BFH Inference API base URL from `https://inference.mlmp.ti.bfh.ch/api` to `https://inference.mlmp.ti.bfh.ch/api/v1`
+- **Documentation Updates**: Updated all documentation files to reflect the new BFH API endpoint
+- **Provider Detection**: BfhProvider now correctly detects and handles the new `/api/v1` endpoint
+- **Response Structure**: Confirmed support for BFH's enhanced response format including `reasoning_content` and `provider_specific_fields`
+
 ### Known Limitations
 - Danger word detection system planned for future version
 - Advanced analytics and reporting features planned
@@ -157,3 +163,4 @@
 - No breaking changes from previous development builds
 - Run database migration to add new `conversation_context` and `sent_context` fields
 - Rebuild React assets after updating (`gulp build`)
+- **BFH Provider Users**: Update your `llm_base_url` configuration to `https://inference.mlmp.ti.bfh.ch/api/v1` in the admin panel

@@ -22,6 +22,17 @@ These settings apply to all chat instances unless overridden at component level.
 | `llm_api_key` | password | - | API authentication token |
 | `llm_timeout` | number | `30` | Request timeout in seconds |
 
+#### Supported Providers
+
+The plugin automatically detects the provider based on the `llm_base_url`. Supported providers include:
+
+| Provider | Base URL | Features |
+|----------|----------|----------|
+| **GPUStack (UniBE)** | `https://gpustack.unibe.ch/v1` | Standard OpenAI-compatible API |
+| **BFH Inference API** | `https://inference.mlmp.ti.bfh.ch/api/v1` | Enhanced with reasoning content and provider-specific fields |
+
+See [Provider Abstraction](provider-abstraction.md) for more details on adding custom providers.
+
 ### Model Settings
 
 | Field | Type | Default | Description |

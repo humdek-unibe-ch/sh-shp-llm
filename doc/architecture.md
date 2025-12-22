@@ -197,7 +197,7 @@ The system automatically selects the correct provider based on the `llm_base_url
 | Base URL | Provider | Features |
 |----------|----------|----------|
 | `https://gpustack.unibe.ch/v1` | GPUStack | Standard OpenAI-compatible |
-| `https://inference.mlmp.ti.bfh.ch/api` | BFH | Enhanced with reasoning content |
+| `https://inference.mlmp.ti.bfh.ch/api/v1` | BFH | Enhanced with reasoning content |
 
 ### Response Normalization
 

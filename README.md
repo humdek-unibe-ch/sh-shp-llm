@@ -159,7 +159,7 @@ The plugin uses a provider abstraction layer to support multiple LLM APIs seamle
 | Provider | Base URL | Features |
 |----------|----------|----------|
 | **GPUStack (UniBE)** | `https://gpustack.unibe.ch/v1` | Standard OpenAI-compatible |
-| **BFH Inference API** | `https://inference.mlmp.ti.bfh.ch/api` | Enhanced with reasoning content |
+| **BFH Inference API** | `https://inference.mlmp.ti.bfh.ch/api/v1` | Enhanced with reasoning content |
 | **OpenAI** | Coming soon | Full API support |
 | **Anthropic** | Coming soon | Claude models |
 
