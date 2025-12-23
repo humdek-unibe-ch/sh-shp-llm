@@ -302,3 +302,4 @@ The chat component now supports both:
 
 However, instructing the LLM to use Markdown produces more consistent and predictable results.
 
+
