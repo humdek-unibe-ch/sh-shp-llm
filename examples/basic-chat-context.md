@@ -40,3 +40,4 @@ Guidelines:
 - No forms or special UI elements appear
 - Standard chat interface is displayed
 
+

@@ -92,3 +92,4 @@ Preferences Form:
 - Form submissions are sent as structured data
 - Data is saved to the configured table (if enabled)
 
+

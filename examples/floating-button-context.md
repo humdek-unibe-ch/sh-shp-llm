@@ -79,3 +79,4 @@ Example: One for sales (bottom-right) and one for support (bottom-left)
 - Click outside closes panel
 - Mobile: panel goes full-screen
 
+
