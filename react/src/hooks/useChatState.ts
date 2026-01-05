@@ -390,7 +390,18 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
           };
           setMessages(prev => [...prev, safetyMessage]);
         }
-        
+
+        // IMPORTANT: Update the current conversation to mark it as blocked
+        // This ensures the UI immediately reflects the blocking state
+        if (currentConversation) {
+          setCurrentConversation({
+            ...currentConversation,
+            blocked: true,
+            blocked_reason: 'Safety concerns detected',
+            blocked_at: new Date().toISOString()
+          });
+        }
+
         // Return the blocked response - no error, just blocked
         return {
           blocked: true,

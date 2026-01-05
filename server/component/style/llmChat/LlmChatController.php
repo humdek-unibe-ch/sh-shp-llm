@@ -652,7 +652,7 @@ class LlmChatController extends BaseController
     private function handleSafetyDetection($parsed_response, $conversation_id, $user_id)
     {
         $safety = $this->response_service->assessSafety($parsed_response);
-        
+
         // If safe, nothing to do
         if ($safety['is_safe'] && $safety['danger_level'] === null) {
             return;
@@ -661,13 +661,19 @@ class LlmChatController extends BaseController
         $section_id = $this->model->getSectionId();
         $detected_concerns = $safety['detected_concerns'];
 
-        // Log detection regardless of level
-        if (!empty($detected_concerns)) {
-            error_log("LLM Safety Detection: Level {$safety['danger_level']}, Concerns: " . implode(', ', $detected_concerns));
+        // ALWAYS log critical and emergency detections to transactions (safety requirement)
+        if (!empty($detected_concerns) && in_array($safety['danger_level'], ['critical', 'emergency'])) {
+            $this->logSafetyDetection($detected_concerns, $parsed_response, $user_id, $conversation_id, $section_id, $safety);
         }
 
-        // Send notifications if intervention required (critical or emergency)
-        if ($safety['requires_intervention']) {
+        // ALWAYS block conversation for critical/emergency levels (critical safety measure)
+        if (in_array($safety['danger_level'], ['critical', 'emergency'])) {
+            $reason = strtoupper($safety['danger_level']) . ': LLM detected danger: ' . implode(', ', $detected_concerns);
+            $this->danger_detection_service->blockConversation($conversation_id, $detected_concerns, $reason);
+        }
+
+        // Send notifications if intervention required AND danger detection is enabled
+        if ($safety['requires_intervention'] && $this->danger_detection_service->isEnabled()) {
             $this->danger_detection_service->sendNotifications(
                 $detected_concerns,
                 $safety['safety_message'] ?? 'Dangerous content detected by AI',
@@ -676,11 +682,45 @@ class LlmChatController extends BaseController
                 $section_id
             );
         }
+    }
 
-        // Block conversation if emergency level
-        if ($safety['danger_level'] === 'emergency') {
-            $reason = 'LLM detected emergency danger: ' . implode(', ', $detected_concerns);
-            $this->danger_detection_service->blockConversation($conversation_id, $detected_concerns, $reason);
+    /**
+     * Log safety detection to transactions table
+     * This ALWAYS happens for critical/emergency detections regardless of CMS settings
+     */
+    private function logSafetyDetection($detected_concerns, $parsed_response, $user_id, $conversation_id, $section_id, $safety)
+    {
+        try {
+            $services = $this->model->get_services();
+            $transaction = $services->get_transaction();
+
+            // Prepare verbal log with detection details (JSON format for searchability)
+            $log_data = json_encode([
+                'event' => 'llm_safety_detection',
+                'detected_concerns' => $detected_concerns,
+                'danger_level' => $safety['danger_level'],
+                'safety_message' => $safety['safety_message'],
+                'conversation_id' => $conversation_id,
+                'section_id' => $section_id,
+                'ai_detection' => true, // Indicates this came from AI, not keyword matching
+                'timestamp' => date('Y-m-d H:i:s')
+            ], JSON_UNESCAPED_UNICODE);
+
+            // Log to transactions table
+            $transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_PLUGIN,
+                $user_id,
+                'llm_safety_detection', // Virtual table name for easy filtering
+                $section_id, // Use section_id as entry_id for reference
+                false,
+                $log_data
+            );
+
+            error_log('LLM Controller: Safety detection logged to transactions for user ' . $user_id);
+        } catch (Exception $e) {
+            // Log error but don't fail the detection
+            error_log('LLM Controller: Failed to log safety detection transaction: ' . $e->getMessage());
         }
     }
 
@@ -1463,6 +1503,7 @@ class LlmChatController extends BaseController
             'noVisionSupportText' => $this->model->getNoVisionSupportText(),
             'sendMessageTitle' => $this->model->getSendMessageTitle(),
             'removeFileTitle' => $this->model->getRemoveFileTitle(),
+            'conversationBlockedMessage' => $this->model->getDangerBlockedMessage(),
             // File config
             'fileConfig' => [
                 'maxFileSize' => LLM_MAX_FILE_SIZE,

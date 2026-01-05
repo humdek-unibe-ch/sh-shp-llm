@@ -293,9 +293,9 @@ class LlmService
             return $cached;
         }
 
-        $sql = "SELECT id, id_sections, title, model, created_at, updated_at
+        $sql = "SELECT id, id_sections, title, model, created_at, updated_at, blocked, blocked_reason, blocked_at
                 FROM llmConversations
-                WHERE id_users = :id_user AND deleted = 0 AND blocked = 0";
+                WHERE id_users = :id_user AND deleted = 0";
         $params = array(':id_user' => $user_id);
 
         if ($model) {

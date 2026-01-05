@@ -22,7 +22,7 @@ import { ProgressIndicator } from '../shared/ProgressIndicator';
 import { useChatState } from '../../../hooks/useChatState';
 import { useStreaming } from '../../../hooks/useStreaming';
 import { createFormApi, createContinueApi, StreamingApi, progressApi } from '../../../utils/api';
-import type { LlmChatConfig, SelectedFile, Message, ProgressData } from '../../../types';
+import type { LlmChatConfig, SelectedFile, Message, ProgressData, Conversation } from '../../../types';
 import './LlmChat.css';
 
 /**
@@ -231,7 +231,15 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     }, []),
     onRefreshMessages: messageRefreshHandler,
     onNewConversation: newConversationHandler,
-    getActiveModel: useCallback(() => config.configuredModel, [config.configuredModel])
+    getActiveModel: useCallback(() => config.configuredModel, [config.configuredModel]),
+    onUpdateConversation: useCallback((updates: Partial<Conversation>) => {
+      if (currentConversation) {
+        setCurrentConversation({
+          ...currentConversation,
+          ...updates
+        });
+      }
+    }, [currentConversation])
   });
 
 
@@ -809,7 +817,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
               {isConversationBlocked ? (
                 <Alert variant="warning" className="mb-0">
                   <i className="fas fa-ban mr-2"></i>
-                  {config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'}
+                  <span dangerouslySetInnerHTML={{
+                    __html: config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'
+                  }} />
                 </Alert>
               ) : (
                 <MessageInput

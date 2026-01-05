@@ -277,6 +277,27 @@
 - **Provider Detection**: BfhProvider now correctly detects and handles the new `/api/v1` endpoint
 - **Response Structure**: Confirmed support for BFH's enhanced response format including `reasoning_content` and `provider_specific_fields`
 
+#### Enhanced Safety Detection & Blocking (January 5, 2026)
+- **Always-Active Critical Safety**: Critical and emergency danger detections now ALWAYS trigger logging and blocking regardless of CMS danger detection settings
+- **Immediate UI Blocking**: Conversations blocked by AI detection immediately update UI without page refresh
+- **Visual Blocked Indicators**: Blocked conversations show in conversation list with ban icon, "Blocked" badge, and grayed appearance
+- **CMS-Configurable Blocked Message**: `danger_blocked_message` CMS field now controls the blocked conversation message with HTML support
+- **Transaction Logging**: All critical/emergency AI detections logged to transactions table for audit purposes
+- **Streaming Safety Support**: Safety detection works for both streaming and non-streaming responses
+
+**Safety Enhancement Details:**
+- Emergency/critical detections trigger automatic conversation blocking
+- Transaction logging with event types: `llm_safety_detection`, `llm_streaming_safety_detection`
+- Frontend immediately updates conversation state when blocked
+- Blocked conversations remain visible in sidebar with visual indicators
+- HTML rendering support for rich blocked messages from CMS
+
+**New Features:**
+- `conversationBlockedMessage` config field populated from `danger_blocked_message` CMS field
+- Visual indicators for blocked conversations in sidebar
+- Immediate UI state updates for streaming safety detections
+- Enhanced error logging with cleaned up debug messages
+
 ### Known Limitations
 - Advanced analytics and reporting features planned
 - Danger word severity levels (emergency/critical/warning) planned for future version
@@ -286,3 +307,4 @@
 - Run database migration to add new `conversation_context` and `sent_context` fields
 - Rebuild React assets after updating (`gulp build`)
 - **BFH Provider Users**: Update your `llm_base_url` configuration to `https://inference.mlmp.ti.bfh.ch/api/v1` in the admin panel
+- **Safety Enhancement**: Critical/emergency AI detections now always log and block conversations

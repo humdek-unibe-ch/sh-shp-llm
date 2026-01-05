@@ -108,6 +108,10 @@ export interface Conversation {
   blocked?: boolean | number;
   /** Reason for blocking */
   blocked_reason?: string;
+  /** When the conversation was blocked */
+  blocked_at?: string;
+  /** Who blocked the conversation (user ID) */
+  blocked_by?: number;
 }
 
 // ============================================================================

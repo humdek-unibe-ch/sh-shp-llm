@@ -284,10 +284,6 @@ EOT;
         $detected = [];
         $message_lower = strtolower($message);
 
-        // Add debug logging
-        error_log('LLM Danger Detection: Scanning message for keywords');
-        error_log('LLM Danger Detection: Message (first 100 chars): ' . substr($message_lower, 0, 100));
-        error_log('LLM Danger Detection: Keywords to check: ' . implode(', ', array_slice($keywords, 0, 10)) . (count($keywords) > 10 ? '...' : ''));
 
         foreach ($keywords as $keyword) {
             // Escape regex special characters in keyword
@@ -299,21 +295,16 @@ EOT;
                 // Phrase: check if it exists in message (with typo tolerance)
                 if ($this->phraseMatchesWithTypos($message_lower, $keyword)) {
                     $detected[] = $keyword;
-                    error_log('LLM Danger Detection: DETECTED keyword: ' . $keyword);
                 }
             } else {
                 // Single word: use word boundary matching
                 $pattern = '/\b' . $escaped_keyword . '\b/iu';
                 if (preg_match($pattern, $message_lower)) {
                     $detected[] = $keyword;
-                    error_log('LLM Danger Detection: DETECTED keyword: ' . $keyword);
                 }
             }
         }
 
-        if (empty($detected)) {
-            error_log('LLM Danger Detection: No keywords detected');
-        }
 
         return array_unique($detected);
     }
@@ -426,15 +417,13 @@ EOT;
     public function sendNotifications($detected_keywords, $message, $user_id, $conversation_id, $section_id)
     {
         $emails = $this->model->getDangerNotificationEmails();
-        
-        // Debug logging
-        error_log('LLM Danger Detection: Notification check - Keywords: ' . implode(', ', $detected_keywords));
-        error_log('LLM Danger Detection: Configured emails: ' . (empty($emails) ? 'NONE' : implode(', ', $emails)));
-        
+
         if (empty($emails)) {
-            error_log('LLM Danger Detection: No notification emails configured - skipping email notifications');
             return false;
         }
+
+        // Debug logging for notification attempts
+        error_log('LLM Danger Detection: Sending notifications for keywords: ' . implode(', ', $detected_keywords));
 
         try {
             $job_scheduler = $this->services->get_job_scheduler();

@@ -10,7 +10,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { StreamingApi, createMessagesApi, handleApiError } from '../utils/api';
-import type { StreamingEvent, LlmChatConfig, SelectedFile, ProgressData } from '../types';
+import type { StreamingEvent, LlmChatConfig, SelectedFile, ProgressData, Conversation } from '../types';
 
 /**
  * Options for useStreaming hook
@@ -32,6 +32,8 @@ export interface UseStreamingOptions {
   getActiveModel?: () => string;
   /** Callback when a new conversation is created */
   onNewConversation?: (conversationId: string, model: string) => void;
+  /** Callback to update conversation state (e.g., when blocked) */
+  onUpdateConversation?: (updates: Partial<Conversation>) => void;
 }
 
 /**
@@ -71,7 +73,7 @@ async function smoothPageReload(): Promise<void> {
  * @returns Streaming state and controls
  */
 export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
-  const { config, onChunk, onDone, onError, onStart, onRefreshMessages, getActiveModel, onNewConversation } = options;
+  const { config, onChunk, onDone, onError, onStart, onRefreshMessages, getActiveModel, onNewConversation, onUpdateConversation } = options;
   
   // Create section-specific messages API
   const messagesApi = useMemo(
@@ -236,6 +238,19 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               clearTimeout(streamingTimeout);
               // Streaming completed - industry standard: single atomic save
               setIsStreaming(false);
+
+              // Handle safety data from streaming response (AI detected danger)
+              if (event.safety && (event.safety.is_safe === false)) {
+                // Update conversation state to reflect blocking
+                if (onUpdateConversation) {
+                  onUpdateConversation({
+                    blocked: true,
+                    blocked_reason: event.safety.safety_message || 'AI detected safety concerns',
+                    blocked_at: new Date().toISOString()
+                  });
+                }
+              }
+
               onDone?.(event.tokens_used || 0, event.progress);
 
               // Clear streaming content immediately (server has saved complete message)

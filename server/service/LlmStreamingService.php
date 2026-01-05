@@ -229,8 +229,23 @@ class LlmStreamingService
             return null;
         }
         
-        // Handle intervention if needed
-        if ($safety['requires_intervention'] && $this->danger_detection_service && $this->config_model) {
+        // ALWAYS handle critical/emergency blocking and logging (critical safety measures)
+        if (in_array($safety['danger_level'], ['critical', 'emergency'])) {
+            $reason = 'CRITICAL: LLM detected danger: ' . implode(', ', $safety['detected_concerns']);
+            $this->danger_detection_service->blockConversation(
+                $this->conversation_id,
+                $safety['detected_concerns'],
+                $reason
+            );
+        }
+
+        // ALWAYS log critical and emergency detections
+        if (in_array($safety['danger_level'], ['critical', 'emergency']) && !empty($safety['detected_concerns'])) {
+            $this->logStreamingSafetyDetection($safety);
+        }
+
+        // Send notifications if intervention required AND danger detection is enabled
+        if ($safety['requires_intervention'] && $this->danger_detection_service && $this->config_model && $this->danger_detection_service->isEnabled()) {
             try {
                 // Get user ID from conversation
                 $conversation = $this->llm_service->db->query_db_first(
@@ -238,10 +253,10 @@ class LlmStreamingService
                     ['id' => $this->conversation_id]
                 );
                 $user_id = $conversation ? $conversation['id_users'] : 0;
-                $section_id = method_exists($this->config_model, 'getSectionId') 
-                    ? $this->config_model->getSectionId() 
+                $section_id = method_exists($this->config_model, 'getSectionId')
+                    ? $this->config_model->getSectionId()
                     : 0;
-                
+
                 // Send notifications
                 $this->danger_detection_service->sendNotifications(
                     $safety['detected_concerns'],
@@ -250,23 +265,69 @@ class LlmStreamingService
                     $this->conversation_id,
                     $section_id
                 );
-                
-                // Block conversation if emergency
-                if ($safety['danger_level'] === 'emergency') {
-                    $reason = 'LLM detected emergency danger: ' . implode(', ', $safety['detected_concerns']);
-                    $this->danger_detection_service->blockConversation(
-                        $this->conversation_id, 
-                        $safety['detected_concerns'], 
-                        $reason
-                    );
-                }
             } catch (Exception $e) {
-                error_log('LLM Streaming: Failed to process safety intervention: ' . $e->getMessage());
+                error_log('LLM Streaming: Failed to send notifications: ' . $e->getMessage());
             }
         }
         
         // Return safety data for frontend
         return $safety;
+    }
+
+    /**
+     * Log streaming safety detection to transactions table
+     * This ALWAYS happens for critical/emergency detections regardless of CMS settings
+     */
+    private function logStreamingSafetyDetection($safety)
+    {
+        try {
+            // Get user ID from conversation
+            $conversation = $this->llm_service->db->query_db_first(
+                'SELECT id_users FROM llmConversations WHERE id = :id',
+                ['id' => $this->conversation_id]
+            );
+            $user_id = $conversation ? $conversation['id_users'] : 0;
+            $section_id = method_exists($this->config_model, 'getSectionId')
+                ? $this->config_model->getSectionId()
+                : 0;
+
+            $services = $this->llm_service->services ?? null;
+            if (!$services) {
+                error_log('LLM Streaming: Cannot log safety detection - services not available');
+                return;
+            }
+
+            $transaction = $services->get_transaction();
+
+            // Prepare verbal log with detection details (JSON format for searchability)
+            $log_data = json_encode([
+                'event' => 'llm_streaming_safety_detection',
+                'detected_concerns' => $safety['detected_concerns'],
+                'danger_level' => $safety['danger_level'],
+                'safety_message' => $safety['safety_message'],
+                'conversation_id' => $this->conversation_id,
+                'section_id' => $section_id,
+                'ai_detection' => true, // Indicates this came from AI, not keyword matching
+                'streaming' => true, // Indicates this was from streaming response
+                'timestamp' => date('Y-m-d H:i:s')
+            ], JSON_UNESCAPED_UNICODE);
+
+            // Log to transactions table
+            $transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_PLUGIN,
+                $user_id,
+                'llm_streaming_safety_detection', // Virtual table name for easy filtering
+                $section_id, // Use section_id as entry_id for reference
+                false,
+                $log_data
+            );
+
+            error_log('LLM Streaming: Safety detection logged to transactions for user ' . $user_id . ' (streaming)');
+        } catch (Exception $e) {
+            // Log error but don't fail the detection
+            error_log('LLM Streaming: Failed to log streaming safety detection transaction: ' . $e->getMessage());
+        }
     }
 
     /**

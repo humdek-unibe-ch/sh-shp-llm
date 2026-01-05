@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { Card, ListGroup, Button, Modal, Form, CloseButton } from 'react-bootstrap';
+import { Card, ListGroup, Button, Modal, Form, CloseButton, Badge } from 'react-bootstrap';
 import type { Conversation, LlmChatConfig } from '../../../types';
 import { formatDate } from '../../../utils/formatters';
 
@@ -87,20 +87,37 @@ const ConversationItem: React.FC<ConversationItemProps> = ({
     }
   }, [onDelete, config]);
   
+  // Check if conversation is blocked
+  const isBlocked = conversation.blocked === true || conversation.blocked === 1;
+
   return (
     <ListGroup.Item
-      action
+      action={!isBlocked} // Disable click action if blocked
       active={isActive}
-      onClick={onSelect}
-      className="d-flex align-items-center w-auto justify-content-between conversation-row"
+      onClick={isBlocked ? undefined : onSelect} // Don't allow selecting blocked conversations
+      className={`d-flex align-items-center w-auto justify-content-between conversation-row ${isBlocked ? 'blocked-conversation' : ''}`}
+      style={isBlocked ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
     >
       <div className="d-flex align-items-center flex-grow-1">
         <div className="conversation-icon mr-3">
-          <i className="fas fa-comment-dots"></i>
+          <i className={`fas ${isBlocked ? 'fa-ban text-warning' : 'fa-comment-dots'}`}></i>
         </div>
         <div className="conversation-content">
-          <div className="conversation-title font-weight-medium">{conversation.title}</div>
-          <small className="text-muted">{formatDate(conversation.updated_at)}</small>
+          <div className="conversation-title font-weight-medium">
+            {conversation.title}
+            {isBlocked && (
+              <Badge variant="warning" className="ml-2" style={{ fontSize: '0.7em' }}>
+                <i className="fas fa-ban mr-1"></i>
+                Blocked
+              </Badge>
+            )}
+          </div>
+          <small className="text-muted">
+            {formatDate(conversation.updated_at)}
+            {isBlocked && conversation.blocked_reason && (
+              <span className="text-warning ml-1">• {conversation.blocked_reason}</span>
+            )}
+          </small>
         </div>
       </div>
       <Button
