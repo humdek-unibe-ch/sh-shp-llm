@@ -190,7 +190,7 @@ class LlmService
      */
     private function clearConversationMessagesCache($user_id)
     {
-        // Get all conversation IDs for this user
+        // Get all conversation IDs for this user (including blocked ones for cache clearing)
         $conversations = $this->db->query_db(
             "SELECT id FROM llmConversations WHERE id_users = ? AND deleted = 0",
             [$user_id]
@@ -205,7 +205,7 @@ class LlmService
     /**
      * Log transaction using the proper Transaction service
      */
-    private function logTransaction($operation, $table, $record_id, $user_id, $details = '')
+    protected function logTransaction($operation, $table, $record_id, $user_id, $details = '')
     {
         $this->services->get_transaction()->add_transaction(
             $operation,                    // tran_type
@@ -295,7 +295,7 @@ class LlmService
 
         $sql = "SELECT id, id_sections, title, model, created_at, updated_at
                 FROM llmConversations
-                WHERE id_users = :id_user AND deleted = 0";
+                WHERE id_users = :id_user AND deleted = 0 AND blocked = 0";
         $params = array(':id_user' => $user_id);
 
         if ($model) {

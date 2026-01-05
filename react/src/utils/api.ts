@@ -654,6 +654,13 @@ export const progressApi = {
 // ADMIN API
 // ============================================================================
 
+// Admin action response types
+interface AdminActionResponse {
+  success?: boolean;
+  error?: string;
+  message?: string;
+}
+
 export const adminApi = {
   async getFilters() {
     return apiGet<AdminFiltersResponse>('admin_filters');
@@ -684,6 +691,43 @@ export const adminApi = {
     return apiGet<AdminMessagesResponse>('admin_messages', {
       conversation_id: conversationId
     });
+  },
+
+  /**
+   * Delete a conversation (soft delete - sets deleted flag)
+   * @param conversationId - The conversation ID to delete
+   */
+  async deleteConversation(conversationId: string): Promise<AdminActionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'admin_delete_conversation');
+    formData.append('conversation_id', conversationId);
+    return apiPost<AdminActionResponse>(formData);
+  },
+
+  /**
+   * Block a conversation
+   * @param conversationId - The conversation ID to block
+   * @param reason - Optional reason for blocking
+   */
+  async blockConversation(conversationId: string, reason?: string): Promise<AdminActionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'admin_block_conversation');
+    formData.append('conversation_id', conversationId);
+    if (reason) {
+      formData.append('reason', reason);
+    }
+    return apiPost<AdminActionResponse>(formData);
+  },
+
+  /**
+   * Unblock a conversation
+   * @param conversationId - The conversation ID to unblock
+   */
+  async unblockConversation(conversationId: string): Promise<AdminActionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'admin_unblock_conversation');
+    formData.append('conversation_id', conversationId);
+    return apiPost<AdminActionResponse>(formData);
   }
 };
 

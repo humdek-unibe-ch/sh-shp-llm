@@ -532,6 +532,7 @@
   box-shadow: var(--llm-shadow-medium);
 }
 
+
 /* ===== Raw HTML Support ===== */
 /* Styles for HTML tags that may come directly from LLM responses */
 .markdown-content img,

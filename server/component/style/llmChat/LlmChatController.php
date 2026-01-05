@@ -16,7 +16,8 @@ require_once __DIR__ . "/../../../service/LlmDataSavingService.php";
 require_once __DIR__ . "/../../../service/LlmRequestService.php";
 require_once __DIR__ . "/../../../service/LlmContextService.php";
 require_once __DIR__ . "/../../../service/LlmProgressTrackingService.php";
-require_once __DIR__ . "/../../../service/LlmStructuredResponseService.php";
+require_once __DIR__ . "/../../../service/LlmResponseService.php";
+require_once __DIR__ . "/../../../service/LlmDangerDetectionService.php";
 
 /**
  * LLM Chat Controller
@@ -63,6 +64,12 @@ class LlmChatController extends BaseController
 
     /** @var LlmProgressTrackingService Progress tracking service */
     private $progress_tracking_service;
+
+    /** @var LlmDangerDetectionService Danger detection service */
+    private $danger_detection_service;
+
+    /** @var LlmResponseService Unified response parsing and validation */
+    private $response_service;
 
     /** @var float Request start time for activity logging */
     private $request_start_time;
@@ -158,11 +165,16 @@ class LlmChatController extends BaseController
         $api_formatter_service = new LlmApiFormatterService();
         
         $this->streaming_service = new LlmStreamingService($this->llm_service);
-
-        $structured_response_service = new LlmStructuredResponseService();
         
         // Progress tracking service - created before context service so it can be injected
         $this->progress_tracking_service = new LlmProgressTrackingService($services);
+        
+        // Danger detection service - handles notifications when LLM detects danger
+        // Safety detection is performed by LLM via structured response schema
+        $this->danger_detection_service = new LlmDangerDetectionService($services, $this->model);
+        
+        // Response service - unified response parsing and validation
+        $this->response_service = new LlmResponseService($this->model, $services);
         
         // Composite services
         $this->request_service = new LlmRequestService($this->llm_service, $this->model);
@@ -172,7 +184,6 @@ class LlmChatController extends BaseController
             $floating_mode_service,
             $strict_conversation_service,
             $api_formatter_service,
-            $structured_response_service,
             $this->progress_tracking_service  // Pass progress tracking service for context building
         );
     }
@@ -294,6 +305,23 @@ class LlmChatController extends BaseController
         $is_streaming_prep = ($_POST['prepare_streaming'] ?? '') === '1';
         $section_id = $this->model->getSectionId();
 
+        // ========== CONVERSATION BLOCKING CHECK ==========
+        // Check if conversation is blocked before allowing any messages
+        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
+            $this->sendJsonResponse([
+                'blocked' => true,
+                'type' => 'conversation_blocked',
+                'message' => 'This conversation has been blocked due to safety concerns. Please start a new conversation.',
+                'error' => 'Conversation blocked'
+            ]);
+            return;
+        }
+        // ============================================
+        
+        // NOTE: Danger detection is now handled by the LLM via structured response schema.
+        // The LLM evaluates message safety and returns it in the safety field.
+        // See LlmResponseService for schema details.
+
         try {
             // Check rate limiting
             $rate_data = $this->request_service->checkRateLimit($user_id);
@@ -354,6 +382,19 @@ class LlmChatController extends BaseController
         $is_streaming_prep = ($_POST['prepare_streaming'] ?? '') === '1';
         $section_id = $this->model->getSectionId();
 
+        // ========== CONVERSATION BLOCKING CHECK ==========
+        // Check if conversation is blocked before allowing any messages
+        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
+            $this->sendJsonResponse([
+                'blocked' => true,
+                'type' => 'conversation_blocked',
+                'message' => 'This conversation has been blocked due to safety concerns. Please start a new conversation.',
+                'error' => 'Conversation blocked'
+            ]);
+            return;
+        }
+        // ============================================
+
         // Parse and validate form values
         $form_values = $this->form_mode_service->parseFormValues($form_values_json);
         if ($form_values === null) {
@@ -375,6 +416,9 @@ class LlmChatController extends BaseController
             $this->sendJsonResponse(['error' => 'Could not generate form submission text'], 400);
             return;
         }
+
+        // NOTE: Danger detection is now handled by the LLM via structured response schema.
+        // The LLM evaluates message safety and returns it in the safety field.
 
         try {
             // Check rate limiting
@@ -513,6 +557,13 @@ class LlmChatController extends BaseController
                 $progress_data = $this->calculateConversationProgress($conversation_id, $messages);
             }
 
+            // Set safety services for post-stream safety detection
+            $this->streaming_service->setSafetyServices(
+                $this->response_service,
+                $this->danger_detection_service,
+                $this->model
+            );
+
             $this->streaming_service->startStreamingResponse(
                 $conversation_id,
                 $api_messages,
@@ -524,20 +575,32 @@ class LlmChatController extends BaseController
             return;
         }
 
-        // Non-streaming: call API and save response
-        $response = $this->request_service->callLlmApi($api_messages);
-        
-        // Response is now normalized by provider
-        // Structure: ['content', 'role', 'finish_reason', 'usage', 'reasoning', 'raw_response']
-        
-        if (!isset($response['content'])) {
-            throw new Exception('Invalid response from LLM API - missing content');
-        }
+        // Non-streaming: call API with schema validation and retry logic
+        $llm_callable = function($messages) {
+            return $this->request_service->callLlmApi($messages);
+        };
 
+        $result = $this->response_service->callLlmWithSchemaValidation($llm_callable, $api_messages);
+        $parsed = $result['response'];
+        $response = $result['raw_response'];
+
+        // Extract response data
         $assistant_message = $response['content'];
         $tokens_used = $response['usage']['total_tokens'] ?? null;
         $reasoning = $response['reasoning'] ?? null;
         $raw_response = $response['raw_response'] ?? $response;
+
+        // Log retry attempts if more than 1 was needed
+        if ($result['attempts'] > 1) {
+            error_log('LLM response required ' . $result['attempts'] . ' attempts to match schema');
+        }
+
+        // ========== SAFETY DETECTION FROM LLM RESPONSE ==========
+        if ($parsed['valid'] && isset($parsed['data'])) {
+            $user_id = $this->model->getUserId();
+            $this->handleSafetyDetection($parsed['data'], $conversation_id, $user_id);
+        }
+        // ============================================
 
         $this->request_service->addAssistantMessage(
             $conversation_id,
@@ -555,12 +618,70 @@ class LlmChatController extends BaseController
             'is_new_conversation' => $is_new_conversation
         ];
 
+        // Include structured response data if valid
+        if ($parsed['valid'] && isset($parsed['data'])) {
+            $response_data['structured'] = $parsed['data'];
+            
+            // Include safety info in response for frontend handling
+            $safety = $this->response_service->assessSafety($parsed['data']);
+            if (!$safety['is_safe'] || $safety['danger_level'] !== null) {
+                $response_data['safety'] = $safety;
+            }
+        }
+
         // Include progress data if progress tracking is enabled
         if ($this->model->isProgressTrackingEnabled()) {
             $response_data['progress'] = $this->calculateConversationProgress($conversation_id, $messages);
         }
 
         $this->sendJsonResponse($response_data);
+    }
+
+    /**
+     * Handle safety detection from LLM response
+     * 
+     * When the LLM detects dangerous content, this method:
+     * 1. Logs the detection to transactions
+     * 2. Sends email notifications if intervention required
+     * 3. Blocks the conversation if emergency level
+     * 
+     * @param array $parsed_response Parsed structured response
+     * @param int $conversation_id Conversation ID
+     * @param int $user_id User ID
+     */
+    private function handleSafetyDetection($parsed_response, $conversation_id, $user_id)
+    {
+        $safety = $this->response_service->assessSafety($parsed_response);
+        
+        // If safe, nothing to do
+        if ($safety['is_safe'] && $safety['danger_level'] === null) {
+            return;
+        }
+
+        $section_id = $this->model->getSectionId();
+        $detected_concerns = $safety['detected_concerns'];
+
+        // Log detection regardless of level
+        if (!empty($detected_concerns)) {
+            error_log("LLM Safety Detection: Level {$safety['danger_level']}, Concerns: " . implode(', ', $detected_concerns));
+        }
+
+        // Send notifications if intervention required (critical or emergency)
+        if ($safety['requires_intervention']) {
+            $this->danger_detection_service->sendNotifications(
+                $detected_concerns,
+                $safety['safety_message'] ?? 'Dangerous content detected by AI',
+                $user_id,
+                $conversation_id,
+                $section_id
+            );
+        }
+
+        // Block conversation if emergency level
+        if ($safety['danger_level'] === 'emergency') {
+            $reason = 'LLM detected emergency danger: ' . implode(', ', $detected_concerns);
+            $this->danger_detection_service->blockConversation($conversation_id, $detected_concerns, $reason);
+        }
     }
 
     /**

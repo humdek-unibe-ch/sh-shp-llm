@@ -237,6 +237,10 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     `temperature` decimal(3,2) DEFAULT 1,
     `max_tokens` int DEFAULT 2048,
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
+    `blocked` TINYINT(1) DEFAULT 0 NOT NULL COMMENT 'Conversation blocked due to safety concerns',
+    `blocked_reason` TEXT DEFAULT NULL COMMENT 'Reason for blocking (danger keywords detected, manual block, etc)',
+    `blocked_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'When the conversation was blocked',
+    `blocked_by` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Admin user who manually blocked (NULL for automatic)',
     `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -244,6 +248,7 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     KEY `idx_user_updated` (`id_users`, `updated_at`),
     KEY `idx_section` (`id_sections`),
     KEY `idx_deleted` (`deleted`),
+    KEY `idx_blocked` (`blocked`),
     CONSTRAINT `fk_llmConversations_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE,
 CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -496,12 +501,48 @@ CREATE TABLE IF NOT EXISTS `llmConversationProgress` (
 -- STRUCTURED RESPONSE MODE FEATURE
 -- =====================================================
 
--- Add structured response mode field
--- When enabled, LLM always returns JSON following RESPONSE_SCHEMA
--- This enables flexible forms + free text interaction
-INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
-(NULL, 'enable_structured_response', get_field_type_id('checkbox'), '0');
+-- Structured response mode is now MANDATORY
+-- All LLM responses use the standardized JSON schema
+-- See doc/response-schema.md for complete schema documentation
 
--- Link structured response field to llmchat style
+-- Structured response mode is always enabled (no configuration needed)
+-- All responses automatically use the standardized JSON schema
+
+-- =====================================================
+-- DANGER WORD DETECTION FEATURE
+-- =====================================================
+-- Critical safety feature that monitors AI conversations for potentially
+-- harmful content, blocks dangerous messages, and sends immediate notifications.
+-- Uses SelfHelp's JobScheduler for email delivery and transactions table for audit.
+
+-- Field to enable/disable danger detection (per-section)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_danger_detection', get_field_type_id('checkbox'), '0');
+
+-- Field for danger keywords list (per-section, internal config)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'danger_keywords', get_field_type_id('textarea'), '0');
+
+-- Field for notification email addresses (per-section)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'danger_notification_emails', get_field_type_id('text'), '0');
+
+-- Field for custom blocked message (per-section, translatable, user-visible)
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'danger_blocked_message', get_field_type_id('markdown'), '1');
+
+-- Link danger detection fields to llmChat style
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('llmChat'), get_field_id('enable_structured_response'), '1', 'Enable structured response mode. When enabled, the LLM always returns responses in a standardized JSON schema format. This provides:\n\n- **Flexible interaction**: Forms are optional guidance, users can always type free text\n- **Progress tracking integration**: Automatic topic coverage detection\n- **Rich content**: Support for text blocks with different styles, optional forms, media, and navigation suggestions\n- **Predictable parsing**: All responses follow the same structure\n\nRecommended for educational modules and guided conversations where you want both structure and flexibility.');
+(get_style_id('llmChat'), get_field_id('enable_danger_detection'), '0', 
+ 'Enable danger word detection. When enabled, user messages are scanned for dangerous keywords before AI processing. If detected:\n\n- The message is blocked immediately\n- A safety message is shown to the user\n- Email notifications are sent to configured addresses\n- The detection is logged for audit purposes\n- The AI context includes critical safety instructions\n\nThis provides double protection: controller-level blocking AND AI-level refusal.'),
+
+(get_style_id('llmChat'), get_field_id('danger_keywords'), 
+ 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis,kill someone,jemanden töten,harm others,anderen schaden',
+ 'Comma-separated list of danger keywords. Case-insensitive. Supports multi-language.\n\n**Example:**\nsuicide,selbstmord,kill myself,mich umbringen,self-harm,harm others\n\n**Tips:**\n- Include variations in all languages your study uses\n- Use phrases for more accuracy (e.g., `kill myself` vs just `kill`)\n- These keywords are also injected into the AI context as critical safety instructions\n- Word-boundary matching prevents false positives (e.g., `skill` wont match `kill`)'),
+
+(get_style_id('llmChat'), get_field_id('danger_notification_emails'), '',
+ 'Email addresses to notify when danger keywords are detected.\nOne email per line or separated by semicolons.\n\n**Example:**\nadmin@example.com\nresearcher@example.com\n\n**Note:** If empty, only audit logging occurs (no email notifications). Emails are sent immediately via SelfHelp job scheduler.'),
+
+(get_style_id('llmChat'), get_field_id('danger_blocked_message'), 
+ 'I noticed some concerning content in your message. While I want to help, I''m not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you''re in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*',
+ 'Message shown to users when danger keywords are detected. Supports markdown formatting.\n\nThis message replaces the AI response when the conversation is blocked. The conversation remains active - users can continue with different messages.');

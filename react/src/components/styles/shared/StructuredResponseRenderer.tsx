@@ -133,16 +133,22 @@ const NextStepRenderer: React.FC<{
 
       {suggestions && suggestions.length > 0 && (
         <div className="suggestion-buttons d-flex flex-wrap gap-2">
-          {suggestions.map((suggestion, index) => (
-            <button
-              key={index}
-              type="button"
-              className="btn btn-outline-primary btn-sm suggestion-btn"
-              onClick={() => onSuggestionClick?.(suggestion)}
-            >
-              {suggestion}
-            </button>
-          ))}
+          {suggestions.map((suggestion, index) => {
+            // Guard against undefined/null suggestions
+            if (!suggestion || typeof suggestion !== 'string') {
+              return null;
+            }
+            return (
+              <button
+                key={index}
+                type="button"
+                className="btn btn-outline-primary btn-sm suggestion-btn"
+                onClick={() => onSuggestionClick?.(suggestion)}
+              >
+                {suggestion}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

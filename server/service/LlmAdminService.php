@@ -236,4 +236,153 @@ class LlmAdminService extends LlmService
         ) ?: [];
     }
 
+    /**
+     * Admin: Soft delete a conversation
+     * Sets deleted flag but keeps data in database for audit purposes
+     * 
+     * @param int $conversation_id Conversation ID to delete
+     * @param int|null $admin_user_id Admin user performing the action
+     * @return bool True if deleted successfully
+     */
+    public function adminDeleteConversation($conversation_id, $admin_user_id = null)
+    {
+        // Verify conversation exists
+        $conversation = $this->db->query_db_first(
+            "SELECT id, id_users FROM llmConversations WHERE id = ?",
+            [$conversation_id]
+        );
+        
+        if (!$conversation) {
+            throw new Exception('Conversation not found');
+        }
+        
+        // Soft delete conversation
+        $result = $this->db->update_by_ids(
+            'llmConversations',
+            ['deleted' => 1],
+            ['id' => $conversation_id]
+        );
+        
+        if ($result) {
+            // Also soft delete all messages in this conversation
+            $this->db->update_by_ids(
+                'llmMessages',
+                ['deleted' => 1],
+                ['id_llmConversations' => $conversation_id]
+            );
+            
+            // Log the action
+            $this->logTransaction(
+                transactionTypes_delete,
+                'llmConversations',
+                $conversation_id,
+                $conversation['id_users'],
+                'Admin deleted conversation' . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
+            );
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Admin: Block a conversation
+     * Prevents users from continuing the conversation
+     * 
+     * @param int $conversation_id Conversation ID to block
+     * @param string|null $reason Reason for blocking
+     * @param int|null $admin_user_id Admin user performing the action
+     * @return bool True if blocked successfully
+     */
+    public function adminBlockConversation($conversation_id, $reason = null, $admin_user_id = null)
+    {
+        // Verify conversation exists
+        $conversation = $this->db->query_db_first(
+            "SELECT id, id_users, blocked FROM llmConversations WHERE id = ?",
+            [$conversation_id]
+        );
+        
+        if (!$conversation) {
+            throw new Exception('Conversation not found');
+        }
+        
+        if ($conversation['blocked']) {
+            throw new Exception('Conversation is already blocked');
+        }
+        
+        $block_reason = $reason ?: 'Manually blocked by administrator';
+        
+        $result = $this->db->update_by_ids(
+            'llmConversations',
+            [
+                'blocked' => 1,
+                'blocked_reason' => $block_reason,
+                'blocked_at' => date('Y-m-d H:i:s'),
+                'blocked_by' => $admin_user_id
+            ],
+            ['id' => $conversation_id]
+        );
+        
+        if ($result) {
+            // Log the action
+            $this->logTransaction(
+                transactionTypes_update,
+                'llmConversations',
+                $conversation_id,
+                $conversation['id_users'],
+                "Admin blocked conversation. Reason: {$block_reason}" . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
+            );
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Admin: Unblock a conversation
+     * Allows users to continue the conversation again
+     * 
+     * @param int $conversation_id Conversation ID to unblock
+     * @param int|null $admin_user_id Admin user performing the action
+     * @return bool True if unblocked successfully
+     */
+    public function adminUnblockConversation($conversation_id, $admin_user_id = null)
+    {
+        // Verify conversation exists
+        $conversation = $this->db->query_db_first(
+            "SELECT id, id_users, blocked FROM llmConversations WHERE id = ?",
+            [$conversation_id]
+        );
+        
+        if (!$conversation) {
+            throw new Exception('Conversation not found');
+        }
+        
+        if (!$conversation['blocked']) {
+            throw new Exception('Conversation is not blocked');
+        }
+        
+        $result = $this->db->update_by_ids(
+            'llmConversations',
+            [
+                'blocked' => 0,
+                'blocked_reason' => null,
+                'blocked_at' => null,
+                'blocked_by' => null
+            ],
+            ['id' => $conversation_id]
+        );
+        
+        if ($result) {
+            // Log the action
+            $this->logTransaction(
+                transactionTypes_update,
+                'llmConversations',
+                $conversation_id,
+                $conversation['id_users'],
+                'Admin unblocked conversation' . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
+            );
+        }
+        
+        return $result;
+    }
+
 }

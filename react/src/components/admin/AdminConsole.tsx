@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination, Modal } from 'react-bootstrap';
 import Select from 'react-select';
 import { adminApi } from '../../utils/api';
 import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
@@ -18,6 +18,16 @@ interface AdminFilters {
   query: string;
   dateFrom: string;
   dateTo: string;
+}
+
+// Confirmation modal state interface
+interface ConfirmationModal {
+  show: boolean;
+  title: string;
+  message: string;
+  confirmText: string;
+  confirmVariant: 'danger' | 'warning' | 'success' | 'primary';
+  onConfirm: () => void;
 }
 
 interface FilterOption {
@@ -413,6 +423,19 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     target: HTMLElement | null;
   }>({ show: false, message: null, target: null });
 
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<ConfirmationModal>({
+    show: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    confirmVariant: 'primary',
+    onConfirm: () => {}
+  });
+
+  // Block reason input state
+  const [blockReason, setBlockReason] = useState('');
+
   // Scroll position preservation
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [preservedScrollTop, setPreservedScrollTop] = useState<number | null>(null);
@@ -559,6 +582,134 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     setMessages([]);
     setCurrentPage(1);
   };
+
+  // ========== Admin Action Handlers ==========
+
+  // Helper to show confirmation modal
+  const showConfirmation = (
+    title: string,
+    message: string,
+    confirmText: string,
+    confirmVariant: 'danger' | 'warning' | 'success' | 'primary',
+    onConfirm: () => void
+  ) => {
+    setConfirmModal({
+      show: true,
+      title,
+      message,
+      confirmText,
+      confirmVariant,
+      onConfirm
+    });
+  };
+
+  // Helper to hide confirmation modal
+  const hideConfirmation = () => {
+    setConfirmModal(prev => ({ ...prev, show: false }));
+    setBlockReason('');
+  };
+
+  const handleDeleteConversation = (conversationId: string) => {
+    showConfirmation(
+      'Delete Conversation',
+      'Are you sure you want to delete this conversation? The conversation will be hidden from the user but kept in the database for audit purposes.',
+      'Delete',
+      'danger',
+      async () => {
+        hideConfirmation();
+        setLoading(true);
+        try {
+          const response = await adminApi.deleteConversation(conversationId);
+          if (response.error) {
+            throw new Error(response.error);
+          }
+          
+          // Clear selection and refresh list
+          setSelectedConversation(null);
+          setMessages([]);
+          await loadConversations(currentPage);
+        } catch (err) {
+          setError((err as Error).message);
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  const handleBlockConversation = (conversationId: string) => {
+    // Show block modal with reason input
+    setConfirmModal({
+      show: true,
+      title: 'Block Conversation',
+      message: 'The user will not be able to continue this conversation. Optionally enter a reason for blocking:',
+      confirmText: 'Block',
+      confirmVariant: 'warning',
+      onConfirm: async () => {
+        hideConfirmation();
+        setLoading(true);
+        try {
+          const response = await adminApi.blockConversation(conversationId, blockReason || undefined);
+          if (response.error) {
+            throw new Error(response.error);
+          }
+          
+          // Update the selected conversation's blocked status
+          if (selectedConversation && selectedConversation.id.toString() === conversationId) {
+            setSelectedConversation({
+              ...selectedConversation,
+              blocked: true,
+              blocked_reason: blockReason || 'Manually blocked by administrator'
+            });
+          }
+          
+          // Refresh conversation list
+          await loadConversations(currentPage);
+        } catch (err) {
+          setError((err as Error).message);
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
+  const handleUnblockConversation = (conversationId: string) => {
+    showConfirmation(
+      'Unblock Conversation',
+      'Are you sure you want to unblock this conversation? The user will be able to continue chatting.',
+      'Unblock',
+      'success',
+      async () => {
+        hideConfirmation();
+        setLoading(true);
+        try {
+          const response = await adminApi.unblockConversation(conversationId);
+          if (response.error) {
+            throw new Error(response.error);
+          }
+          
+          // Update the selected conversation's blocked status
+          if (selectedConversation && selectedConversation.id.toString() === conversationId) {
+            setSelectedConversation({
+              ...selectedConversation,
+              blocked: false,
+              blocked_reason: undefined
+            });
+          }
+          
+          // Refresh conversation list
+          await loadConversations(currentPage);
+        } catch (err) {
+          setError((err as Error).message);
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  // ========== End Admin Action Handlers ==========
 
   const getUserDisplayName = (user: FilterOption) => {
     const nameParts = [];
@@ -939,9 +1090,21 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 <Card.Header className="bg-light py-2">
                   <div className="d-flex justify-content-between align-items-start">
                     <div className="flex-grow-1">
-                      <h5 className="text-dark mb-1 font-weight-bold">
-                        {selectedConversation.title || 'Untitled Conversation'}
-                      </h5>
+                      <div className="d-flex align-items-center mb-1">
+                        <h5 className="text-dark mb-0 font-weight-bold">
+                          {selectedConversation.title || 'Untitled Conversation'}
+                        </h5>
+                        {selectedConversation.blocked ? (
+                          <Badge variant="warning" className="ml-2">
+                            <i className="fas fa-ban mr-1"></i>Blocked
+                          </Badge>
+                        ) : null}
+                        {selectedConversation.deleted ? (
+                          <Badge variant="danger" className="ml-2">
+                            <i className="fas fa-trash-alt mr-1"></i>Deleted
+                          </Badge>
+                        ) : null}
+                      </div>
                       <div className="small text-muted">
                         <i className="fas fa-user mr-1"></i>
                         {selectedConversation.user_name || 'Unknown'}
@@ -960,11 +1123,59 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         <i className="fas fa-clock mr-1"></i>
                         {formatDate(selectedConversation.updated_at)}
                       </div>
+                      {selectedConversation.blocked_reason && (
+                        <div className="small text-danger mt-1">
+                          <i className="fas fa-exclamation-triangle mr-1"></i>
+                          Block reason: {selectedConversation.blocked_reason}
+                        </div>
+                      )}
                     </div>
-                    <Badge variant="info" className="px-2 py-1">
-                      <i className="fas fa-comment-dots mr-1"></i>
-                      {selectedConversation.message_count || 0}
-                    </Badge>
+                    <div className="d-flex align-items-center">
+                      <Badge variant="info" className="px-2 py-1 mr-2">
+                        <i className="fas fa-comment-dots mr-1"></i>
+                        {selectedConversation.message_count || 0}
+                      </Badge>
+                      {/* Action Buttons Dropdown */}
+                      <div className="dropdown">
+                        <button 
+                          className="btn btn-outline-secondary btn-sm dropdown-toggle" 
+                          type="button" 
+                          data-toggle="dropdown" 
+                          aria-haspopup="true" 
+                          aria-expanded="false"
+                        >
+                          <i className="fas fa-cog mr-1"></i>
+                          Actions
+                        </button>
+                        <div className="dropdown-menu dropdown-menu-right">
+                          {selectedConversation.blocked ? (
+                            <button 
+                              className="dropdown-item text-success"
+                              onClick={() => handleUnblockConversation(selectedConversation.id.toString())}
+                            >
+                              <i className="fas fa-check-circle mr-2"></i>
+                              Unblock Conversation
+                            </button>
+                          ) : (
+                            <button 
+                              className="dropdown-item text-warning"
+                              onClick={() => handleBlockConversation(selectedConversation.id.toString())}
+                            >
+                              <i className="fas fa-ban mr-2"></i>
+                              Block Conversation
+                            </button>
+                          )}
+                          <div className="dropdown-divider"></div>
+                          <button 
+                            className="dropdown-item text-danger"
+                            onClick={() => handleDeleteConversation(selectedConversation.id.toString())}
+                          >
+                            <i className="fas fa-trash-alt mr-2"></i>
+                            Delete Conversation
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </Card.Header>
 
@@ -993,6 +1204,39 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
           onHide={() => setContextPopup({ show: false, message: null, target: null })}
         />
       )}
+
+      {/* Confirmation Modal */}
+      <Modal show={confirmModal.show} onHide={hideConfirmation} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <i className={`fas ${confirmModal.confirmVariant === 'danger' ? 'fa-trash-alt' : confirmModal.confirmVariant === 'warning' ? 'fa-ban' : 'fa-check-circle'} mr-2 text-${confirmModal.confirmVariant}`}></i>
+            {confirmModal.title}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>{confirmModal.message}</p>
+          {/* Show reason input for block action */}
+          {confirmModal.title === 'Block Conversation' && (
+            <Form.Group>
+              <Form.Label className="small text-muted">Reason (optional)</Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="Enter reason for blocking..."
+                value={blockReason}
+                onChange={(e) => setBlockReason(e.target.value)}
+              />
+            </Form.Group>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={hideConfirmation}>
+            Cancel
+          </Button>
+          <Button variant={confirmModal.confirmVariant} onClick={confirmModal.onConfirm}>
+            {confirmModal.confirmText}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

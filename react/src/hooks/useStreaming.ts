@@ -145,6 +145,21 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
         files
       );
 
+      // Handle danger detection blocked response
+      if (prepResponse.blocked && prepResponse.type === 'danger_detected') {
+        // Return the safety message - don't treat as error
+        // The caller should display this as an assistant message
+        if (prepResponse.message && onChunk) {
+          // Use onChunk to display the safety message content
+          onChunk(prepResponse.message);
+        }
+        if (onDone) {
+          // Signal completion with 0 tokens (no AI processing occurred)
+          onDone(0, undefined);
+        }
+        return null;
+      }
+      
       if (prepResponse.error) {
         onError?.(prepResponse.error);
         return null;
@@ -221,7 +236,6 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
               clearTimeout(streamingTimeout);
               // Streaming completed - industry standard: single atomic save
               setIsStreaming(false);
-              console.log('[Streaming] Done event received, progress:', event.progress);
               onDone?.(event.tokens_used || 0, event.progress);
 
               // Clear streaming content immediately (server has saved complete message)
@@ -281,7 +295,6 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
 
               // Retry for certain recoverable errors
               if (shouldRetry) {
-                console.log(`Retrying streaming due to error (attempt ${retryCount + 1}/${MAX_RETRIES + 1}): ${errorMessage}`);
                 setTimeout(() => {
                   sendStreamingMessage(message, conversationId, files, retryCount + 1);
                 }, 3000 * (retryCount + 1)); // Longer delay for server errors
@@ -328,7 +341,6 @@ export function useStreaming(options: UseStreamingOptions): UseStreamingReturn {
           // For connection errors, try to retry if we haven't exceeded max retries
           const shouldRetry = retryCount < MAX_RETRIES;
           if (shouldRetry) {
-            console.log(`Retrying streaming (attempt ${retryCount + 1}/${MAX_RETRIES + 1})`);
             setTimeout(() => {
               sendStreamingMessage(message, conversationId, files, retryCount + 1);
             }, 2000 * (retryCount + 1)); // Exponential backoff

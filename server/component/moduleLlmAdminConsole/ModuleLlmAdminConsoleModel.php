@@ -108,6 +108,43 @@ class ModuleLlmAdminConsoleModel extends BaseModel
     }
 
     /**
+     * Admin: Delete a conversation (soft delete)
+     * 
+     * @param int $conversation_id Conversation ID to delete
+     * @param int|null $admin_user_id Admin user performing the action
+     * @return bool True if deleted successfully
+     */
+    public function adminDeleteConversation($conversation_id, $admin_user_id = null)
+    {
+        return $this->llm_admin_service->adminDeleteConversation($conversation_id, $admin_user_id);
+    }
+
+    /**
+     * Admin: Block a conversation
+     * 
+     * @param int $conversation_id Conversation ID to block
+     * @param string|null $reason Reason for blocking
+     * @param int|null $admin_user_id Admin user performing the action
+     * @return bool True if blocked successfully
+     */
+    public function adminBlockConversation($conversation_id, $reason = null, $admin_user_id = null)
+    {
+        return $this->llm_admin_service->adminBlockConversation($conversation_id, $reason, $admin_user_id);
+    }
+
+    /**
+     * Admin: Unblock a conversation
+     * 
+     * @param int $conversation_id Conversation ID to unblock
+     * @param int|null $admin_user_id Admin user performing the action
+     * @return bool True if unblocked successfully
+     */
+    public function adminUnblockConversation($conversation_id, $admin_user_id = null)
+    {
+        return $this->llm_admin_service->adminUnblockConversation($conversation_id, $admin_user_id);
+    }
+
+    /**
      * UI labels for the React admin console.
      */
     public function getLabels()

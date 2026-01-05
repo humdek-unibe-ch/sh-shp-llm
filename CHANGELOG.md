@@ -1,8 +1,122 @@
 # Changelog - LLM Plugin
 
-## [1.0.0] - 2024-12-12
+## [1.0.0] - 2025-12-23
 
 ### Added
+
+#### Unified JSON Response Schema (December 23, 2025)
+- **Mandatory Structured Responses**: All LLM responses now follow a unified JSON schema
+- **Predictable Parsing**: Frontend knows exactly what to expect from every response
+- **Built-in Safety Detection**: Safety assessment is now part of every LLM response
+- **Integrated Form Support**: Forms, media, and suggestions all in one schema
+- **Progress Tracking**: Optional topic coverage tracking in response schema
+- **Schema Validation**: Backend validates all responses against schema
+
+**New Schema Fields:**
+- `type`: Always "response" for identification
+- `safety`: Safety assessment with `is_safe`, `danger_level`, `detected_concerns`
+- `content`: Text blocks, optional form, media, suggestions
+- `progress`: Optional progress tracking data
+- `metadata`: Model name, tokens used, language
+
+**New Files:**
+- `server/service/LlmResponseService.php`: Unified response handling
+- `server/constants/LlmResponseSchema.php`: Schema constants with detailed field documentation
+- `doc/response-schema.md`: Complete schema documentation
+
+#### Suggestions (Quick Reply Buttons) Feature
+- **Quick Reply Buttons**: Users can click suggestion buttons for common responses
+- **Flexible Actions**: Supports `send_message`, `navigate`, and `external_link` actions
+- **Custom Values**: Optional `value` property allows different message than button label
+- **Backwards Compatible**: Frontend handles both object and string array formats
+
+**Suggestion Object Format:**
+```json
+{
+  "suggestions": [
+    { "text": "Option 1" },
+    { "text": "Custom action", "value": "Send this message instead" }
+  ]
+}
+```
+
+### Fixed
+
+#### Suggestions Rendering Fix (December 23, 2025)
+- **Fixed**: Suggestions not rendering when LLM returns wrong property names
+- **Root Cause**: LLM sometimes used `label`, `name`, or `title` instead of required `text` property
+- **Solution**: Strict validation - only `{"text": "..."}` format is accepted
+- **Schema Update**: System instructions now explicitly show WRONG formats to avoid (label, name, title, etc.)
+- **No Backwards Compatibility**: Removed support for non-standard formats - LLM must use exact schema
+
+### Changed
+
+#### Schema Documentation Improvements (December 23, 2025)
+- **Enhanced System Instructions**: Much clearer formatting with visual separators
+- **Explicit Suggestions Format**: System prompt now clearly shows correct vs incorrect format
+- **Field Descriptions**: Added detailed descriptions to all schema fields
+- **Complete Examples**: Added comprehensive examples for all content types
+
+#### Schema Validation & Retry Logic (January 5, 2026)
+- **Mandatory Schema Compliance**: LLM responses must now match the JSON schema exactly - no randomness allowed
+- **Automatic Retry Logic**: Failed schema validation triggers up to 3 automatic retry attempts
+- **Professional Schema Management**: Moved schema from PHP constants to dedicated JSON file (`schemas/llm-response.schema.json`)
+- **Enhanced System Instructions**: LLM now receives the actual JSON schema in prompts instead of hardcoded examples
+- **Self-Correcting AI**: LLM automatically fixes invalid responses based on validation error feedback
+
+**New Features:**
+- Schema validation with retry loop in `LlmResponseService::callLlmWithSchemaValidation()`
+- Dedicated JSON schema file for better maintainability
+- Enhanced error feedback sent to LLM on retry attempts
+- Improved null value handling in schema validation
+
+**Technical Implementation:**
+- Updated `LlmResponseService::buildSchemaInstruction()` to load schema from JSON file
+- Added retry logic with configurable max attempts (default: 3)
+- Fixed validation edge cases (null vs empty string handling)
+- Enhanced logging for retry attempts and validation failures
+
+#### Schema Architecture Improvements (January 5, 2026)
+- **Moved Schema to JSON File**: Schema now stored in `schemas/llm-response.schema.json` instead of PHP constants
+- **Dynamic Schema Loading**: `LlmResponseSchema::getSchema()` loads and caches JSON schema
+- **Enhanced Validation**: Fixed null handling and improved error messages
+- **Better Error Recovery**: Graceful fallback to inline schema if JSON file unavailable
+
+#### Removed Hints Functionality
+- **Removed**: Form field hints (`HintsDisplay` component) - replaced by suggestions
+- **Migration**: Use `content.suggestions` instead of `field.hints` for quick input options
+- **Cleaner Forms**: Forms now focus on structured input, suggestions handle quick replies
+
+#### LLM-Based Danger Detection (December 23, 2025)
+- **AI-Powered Safety**: Danger detection moved from keyword scanning to LLM evaluation
+- **Contextual Understanding**: LLM understands nuance and context of messages
+- **Immediate Email Notifications**: Uses SelfHelp's JobScheduler for instant delivery
+- **Audit Logging**: All detections logged to transactions table
+- **Emergency Blocking**: Conversations automatically blocked on emergency level
+- **Multi-language Support**: Configure keywords in any language
+
+**Safety Detection Flow:**
+1. Keywords injected into LLM context as critical safety instructions
+2. LLM evaluates each message and returns safety assessment in response
+3. Backend processes safety field: logs, notifies, blocks as needed
+4. Frontend displays safety message and handles blocked state
+
+**Configuration Fields:**
+- `enable_danger_detection`: Enable/disable the feature per section
+- `danger_keywords`: Comma-separated list of keywords for LLM to detect
+- `danger_notification_emails`: Email addresses for safety notifications
+- `danger_blocked_message`: Customizable safety message (markdown)
+
+**New Files:**
+- `server/service/LlmDangerDetectionService.php`: Notification handling
+- `server/constants/LlmResponseSchema.php`: Schema constants
+- `doc/danger-word-detection.md`: Feature documentation
+
+**Technical Implementation:**
+- LLM context injection via `LlmResponseService.buildResponseContext()`
+- Safety processing in `LlmChatController.handleSafetyDetection()`
+- Email delivery via `JobScheduler.add_and_execute_job()`
+- React frontend types for unified schema in `types/index.ts`
 
 #### Core Features
 - Complete LLM chat plugin implementation for SelfHelp CMS
@@ -149,15 +263,15 @@
 - **Browser Compatibility**: Chrome/Edge, Firefox, Safari, mobile browsers
 - **Migration**: No breaking changes, scoped CSS to avoid conflicts
 
-### Changed (December 22, 2024)
+### Changed (December 22, 2025)
 - **BFH Provider URL Update**: Updated BFH Inference API base URL from `https://inference.mlmp.ti.bfh.ch/api` to `https://inference.mlmp.ti.bfh.ch/api/v1`
 - **Documentation Updates**: Updated all documentation files to reflect the new BFH API endpoint
 - **Provider Detection**: BfhProvider now correctly detects and handles the new `/api/v1` endpoint
 - **Response Structure**: Confirmed support for BFH's enhanced response format including `reasoning_content` and `provider_specific_fields`
 
 ### Known Limitations
-- Danger word detection system planned for future version
 - Advanced analytics and reporting features planned
+- Danger word severity levels (emergency/critical/warning) planned for future version
 
 ### Migration Notes
 - No breaking changes from previous development builds

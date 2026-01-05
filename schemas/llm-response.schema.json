@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "safety", "content", "metadata"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["response"],
+      "description": "Response type identifier - must always be \"response\""
+    },
+    "safety": {
+      "type": "object",
+      "description": "Safety assessment of user message and response",
+      "required": ["is_safe", "danger_level", "detected_concerns", "requires_intervention"],
+      "properties": {
+        "is_safe": {
+          "type": "boolean",
+          "description": "True if content is safe, false if danger detected at critical/emergency level"
+        },
+        "danger_level": {
+          "type": ["string", "null"],
+          "enum": [null, "warning", "critical", "emergency"],
+          "description": "Severity level: null=safe, warning=log only, critical=notify admins, emergency=block"
+        },
+        "detected_concerns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "suicide", "self_harm", "harm_others", "violence",
+              "sexual_abuse", "substance_abuse", "eating_disorder",
+              "domestic_violence", "child_safety", "terrorism"
+            ]
+          },
+          "description": "List of detected safety concern categories"
+        },
+        "requires_intervention": {
+          "type": "boolean",
+          "description": "True if administrators should be notified immediately"
+        },
+        "safety_message": {
+          "type": ["string", "null"],
+          "description": "Supportive, non-judgmental message when danger is detected"
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "description": "The actual response content to display to the user",
+      "required": ["text_blocks"],
+      "properties": {
+        "text_blocks": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Array of text content blocks with styling. At least one block required.",
+          "items": {
+            "type": "object",
+            "required": ["type", "content"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["text", "heading", "info", "warning", "error", "success", "code"],
+                "description": "Block type determines rendering style"
+              },
+              "content": {
+                "type": "string",
+                "description": "The text content, can include markdown formatting"
+              },
+              "style": {
+                "type": "string",
+                "enum": ["default", "bold", "italic", "code", "quote"],
+                "default": "default",
+                "description": "Additional text styling"
+              }
+            }
+          }
+        },
+        "form": {
+          "type": ["object", "null"],
+          "description": "Optional form for structured user input. See FORM STRUCTURE section."
+        },
+        "media": {
+          "type": "array",
+          "description": "Optional media items (images, videos, audio)",
+          "items": {
+            "type": "object",
+            "required": ["type", "url"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["image", "video", "audio"]
+              },
+              "url": {
+                "type": "string",
+                "description": "URL or path to the media file"
+              },
+              "alt": {
+                "type": ["string", "null"],
+                "description": "Alt text for accessibility (images)"
+              },
+              "caption": {
+                "type": ["string", "null"],
+                "description": "Optional caption displayed below media"
+              }
+            }
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "description": "Quick reply suggestion buttons. STRICT FORMAT: Each item MUST be {\"text\": \"button label\"}",
+          "items": {
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "REQUIRED: The button label. This is the ONLY accepted property name."
+              }
+            }
+          }
+        }
+      }
+    },
+    "progress": {
+      "type": ["object", "null"],
+      "description": "Optional progress tracking for educational modules/topics",
+      "properties": {
+        "percentage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Overall completion percentage (0-100)"
+        },
+        "current_topic": {
+          "type": ["string", "null"],
+          "description": "ID or name of current topic being covered"
+        },
+        "topics_covered": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of topic IDs/names that have been covered"
+        },
+        "topics_remaining": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of topic IDs/names still to be covered"
+        },
+        "milestones_reached": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of milestones achieved (e.g., \"25%\", \"50%\")"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Response metadata for tracking and debugging",
+      "required": ["model"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Name of the LLM model that generated this response"
+        },
+        "tokens_used": {
+          "type": ["number", "null"],
+          "description": "Number of tokens consumed for this response"
+        },
+        "confidence": {
+          "type": ["number", "null"],
+          "description": "Optional confidence score (0-1)"
+        },
+        "language": {
+          "type": ["string", "null"],
+          "description": "Detected/used language code (en, de, fr, etc.)"
+        }
+      }
+    }
+  }
+}

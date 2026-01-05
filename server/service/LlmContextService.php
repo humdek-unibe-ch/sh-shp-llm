@@ -3,19 +3,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+require_once __DIR__ . '/LlmResponseService.php';
+
 /**
  * LLM Context Service
  * 
  * Handles context building for LLM API calls.
  * Centralizes the logic for:
  * - Building context messages from configuration
- * - Applying structured response schema (always JSON output)
+ * - Applying unified response schema (always JSON output with safety detection)
  * - Applying form mode context
  * - Applying floating mode context
  * - Applying strict conversation mode context
  * 
- * The service determines which context mode to apply based on
- * the model configuration (priority: structured response > form mode > floating mode > strict mode).
+ * All responses use the unified JSON schema from LlmResponseService.
+ * Safety detection is handled by the LLM via the schema's safety field.
  */
 class LlmContextService
 {
@@ -24,7 +26,7 @@ class LlmContextService
     private $floating_mode_service;
     private $strict_conversation_service;
     private $api_formatter_service;
-    private $structured_response_service;
+    private $response_service;
     private $progress_tracking_service;
 
     /**
@@ -35,7 +37,6 @@ class LlmContextService
      * @param LlmFloatingModeService $floating_mode_service Floating mode service
      * @param LlmStrictConversationService $strict_conversation_service Strict mode service
      * @param LlmApiFormatterService $api_formatter_service API formatter service
-     * @param LlmStructuredResponseService $structured_response_service Structured response service
      * @param LlmProgressTrackingService $progress_tracking_service Progress tracking service (optional)
      */
     public function __construct(
@@ -44,7 +45,6 @@ class LlmContextService
         $floating_mode_service,
         $strict_conversation_service,
         $api_formatter_service,
-        $structured_response_service,
         $progress_tracking_service = null
     ) {
         $this->model = $model;
@@ -52,20 +52,22 @@ class LlmContextService
         $this->floating_mode_service = $floating_mode_service;
         $this->strict_conversation_service = $strict_conversation_service;
         $this->api_formatter_service = $api_formatter_service;
-        $this->structured_response_service = $structured_response_service;
         $this->progress_tracking_service = $progress_tracking_service;
+        
+        // Initialize unified response service
+        $this->response_service = new LlmResponseService($model);
     }
 
     /**
      * Build the complete context messages based on configuration
      *
      * Priority order:
-     * 1. Language-specific context adaptation (always applied first)
-     * 2. Structured response mode (highest) - if enabled, ensures all responses are JSON
-     * 3. Form mode - if enabled (legacy, use structured instead)
-     * 4. Floating mode - if floating button is enabled
-     * 5. Strict conversation mode - if enabled and has context
-     * 6. Basic context - just the parsed conversation context
+     * 1. Unified response schema with safety detection (ALWAYS applied)
+     * 2. Language-specific context adaptation
+     * 3. Floating mode - if floating button is enabled
+     * 4. Strict conversation mode - if enabled and has context
+     * 5. Form mode context - if enabled
+     * 6. Basic context - the parsed conversation context
      *
      * @param int|null $conversation_id Optional conversation ID for progress tracking
      * @param int|null $section_id Optional section ID for progress tracking
@@ -76,45 +78,29 @@ class LlmContextService
         // Get base context from model configuration
         $context_messages = $this->model->getParsedConversationContext();
 
-        // Apply language-specific context adaptation first
+        // Apply language-specific context adaptation
         $context_messages = $this->applyLanguageContext($context_messages);
 
-        // Check if structured response mode is enabled (new approach)
-        if ($this->model->isStructuredResponseEnabled()) {
-            $include_progress = $this->model->isProgressTrackingEnabled();
-
-            // Build progress data if progress tracking is enabled and we have the required IDs
-            $progress_data = [];
-            if ($include_progress && $this->progress_tracking_service && $conversation_id && $section_id) {
-                $progress_data = $this->buildProgressData($conversation_id, $section_id);
-            }
-
-            $context_messages = $this->structured_response_service->buildStructuredResponseContext(
-                $context_messages,
-                $include_progress,
-                $progress_data
-            );
-
-            // Apply additional modes on top of structured response
-            if ($this->model->isFloatingButtonEnabled()) {
-                return $this->floating_mode_service->buildFloatingModeContext($context_messages);
-            }
-
-            if ($this->model->shouldApplyStrictMode()) {
-                return $this->strict_conversation_service->buildStrictModeContext(
-                    $context_messages,
-                    $this->model->getConversationContext()
-                );
-            }
-
-            return $context_messages;
+        // Build progress data if progress tracking is enabled
+        $include_progress = $this->model->isProgressTrackingEnabled();
+        $progress_data = [];
+        if ($include_progress && $this->progress_tracking_service && $conversation_id && $section_id) {
+            $progress_data = $this->buildProgressData($conversation_id, $section_id);
         }
 
-        // Legacy: Apply context based on mode priority
-        if ($this->model->isFormModeEnabled()) {
-            return $this->form_mode_service->buildFormModeContext($context_messages);
-        }
+        // Build danger detection config
+        $danger_config = $this->buildDangerConfig();
 
+        // ALWAYS apply unified response schema with safety detection
+        // This is now mandatory - all responses must be structured JSON
+        $context_messages = $this->response_service->buildResponseContext(
+            $context_messages,
+            $include_progress,
+            $progress_data,
+            $danger_config
+        );
+
+        // Apply additional modes on top of structured response
         if ($this->model->isFloatingButtonEnabled()) {
             return $this->floating_mode_service->buildFloatingModeContext($context_messages);
         }
@@ -126,7 +112,47 @@ class LlmContextService
             );
         }
 
+        if ($this->model->isFormModeEnabled()) {
+            return $this->form_mode_service->buildFormModeContext($context_messages);
+        }
+
         return $context_messages;
+    }
+
+    /**
+     * Build danger detection configuration
+     *
+     * Returns the danger detection settings from the model configuration
+     * to be passed to the response service for LLM-based safety detection.
+     *
+     * @return array Danger config with 'enabled' and 'keywords' keys
+     */
+    private function buildDangerConfig()
+    {
+        // Check if model has danger detection methods
+        if (!method_exists($this->model, 'isDangerDetectionEnabled')) {
+            return ['enabled' => false, 'keywords' => []];
+        }
+
+        $enabled = $this->model->isDangerDetectionEnabled();
+        if (!$enabled) {
+            return ['enabled' => false, 'keywords' => []];
+        }
+
+        $keywords_str = $this->model->getDangerKeywords();
+        if (empty($keywords_str)) {
+            return ['enabled' => true, 'keywords' => []];
+        }
+
+        // Parse comma-separated keywords
+        $keywords = array_map('trim', explode(',', $keywords_str));
+        $keywords = array_filter($keywords);
+        $keywords = array_unique($keywords);
+
+        return [
+            'enabled' => true,
+            'keywords' => array_values($keywords)
+        ];
     }
 
     /**

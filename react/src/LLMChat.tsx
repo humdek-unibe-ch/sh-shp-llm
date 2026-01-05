@@ -342,6 +342,10 @@ function parseConfig(container: HTMLElement) {
     jsonConfig.removeFileTitle ||
     DEFAULT_CONFIG.removeFileTitle!;
 
+  const conversationBlockedMessage = container.dataset.conversationBlockedMessage ||
+    jsonConfig.conversationBlockedMessage ||
+    DEFAULT_CONFIG.conversationBlockedMessage!;
+
   // Create minimal config first
   const baseConfig = {
     userId,
@@ -419,7 +423,8 @@ function parseConfig(container: HTMLElement) {
     noVisionSupportTitle,
     noVisionSupportText,
     sendMessageTitle,
-    removeFileTitle
+    removeFileTitle,
+    conversationBlockedMessage
   };
 
   return fullConfig as LlmChatConfig;

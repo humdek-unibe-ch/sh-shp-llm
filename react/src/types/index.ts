@@ -104,6 +104,10 @@ export interface Conversation {
   created_at: string;
   /** Last update timestamp (ISO format) */
   updated_at: string;
+  /** Whether conversation is blocked by admin */
+  blocked?: boolean | number;
+  /** Reason for blocking */
+  blocked_reason?: string;
 }
 
 // ============================================================================
@@ -306,6 +310,8 @@ export interface LlmChatConfig {
   sendMessageTitle: string;
   /** Remove file button title */
   removeFileTitle: string;
+  /** Message shown when conversation is blocked */
+  conversationBlockedMessage: string;
 }
 
 /**
@@ -381,7 +387,8 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   noVisionSupportTitle: 'Current model does not support image uploads',
   noVisionSupportText: 'No vision',
   sendMessageTitle: 'Send message',
-  removeFileTitle: 'Remove file'
+  removeFileTitle: 'Remove file',
+  conversationBlockedMessage: 'This conversation has been blocked. You cannot send any more messages.'
 };
 
 // ============================================================================
@@ -406,6 +413,23 @@ export interface GetConversationResponse {
 }
 
 /**
+ * Safety assessment from LLM response
+ * Used for danger detection and intervention
+ */
+export interface SafetyAssessment {
+  /** True if content is safe */
+  is_safe: boolean;
+  /** Danger level: null (safe), warning, critical, emergency */
+  danger_level: null | 'warning' | 'critical' | 'emergency';
+  /** Detected concern categories */
+  detected_concerns: string[];
+  /** True if administrators should be notified */
+  requires_intervention: boolean;
+  /** Supportive safety message from LLM */
+  safety_message?: string | null;
+}
+
+/**
  * Response from send_message action
  */
 export interface SendMessageResponse {
@@ -415,6 +439,60 @@ export interface SendMessageResponse {
   streaming?: boolean;
   progress?: ProgressData;
   error?: string;
+  // Structured response data
+  structured?: LlmStructuredResponse;
+  // Safety assessment from LLM
+  safety?: SafetyAssessment;
+  // Legacy danger detection fields (for backwards compatibility)
+  blocked?: boolean;
+  type?: 'danger_detected' | 'conversation_blocked';
+  detected_keywords?: string[];
+}
+
+/**
+ * Unified LLM Structured Response Schema
+ * All LLM responses follow this format for predictable parsing
+ */
+export interface LlmStructuredResponse {
+  type: 'response';
+  safety: SafetyAssessment;
+  content: {
+    text_blocks: Array<{
+      type: 'text' | 'heading' | 'info' | 'warning' | 'error' | 'success' | 'code';
+      content: string;
+      style?: 'default' | 'bold' | 'italic' | 'code' | 'quote';
+    }>;
+    form?: {
+      title?: string;
+      description?: string;
+      fields: FormField[];
+      submit_label?: string;
+    } | null;
+    media?: Array<{
+      type: 'image' | 'video' | 'audio';
+      url: string;
+      alt?: string;
+      caption?: string;
+    }>;
+    /** Quick reply suggestions - STRICT FORMAT: Each item must have only "text" property */
+    suggestions?: Array<{
+      /** REQUIRED: The button label text. This is the ONLY accepted property. */
+      text: string;
+    }>;
+  };
+  progress?: {
+    percentage: number;
+    current_topic?: string | null;
+    topics_covered?: string[];
+    topics_remaining?: string[];
+    milestones_reached?: string[];
+  } | null;
+  metadata: {
+    model: string;
+    tokens_used?: number | null;
+    confidence?: number | null;
+    language?: string | null;
+  };
 }
 
 /**
@@ -442,6 +520,12 @@ export interface PrepareStreamingResponse {
   is_new_conversation?: boolean;
   user_message?: Message;
   error?: string;
+  // Safety/danger detection fields
+  blocked?: boolean;
+  type?: 'danger_detected' | 'conversation_blocked';
+  message?: string;
+  detected_keywords?: string[];
+  safety?: SafetyAssessment;
 }
 
 // ============================================================================
@@ -463,6 +547,8 @@ export interface StreamingEvent {
   tokens_used?: number;
   /** Progress data for done events (when progress tracking is enabled) */
   progress?: ProgressData;
+  /** Safety assessment for done events (when danger detected) */
+  safety?: SafetyAssessment;
   /** Error message for error events */
   message?: string;
   /** Model used for start events */
@@ -516,6 +602,16 @@ export interface AdminConversation extends Conversation {
   user_email?: string;
   section_name?: string;
   message_count?: number;
+  /** Whether conversation is blocked */
+  blocked?: boolean | number;
+  /** Reason for blocking */
+  blocked_reason?: string;
+  /** When the conversation was blocked */
+  blocked_at?: string;
+  /** Who blocked the conversation (user ID) */
+  blocked_by?: number;
+  /** Whether conversation is deleted (soft delete) */
+  deleted?: boolean | number;
 }
 
 export interface AdminConversationsResponse {
@@ -1215,6 +1311,7 @@ export interface StructuredResponse {
 
 /**
  * Check if content is a valid structured response
+ * Supports BOTH old schema (with meta) and new unified schema (with safety/metadata)
  * @param content Message content to check
  * @returns true if valid structured response
  */
@@ -1223,30 +1320,59 @@ export function isStructuredResponse(content: unknown): content is StructuredRes
   
   const obj = content as Record<string, unknown>;
   
-  // Must have content and meta objects
+  // Must have content object
   if (!obj.content || typeof obj.content !== 'object') return false;
-  if (!obj.meta || typeof obj.meta !== 'object') return false;
   
   const contentObj = obj.content as Record<string, unknown>;
-  const metaObj = obj.meta as Record<string, unknown>;
   
   // Content must have text_blocks array
   if (!Array.isArray(contentObj.text_blocks)) return false;
   
-  // Meta must have response_type
-  if (typeof metaObj.response_type !== 'string') return false;
+  // Check for NEW unified schema (type: "response" with safety or metadata)
+  // The schema requires: type, safety, content, metadata
+  // But we're lenient here - if it has type: "response" and valid content structure,
+  // and has either safety or metadata, we accept it
+  if (obj.type === 'response') {
+    // Has metadata object - valid new schema
+    if (obj.metadata && typeof obj.metadata === 'object') {
+      return true;
+    }
+    // Has safety object - valid new schema (metadata may be added server-side)
+    if (obj.safety && typeof obj.safety === 'object') {
+      return true;
+    }
+  }
   
-  return true;
+  // Check for OLD schema (meta.response_type)
+  if (obj.meta && typeof obj.meta === 'object') {
+    const metaObj = obj.meta as Record<string, unknown>;
+    if (typeof metaObj.response_type === 'string') {
+      return true; // Valid old schema
+    }
+  }
+  
+  return false;
 }
 
 /**
  * Check if JSON content appears to be incomplete/truncated
+ * This is a conservative check - we only flag as incomplete if clearly truncated
  * @param jsonContent The JSON string to check
  * @returns true if content appears incomplete
  */
 function isIncompleteJson(jsonContent: string): boolean {
   // Check for obvious signs of truncation
   const trimmed = jsonContent.trim();
+  
+  // Empty content is incomplete
+  if (!trimmed) {
+    return true;
+  }
+
+  // Must start with { or [ to be valid JSON
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return true;
+  }
 
   // Check for incomplete objects/arrays (missing closing braces/brackets)
   let openBraces = 0;
@@ -1262,7 +1388,7 @@ function isIncompleteJson(jsonContent: string): boolean {
       continue;
     }
 
-    if (char === '\\') {
+    if (char === '\\' && inString) {
       escapeNext = true;
       continue;
     }
@@ -1290,19 +1416,19 @@ function isIncompleteJson(jsonContent: string): boolean {
     }
   }
 
-  // If we have unclosed braces or brackets, it's likely incomplete
-  if (openBraces > 0 || openBrackets > 0) {
+  // If we have unclosed braces or brackets, it's incomplete
+  if (openBraces !== 0 || openBrackets !== 0) {
     return true;
   }
 
-  // Check for trailing commas that suggest truncation
-  const lastNonWhitespace = trimmed.replace(/\s+$/, '');
-  if (lastNonWhitespace.endsWith(',')) {
+  // If we're still in a string, it's incomplete
+  if (inString) {
     return true;
   }
 
-  // Check for incomplete key-value pairs
-  if (lastNonWhitespace.endsWith(':')) {
+  // Check if JSON ends with proper closing character
+  const lastChar = trimmed[trimmed.length - 1];
+  if (lastChar !== '}' && lastChar !== ']') {
     return true;
   }
 
@@ -1312,6 +1438,7 @@ function isIncompleteJson(jsonContent: string): boolean {
 /**
  * Parse message content to check if it's a structured response
  * Handles both pure JSON and markdown code block wrapped JSON
+ * Supports BOTH old schema (meta) and new unified schema (type, safety, metadata)
  * @param content Message content to parse
  * @returns StructuredResponse if valid, null otherwise
  */
@@ -1327,26 +1454,200 @@ export function parseStructuredResponse(content: string): StructuredResponse | n
     jsonContent = jsonContent.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
   }
   
-  try {
-    // Check if JSON appears incomplete before parsing
-    if (isIncompleteJson(jsonContent)) {
-      return null; // Don't parse incomplete JSON
-    }
+  // Check if JSON appears incomplete before parsing
+  if (isIncompleteJson(jsonContent)) {
+    console.debug('[parseStructuredResponse] JSON appears incomplete:', jsonContent.substring(0, 100));
+    return null;
+  }
 
-    const parsed = JSON.parse(jsonContent);
+  try {
+    const parsed: unknown = JSON.parse(jsonContent);
+    
+    // Check if it's the new unified schema (type: "response" with content.text_blocks)
+    const asAny = parsed as Record<string, unknown>;
+    if (asAny && asAny.type === 'response' && asAny.content) {
+      const contentObj = asAny.content as Record<string, unknown>;
+      if (Array.isArray(contentObj.text_blocks) && contentObj.text_blocks.length > 0) {
+        // Valid unified schema - convert to StructuredResponse format
+        try {
+          return convertUnifiedToStructuredResponse(parsed as LlmStructuredResponse);
+        } catch (convError) {
+          console.debug('[parseStructuredResponse] Conversion error:', convError);
+          // Try to return a basic structure
+          return createBasicStructuredResponse(parsed as LlmStructuredResponse);
+        }
+      }
+    }
+    
+    // Check for old schema (meta.response_type)
     if (isStructuredResponse(parsed)) {
       return parsed;
     }
-  } catch {
-    // Not valid JSON
+    
+    console.debug('[parseStructuredResponse] Parsed JSON does not match expected schema');
+  } catch (parseError) {
+    console.debug('[parseStructuredResponse] JSON parse error:', parseError);
   }
   
   return null;
 }
 
 /**
+ * Extract suggestion text from suggestion object
+ * 
+ * STRICT FORMAT: Each suggestion MUST be an object with a "text" property.
+ * Example: { "text": "Option 1" }
+ * 
+ * @param suggestions Raw suggestions array from LLM response
+ * @returns Array of strings suitable for display
+ */
+function extractSuggestionTexts(suggestions: unknown[] | undefined): string[] {
+  if (!suggestions || !Array.isArray(suggestions) || suggestions.length === 0) {
+    return [];
+  }
+  
+  return suggestions
+    .map(s => {
+      // STRICT: Only accept objects with "text" property
+      if (s && typeof s === 'object' && 'text' in s) {
+        const obj = s as { text: string };
+        return typeof obj.text === 'string' ? obj.text : '';
+      }
+      // Log invalid format for debugging
+      console.warn('[LLM Response] Invalid suggestion format. Expected {text: string}, got:', s);
+      return '';
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Create a basic structured response from unified schema when full conversion fails
+ * This ensures we can at least display the text content
+ */
+function createBasicStructuredResponse(unified: LlmStructuredResponse): StructuredResponse {
+  const textBlocks: TextBlock[] = [];
+  
+  // Extract text blocks
+  if (unified.content?.text_blocks) {
+    for (const block of unified.content.text_blocks) {
+      textBlocks.push({
+        type: mapTextBlockType(block.type || 'text'),
+        content: block.content || '',
+        level: block.type === 'heading' ? 2 : undefined
+      });
+    }
+  }
+  
+  // Ensure at least one text block
+  if (textBlocks.length === 0) {
+    textBlocks.push({ type: 'paragraph', content: 'Response received.' });
+  }
+  
+  // Convert form if present
+  const forms: StructuredForm[] = [];
+  if (unified.content?.form) {
+    forms.push({
+      id: 'form_1',
+      title: unified.content.form.title,
+      description: unified.content.form.description,
+      fields: unified.content.form.fields || [],
+      submit_label: unified.content.form.submit_label
+    });
+  }
+  
+  // Convert suggestions (STRICT: only accepts {text: string} objects)
+  const suggestionTexts = extractSuggestionTexts(unified.content?.suggestions as unknown[]);
+  const nextStep: NextStep | undefined = suggestionTexts.length > 0
+    ? { suggestions: suggestionTexts }
+    : undefined;
+  
+  return {
+    content: {
+      text_blocks: textBlocks,
+      forms: forms.length > 0 ? forms : undefined,
+      media: undefined,
+      next_step: nextStep
+    },
+    meta: {
+      response_type: 'conversational',
+      emotion: 'neutral'
+    }
+  };
+}
+
+/**
+ * Convert new unified LLM response schema to old StructuredResponse format
+ * for backwards compatibility with existing rendering code
+ */
+function convertUnifiedToStructuredResponse(unified: LlmStructuredResponse): StructuredResponse {
+  // Map text block types from new schema to old schema
+  const mappedTextBlocks = unified.content.text_blocks.map(block => ({
+    type: mapTextBlockType(block.type),
+    content: block.content,
+    level: block.type === 'heading' ? 2 : undefined
+  }));
+  
+  // Convert forms if present (new schema uses form, old uses forms array)
+  const forms: StructuredForm[] = [];
+  if (unified.content.form) {
+    forms.push({
+      id: 'form_1',
+      title: unified.content.form.title,
+      description: unified.content.form.description,
+      fields: unified.content.form.fields,
+      submit_label: unified.content.form.submit_label
+    });
+  }
+  
+  // Convert suggestions (STRICT: only accepts {text: string} objects)
+  const suggestionTexts = extractSuggestionTexts(unified.content.suggestions as unknown[]);
+  
+  return {
+    content: {
+      text_blocks: mappedTextBlocks as TextBlock[],
+      forms: forms.length > 0 ? forms : undefined,
+      media: unified.content.media?.map(m => ({
+        type: m.type,
+        src: m.url,
+        alt: m.alt,
+        caption: m.caption
+      })),
+      next_step: suggestionTexts.length > 0 
+        ? { suggestions: suggestionTexts }
+        : undefined
+    },
+    meta: {
+      response_type: 'conversational',
+      emotion: 'neutral',
+      progress: unified.progress ? {
+        percentage: unified.progress.percentage,
+        covered_topics: unified.progress.topics_covered,
+        remaining_topics: unified.progress.topics_remaining?.length
+      } : undefined
+    }
+  };
+}
+
+/**
+ * Map new schema text block types to old schema types
+ */
+function mapTextBlockType(type: string): TextBlockType {
+  const typeMap: Record<string, TextBlockType> = {
+    'text': 'paragraph',
+    'heading': 'heading',
+    'info': 'info',
+    'warning': 'warning',
+    'error': 'warning', // Map error to warning for display
+    'success': 'success',
+    'code': 'quote' // Map code to quote for now
+  };
+  return typeMap[type] || 'paragraph';
+}
+
+/**
  * Convert structured response to markdown for display
  * Used as fallback when structured rendering is not available
+ * Supports both old and new schema text block types
  * @param response The structured response
  * @returns Markdown string
  */
@@ -1376,6 +1677,8 @@ export function structuredResponseToMarkdown(response: StructuredResponse): stri
       case 'tip':
         parts.push(`💡 **Tip**: ${block.content}`);
         break;
+      case 'paragraph':
+      case 'list':
       default:
         parts.push(block.content);
     }
@@ -1452,6 +1755,141 @@ export function extractFormsFromStructuredResponse(response: StructuredResponse)
   }
   
   return response.content.forms.map(structuredFormToFormDefinition);
+}
+
+// ============================================================================
+// UNIFIED LLM RESPONSE HANDLING
+// ============================================================================
+
+/**
+ * Check if parsed object is a valid LlmStructuredResponse
+ * @param obj Object to check
+ * @returns true if valid unified response
+ */
+export function isLlmStructuredResponse(obj: unknown): obj is LlmStructuredResponse {
+  if (!obj || typeof obj !== 'object') return false;
+  
+  const response = obj as Record<string, unknown>;
+  
+  // Check required fields - type must be 'response'
+  if (response.type !== 'response') return false;
+  
+  // Must have safety object (core to the unified schema)
+  if (!response.safety || typeof response.safety !== 'object') return false;
+  
+  // Must have content object
+  if (!response.content || typeof response.content !== 'object') return false;
+  
+  // Metadata is technically required by schema, but be lenient - 
+  // accept responses without metadata (can be added server-side)
+  // This allows partial responses to still be valid
+  
+  // Check content.text_blocks
+  const content = response.content as Record<string, unknown>;
+  if (!Array.isArray(content.text_blocks)) return false;
+  if (content.text_blocks.length === 0) return false;
+  
+  return true;
+}
+
+/**
+ * Parse message content to unified LLM response
+ * @param content Raw message content
+ * @returns LlmStructuredResponse if valid, null otherwise
+ */
+export function parseLlmResponse(content: string): LlmStructuredResponse | null {
+  if (!content) return null;
+  
+  let jsonContent = content.trim();
+  
+  // Remove markdown code block wrappers if present
+  if (jsonContent.startsWith('```json')) {
+    jsonContent = jsonContent.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+  } else if (jsonContent.startsWith('```')) {
+    jsonContent = jsonContent.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+  
+  try {
+    const parsed = JSON.parse(jsonContent);
+    if (isLlmStructuredResponse(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Not valid JSON
+  }
+  
+  return null;
+}
+
+/**
+ * Convert unified LLM response to markdown for display
+ * @param response Parsed LLM response
+ * @returns Markdown string
+ */
+export function llmResponseToMarkdown(response: LlmStructuredResponse): string {
+  const parts: string[] = [];
+  
+  // Add safety message if danger detected
+  if (!response.safety.is_safe && response.safety.safety_message) {
+    parts.push(`⚠️ **Safety Notice**: ${response.safety.safety_message}`);
+    parts.push('');
+  }
+  
+  // Convert text blocks
+  for (const block of response.content.text_blocks) {
+    switch (block.type) {
+      case 'heading':
+        parts.push(`## ${block.content}`);
+        break;
+      case 'info':
+        parts.push(`ℹ️ **Info**: ${block.content}`);
+        break;
+      case 'warning':
+        parts.push(`⚠️ **Warning**: ${block.content}`);
+        break;
+      case 'error':
+        parts.push(`🚨 **Important**: ${block.content}`);
+        break;
+      case 'success':
+        parts.push(`✅ ${block.content}`);
+        break;
+      case 'code':
+        parts.push('```\n' + block.content + '\n```');
+        break;
+      default:
+        parts.push(block.content);
+    }
+  }
+  
+  return parts.join('\n\n');
+}
+
+/**
+ * Check if LLM response indicates danger requiring intervention
+ * @param response Parsed LLM response or safety assessment
+ * @returns true if intervention is required
+ */
+export function requiresSafetyIntervention(response: LlmStructuredResponse | SafetyAssessment): boolean {
+  const safety = 'safety' in response ? response.safety : response;
+  return safety.requires_intervention === true || safety.danger_level === 'emergency';
+}
+
+/**
+ * Get form from unified LLM response
+ * @param response Parsed LLM response
+ * @returns FormDefinition if form present, null otherwise
+ */
+export function getFormFromLlmResponse(response: LlmStructuredResponse): FormDefinition | null {
+  if (!response.content.form) return null;
+  
+  const form = response.content.form;
+  return {
+    type: 'form',
+    title: form.title,
+    description: form.description,
+    fields: form.fields,
+    submitLabel: form.submit_label
+  };
 }
 
 // ============================================================================

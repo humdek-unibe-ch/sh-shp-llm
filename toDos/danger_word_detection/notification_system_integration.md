@@ -1,7 +1,14 @@
 # Danger Word Detection - Notification System Integration
 
+> **Note**: This document describes a comprehensive future notification system. The current v1.0.0 implementation uses a simpler approach:
+> - Email notifications via SelfHelp's JobScheduler (`add_and_execute_job()`)
+> - Audit logging via the existing transactions table
+> - Configurable email addresses per section via CMS field
+> 
+> See `doc/danger-word-detection.md` for the current implementation details.
+
 ## Overview
-Integration plan for connecting danger word detection with SelfHelp's notification and alerting systems to ensure timely response to critical safety incidents.
+Integration plan for connecting danger word detection with SelfHelp's notification and alerting systems to ensure timely response to critical safety incidents. This document outlines potential future enhancements.
 
 ## Notification Architecture
 

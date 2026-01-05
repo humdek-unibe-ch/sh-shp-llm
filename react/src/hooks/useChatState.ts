@@ -377,6 +377,29 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
         files
       );
       
+      // Handle danger detection blocked response
+      if (response.blocked && response.type === 'danger_detected') {
+        // Add the safety message as an assistant response
+        // This shows the user the supportive safety message
+        if (response.message) {
+          const safetyMessage: Message = {
+            id: 'safety-' + Date.now(),
+            role: 'assistant',
+            content: response.message,
+            timestamp: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, safetyMessage]);
+        }
+        
+        // Return the blocked response - no error, just blocked
+        return {
+          blocked: true,
+          type: 'danger_detected',
+          message: response.message,
+          detected_keywords: response.detected_keywords
+        };
+      }
+      
       if (response.error) {
         setError(response.error);
         return { error: response.error };

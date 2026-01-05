@@ -48,6 +48,15 @@ class ModuleLlmAdminConsoleController extends BaseController
             case 'admin_messages':
                 $this->handleAdminMessages();
                 break;
+            case 'admin_delete_conversation':
+                $this->handleAdminDeleteConversation();
+                break;
+            case 'admin_block_conversation':
+                $this->handleAdminBlockConversation();
+                break;
+            case 'admin_unblock_conversation':
+                $this->handleAdminUnblockConversation();
+                break;
             default:
                 $this->sendJsonResponse(['error' => 'Unknown action'], 400);
                 break;
@@ -122,6 +131,94 @@ class ModuleLlmAdminConsoleController extends BaseController
             }
 
             $this->sendJsonResponse($result);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle admin delete conversation request.
+     * Soft deletes the conversation (sets deleted flag).
+     */
+    private function handleAdminDeleteConversation()
+    {
+        $conversation_id = $_POST['conversation_id'] ?? null;
+
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+
+        try {
+            // Get admin user ID if available
+            $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
+            
+            $result = $this->model->adminDeleteConversation($conversation_id, $admin_user_id);
+
+            if ($result) {
+                $this->sendJsonResponse(['success' => true, 'message' => 'Conversation deleted successfully']);
+            } else {
+                $this->sendJsonResponse(['error' => 'Failed to delete conversation'], 500);
+            }
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle admin block conversation request.
+     * Blocks the conversation to prevent further messages.
+     */
+    private function handleAdminBlockConversation()
+    {
+        $conversation_id = $_POST['conversation_id'] ?? null;
+        $reason = $_POST['reason'] ?? null;
+
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+
+        try {
+            // Get admin user ID if available
+            $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
+            
+            $result = $this->model->adminBlockConversation($conversation_id, $reason, $admin_user_id);
+
+            if ($result) {
+                $this->sendJsonResponse(['success' => true, 'message' => 'Conversation blocked successfully']);
+            } else {
+                $this->sendJsonResponse(['error' => 'Failed to block conversation'], 500);
+            }
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Handle admin unblock conversation request.
+     * Unblocks a previously blocked conversation.
+     */
+    private function handleAdminUnblockConversation()
+    {
+        $conversation_id = $_POST['conversation_id'] ?? null;
+
+        if (!$conversation_id) {
+            $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
+            return;
+        }
+
+        try {
+            // Get admin user ID if available
+            $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
+            
+            $result = $this->model->adminUnblockConversation($conversation_id, $admin_user_id);
+
+            if ($result) {
+                $this->sendJsonResponse(['success' => true, 'message' => 'Conversation unblocked successfully']);
+            } else {
+                $this->sendJsonResponse(['error' => 'Failed to unblock conversation'], 500);
+            }
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

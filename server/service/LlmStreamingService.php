@@ -8,7 +8,10 @@
  * - Guaranteed data integrity
  * - Enterprise-grade error recovery
  * - Optimized SSE delivery
+ * - Post-stream safety assessment
  */
+
+require_once __DIR__ . '/LlmResponseService.php';
 
 class LlmStreamingService
 {
@@ -18,10 +21,33 @@ class LlmStreamingService
     private $has_finalized = false;
     private $sent_context = null;
     private $progress_data = null;
+    
+    /** @var LlmResponseService|null Response service for safety parsing */
+    private $response_service = null;
+    
+    /** @var LlmDangerDetectionService|null Danger detection for notifications */
+    private $danger_detection_service = null;
+    
+    /** @var object|null Model instance for configuration */
+    private $config_model = null;
 
     public function __construct($llm_service)
     {
         $this->llm_service = $llm_service;
+    }
+    
+    /**
+     * Set optional services for safety detection
+     * 
+     * @param LlmResponseService $response_service Response parsing service
+     * @param LlmDangerDetectionService $danger_detection_service Notification service
+     * @param object $model Model instance for configuration
+     */
+    public function setSafetyServices($response_service, $danger_detection_service, $model)
+    {
+        $this->response_service = $response_service;
+        $this->danger_detection_service = $danger_detection_service;
+        $this->config_model = $model;
     }
     
     /**
@@ -151,12 +177,19 @@ class LlmStreamingService
         $this->has_finalized = true;
 
         try {
-            $raw_response = $this->buildRawResponse($buffer->getContent(), $tokens_used);
+            $content = $buffer->getContent();
+            $raw_response = $this->buildRawResponse($content, $tokens_used);
             $buffer->finalize($tokens_used, $raw_response);
 
             $done_data = ['type' => 'done', 'tokens_used' => $tokens_used];
             if ($this->progress_data !== null) {
                 $done_data['progress'] = $this->progress_data;
+            }
+            
+            // Parse and check safety from completed response
+            $safety_result = $this->processStreamedResponseSafety($content);
+            if ($safety_result !== null) {
+                $done_data['safety'] = $safety_result;
             }
 
             $this->sendSSE($done_data);
@@ -164,6 +197,76 @@ class LlmStreamingService
         } catch (Exception $e) {
             $this->sendSSE(['type' => 'error', 'message' => 'Failed to save message: ' . $e->getMessage()]);
         }
+    }
+    
+    /**
+     * Process safety from completed streamed response
+     * 
+     * Parses the completed response to check for safety concerns.
+     * Sends notifications and blocks conversation if needed.
+     * 
+     * @param string $content Completed response content
+     * @return array|null Safety data to include in done event, or null if safe
+     */
+    private function processStreamedResponseSafety($content)
+    {
+        // Skip if no response service configured
+        if (!$this->response_service) {
+            return null;
+        }
+        
+        // Parse the response
+        $parsed = $this->response_service->parseResponse($content);
+        if (!$parsed['valid'] || !isset($parsed['data'])) {
+            return null;
+        }
+        
+        // Assess safety
+        $safety = $this->response_service->assessSafety($parsed['data']);
+        
+        // If safe and no concerns, nothing to return
+        if ($safety['is_safe'] && $safety['danger_level'] === null) {
+            return null;
+        }
+        
+        // Handle intervention if needed
+        if ($safety['requires_intervention'] && $this->danger_detection_service && $this->config_model) {
+            try {
+                // Get user ID from conversation
+                $conversation = $this->llm_service->db->query_db_first(
+                    'SELECT id_users FROM llmConversations WHERE id = :id',
+                    ['id' => $this->conversation_id]
+                );
+                $user_id = $conversation ? $conversation['id_users'] : 0;
+                $section_id = method_exists($this->config_model, 'getSectionId') 
+                    ? $this->config_model->getSectionId() 
+                    : 0;
+                
+                // Send notifications
+                $this->danger_detection_service->sendNotifications(
+                    $safety['detected_concerns'],
+                    $safety['safety_message'] ?? 'Dangerous content detected by AI',
+                    $user_id,
+                    $this->conversation_id,
+                    $section_id
+                );
+                
+                // Block conversation if emergency
+                if ($safety['danger_level'] === 'emergency') {
+                    $reason = 'LLM detected emergency danger: ' . implode(', ', $safety['detected_concerns']);
+                    $this->danger_detection_service->blockConversation(
+                        $this->conversation_id, 
+                        $safety['detected_concerns'], 
+                        $reason
+                    );
+                }
+            } catch (Exception $e) {
+                error_log('LLM Streaming: Failed to process safety intervention: ' . $e->getMessage());
+            }
+        }
+        
+        // Return safety data for frontend
+        return $safety;
     }
 
     /**

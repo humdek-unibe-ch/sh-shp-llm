@@ -19,6 +19,7 @@ A comprehensive LLM integration plugin for SelfHelp CMS, enabling real-time AI c
 - 🎯 **Model-specific Settings** - Per-component model configuration
 - 📊 **Token Tracking** - Usage monitoring and logging
 - 🔍 **Context Debugging** - Track context sent with each message
+- ✅ **Schema Validation & Retry** - Guaranteed structured responses with automatic error correction
 
 ## Quick Start
 
@@ -94,6 +95,31 @@ This context will guide all AI responses in this chat component.
 ```
 
 Supports both markdown/text and JSON array formats. See [doc/conversation-context.md](doc/conversation-context.md) for details.
+
+## Schema Validation & Retry Logic
+
+The plugin ensures **100% schema compliance** through mandatory JSON response validation:
+
+### How It Works
+1. **Schema Definition**: All responses follow a strict JSON schema stored in `schemas/llm-response.schema.json`
+2. **LLM Integration**: AI receives the actual schema in system prompts for guaranteed compliance
+3. **Validation**: Every response is validated against the schema before acceptance
+4. **Auto-Retry**: Invalid responses trigger automatic retries (up to 3 attempts) with error feedback
+5. **Error Correction**: LLM receives specific validation errors and corrects itself
+
+### Benefits
+- 🎯 **Predictable Parsing**: Frontend always knows response structure
+- 🔄 **Self-Correcting**: AI automatically fixes formatting errors
+- 🛡️ **No Randomness**: Structured data only, no unexpected formats
+- 📊 **Reliability**: Guaranteed schema compliance across all responses
+
+### Technical Details
+- Schema loaded dynamically from `schemas/llm-response.schema.json`
+- Retry logic in `LlmResponseService::callLlmWithSchemaValidation()`
+- Enhanced error messages sent to LLM for self-correction
+- Comprehensive logging of validation attempts
+
+See [doc/response-schema.md](doc/response-schema.md) for complete schema documentation.
 
 ## File Structure
 

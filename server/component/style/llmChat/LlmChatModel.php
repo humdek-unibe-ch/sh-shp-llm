@@ -95,9 +95,8 @@ class LlmChatModel extends StyleModel
     private $form_mode_active_title;
     private $form_mode_active_description;
 
-    // Structured response mode - LLM always returns JSON schema
-    // This is the recommended mode for flexible forms + free text interaction
-    private $enable_structured_response;
+    // Structured response mode is MANDATORY
+    // All LLM responses use standardized JSON schema (see doc/response-schema.md)
 
     // Data saving - save form data to SelfHelp UserInput system
     private $enable_data_saving;
@@ -127,6 +126,13 @@ class LlmChatModel extends StyleModel
     // Context language - language for progress confirmation questions
     // Supported: en, de, fr, es, it, pt, nl (default: en)
     private $context_language;
+
+    // Danger word detection - critical safety feature
+    // Monitors messages for dangerous keywords and blocks/notifies
+    private $enable_danger_detection;
+    private $danger_keywords;
+    private $danger_notification_emails;
+    private $danger_blocked_message;
 
     /* Constructors ***********************************************************/
 
@@ -251,9 +257,8 @@ class LlmChatModel extends StyleModel
         $this->form_mode_active_title = $this->get_db_field('form_mode_active_title', 'Form Mode Active');
         $this->form_mode_active_description = $this->get_db_field('form_mode_active_description', 'Please use the form above to respond.');
 
-        // Structured response mode - LLM always returns JSON with structured schema
-        // Enables flexible interaction: forms are optional guidance, users can always type free text
-        $this->enable_structured_response = $this->get_db_field('enable_structured_response', '0');
+        // Structured response mode is now MANDATORY (no configuration needed)
+        // All responses automatically use standardized JSON schema
 
         // Data saving - save form data to SelfHelp UserInput system
         $this->enable_data_saving = $this->get_db_field('enable_data_saving', '0');
@@ -283,6 +288,13 @@ class LlmChatModel extends StyleModel
         // Context language for progress confirmation questions
         // Auto-detect from context or use explicit setting
         $this->context_language = $this->get_db_field('context_language', 'auto');
+
+        // Danger word detection - critical safety feature
+        $this->enable_danger_detection = $this->get_db_field('enable_danger_detection', '0');
+        $this->danger_keywords = $this->get_db_field('danger_keywords', '');
+        $this->danger_notification_emails = $this->get_db_field('danger_notification_emails', '');
+        $this->danger_blocked_message = $this->get_db_field('danger_blocked_message', 
+            "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you're in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*");
 
         // Initialize dataTable for this section if data saving is enabled
         $this->initializeDataTableIfNeeded();
@@ -1250,19 +1262,22 @@ EOT;
 
     /**
      * Check if structured response mode is enabled
-     * When enabled, LLM always returns JSON following the RESPONSE_SCHEMA
      * 
-     * This is the recommended mode for:
+     * ALWAYS RETURNS TRUE - Structured response mode is now mandatory.
+     * All LLM responses use the standardized JSON schema defined in doc/response-schema.md
+     * 
+     * Features:
+     * - Safety detection integrated at LLM level
      * - Flexible forms + free text interaction
      * - Progress tracking integration
      * - Rich content with text blocks, forms, media
-     * - Predictable parsing of all responses
+     * - Predictable parsing and validation
      *
-     * @return bool True if structured response mode is enabled
+     * @return bool Always returns true
      */
     public function isStructuredResponseEnabled()
     {
-        return $this->enable_structured_response === '1';
+        return true;
     }
 
     // ===== Data Saving Methods =====
@@ -1479,6 +1494,72 @@ EOT;
             'completeMessage' => $this->getProgressCompleteMessage(),
             'showTopics' => $this->shouldShowProgressTopics(),
             'contextLanguage' => $this->getContextLanguage()
+        ];
+    }
+
+    // ===== Danger Word Detection Methods =====
+
+    /**
+     * Check if danger word detection is enabled
+     *
+     * @return bool True if danger detection is enabled
+     */
+    public function isDangerDetectionEnabled()
+    {
+        return $this->enable_danger_detection === '1';
+    }
+
+    /**
+     * Get danger keywords as a raw string
+     *
+     * @return string Comma-separated danger keywords
+     */
+    public function getDangerKeywords()
+    {
+        return $this->danger_keywords;
+    }
+
+    /**
+     * Get notification email addresses as an array
+     *
+     * Supports both newline and semicolon separators.
+     *
+     * @return array Array of email addresses
+     */
+    public function getDangerNotificationEmails()
+    {
+        if (empty($this->danger_notification_emails)) {
+            return [];
+        }
+        // Support both newline and semicolon separators
+        $emails = preg_split('/[\n;]+/', $this->danger_notification_emails);
+        return array_filter(array_map('trim', $emails));
+    }
+
+    /**
+     * Get the blocked message shown to users when danger keywords are detected
+     *
+     * @return string The safety message (supports markdown)
+     */
+    public function getDangerBlockedMessage()
+    {
+        return $this->danger_blocked_message;
+    }
+
+    /**
+     * Get danger detection configuration
+     * 
+     * Returns all danger detection settings as an array
+     *
+     * @return array Danger detection configuration
+     */
+    public function getDangerDetectionConfig()
+    {
+        return [
+            'enabled' => $this->isDangerDetectionEnabled(),
+            'keywords' => $this->getDangerKeywords(),
+            'notificationEmails' => $this->getDangerNotificationEmails(),
+            'blockedMessage' => $this->getDangerBlockedMessage()
         ];
     }
 

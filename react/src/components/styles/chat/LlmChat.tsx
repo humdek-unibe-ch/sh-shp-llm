@@ -311,6 +311,21 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         setIsProcessing(true);
         try {
           const result = await sendMessage(message, files);
+          
+          // Handle danger detection blocked response
+          // Show safety message as an assistant response (not an error)
+          if (result.blocked && result.type === 'danger_detected') {
+            // The safety message should be shown as an assistant response
+            // This is handled by adding it to the messages list
+            // Note: The user's message was already added above, but it wasn't saved to DB
+            // We don't remove it from UI - it shows what triggered the safety response
+            if (result.message) {
+              // The safety message is returned as a regular assistant message
+              // The hook already handles adding it to the UI
+            }
+            return;
+          }
+          
           if (result.error) {
             setError(result.error);
             return;
@@ -603,6 +618,11 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
    * Sends the suggestion text as a regular message
    */
   const handleSuggestionClick = useCallback((suggestion: string) => {
+    // Guard against undefined/null suggestions
+    if (!suggestion || typeof suggestion !== 'string') {
+      console.error('Invalid suggestion:', suggestion);
+      return;
+    }
     // Use the same flow as sending a regular message
     handleSendMessage(suggestion, []);
   }, [handleSendMessage]);
@@ -687,6 +707,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   // Determine if model is mismatched
   const isModelMismatch = currentConversation?.model &&
     currentConversation.model !== config.configuredModel;
+
+  // Determine if conversation is blocked
+  const isConversationBlocked = currentConversation?.blocked === true || currentConversation?.blocked === 1;
 
   return (
     <Container fluid className={`llm-chat-container llm-chat-shell ${config.isFloatingMode ? 'p-0' : 'p-3'}`}>
@@ -783,13 +806,20 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
             {/* Message Input */}
             <Card.Footer className="bg-white border-0 p-3 llm-chat-footer">
-              <MessageInput
-                onSend={handleSendMessage}
-                selectedFiles={selectedFiles}
-                onFilesChange={handleFilesChange}
-                disabled={isStreaming || isLoading || isAutoStarting}
-                config={config}
-              />
+              {isConversationBlocked ? (
+                <Alert variant="warning" className="mb-0">
+                  <i className="fas fa-ban mr-2"></i>
+                  {config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'}
+                </Alert>
+              ) : (
+                <MessageInput
+                  onSend={handleSendMessage}
+                  selectedFiles={selectedFiles}
+                  onFilesChange={handleFilesChange}
+                  disabled={isStreaming || isLoading || isAutoStarting}
+                  config={config}
+                />
+              )}
             </Card.Footer>
           </Card>
         </Col>
