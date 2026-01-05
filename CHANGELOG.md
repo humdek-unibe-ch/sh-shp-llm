@@ -82,6 +82,14 @@
 - **Enhanced Validation**: Fixed null handling and improved error messages
 - **Better Error Recovery**: Graceful fallback to inline schema if JSON file unavailable
 
+#### Form Schema & Validation (January 5, 2026)
+- **Complete Form Schema**: Added comprehensive form structure definition with all field types
+- **Form Validation**: Added strict validation for form objects, fields, options, and field types
+- **Field Type Support**: Full support for radio, checkbox, select, text, textarea, number, scale fields
+- **Option Validation**: Validates option arrays with required value/label properties
+- **Scale Field Validation**: Enforces min/max requirements for rating scales
+- **Documentation Enhancement**: Updated form documentation with complete field specifications
+
 #### Removed Hints Functionality
 - **Removed**: Form field hints (`HintsDisplay` component) - replaced by suggestions
 - **Migration**: Use `content.suggestions` instead of `field.hints` for quick input options

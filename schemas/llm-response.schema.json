@@ -77,7 +77,88 @@
         },
         "form": {
           "type": ["object", "null"],
-          "description": "Optional form for structured user input. See FORM STRUCTURE section."
+          "description": "Optional form for structured user input collection",
+          "properties": {
+            "title": {
+              "type": "string",
+              "description": "Form title displayed at the top"
+            },
+            "description": {
+              "type": "string",
+              "description": "Optional form description/subtitle"
+            },
+            "fields": {
+              "type": "array",
+              "description": "Array of form fields to collect user input",
+              "items": {
+                "type": "object",
+                "required": ["id", "type", "label"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Unique field identifier"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["radio", "checkbox", "select", "text", "textarea", "number", "scale"],
+                    "description": "Field type: radio (single choice), checkbox (multiple choice), select (dropdown), text (single line), textarea (multi-line), number (numeric), scale (rating scale)"
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Field label/question text"
+                  },
+                  "required": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether this field must be filled"
+                  },
+                  "options": {
+                    "type": "array",
+                    "description": "Available options for radio, checkbox, and select fields",
+                    "items": {
+                      "type": "object",
+                      "required": ["value", "label"],
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "description": "Option value"
+                        },
+                        "label": {
+                          "type": "string",
+                          "description": "Option display label"
+                        }
+                      }
+                    }
+                  },
+                  "min": {
+                    "type": "number",
+                    "description": "Minimum value for number/scale fields"
+                  },
+                  "max": {
+                    "type": "number",
+                    "description": "Maximum value for number/scale fields"
+                  },
+                  "placeholder": {
+                    "type": "string",
+                    "description": "Placeholder text for text/textarea fields"
+                  },
+                  "helpText": {
+                    "type": "string",
+                    "description": "Additional help text for the field"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1
+            },
+            "submit_label": {
+              "type": "string",
+              "default": "Submit",
+              "description": "Label for the submit button"
+            }
+          },
+          "additionalProperties": false,
+          "required": ["fields"]
         },
         "media": {
           "type": "array",

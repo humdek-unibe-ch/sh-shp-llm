@@ -453,10 +453,147 @@ INSTRUCTIONS;
             $errors[] = "Missing required metadata field: model";
         }
 
+        // Validate form structure if present
+        if (isset($response['content']['form']) && $response['content']['form'] !== null) {
+            $formErrors = self::validateFormStructure($response['content']['form']);
+            $errors = array_merge($errors, $formErrors);
+        }
+
         return [
             'valid' => empty($errors),
             'errors' => $errors
         ];
+    }
+
+    /**
+     * Validate form structure in content.form
+     *
+     * @param array $form The form object to validate
+     * @return array Array of validation error messages
+     */
+    private static function validateFormStructure($form)
+    {
+        $errors = [];
+
+        // Form must be an object
+        if (!is_array($form)) {
+            $errors[] = "content.form must be an object or null";
+            return $errors;
+        }
+
+        // Check required fields array
+        if (!isset($form['fields']) || !is_array($form['fields'])) {
+            $errors[] = "content.form.fields is required and must be an array";
+            return $errors;
+        }
+
+        // Must have at least one field
+        if (empty($form['fields'])) {
+            $errors[] = "content.form.fields must contain at least one field";
+            return $errors;
+        }
+
+        // Validate each field
+        foreach ($form['fields'] as $i => $field) {
+            $fieldErrors = self::validateFormField($field, $i);
+            $errors = array_merge($errors, $fieldErrors);
+        }
+
+        // Validate optional string fields
+        $stringFields = ['title', 'description', 'submit_label'];
+        foreach ($stringFields as $fieldName) {
+            if (isset($form[$fieldName]) && !is_string($form[$fieldName])) {
+                $errors[] = "content.form.{$fieldName} must be a string if present";
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Validate a single form field
+     *
+     * @param array $field The field to validate
+     * @param int $index Field index in the array
+     * @return array Array of validation error messages
+     */
+    private static function validateFormField($field, $index)
+    {
+        $errors = [];
+
+        // Must be an object
+        if (!is_array($field)) {
+            $errors[] = "content.form.fields[{$index}] must be an object";
+            return $errors;
+        }
+
+        // Required fields
+        $requiredFields = ['id', 'type', 'label'];
+        foreach ($requiredFields as $reqField) {
+            if (!isset($field[$reqField])) {
+                $errors[] = "content.form.fields[{$index}].{$reqField} is required";
+            } elseif (!is_string($field[$reqField])) {
+                $errors[] = "content.form.fields[{$index}].{$reqField} must be a string";
+            }
+        }
+
+        // Validate field type
+        if (isset($field['type'])) {
+            $validTypes = ['radio', 'checkbox', 'select', 'text', 'textarea', 'number', 'scale'];
+            if (!in_array($field['type'], $validTypes)) {
+                $errors[] = "content.form.fields[{$index}].type must be one of: " . implode(', ', $validTypes);
+            }
+
+            // Selection fields (radio, checkbox, select) require options
+            if (in_array($field['type'], ['radio', 'checkbox', 'select'])) {
+                if (!isset($field['options']) || !is_array($field['options'])) {
+                    $errors[] = "content.form.fields[{$index}].options is required for {$field['type']} fields";
+                } elseif (empty($field['options'])) {
+                    $errors[] = "content.form.fields[{$index}].options must not be empty for {$field['type']} fields";
+                } else {
+                    // Validate each option
+                    foreach ($field['options'] as $optIndex => $option) {
+                        if (!is_array($option) || !isset($option['value']) || !isset($option['label'])) {
+                            $errors[] = "content.form.fields[{$index}].options[{$optIndex}] must have 'value' and 'label' properties";
+                        }
+                    }
+                }
+            }
+
+            // Scale fields require min/max
+            if ($field['type'] === 'scale') {
+                if (!isset($field['min']) || !isset($field['max'])) {
+                    $errors[] = "content.form.fields[{$index}] scale fields require 'min' and 'max' properties";
+                } elseif (!is_numeric($field['min']) || !is_numeric($field['max'])) {
+                    $errors[] = "content.form.fields[{$index}] min and max must be numbers";
+                } elseif ($field['min'] >= $field['max']) {
+                    $errors[] = "content.form.fields[{$index}] min must be less than max";
+                }
+            }
+        }
+
+        // Validate optional boolean field
+        if (isset($field['required']) && !is_bool($field['required'])) {
+            $errors[] = "content.form.fields[{$index}].required must be a boolean if present";
+        }
+
+        // Validate optional numeric fields
+        $numericFields = ['min', 'max'];
+        foreach ($numericFields as $numField) {
+            if (isset($field[$numField]) && !is_numeric($field[$numField])) {
+                $errors[] = "content.form.fields[{$index}].{$numField} must be a number if present";
+            }
+        }
+
+        // Validate optional string fields
+        $stringFields = ['placeholder', 'helpText'];
+        foreach ($stringFields as $strField) {
+            if (isset($field[$strField]) && !is_string($field[$strField])) {
+                $errors[] = "content.form.fields[{$index}].{$strField} must be a string if present";
+            }
+        }
+
+        return $errors;
     }
 }
 

@@ -388,15 +388,34 @@ Forms are used when you need structured user input (questionnaires, ratings, mul
 
 ### Form Field Types
 
-| Type | Description | Required Properties |
-|------|-------------|---------------------|
-| `radio` | Single selection (radio buttons) | `options` array |
-| `checkbox` | Multiple selection (checkboxes) | `options` array |
-| `select` | Dropdown single selection | `options` array |
-| `text` | Single line text input | - |
-| `textarea` | Multi-line text input | - |
-| `number` | Numeric input | Optional `min`, `max` |
-| `scale` | Rating scale slider | `min`, `max` |
+| Type | Description | Required Properties | Optional Properties |
+|------|-------------|-------------------|-------------------|
+| `radio` | Single selection (radio buttons) | `options` | `helpText` |
+| `checkbox` | Multiple selection (checkboxes) | `options` | `helpText` |
+| `select` | Dropdown single selection | `options` | `helpText` |
+| `text` | Single line text input | - | `placeholder`, `helpText` |
+| `textarea` | Multi-line text input | - | `placeholder`, `helpText` |
+| `number` | Numeric input | - | `min`, `max`, `placeholder`, `helpText` |
+| `scale` | Rating scale (1-10) | `min`, `max` | `helpText` |
+
+### Frontend Rendering
+
+Forms are rendered as interactive components with:
+- **Field labels** prominently displayed
+- **Appropriate input controls** based on field type
+- **Validation feedback** for required fields
+- **Help text** displayed below fields when provided
+- **Submit button** with custom label
+- **Form state management** with error handling
+
+### Validation Rules
+
+The schema enforces these validation rules:
+- Forms must have at least one field
+- Selection fields must have non-empty options arrays
+- Scale fields must have valid min/max values
+- All field IDs must be unique strings
+- Field types must match allowed values
 
 ### Option Structure
 
