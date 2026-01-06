@@ -277,6 +277,26 @@
 - **Provider Detection**: BfhProvider now correctly detects and handles the new `/api/v1` endpoint
 - **Response Structure**: Confirmed support for BFH's enhanced response format including `reasoning_content` and `provider_specific_fields`
 
+#### Form Submission Failure Recovery (January 6, 2026)
+- **Persistent Retry Mechanism**: Form submissions that fail now show a retry option that persists across page reloads
+- **Automatic Failure Detection**: System detects failed form submissions from conversation history and automatically offers retry
+- **Seamless User Experience**: Users are never stuck in dead-end situations when form submissions fail
+- **Smart State Management**: Failed submission state tracked in memory and automatically detected from conversation metadata
+- **Fallback Retry Logic**: Supports both in-session retries and post-reload recovery from conversation history
+
+**Retry Detection Logic:**
+1. **In-Session**: Failed submissions tracked in React state with retry button
+2. **Post-Reload**: System scans conversation history for user messages with form metadata but no assistant response
+3. **Automatic UI**: Retry form appears automatically when failed submission detected
+4. **Data Preservation**: Original form values extracted from stored submission metadata
+
+**New Features:**
+- `RetryForm` component with warning message and retry button
+- Persistent retry detection across page reloads
+- Form value preservation for seamless retry experience
+- Enhanced error handling in `handleFormSubmit` function
+- Conversation history analysis for automatic failure detection
+
 #### Enhanced Safety Detection & Blocking (January 5, 2026)
 - **Always-Active Critical Safety**: Critical and emergency danger detections now ALWAYS trigger logging and blocking regardless of CMS danger detection settings
 - **Immediate UI Blocking**: Conversations blocked by AI detection immediately update UI without page refresh

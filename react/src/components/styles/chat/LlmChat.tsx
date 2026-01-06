@@ -122,6 +122,14 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   // Local state for form submission (form mode)
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
+  // Local state to track failed form submissions for retry
+  const [lastFailedFormSubmission, setLastFailedFormSubmission] = useState<{
+    values: Record<string, string | string[]>;
+    readableText: string;
+    conversationId: string | null;
+    timestamp: number;
+  } | null>(null);
+
   // Local state for progress tracking
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [isProgressUpdating, setIsProgressUpdating] = useState(false);
@@ -526,6 +534,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     // Get current conversation ID
     const conversationId = currentConversation?.id || null;
 
+    // Clear any previous failed submission
+    setLastFailedFormSubmission(null);
+
     setIsFormSubmitting(true);
 
     try {
@@ -594,6 +605,14 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     } catch (error) {
       console.error('Failed to submit form:', error);
       setError(error instanceof Error ? error.message : 'Failed to submit form');
+
+      // Track the failed submission for retry capability
+      setLastFailedFormSubmission({
+        values,
+        readableText,
+        conversationId,
+        timestamp: Date.now()
+      });
     } finally {
       setIsFormSubmitting(false);
     }
@@ -613,6 +632,22 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     setCurrentConversation,
     forceScrollToBottom
   ]);
+
+  /**
+   * Handle retrying a failed form submission
+   */
+  const handleRetryFormSubmission = useCallback(async () => {
+    if (!lastFailedFormSubmission) return;
+
+    // Clear the failed submission state
+    setLastFailedFormSubmission(null);
+
+    // Retry the submission with the same values
+    await handleFormSubmit(
+      lastFailedFormSubmission.values,
+      lastFailedFormSubmission.readableText
+    );
+  }, [lastFailedFormSubmission, handleFormSubmit]);
 
   /**
    * Handle file selection
@@ -798,6 +833,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                   isFormSubmitting={isFormSubmitting}
                   onContinue={config.enableFormMode ? handleContinue : undefined}
                   onSuggestionClick={handleSuggestionClick}
+                  lastFailedFormSubmission={lastFailedFormSubmission}
+                  onRetryFormSubmission={handleRetryFormSubmission}
                 />
               </div>
             </Card.Body>

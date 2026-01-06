@@ -255,6 +255,64 @@ When form mode is enabled (`enable_form_mode`), the chat expects form submission
 3. Backend prompts LLM to continue with next step/form
 4. LLM responds with next form or content
 
+## Form Submission Failure Recovery
+
+The LLM Chat system includes robust error recovery for form submissions to prevent users from getting stuck in dead-end situations.
+
+### Automatic Retry Mechanism
+
+When a form submission fails (due to network issues, LLM errors, server timeouts, etc.), the system automatically:
+
+1. **Tracks the failure** in React component state
+2. **Preserves form data** for retry capability
+3. **Shows a retry form** with warning message and retry button
+4. **Detects failures after page reload** by analyzing conversation history
+
+### Retry Detection Logic
+
+The system detects failed form submissions in two ways:
+
+#### In-Session Detection
+- Form submission fails during current session
+- Failed submission state stored in React component
+- Retry form appears immediately with preserved form values
+
+#### Post-Reload Detection
+- Page is reloaded after a failed submission
+- System scans conversation history for user messages with form metadata
+- If last message is user + has form submission metadata + no assistant response → detected as failed
+- Retry form appears automatically with extracted form values
+
+### Configuration
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `form_submission_error` | text | Error message shown when form submission fails (default: "Form submission failed") |
+
+### User Experience
+
+1. **Seamless Recovery**: Users never get stuck - retry option always available
+2. **Data Preservation**: Original form selections maintained for easy retry
+3. **Clear Feedback**: Warning message explains the failure and offers retry
+4. **Persistent State**: Retry capability survives page reloads
+
+### Technical Implementation
+
+- `RetryForm` component with warning styling and retry button
+- Conversation history analysis in `MessageList.shouldShowRetryForm()`
+- Form value extraction from submission metadata
+- State management in `LlmChat.handleFormSubmit()` and related functions
+
+### Error Scenarios Handled
+
+- Network timeouts and connection failures
+- LLM API errors and rate limiting
+- Server-side processing errors
+- Database transaction failures
+- Invalid form data validation errors
+
+This ensures users can always continue their form-based conversations, even when technical issues occur.
+
 ## Security Considerations
 
 1. **User Isolation**: Users can only access their own data (enforced by UserInput)

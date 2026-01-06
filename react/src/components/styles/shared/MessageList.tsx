@@ -17,7 +17,7 @@
  * @module components/MessageList
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import type { Message, LlmChatConfig, FormDefinition, StructuredResponse } from '../../../types';
 import { 
   parseFormDefinition, 
@@ -56,6 +56,15 @@ interface MessageListProps {
   onContinue?: () => void;
   /** Callback when a suggestion button is clicked (structured response mode) */
   onSuggestionClick?: (suggestion: string) => void;
+  /** Information about the last failed form submission for retry */
+  lastFailedFormSubmission?: {
+    values: Record<string, string | string[]>;
+    readableText: string;
+    conversationId: string | null;
+    timestamp: number;
+  } | null;
+  /** Callback when retrying a failed form submission */
+  onRetryFormSubmission?: () => void;
 }
 
 /**
@@ -397,8 +406,59 @@ const ContinueButton: React.FC<{
 );
 
 /**
+ * Retry Form Component
+ * Shows when a form submission failed and allows the user to retry
+ */
+const RetryForm: React.FC<{
+  failedSubmission: {
+    values: Record<string, string | string[]>;
+    readableText: string;
+    conversationId: string | null;
+    timestamp: number;
+  };
+  onRetry: () => void;
+  isSubmitting: boolean;
+  config: LlmChatConfig;
+}> = ({ failedSubmission, onRetry, isSubmitting, config }) => {
+  const handleRetry = useCallback(() => {
+    onRetry();
+  }, [onRetry]);
+
+  return (
+    <div className="retry-form-wrapper">
+      <div className="alert alert-warning mb-3">
+        <i className="fas fa-exclamation-triangle mr-2"></i>
+        <strong>{config.formSubmissionError || 'Form submission failed'}</strong>
+        <br />
+        <small>Your previous form submission could not be processed. Please try again.</small>
+      </div>
+
+      <div className="text-center py-3">
+        <button
+          className="btn btn-warning btn-lg px-5"
+          onClick={handleRetry}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <>
+              <span className="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>
+              Retrying...
+            </>
+          ) : (
+            <>
+              <i className="fas fa-redo mr-2"></i>
+              Retry Form Submission
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/**
  * Message List Component
- * 
+ *
  * Main component that renders all messages in the conversation
  */
 export const MessageList: React.FC<MessageListProps> = ({
@@ -411,7 +471,9 @@ export const MessageList: React.FC<MessageListProps> = ({
   onFormSubmit,
   isFormSubmitting = false,
   onContinue,
-  onSuggestionClick
+  onSuggestionClick,
+  lastFailedFormSubmission,
+  onRetryFormSubmission
 }) => {
   // Show loading state
   if (isLoading) {
@@ -460,6 +522,11 @@ export const MessageList: React.FC<MessageListProps> = ({
       return false;
     }
 
+    // If there's a failed form submission, don't show continue button
+    if (lastFailedFormSubmission) {
+      return false;
+    }
+
     // Find the last assistant message
     const lastAssistantMessage = [...messages].reverse().find(msg => msg.role === 'assistant');
     if (!lastAssistantMessage) {
@@ -470,6 +537,62 @@ export const MessageList: React.FC<MessageListProps> = ({
     // UNIFIED: messageHasForm checks both legacy FormDefinition AND StructuredResponse.forms
     const hasForm = messageHasForm(lastAssistantMessage.content);
     return !hasForm;
+  };
+
+  // Determine if we should show the retry form
+  // Show when there's a failed form submission (either from state or detected from conversation)
+  const shouldShowRetryForm = () => {
+    if (!config.enableFormMode || isStreaming || messages.length === 0) {
+      return false;
+    }
+
+    const lastMessage = messages[messages.length - 1];
+
+    // First check if we have an active failed submission in state
+    if (lastFailedFormSubmission && lastMessage && lastMessage.role === 'user') {
+      return true;
+    }
+
+    // Then check if we can detect a failed submission from conversation history
+    // A failed submission is: last message is user + has form metadata + no assistant response after
+    if (lastMessage && lastMessage.role === 'user') {
+      // Check if this user message has form submission metadata
+      const submissionMeta = parseFormSubmissionMetadata(lastMessage.attachments);
+      if (submissionMeta) {
+        // This is a form submission with no response after it - consider it failed
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Get retry form data - either from state or detected from conversation
+  const getRetryFormData = () => {
+    // First priority: use data from component state if available
+    if (lastFailedFormSubmission) {
+      return lastFailedFormSubmission;
+    }
+
+    // Second priority: extract from conversation history
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === 'user') {
+      const submissionMeta = parseFormSubmissionMetadata(lastMessage.attachments);
+      if (submissionMeta) {
+        // Find the form definition from previous assistant message
+        const previousFormDef = findPreviousAssistantFormDefinition(messages.length - 1);
+        if (previousFormDef) {
+          return {
+            values: submissionMeta.values,
+            readableText: lastMessage.content,
+            conversationId: null, // We don't need this for retry from history
+            timestamp: new Date(lastMessage.timestamp).getTime()
+          };
+        }
+      }
+    }
+
+    return null;
   };
   
   // Determine if we should show thinking indicator for Continue button area
@@ -547,6 +670,34 @@ export const MessageList: React.FC<MessageListProps> = ({
         <ThinkingIndicator text={config.aiThinkingText} />
       )}
       
+      {/* Show retry form when there's a failed form submission */}
+      {(() => {
+        const retryData = getRetryFormData();
+        const showRetry = shouldShowRetryForm() && retryData;
+
+        if (!showRetry) return null;
+
+        // For retries from state, use the onRetryFormSubmission function
+        // For retries from conversation history, create a synthetic retry function
+        const retryFunction = lastFailedFormSubmission && onRetryFormSubmission
+          ? onRetryFormSubmission
+          : () => {
+              // Retry from conversation history - call onFormSubmit with saved values
+              if (onFormSubmit && retryData) {
+                onFormSubmit(retryData.values, retryData.readableText);
+              }
+            };
+
+        return (
+          <RetryForm
+            failedSubmission={retryData}
+            onRetry={retryFunction}
+            isSubmitting={isFormSubmitting}
+            config={config}
+          />
+        );
+      })()}
+
       {/* Show Continue button in form mode when last assistant message has no form */}
       {shouldShowContinueButton() && !isProcessing && !isFormSubmitting && onContinue && (
         <ContinueButton

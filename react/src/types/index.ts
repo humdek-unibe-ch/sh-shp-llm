@@ -316,6 +316,8 @@ export interface LlmChatConfig {
   removeFileTitle: string;
   /** Message shown when conversation is blocked */
   conversationBlockedMessage: string;
+  /** Error message for form submission failures */
+  formSubmissionError?: string;
 }
 
 /**
@@ -392,7 +394,8 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   noVisionSupportText: 'No vision',
   sendMessageTitle: 'Send message',
   removeFileTitle: 'Remove file',
-  conversationBlockedMessage: 'This conversation has been blocked. You cannot send any more messages.'
+  conversationBlockedMessage: 'This conversation has been blocked. You cannot send any more messages.',
+  formSubmissionError: 'Form submission failed'
 };
 
 // ============================================================================
