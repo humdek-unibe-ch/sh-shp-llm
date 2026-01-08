@@ -5,25 +5,45 @@
 ?>
 <?php
 
+require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/provider/LlmProviderRegistry.php';
+require_once __DIR__ . '/validation/LlmValidator.php';
+require_once __DIR__ . '/exception/LlmException.php';
+require_once __DIR__ . '/exception/LlmValidationException.php';
+require_once __DIR__ . '/exception/LlmRateLimitException.php';
+require_once __DIR__ . '/exception/LlmApiException.php';
 
-class LlmService
+/**
+ * Main LLM Service
+ * 
+ * Core service for LLM chat functionality. Handles:
+ * - Conversation management (CRUD operations)
+ * - Message management
+ * - LLM API integration
+ * - Rate limiting
+ * 
+ * Extends BaseLlmService for common functionality.
+ * 
+ * @package LLM Plugin
+ * @version 1.1.0
+ */
+class LlmService extends BaseLlmService
 {
-    protected $services;
-    protected $db;
-    protected $cache;
+    /** @var LlmProviderInterface Current LLM provider */
     protected $provider;
 
-    /* Constructors ***********************************************************/
+    /* =========================================================================
+     * CONSTRUCTOR
+     * ========================================================================= */
 
     /**
      * Constructor
+     * 
+     * @param object $services SelfHelp services container
      */
     public function __construct($services)
     {
-        $this->services = $services;
-        $this->db = $services->get_db();
-        $this->cache = $this->db->get_cache();
+        parent::__construct($services);
         
         // Initialize provider based on configuration
         $config = $this->getLlmConfig();
@@ -40,10 +60,17 @@ class LlmService
         return $this->provider;
     }
 
-    /* Private Methods *********************************************************/
+    /* =========================================================================
+     * CONFIGURATION
+     * ========================================================================= */
 
     /**
      * Get LLM configuration
+     * 
+     * Retrieves configuration from database with caching.
+     * Falls back to defaults if not configured.
+     * 
+     * @return array Configuration array
      */
     public function getLlmConfig()
     {
@@ -69,14 +96,13 @@ class LlmService
                     if ($page_data) {
                         // Extract LLM configuration fields from the page data
                         foreach ($page_data as $key => $value) {
-                            if (strpos($key, 'llm_') === 0) { // Only LLM-related fields
+                            if (strpos($key, 'llm_') === 0) {
                                 $config[$key] = $value;
                             }
                         }
                     }
                 } catch (Exception $e) {
-                    // If stored procedure fails, continue with defaults
-                    error_log('LLM config retrieval failed: ' . $e->getMessage());
+                    $this->logWarning('LLM config retrieval failed', ['error' => $e->getMessage()]);
                 }
             }
 
@@ -94,39 +120,33 @@ class LlmService
         return $config;
     }
 
+    /* =========================================================================
+     * RATE LIMITING
+     * ========================================================================= */
+
     /**
-     * Check rate limiting
+     * Check rate limiting for a user
+     * 
+     * @param int $user_id User ID
+     * @return array Rate limit data
+     * @throws LlmRateLimitException If rate limit exceeded
      */
     public function checkRateLimit($user_id)
     {
-        $cache_key = LLM_CACHE_RATE_LIMIT . '_' . $user_id;
-        $current_minute = date('Y-m-d H:i');
-
-        $rate_data = $this->cache->get($cache_key);
-        if (!$rate_data) {
-            $rate_data = [
-                'minute' => $current_minute,
-                'requests' => 0,
-                'conversations' => []
-            ];
+        $rate_data = $this->cacheManager->getRateLimitData($user_id);
+        
+        if (!$rate_data || $this->cacheManager->shouldResetRateLimit($rate_data)) {
+            $rate_data = $this->cacheManager->initRateLimitData();
         }
 
-        // Reset if new minute
-        if ($rate_data['minute'] !== $current_minute) {
-            $rate_data = [
-                'minute' => $current_minute,
-                'requests' => 0,
-                'conversations' => []
-            ];
-        }
-
-        // Check limits
+        // Check requests per minute limit
         if ($rate_data['requests'] >= LLM_RATE_LIMIT_REQUESTS_PER_MINUTE) {
-            throw new Exception('Rate limit exceeded: ' . LLM_RATE_LIMIT_REQUESTS_PER_MINUTE . ' requests per minute');
+            throw LlmRateLimitException::requestsPerMinute(LLM_RATE_LIMIT_REQUESTS_PER_MINUTE);
         }
 
+        // Check concurrent conversations limit
         if (count($rate_data['conversations']) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
-            throw new Exception('Concurrent conversation limit exceeded: ' . LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations');
+            throw LlmRateLimitException::concurrentConversations(LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS);
         }
 
         return $rate_data;
@@ -134,22 +154,21 @@ class LlmService
 
     /**
      * Update rate limiting data
+     * 
+     * @param int $user_id User ID
+     * @param array|null $rate_data Existing rate data (optional)
+     * @param int|null $conversation_id Conversation ID to track (optional)
+     * @return void
      */
     public function updateRateLimit($user_id, $rate_data = null, $conversation_id = null)
     {
         // If rate_data is not provided, get it from cache
         if ($rate_data === null) {
-            $cache_key = LLM_CACHE_RATE_LIMIT . '_' . $user_id;
-            $rate_data = $this->cache->get($cache_key);
+            $rate_data = $this->cacheManager->getRateLimitData($user_id);
 
             // If no cached data exists, initialize it
-            if (!$rate_data) {
-                $current_minute = date('Y-m-d H:i');
-                $rate_data = [
-                    'minute' => $current_minute,
-                    'requests' => 0,
-                    'conversations' => []
-                ];
+            if (!$rate_data || $this->cacheManager->shouldResetRateLimit($rate_data)) {
+                $rate_data = $this->cacheManager->initRateLimitData();
             }
         }
 
@@ -169,60 +188,23 @@ class LlmService
             $rate_data['conversations'][] = $conversation_id;
         }
 
-        $cache_key = LLM_CACHE_RATE_LIMIT . '_' . $user_id;
-        $this->cache->set($cache_key, $rate_data, 60); // Cache for 1 minute
+        $this->cacheManager->setRateLimitData($user_id, $rate_data);
     }
 
-    /**
-     * Clear user cache
-     */
-    private function clearUserCache($user_id)
-    {
-        $this->cache->clear_cache(LLM_CACHE_USER_CONVERSATIONS, $user_id);
-        // Clear all conversation message caches for this user
-        $this->clearConversationMessagesCache($user_id);
-    }
-
-    /**
-     * Clear conversation messages cache for a specific user
-     * Since conversation message caches use conversation_id as key, we need to find all user's conversations
-     */
-    private function clearConversationMessagesCache($user_id)
-    {
-        // Get all conversation IDs for this user (including blocked ones for cache clearing)
-        $conversations = $this->db->query_db(
-            "SELECT id FROM llmConversations WHERE id_users = ? AND deleted = 0",
-            [$user_id]
-        );
-
-        // Clear message cache for each conversation
-        foreach ($conversations as $conversation) {
-            $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation['id']);
-        }
-    }
-
-    /**
-     * Log transaction using the proper Transaction service
-     */
-    protected function logTransaction($operation, $table, $record_id, $user_id, $details = '')
-    {
-        $this->services->get_transaction()->add_transaction(
-            $operation,                    // tran_type
-            TRANSACTION_BY_LLM_PLUGIN,     // tran_by
-            $user_id,                      // user_id
-            $table,                        // table_name
-            $record_id,                    // entry_id
-            false,                         // log_row (don't log full row data)
-            $details                       // verbal_log
-        );
-    }
-
-    /* Public Methods *********************************************************/
-
-    /* Conversation Management */
+    /* =========================================================================
+     * CONVERSATION MANAGEMENT
+     * ========================================================================= */
 
     /**
      * Create a new conversation
+     * 
+     * @param int $user_id User ID
+     * @param string|null $title Conversation title
+     * @param string|null $model Model name
+     * @param float|null $temperature Temperature setting
+     * @param int|null $max_tokens Max tokens setting
+     * @param int|null $section_id Section ID for multi-section pages
+     * @return int New conversation ID
      */
     public function createConversation($user_id, $title = null, $model = null, $temperature = null, $max_tokens = null, $section_id = null)
     {
@@ -233,47 +215,53 @@ class LlmService
             'id_sections' => $section_id,
             'title' => $title ?: 'New Conversation',
             'model' => $model ?: $config['llm_default_model'],
-            'temperature' => $temperature ?: $config['llm_temperature'],
-            'max_tokens' => $max_tokens ?: $config['llm_max_tokens']
+            'temperature' => LlmValidator::temperature($temperature, $config['llm_temperature']),
+            'max_tokens' => LlmValidator::maxTokens($max_tokens, $config['llm_max_tokens'])
         ];
 
         $conversation_id = $this->db->insert('llmConversations', $data);
 
-        // Clear user cache
-        $this->clearUserCache($user_id);
+        // Clear user cache using cache manager
+        $this->cacheManager->clearUserCache($user_id);
 
-        // Log transaction
+        // Log transaction using trait
         $this->logTransaction(transactionTypes_insert, 'llmConversations', $conversation_id, $user_id, 'New conversation created');
 
         return $conversation_id;
     }
 
     /**
-     * Get or create a conversation for a specific model (legacy behavior)
+     * Get or create a conversation for a specific model
+     * 
      * Returns the most recent conversation for the model, or creates a new one if none exists.
+     * 
+     * @param int $user_id User ID
+     * @param string $model Model name
+     * @param float|null $temperature Temperature setting
+     * @param int|null $max_tokens Max tokens setting
+     * @param int|null $section_id Section ID
+     * @return int Conversation ID
      */
     public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null)
     {
-        // First, try to find an existing conversation for this model within the same section
-        // CRITICAL: Must pass section_id to ensure conversations are isolated per section
+        // Try to find an existing conversation for this model within the same section
         $existing_conversations = $this->getUserConversations($user_id, 1, $model, $section_id);
 
         if (!empty($existing_conversations)) {
-            // Return the most recent conversation for this model in this section
             return $existing_conversations[0]['id'];
         }
 
-        // No existing conversation found for this section, create a new one
+        // No existing conversation found, create a new one
         return $this->createConversation($user_id, null, $model, $temperature, $max_tokens, $section_id);
     }
 
     /**
      * Get user conversations
      * 
-     * @param int $user_id The user ID
-     * @param int $limit Maximum number of conversations to return
+     * @param int $user_id User ID
+     * @param int $limit Maximum number of conversations
      * @param string|null $model Filter by model name
-     * @param int|null $section_id Filter by section ID (for multi-section pages)
+     * @param int|null $section_id Filter by section ID
      * @return array Array of conversation records
      */
     public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null, $section_id = null)
@@ -285,8 +273,8 @@ class LlmService
         if ($section_id) {
             $cache_params['section_id'] = $section_id;
         }
-        $cache_key = $this->cache->generate_key(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
-        $cached = $this->cache->get($cache_key);
+        
+        $cached = $this->cacheManager->get(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
 
         if ($cached !== false) {
             return $cached;
@@ -295,42 +283,39 @@ class LlmService
         $sql = "SELECT id, id_sections, title, model, created_at, updated_at, blocked, blocked_reason, blocked_at
                 FROM llmConversations
                 WHERE id_users = :id_user AND deleted = 0";
-        $params = array(':id_user' => $user_id);
+        $params = [':id_user' => $user_id];
 
         if ($model) {
             $sql .= " AND model = :model";
             $params[':model'] = $model;
         }
 
-        // Filter by section ID when provided - ensures each llmChat section shows only its own conversations
         if ($section_id) {
             $sql .= " AND id_sections = :section_id";
             $params[':section_id'] = $section_id;
         }
 
-        $sql .= " ORDER BY updated_at DESC LIMIT " . $limit . ";";
+        $sql .= " ORDER BY updated_at DESC LIMIT " . (int)$limit . ";";
 
         $conversations = $this->db->query_db($sql, $params);
 
-        $this->cache->set($cache_key, $conversations, 300); // Cache for 5 minutes
+        $this->cacheManager->set(LLM_CACHE_USER_CONVERSATIONS, $user_id, $conversations, $cache_params);
         return $conversations;
     }
 
     /**
      * Get a specific conversation
      * 
-     * @param int $conversation_id The conversation ID
-     * @param int $user_id The user ID
-     * @param int|null $section_id Optional section ID to verify conversation belongs to this section
-     * @return array|null Conversation data or null if not found/not authorized
+     * @param int $conversation_id Conversation ID
+     * @param int $user_id User ID
+     * @param int|null $section_id Optional section ID to verify ownership
+     * @return array|null Conversation data or null if not found
      */
     public function getConversation($conversation_id, $user_id, $section_id = null)
     {
         $sql = "SELECT * FROM llmConversations WHERE id = ? AND id_users = ?";
         $params = [$conversation_id, $user_id];
 
-        // If section_id is provided, verify the conversation belongs to this section
-        // This prevents accessing conversations from other llmChat instances on the same page
         if ($section_id !== null) {
             $sql .= " AND id_sections = ?";
             $params[] = $section_id;
@@ -343,13 +328,19 @@ class LlmService
 
     /**
      * Update conversation
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $user_id User ID
+     * @param array $data Data to update
+     * @return bool Success
+     * @throws LlmException If conversation not found
      */
     public function updateConversation($conversation_id, $user_id, $data)
     {
         // Verify ownership
         $conversation = $this->getConversation($conversation_id, $user_id);
         if (!$conversation) {
-            throw new Exception('Conversation not found or access denied');
+            throw new LlmException('Conversation not found or access denied', 404);
         }
 
         $allowed_fields = ['title', 'model', 'temperature', 'max_tokens'];
@@ -357,7 +348,14 @@ class LlmService
 
         foreach ($allowed_fields as $field) {
             if (isset($data[$field])) {
-                $update_data[$field] = $data[$field];
+                // Apply validation for specific fields
+                if ($field === 'temperature') {
+                    $update_data[$field] = LlmValidator::temperature($data[$field]);
+                } elseif ($field === 'max_tokens') {
+                    $update_data[$field] = LlmValidator::maxTokens($data[$field]);
+                } else {
+                    $update_data[$field] = $data[$field];
+                }
             }
         }
 
@@ -365,34 +363,39 @@ class LlmService
             $this->db->update_by_ids('llmConversations', $update_data, ['id' => $conversation_id]);
 
             // Clear cache
-            $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id);
+            $this->cacheManager->clearConversationMessageCache($conversation_id);
 
-        // Log transaction
-        $this->logTransaction(transactionTypes_update, 'llmConversations', $conversation_id, $user_id, 'Conversation updated: ' . json_encode($update_data));
+            // Log transaction
+            $this->logTransaction(transactionTypes_update, 'llmConversations', $conversation_id, $user_id, 'Conversation updated: ' . json_encode($update_data));
         }
 
         return true;
     }
 
     /**
-     * Delete conversation
+     * Delete conversation (soft delete)
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $user_id User ID
+     * @return bool Success
+     * @throws LlmException If conversation not found
      */
     public function deleteConversation($conversation_id, $user_id)
     {
         // Verify ownership
         $conversation = $this->getConversation($conversation_id, $user_id);
         if (!$conversation) {
-            throw new Exception('Conversation not found or access denied');
+            throw new LlmException('Conversation not found or access denied', 404);
         }
 
-        // Soft delete conversation (mark as deleted)
+        // Soft delete conversation
         $this->db->update_by_ids('llmConversations', ['deleted' => 1], ['id' => $conversation_id]);
 
-        // Also soft delete all messages in this conversation
+        // Soft delete all messages
         $this->db->update_by_ids('llmMessages', ['deleted' => 1], ['id_llmConversations' => $conversation_id]);
 
         // Clear cache
-        $this->clearUserCache($user_id);
+        $this->cacheManager->clearUserCache($user_id);
 
         // Log transaction
         $this->logTransaction(transactionTypes_delete, 'llmConversations', $conversation_id, $user_id, 'Conversation deleted');
@@ -400,94 +403,55 @@ class LlmService
         return true;
     }
 
-    /* Message Management */
+    /* =========================================================================
+     * MESSAGE MANAGEMENT
+     * ========================================================================= */
 
     /**
-     * Add a message to conversation
-     */
-    /**
-     * Add a message to a conversation - Industry Standard Implementation
+     * Add a message to a conversation
      *
-     * @param int $conversation_id The conversation ID
-     * @param string $role The message role (user/assistant/system)
-     * @param string $content The message content (must be clean text only)
+     * @param int $conversation_id Conversation ID
+     * @param string $role Message role (user/assistant/system)
+     * @param string $content Message content (must be clean text only)
      * @param array|string|null $attachments File attachments metadata
-     * @param string|null $model The AI model used
-     * @param int|null $tokens_used Token count for the message
-     * @param array|null $raw_response Raw API response data (will be JSON encoded)
-     * @param array|null $sent_context Context messages that were sent with this message (for debugging/audit)
-     * @param string|null $reasoning Optional reasoning/thinking process from LLM (provider-specific)
-     * @return int The message ID
+     * @param string|null $model AI model used
+     * @param int|null $tokens_used Token count
+     * @param array|null $raw_response Raw API response data
+     * @param array|null $sent_context Context messages sent with this message
+     * @param string|null $reasoning Optional reasoning from LLM
+     * @return int Message ID
+     * @throws LlmValidationException If content is invalid
+     * @throws LlmException If conversation not found
      */
     public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null)
     {
-        // Validate inputs to prevent corruption
-        if (!is_string($content) || empty($content)) {
-            throw new Exception('Message content must be a non-empty string');
-        }
+        // Validate content
+        $content = LlmValidator::messageContent($content);
+        $role = LlmValidator::role($role);
 
-        // Verify conversation exists and get user_id
+        // Verify conversation exists
         $conversation = $this->db->query_db_first(
             "SELECT id_users FROM llmConversations WHERE id = ?",
             [$conversation_id]
         );
 
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
 
-        // Handle attachments - store full metadata in attachments field
-        $attachmentsData = null;
-        if ($attachments) {
-            if (is_array($attachments)) {
-                $attachmentsData = json_encode($attachments);
-            } elseif (is_string($attachments)) {
-                // Check if it's already JSON (e.g., form submission metadata)
-                $decoded = json_decode($attachments, true);
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                    // It's valid JSON - check if it's form submission or needs wrapping
-                    if (isset($decoded['type']) && $decoded['type'] === 'form_submission') {
-                        // Form submission - store as-is
-                        $attachmentsData = $attachments;
-                    } else {
-                        // Other JSON data - store as-is
-                        $attachmentsData = $attachments;
-                    }
-                } else {
-                    // Backward compatibility - single path string (file path)
-                    $attachmentsData = json_encode([[
-                        'path' => $attachments,
-                        'original_name' => basename($attachments)
-                    ]]);
-                }
-            }
-        }
+        // Process attachments
+        $attachmentsData = $this->processAttachments($attachments);
 
-        // Handle raw response - ensure it's properly JSON encoded
-        $rawResponseData = null;
-        if ($raw_response !== null) {
-            if (is_array($raw_response)) {
-                $rawResponseData = json_encode($raw_response);
-            } elseif (is_string($raw_response)) {
-                // Assume it's already JSON or needs to be stored as-is
-                $rawResponseData = $raw_response;
-            }
-        }
+        // Process raw response
+        $rawResponseData = $this->jsonEncode($raw_response);
 
-        // Handle sent_context - store context snapshot for debugging/audit
-        $sentContextData = null;
-        if ($sent_context !== null) {
-            if (is_array($sent_context)) {
-                $sentContextData = json_encode($sent_context);
-            } elseif (is_string($sent_context)) {
-                $sentContextData = $sent_context;
-            }
-        }
+        // Process sent context
+        $sentContextData = $this->jsonEncode($sent_context);
 
         $data = [
             'id_llmConversations' => $conversation_id,
             'role' => $role,
-            'content' => $content, // Guaranteed to be clean text only
+            'content' => $content,
             'attachments' => $attachmentsData,
             'model' => $model,
             'tokens_used' => $tokens_used,
@@ -496,10 +460,9 @@ class LlmService
             'reasoning' => $reasoning
         ];
 
-
-        // Final validation before insert
+        // Final validation to prevent JSON in content field
         if (strpos($data['content'], '{"id":') !== false) {
-            error_log('CRITICAL: Content field contains JSON data - preventing corruption');
+            $this->logError('Content field contains JSON data - preventing corruption');
             $data['content'] = substr($data['content'], 0, strpos($data['content'], '{"id":'));
         }
 
@@ -512,7 +475,7 @@ class LlmService
         );
 
         // Clear cache
-        $this->cache->clear_cache(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id);
+        $this->cacheManager->clearConversationMessageCache($conversation_id);
 
         // Log transaction
         $this->logTransaction(transactionTypes_insert, 'llmMessages', $message_id, $conversation['id_users'], "Message added to conversation $conversation_id");
@@ -521,25 +484,60 @@ class LlmService
     }
 
     /**
+     * Process attachments for storage
+     * 
+     * @param array|string|null $attachments Raw attachments data
+     * @return string|null JSON encoded attachments
+     */
+    private function processAttachments($attachments)
+    {
+        if (!$attachments) {
+            return null;
+        }
+
+        if (is_array($attachments)) {
+            return $this->jsonEncode($attachments);
+        }
+
+        if (is_string($attachments)) {
+            // Check if it's already valid JSON
+            $decoded = json_decode($attachments, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $attachments;
+            }
+            
+            // Backward compatibility - single path string
+            return $this->jsonEncode([[
+                'path' => $attachments,
+                'original_name' => basename($attachments)
+            ]]);
+        }
+
+        return null;
+    }
+
+    /**
      * Update a message
      *
-     * @param int $message_id The message ID to update
-     * @param array $data The data to update
-     * @return bool True if update was successful
+     * @param int $message_id Message ID
+     * @param array $data Data to update
+     * @return bool Success
      */
     public function updateMessage($message_id, $data)
     {
         return $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
     }
 
-
     /**
      * Get conversation messages
+     * 
+     * @param int $conversation_id Conversation ID
+     * @param int $limit Maximum messages to return
+     * @return array Array of messages
      */
     public function getConversationMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
     {
-        $cache_key = $this->cache->generate_key(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id, ['limit' => $limit]);
-        $cached = $this->cache->get($cache_key);
+        $cached = $this->cacheManager->get(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id, ['limit' => $limit]);
 
         if ($cached !== false) {
             return $cached;
@@ -552,20 +550,25 @@ class LlmService
                  SELECT id FROM llmMessages
                  WHERE id_llmConversations = :conversation_id AND deleted = 0
                  ORDER BY timestamp DESC
-                 LIMIT " . $limit . "
+                 LIMIT " . (int)$limit . "
              ) recent ON m.id = recent.id
              ORDER BY m.timestamp ASC;",
             [':conversation_id' => $conversation_id]
         );
 
-        $this->cache->set($cache_key, $messages, 300); // Cache for 5 minutes
+        $this->cacheManager->set(LLM_CACHE_CONVERSATION_MESSAGES, $conversation_id, $messages, ['limit' => $limit]);
         return $messages;
     }
 
-    /* LLM API Integration */
+    /* =========================================================================
+     * LLM API INTEGRATION
+     * ========================================================================= */
 
     /**
      * Get available models from LLM API
+     * 
+     * @param array|null $config Optional configuration override
+     * @return array Array of model data
      */
     public function getAvailableModels($config = null)
     {
@@ -584,24 +587,24 @@ class LlmService
 
         $response = BaseModel::execute_curl_call($data);
 
-        // If API call fails or returns no data, return default model list
+        // If API call fails, return default model list
         if (!$response || !is_array($response) || empty($response['data'])) {
             return $this->getDefaultModelList()['data'];
         }
 
-        // Normalize models to handle different provider structures
         return $this->normalizeModels($response['data']);
     }
 
     /**
-     * Normalize models from different providers to a consistent structure
+     * Normalize models from different providers
+     * 
+     * @param array $models Raw model data
+     * @return array Normalized models
      */
     private function normalizeModels($models)
     {
         return array_map(function($model) {
-            // Check if this is a new provider model with 'info' structure
             if (isset($model['info'])) {
-                // For new provider, keep the original model id but normalize structure
                 return [
                     'id' => $model['id'],
                     'created' => $model['created'] ?? time(),
@@ -610,70 +613,26 @@ class LlmService
                     'meta' => $model['info']['meta'] ?? null
                 ];
             }
-
-            // For GPUStack and other providers, return as-is
             return $model;
         }, $models);
     }
 
-
     /**
      * Get default model list when API is unavailable
+     * 
+     * @return array Default model list
      */
     private function getDefaultModelList()
     {
-        // Return available models for fallback when API is unavailable
         return [
             "data" => [
-                [
-                    "id" => "qwen3-coder-30b-a3b-instruct",
-                    "created" => 1764016765,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "gpt-oss-120b",
-                    "created" => 1763993286,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "apertus-8b-instruct-2509",
-                    "created" => 1764237775,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "deepseek-r1-0528-qwen3-8b",
-                    "created" => 1764223774,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "minimax-m2",
-                    "created" => 1764020415,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "internvl3-8b-instruct",
-                    "created" => 1764016711,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ],
-                [
-                    "id" => "qwen3-vl-8b-instruct",
-                    "created" => 1764572225,
-                    "object" => "model",
-                    "owned_by" => "gpustack",
-                    "meta" => null
-                ]
+                ["id" => "qwen3-coder-30b-a3b-instruct", "created" => 1764016765, "object" => "model", "owned_by" => "gpustack", "meta" => null],
+                ["id" => "gpt-oss-120b", "created" => 1763993286, "object" => "model", "owned_by" => "gpustack", "meta" => null],
+                ["id" => "apertus-8b-instruct-2509", "created" => 1764237775, "object" => "model", "owned_by" => "gpustack", "meta" => null],
+                ["id" => "deepseek-r1-0528-qwen3-8b", "created" => 1764223774, "object" => "model", "owned_by" => "gpustack", "meta" => null],
+                ["id" => "minimax-m2", "created" => 1764020415, "object" => "model", "owned_by" => "gpustack", "meta" => null],
+                ["id" => "internvl3-8b-instruct", "created" => 1764016711, "object" => "model", "owned_by" => "gpustack", "meta" => null],
+                ["id" => "qwen3-vl-8b-instruct", "created" => 1764572225, "object" => "model", "owned_by" => "gpustack", "meta" => null]
             ],
             "object" => "list"
         ];
@@ -683,8 +642,13 @@ class LlmService
      * Call LLM API for chat completion
      * 
      * Uses provider abstraction to handle different API formats.
-     * Returns normalized response structure.
-     * All calls are synchronous HTTP POST requests.
+     * 
+     * @param array $messages Messages to send
+     * @param string $model Model name
+     * @param float|null $temperature Temperature setting
+     * @param int|null $max_tokens Max tokens setting
+     * @return array Normalized response
+     * @throws LlmApiException If API call fails
      */
     public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null)
     {
@@ -693,15 +657,9 @@ class LlmService
         // Get API URL using provider
         $url = $this->provider->getApiUrl($config['llm_base_url'], LLM_API_CHAT_COMPLETIONS);
 
-        // Validate and clamp temperature to valid range (0.0 - 2.0)
-        $temp_value = (float)($temperature ?: $config['llm_temperature']);
-        if ($temp_value < 0.0) $temp_value = 0.0;
-        if ($temp_value > 2.0) $temp_value = 2.0;
-        
-        // Validate max_tokens
-        $max_tokens_value = (int)($max_tokens ?: $config['llm_max_tokens']);
-        if ($max_tokens_value < 1) $max_tokens_value = 2048;
-        if ($max_tokens_value > 16384) $max_tokens_value = 16384;
+        // Validate parameters using validator
+        $temp_value = LlmValidator::temperature($temperature, $config['llm_temperature']);
+        $max_tokens_value = LlmValidator::maxTokens($max_tokens, $config['llm_max_tokens']);
 
         // Build standard payload
         $payload = [
@@ -730,7 +688,7 @@ class LlmService
         $response = BaseModel::execute_curl_call($data);
 
         if (!$response) {
-            throw new Exception('LLM API request failed - no response received');
+            throw LlmApiException::noResponse();
         }
 
         // If response is a string, try to decode it as JSON
@@ -739,9 +697,8 @@ class LlmService
             if ($decoded !== null) {
                 $response = $decoded;
             } else {
-                // Raw string response - might be an error message
-                error_log('LLM API returned raw string: ' . substr($response, 0, 500));
-                throw new Exception('LLM API returned unexpected response: ' . substr($response, 0, 200));
+            $this->logWarning('LLM API returned raw string', ['response' => substr($response, 0, 500)]);
+            throw LlmApiException::invalidResponse('Unexpected string response', $response);
             }
         }
 
@@ -749,13 +706,9 @@ class LlmService
         try {
             return $this->provider->normalizeResponse($response);
         } catch (Exception $e) {
-            error_log('LLM Provider normalization error: ' . $e->getMessage());
-            error_log('Raw response: ' . json_encode($response));
-            throw new Exception('Failed to normalize LLM response: ' . $e->getMessage());
+            $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
+            throw LlmApiException::normalizationFailed($this->provider->getProviderName(), $e->getMessage(), $response);
         }
     }
-
-    /* File Upload Handling */
-
 }
 ?>

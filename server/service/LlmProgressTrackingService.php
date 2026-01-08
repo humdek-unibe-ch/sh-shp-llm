@@ -3,56 +3,50 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-/**
- * LLM Progress Tracking Service
- */
-
-// Include utility classes
+require_once __DIR__ . "/base/BaseLlmService.php";
 require_once __DIR__ . "/LlmLanguageUtility.php";
 
 /**
+ * LLM Progress Tracking Service
+ *
  * Handles progress calculation for context coverage in LLM conversations.
- * 
+ *
  * IMPORTANT: Progress is tracked based on USER QUESTIONS ONLY, not AI responses.
  * This ensures that the AI mentioning topics doesn't count as "coverage" - only
  * when the USER explicitly asks about a topic does it count.
- * 
+ *
  * The progress tracking system works as follows:
  * 1. Context is parsed to extract "topics" using explicit [TOPIC] markers
  * 2. Each USER message is analyzed to determine which topics were asked about
  * 3. Progress is calculated as a percentage of topics the user has explored
  * 4. Progress is ALWAYS incremental - can only increase, never decrease
- * 
+ *
  * Topic Definition Format (in conversation context):
- * 
+ *
  * [TOPIC:id="arsenal" name="Arsenal FC" keywords="arsenal,gunners,emirates"]
  * Content about Arsenal...
  * [/TOPIC]
- * 
+ *
  * Or simplified format:
  * [TOPIC: Arsenal FC | arsenal, gunners, emirates]
- * 
+ *
  * Coverage Calculation:
  * - A topic is "covered" when the USER asks about it (keyword match in user message)
  * - Depth: Multiple user questions about the same topic increase coverage depth
  * - The algorithm ensures monotonic progress (only increases)
- * 
+ *
  * @author SelfHelp Team
  */
-class LlmProgressTrackingService
+class LlmProgressTrackingService extends BaseLlmService
 {
-    private $services;
-    private $db;
-
     /**
      * Constructor
-     * 
+     *
      * @param object $services The services object
      */
     public function __construct($services)
     {
-        $this->services = $services;
-        $this->db = $services->get_db();
+        parent::__construct($services);
     }
 
     /**

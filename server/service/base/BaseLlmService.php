@@ -1,0 +1,229 @@
+<?php
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+require_once __DIR__ . '/LlmLoggingTrait.php';
+require_once __DIR__ . '/../cache/LlmCacheManager.php';
+
+/**
+ * Base Service Class for LLM Plugin
+ * 
+ * Abstract base class that provides common functionality for all LLM services:
+ * - Database and cache access
+ * - Transaction logging via LlmLoggingTrait
+ * - Centralized cache management via LlmCacheManager
+ * - Common utility methods
+ * 
+ * All services that need database/cache access should extend this class.
+ * 
+ * Usage:
+ * ```php
+ * class MyLlmService extends BaseLlmService
+ * {
+ *     public function myMethod()
+ *     {
+ *         // Access database
+ *         $result = $this->db->query_db("SELECT * FROM table");
+ *         
+ *         // Use cache manager
+ *         $this->cacheManager->clearUserCache($userId);
+ *         
+ *         // Log transactions
+ *         $this->logTransaction(transactionTypes_insert, 'table', $id, $userId, 'Description');
+ *         
+ *         // Debug logging
+ *         $this->logDebug('Operation completed', ['result' => $result]);
+ *     }
+ * }
+ * ```
+ * 
+ * @abstract
+ * @package LLM Plugin
+ * @version 1.0.0
+ */
+abstract class BaseLlmService
+{
+    use LlmLoggingTrait;
+
+    /** @var object SelfHelp services container */
+    protected $services;
+
+    /** @var object SelfHelp database instance */
+    protected $db;
+
+    /** @var object SelfHelp cache instance */
+    protected $cache;
+
+    /** @var LlmCacheManager Centralized cache manager */
+    protected $cacheManager;
+
+    /**
+     * Constructor - initializes common service dependencies
+     * 
+     * @param object $services SelfHelp services container
+     */
+    public function __construct($services)
+    {
+        $this->services = $services;
+        $this->db = $services->get_db();
+        $this->cache = $this->db->get_cache();
+        $this->cacheManager = new LlmCacheManager($this->cache, $this->db);
+    }
+
+    /* =========================================================================
+     * PROTECTED ACCESSORS
+     * ========================================================================= */
+
+    /**
+     * Get the services container
+     * 
+     * @return object SelfHelp services container
+     */
+    protected function getServices()
+    {
+        return $this->services;
+    }
+
+    /**
+     * Get the database instance
+     * 
+     * @return object SelfHelp database instance
+     */
+    protected function getDb()
+    {
+        return $this->db;
+    }
+
+    /**
+     * Get the cache instance
+     * 
+     * @return object SelfHelp cache instance
+     */
+    protected function getCache()
+    {
+        return $this->cache;
+    }
+
+    /**
+     * Get the cache manager
+     * 
+     * @return LlmCacheManager Cache manager instance
+     */
+    protected function getCacheManager()
+    {
+        return $this->cacheManager;
+    }
+
+    /* =========================================================================
+     * COMMON UTILITY METHODS
+     * ========================================================================= */
+
+    /**
+     * Get the current user ID from session
+     * 
+     * @return int|null User ID or null if not authenticated
+     */
+    protected function getCurrentUserId()
+    {
+        return $_SESSION['id_user'] ?? null;
+    }
+
+    /**
+     * Check if a user is authenticated
+     * 
+     * @return bool True if user is authenticated
+     */
+    protected function isAuthenticated()
+    {
+        return !empty($_SESSION['id_user']);
+    }
+
+    /**
+     * Safely encode data as JSON
+     * 
+     * @param mixed $data Data to encode
+     * @param int $flags JSON encoding flags
+     * @return string|null JSON string or null on failure
+     */
+    protected function jsonEncode($data, $flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    {
+        $json = json_encode($data, $flags);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->logError('JSON encode failed: ' . json_last_error_msg());
+            return null;
+        }
+        return $json;
+    }
+
+    /**
+     * Safely decode JSON string
+     * 
+     * @param string $json JSON string to decode
+     * @param bool $assoc Return associative array (default: true)
+     * @return mixed|null Decoded data or null on failure
+     */
+    protected function jsonDecode($json, $assoc = true)
+    {
+        $data = json_decode($json, $assoc);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->logError('JSON decode failed: ' . json_last_error_msg());
+            return null;
+        }
+        return $data;
+    }
+
+    /**
+     * Get a value from an array with a default
+     * 
+     * @param array $array Source array
+     * @param string $key Key to look up
+     * @param mixed $default Default value if key doesn't exist
+     * @return mixed Value or default
+     */
+    protected function arrayGet(array $array, $key, $default = null)
+    {
+        return array_key_exists($key, $array) ? $array[$key] : $default;
+    }
+
+    /**
+     * Check if a string is valid JSON
+     * 
+     * @param string $string String to check
+     * @return bool True if valid JSON
+     */
+    protected function isJson($string)
+    {
+        if (!is_string($string)) {
+            return false;
+        }
+        json_decode($string);
+        return json_last_error() === JSON_ERROR_NONE;
+    }
+
+    /**
+     * Sanitize a string for safe output
+     * 
+     * @param string $string String to sanitize
+     * @return string Sanitized string
+     */
+    protected function sanitize($string)
+    {
+        return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
+    }
+
+    /**
+     * Format a timestamp for display
+     * 
+     * @param string|int $timestamp Timestamp (string or Unix timestamp)
+     * @param string $format Date format (default: Y-m-d H:i:s)
+     * @return string Formatted date string
+     */
+    protected function formatTimestamp($timestamp, $format = 'Y-m-d H:i:s')
+    {
+        if (is_numeric($timestamp)) {
+            return date($format, $timestamp);
+        }
+        return date($format, strtotime($timestamp));
+    }
+}

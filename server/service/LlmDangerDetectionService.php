@@ -2,36 +2,26 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
-?>
-<?php
+
+require_once __DIR__ . '/base/BaseLlmService.php';
 
 /**
  * LLM Danger Detection Service
- * 
+ *
  * Provides danger word detection functionality for the LLM Chat plugin.
  * This is a critical safety feature that:
- * 
+ *
  * 1. Scans user messages for dangerous keywords before AI processing
  * 2. Blocks messages containing dangerous content
  * 3. Sends immediate email notifications via SelfHelp JobScheduler
  * 4. Logs all detections to the transactions table for audit
  * 5. Provides context injection text for LLM safety instructions
- * 
+ *
  * @author SelfHelp Team
- * @version 1.0.0
+ * @version 1.1.0
  */
-class LlmDangerDetectionService
+class LlmDangerDetectionService extends BaseLlmService
 {
-    /**
-     * @var object SelfHelp services container
-     */
-    private $services;
-
-    /**
-     * @var object Database instance
-     */
-    private $db;
-
     /**
      * @var object Model instance for configuration access
      */
@@ -44,14 +34,13 @@ class LlmDangerDetectionService
 
     /**
      * Constructor
-     * 
+     *
      * @param object $services SelfHelp services container
      * @param object $model LlmchatModel instance for configuration access
      */
     public function __construct($services, $model)
     {
-        $this->services = $services;
-        $this->db = $services->get_db();
+        parent::__construct($services);
         $this->model = $model;
     }
 

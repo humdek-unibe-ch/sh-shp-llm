@@ -3,58 +3,54 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+require_once __DIR__ . '/base/BaseLlmService.php';
+
 /**
  * LLM Data Saving Service
  * =======================
- * 
+ *
  * Service class for saving LLM form data to SelfHelp's UserInput system.
  * Uses the standard SelfHelp dataTables/dataRows/dataCells architecture
  * for consistent data storage and retrieval.
- * 
+ *
  * ## Data Architecture
- * 
+ *
  * This service integrates with SelfHelp's unified data storage system:
  * - **dataTables**: Defines the table structure (one per llmChat section)
  * - **dataCols**: Column definitions (created dynamically from form fields)
  * - **dataRows**: Individual records with user associations
  * - **dataCells**: Individual cell values
- * 
+ *
  * ## Save Modes
- * 
+ *
  * - **log**: Each form submission creates a new row (tracking over time)
  * - **record**: Updates user's existing record or creates new (profiles/preferences)
- * 
+ *
  * ## Variable Naming
- * 
+ *
  * The LLM is instructed to use proper variable names (snake_case) based on
  * what data is being collected. The field IDs from the form definition
  * become column names in the dataTable.
- * 
+ *
  * @package LLM Plugin
  * @see UserInput::save_data() for the underlying save mechanism
  */
-class LlmDataSavingService
+class LlmDataSavingService extends BaseLlmService
 {
-    /** @var object Database service */
-    private $db;
-
-    /** @var object Services container */
-    private $services;
-
     /** @var object UserInput service for data operations */
     private $user_input;
 
     /** @var string Table name prefix for LLM chat data tables */
     const TABLE_PREFIX = 'llmChat_';
+
     /**
      * Constructor
-     * 
+     *
      * @param object $services Services container
      */
     public function __construct($services)
     {
-        $this->services = $services;
-        $this->db = $services->get_db();
+        parent::__construct($services);
         $this->user_input = $services->get_user_input();
     }
 
