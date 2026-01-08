@@ -81,12 +81,7 @@ function parseConfig(container: HTMLElement) {
     container.dataset.enableFileUploads === '1' ||
     container.dataset.enableFileUploads === 'true' ||
     jsonConfig.enableFileUploads !== false;
-  
-  const streamingEnabled = 
-    container.dataset.streamingEnabled === '1' ||
-    container.dataset.streamingEnabled === 'true' ||
-    jsonConfig.streamingEnabled !== false;
-  
+
   const enableFullPageReload =
     container.dataset.enableFullPageReload === '1' ||
     container.dataset.enableFullPageReload === 'true' ||
@@ -218,10 +213,6 @@ function parseConfig(container: HTMLElement) {
     jsonConfig.aiThinkingText ||
     DEFAULT_CONFIG.aiThinkingText!;
 
-  const aiStreamingText = container.dataset.aiStreamingText ||
-    jsonConfig.aiStreamingText ||
-    DEFAULT_CONFIG.aiStreamingText!;
-
   const conversationsHeading = container.dataset.conversationsHeading ||
     jsonConfig.conversationsHeading ||
     DEFAULT_CONFIG.conversationsHeading!;
@@ -278,14 +269,6 @@ function parseConfig(container: HTMLElement) {
     jsonConfig.emptyMessageError ||
     DEFAULT_CONFIG.emptyMessageError!;
 
-  const streamingActiveError = container.dataset.streamingActiveError ||
-    jsonConfig.streamingActiveError ||
-    DEFAULT_CONFIG.streamingActiveError!;
-
-  const streamingInterruptionError = container.dataset.streamingInterruptionError ||
-    jsonConfig.streamingInterruptionError ||
-    DEFAULT_CONFIG.streamingInterruptionError!;
-
   const defaultChatTitle = container.dataset.defaultChatTitle ||
     jsonConfig.defaultChatTitle ||
     DEFAULT_CONFIG.defaultChatTitle!;
@@ -317,10 +300,6 @@ function parseConfig(container: HTMLElement) {
   const loadingMessagesText = container.dataset.loadingMessagesText ||
     jsonConfig.loadingMessagesText ||
     DEFAULT_CONFIG.loadingMessagesText!;
-
-  const streamingInProgressPlaceholder = container.dataset.streamingInProgressPlaceholder ||
-    jsonConfig.streamingInProgressPlaceholder ||
-    DEFAULT_CONFIG.streamingInProgressPlaceholder!;
 
   const attachFilesTitle = container.dataset.attachFilesTitle ||
     jsonConfig.attachFilesTitle ||
@@ -354,8 +333,6 @@ function parseConfig(container: HTMLElement) {
     configuredModel,
     enableConversationsList,
     enableFileUploads,
-    streamingEnabled,
-    enableFullPageReload,
     acceptedFileTypes,
     isVisionModel,
     hasConversationContext
@@ -395,7 +372,6 @@ function parseConfig(container: HTMLElement) {
     cancelDeleteButtonLabel,
     tokensSuffix,
     aiThinkingText,
-    aiStreamingText,
     conversationsHeading,
     newChatButtonLabel,
     selectConversationHeading,
@@ -408,8 +384,6 @@ function parseConfig(container: HTMLElement) {
     clearButtonLabel,
     submitButtonLabel,
     emptyMessageError,
-    streamingActiveError,
-    streamingInterruptionError,
     defaultChatTitle,
     deleteButtonTitle,
     conversationTitlePlaceholder,
@@ -418,7 +392,6 @@ function parseConfig(container: HTMLElement) {
     emptyStateTitle,
     emptyStateDescription,
     loadingMessagesText,
-    streamingInProgressPlaceholder,
     attachFilesTitle,
     noVisionSupportTitle,
     noVisionSupportText,

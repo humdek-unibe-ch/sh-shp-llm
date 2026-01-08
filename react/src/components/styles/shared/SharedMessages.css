@@ -292,8 +292,8 @@
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-/* ===== Streaming Indicator ===== */
-.streaming-indicator-bar {
+/* ===== Loading Indicator ===== */
+.loading-indicator-bar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -305,13 +305,14 @@
   color: #007bff;
 }
 
-.streaming-dots {
+/* ===== Thinking Indicator Dots ===== */
+.thinking-dots {
   display: flex;
   align-items: center;
   gap: 3px;
 }
 
-.streaming-dots .dot {
+.thinking-dots .dot {
   width: 8px;
   height: 8px;
   background: #007bff;
@@ -320,29 +321,13 @@
   box-shadow: 0 0 4px rgba(0, 123, 255, 0.4);
 }
 
-.streaming-dots .dot:nth-child(1) { animation-delay: -0.32s; }
-.streaming-dots .dot:nth-child(2) { animation-delay: -0.16s; }
-.streaming-dots .dot:nth-child(3) { animation-delay: 0s; }
+.thinking-dots .dot:nth-child(1) { animation-delay: -0.32s; }
+.thinking-dots .dot:nth-child(2) { animation-delay: -0.16s; }
+.thinking-dots .dot:nth-child(3) { animation-delay: 0s; }
 
 @keyframes dotPulse {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
   40% { transform: scale(1); opacity: 1; }
-}
-
-.streaming-cursor {
-  display: inline-block;
-  width: 3px;
-  height: 1.2em;
-  background: #007bff;
-  margin-left: 3px;
-  animation: cursorBlink 0.8s infinite;
-  border-radius: 1px;
-  vertical-align: text-bottom;
-}
-
-@keyframes cursorBlink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
 }
 
 /* ===== Media Elements (Images/Videos) ===== */

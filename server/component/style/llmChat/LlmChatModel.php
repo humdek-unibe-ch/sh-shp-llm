@@ -23,7 +23,6 @@ class LlmChatModel extends StyleModel
     private $llm_model;
     private $llm_temperature;
     private $llm_max_tokens;
-    private $llm_streaming_enabled;
     private $enable_conversations_list;
     private $enable_file_uploads;
     private $enable_full_page_reload;
@@ -55,8 +54,6 @@ class LlmChatModel extends StyleModel
 
     // Error messages
     private $empty_message_error;
-    private $streaming_active_error;
-    private $streaming_interruption_error;
     private $default_chat_title;
 
     // Additional UI labels
@@ -73,7 +70,6 @@ class LlmChatModel extends StyleModel
     private $loading_messages_text;
 
     // Message input labels
-    private $streaming_in_progress_placeholder;
     private $attach_files_title;
     private $no_vision_support_title;
     private $no_vision_support_text;
@@ -186,7 +182,6 @@ class LlmChatModel extends StyleModel
         $this->llm_model = $this->get_db_field('llm_model', '');
         $this->llm_temperature = $this->get_db_field('llm_temperature', '0.7');
         $this->llm_max_tokens = $this->get_db_field('llm_max_tokens', '2048');
-        $this->llm_streaming_enabled = $this->get_db_field('llm_streaming_enabled', '1');
         $this->enable_file_uploads = $this->get_db_field('enable_file_uploads', '0');
         $this->enable_full_page_reload = $this->get_db_field('enable_full_page_reload', '0');
         $this->submit_button_label = $this->get_db_field('submit_button_label', LLM_DEFAULT_SUBMIT_LABEL);
@@ -217,8 +212,6 @@ class LlmChatModel extends StyleModel
 
         // Error messages
         $this->empty_message_error = $this->get_db_field('empty_message_error', 'Please enter a message');
-        $this->streaming_active_error = $this->get_db_field('streaming_active_error', 'Please wait for the current response to complete');
-        $this->streaming_interruption_error = $this->get_db_field('streaming_interruption_error', 'The AI response was interrupted. Please try again.');
         $this->default_chat_title = $this->get_db_field('default_chat_title', 'AI Chat');
 
         // Additional UI labels
@@ -235,7 +228,6 @@ class LlmChatModel extends StyleModel
         $this->loading_messages_text = $this->get_db_field('loading_messages_text', 'Loading messages...');
 
         // Message input labels
-        $this->streaming_in_progress_placeholder = $this->get_db_field('streaming_in_progress_placeholder', 'Streaming in progress...');
         $this->attach_files_title = $this->get_db_field('attach_files_title', 'Attach files');
         $this->no_vision_support_title = $this->get_db_field('no_vision_support_title', 'Current model does not support image uploads');
         $this->no_vision_support_text = $this->get_db_field('no_vision_support_text', 'No vision');
@@ -439,11 +431,6 @@ class LlmChatModel extends StyleModel
     public function getLlmMaxTokens()
     {
         return $this->llm_max_tokens;
-    }
-
-    public function isStreamingEnabled()
-    {
-        return $this->llm_streaming_enabled === '1';
     }
 
     public function isConversationsListEnabled()
@@ -809,16 +796,6 @@ class LlmChatModel extends StyleModel
         return $this->empty_message_error;
     }
 
-    public function getStreamingActiveError()
-    {
-        return $this->streaming_active_error;
-    }
-
-    public function getStreamingInterruptionError()
-    {
-        return $this->streaming_interruption_error;
-    }
-
     public function getDefaultChatTitle()
     {
         return $this->default_chat_title;
@@ -866,11 +843,6 @@ class LlmChatModel extends StyleModel
     }
 
     // ===== Message Input Labels =====
-
-    public function getStreamingInProgressPlaceholder()
-    {
-        return $this->streaming_in_progress_placeholder;
-    }
 
     public function getAttachFilesTitle()
     {

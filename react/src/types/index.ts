@@ -178,9 +178,7 @@ export interface LlmChatConfig {
   enableConversationsList: boolean;
   /** Whether file uploads are enabled */
   enableFileUploads: boolean;
-  /** Whether streaming is enabled */
-  streamingEnabled: boolean;
-  /** Whether to do full page reload after streaming (default: false - React refresh only) */
+  /** Whether to do full page reload after request completion (default: false - React refresh only) */
   enableFullPageReload: boolean;
   /** Accepted file types string */
   acceptedFileTypes: string;
@@ -256,8 +254,6 @@ export interface LlmChatConfig {
   tokensSuffix: string;
   /** AI thinking text */
   aiThinkingText: string;
-  /** AI streaming text */
-  aiStreamingText: string;
   /** Conversations sidebar heading */
   conversationsHeading: string;
   /** New chat button label */
@@ -282,10 +278,6 @@ export interface LlmChatConfig {
   submitButtonLabel: string;
   /** Error message for empty message */
   emptyMessageError: string;
-  /** Error message for streaming active */
-  streamingActiveError: string;
-  /** Error message for streaming interruption */
-  streamingInterruptionError: string;
   /** Default chat title */
   defaultChatTitle: string;
   /** Delete button title/tooltip */
@@ -302,8 +294,6 @@ export interface LlmChatConfig {
   emptyStateDescription: string;
   /** Loading messages text */
   loadingMessagesText: string;
-  /** Placeholder text when streaming is in progress */
-  streamingInProgressPlaceholder: string;
   /** Attach files button title */
   attachFilesTitle: string;
   /** No vision support title */
@@ -327,7 +317,6 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   configuredModel: 'qwen3-vl-8b-instruct',
   enableConversationsList: true,
   enableFileUploads: true,
-  streamingEnabled: true,
   enableFullPageReload: false,
   acceptedFileTypes: '',
   isVisionModel: false,
@@ -365,7 +354,6 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   cancelDeleteButtonLabel: 'Cancel',
   tokensSuffix: ' tokens',
   aiThinkingText: 'AI is thinking...',
-  aiStreamingText: 'AI is streaming...',
   conversationsHeading: 'Conversations',
   newChatButtonLabel: 'New',
   selectConversationHeading: 'Select a conversation',
@@ -378,8 +366,6 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   clearButtonLabel: 'Clear',
   submitButtonLabel: 'Send',
   emptyMessageError: 'Please enter a message',
-  streamingActiveError: 'Please wait for the current response to complete',
-  streamingInterruptionError: 'The AI response was interrupted. Please try again.',
   defaultChatTitle: 'AI Chat',
   deleteButtonTitle: 'Delete conversation',
   conversationTitlePlaceholder: 'Enter conversation title (optional)',
@@ -388,7 +374,6 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   emptyStateTitle: 'Start a conversation',
   emptyStateDescription: 'Send a message to start chatting with the AI assistant.',
   loadingMessagesText: 'Loading messages...',
-  streamingInProgressPlaceholder: 'Streaming in progress...',
   attachFilesTitle: 'Attach files',
   noVisionSupportTitle: 'Current model does not support image uploads',
   noVisionSupportText: 'No vision',
@@ -443,7 +428,6 @@ export interface SendMessageResponse {
   conversation_id?: string;
   message?: string;
   is_new_conversation?: boolean;
-  streaming?: boolean;
   progress?: ProgressData;
   error?: string;
   // Structured response data
@@ -516,52 +500,6 @@ export interface NewConversationResponse {
 export interface DeleteConversationResponse {
   success?: boolean;
   error?: string;
-}
-
-/**
- * Response from prepare_streaming action
- */
-export interface PrepareStreamingResponse {
-  status?: 'prepared';
-  conversation_id?: string;
-  is_new_conversation?: boolean;
-  user_message?: Message;
-  error?: string;
-  // Safety/danger detection fields
-  blocked?: boolean;
-  type?: 'danger_detected' | 'conversation_blocked';
-  message?: string;
-  detected_keywords?: string[];
-  safety?: SafetyAssessment;
-}
-
-// ============================================================================
-// STREAMING EVENT TYPES
-// ============================================================================
-
-/**
- * Server-Sent Event data structure
- * Matches the SSE events sent by handleStreamingRequest()
- */
-export interface StreamingEvent {
-  /** Event type */
-  type: 'connected' | 'start' | 'chunk' | 'done' | 'error' | 'close';
-  /** Text content for chunk events */
-  content?: string;
-  /** Conversation ID for connected events */
-  conversation_id?: string;
-  /** Tokens used for done events */
-  tokens_used?: number;
-  /** Progress data for done events (when progress tracking is enabled) */
-  progress?: ProgressData;
-  /** Safety assessment for done events (when danger detected) */
-  safety?: SafetyAssessment;
-  /** Error message for error events */
-  message?: string;
-  /** Model used for start events */
-  model?: string;
-  /** Message count for start events */
-  message_count?: number;
 }
 
 // ============================================================================
@@ -651,10 +589,6 @@ export interface ChatState {
   messages: Message[];
   /** Whether data is loading */
   isLoading: boolean;
-  /** Whether currently streaming */
-  isStreaming: boolean;
-  /** Accumulated streaming message content */
-  streamingContent: string;
   /** Error message (if any) */
   error: string | null;
 }
@@ -667,8 +601,6 @@ export const INITIAL_CHAT_STATE: ChatState = {
   currentConversation: null,
   messages: [],
   isLoading: false,
-  isStreaming: false,
-  streamingContent: '',
   error: null
 };
 

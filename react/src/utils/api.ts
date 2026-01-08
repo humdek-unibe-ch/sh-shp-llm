@@ -6,7 +6,6 @@
  * Uses the same endpoint strategy as the vanilla JS implementation:
  * - All requests go through the current page's controller
  * - Uses window.location for URL construction (security through SelfHelp's ACL)
- * - Supports both regular AJAX and streaming (SSE) requests
  * 
  * @module utils/api
  */
@@ -19,8 +18,6 @@ import type {
   SendMessageResponse,
   NewConversationResponse,
   DeleteConversationResponse,
-  PrepareStreamingResponse,
-  StreamingEvent,
   SelectedFile,
   AdminConversationsResponse,
   AdminFiltersResponse,
@@ -312,7 +309,7 @@ export function createMessagesApi(sectionId?: number) {
     },
     
     /**
-     * Send a message (non-streaming)
+     * Send a message
      * Calls: POST action=send_message
      * 
      * @param message - Message content
@@ -345,62 +342,6 @@ export function createMessagesApi(sectionId?: number) {
       });
 
       return apiPost<SendMessageResponse>(formData);
-    },
-    
-    /**
-     * Prepare for streaming
-     * Calls: POST action=send_message with prepare_streaming=1
-     * Saves the user message and prepares for SSE connection
-     * 
-     * @param message - Message content
-     * @param conversationId - Conversation ID (optional)
-     * @param model - LLM model to use
-     * @param files - Array of files to attach
-     * @returns Promise resolving to preparation result with conversation ID
-     */
-    async prepareStreaming(
-      message: string,
-      conversationId: string | null,
-      model: string,
-      files: SelectedFile[] = []
-    ): Promise<PrepareStreamingResponse> {
-      const formData = new FormData();
-      formData.append('action', 'send_message');
-      formData.append('message', message);
-      formData.append('model', model);
-      formData.append('prepare_streaming', '1');
-      if (sectionId !== undefined) {
-        formData.append('section_id', String(sectionId));
-      }
-
-      if (conversationId) {
-        formData.append('conversation_id', conversationId);
-      }
-
-      // Add files to FormData
-      files.forEach((item) => {
-        formData.append('uploaded_files[]', item.file, item.file.name);
-      });
-
-      // Check for test mode
-      const isTestMode = window.location.search.includes('test=1');
-      const url = window.location.pathname + (isTestMode ? '?test=1' : '');
-
-      const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return response.json();
     }
   };
 }
@@ -453,39 +394,6 @@ export function createFormApi(sectionId?: number) {
       }
 
       return apiPost<FormSubmissionResponse>(formData);
-    },
-
-    /**
-     * Submit form and prepare for streaming response
-     * Calls: POST action=submit_form with prepare_streaming=1
-     * 
-     * @param formValues - Object mapping field IDs to selected values
-     * @param readableText - Human-readable text representation of selections
-     * @param conversationId - Conversation ID (optional)
-     * @param model - LLM model to use
-     * @returns Promise resolving to preparation result with conversation ID
-     */
-    async submitAndPrepareStreaming(
-      formValues: Record<string, string | string[]>,
-      readableText: string,
-      conversationId: string | null,
-      model: string
-    ): Promise<PrepareStreamingResponse> {
-      const formData = new FormData();
-      formData.append('action', 'submit_form');
-      formData.append('form_values', JSON.stringify(formValues));
-      formData.append('readable_text', readableText);
-      formData.append('model', model);
-      formData.append('prepare_streaming', '1');
-      if (sectionId !== undefined) {
-        formData.append('section_id', String(sectionId));
-      }
-
-      if (conversationId) {
-        formData.append('conversation_id', conversationId);
-      }
-
-      return apiPost<PrepareStreamingResponse>(formData);
     }
   };
 }
@@ -533,30 +441,6 @@ export function createContinueApi(sectionId?: number) {
       }
 
       return apiPost<SendMessageResponse>(formData);
-    },
-
-    /**
-     * Continue conversation and prepare for streaming response
-     * Calls: POST action=continue_conversation with prepare_streaming=1
-     * 
-     * @param conversationId - The conversation ID to continue
-     * @param model - The LLM model to use
-     * @returns Promise resolving to preparation result
-     */
-    async continueAndPrepareStreaming(
-      conversationId: string,
-      model: string
-    ): Promise<PrepareStreamingResponse> {
-      const formData = new FormData();
-      formData.append('action', 'continue_conversation');
-      formData.append('conversation_id', conversationId);
-      formData.append('model', model);
-      formData.append('prepare_streaming', '1');
-      if (sectionId !== undefined) {
-        formData.append('section_id', String(sectionId));
-      }
-
-      return apiPost<PrepareStreamingResponse>(formData);
     }
   };
 }
@@ -730,107 +614,6 @@ export const adminApi = {
     return apiPost<AdminActionResponse>(formData);
   }
 };
-
-// ============================================================================
-// STREAMING API
-// ============================================================================
-
-/**
- * Streaming API class for Server-Sent Events
- * Manages SSE connection for real-time message streaming
- */
-export class StreamingApi {
-  private eventSource: EventSource | null = null;
-  private conversationId: string;
-  private sectionId?: number;
-  
-  /**
-   * Create a new StreamingApi instance
-   * 
-   * @param conversationId - The conversation ID to stream
-   * @param sectionId - The section ID for this chat instance
-   */
-  constructor(conversationId: string, sectionId?: number) {
-    this.conversationId = conversationId;
-    this.sectionId = sectionId;
-  }
-  
-  /**
-   * Build the streaming URL
-   * Uses current page URL with action and conversation_id parameters
-   */
-  private buildStreamingUrl(): string {
-    const url = new URL(window.location.href);
-    url.searchParams.set('action', 'streaming');
-    url.searchParams.set('conversation_id', this.conversationId);
-    if (this.sectionId !== undefined) {
-      url.searchParams.set('section_id', String(this.sectionId));
-    }
-    return url.toString();
-  }
-  
-  /**
-   * Connect to the SSE stream
-   * 
-   * @param onMessage - Callback for incoming messages
-   * @param onError - Callback for connection errors
-   */
-  connect(
-    onMessage: (event: StreamingEvent) => void,
-    onError?: (error: Event) => void
-  ): void {
-    // Close any existing connection
-    this.disconnect();
-
-    const url = this.buildStreamingUrl();
-    this.eventSource = new EventSource(url);
-
-    // Handle successful connection
-    this.eventSource.onopen = () => {
-      onMessage({ type: 'connected' });
-    };
-
-    this.eventSource.onmessage = (event) => {
-      try {
-        const data: StreamingEvent = JSON.parse(event.data);
-        onMessage(data);
-
-        // Auto-close on done or error
-        if (data.type === 'done' || data.type === 'error' || data.type === 'close') {
-          this.disconnect();
-        }
-      } catch (e) {
-        console.error('Error parsing SSE data:', e);
-        // Send error event for parsing failures
-        onMessage({ type: 'error', message: 'Failed to parse streaming data' });
-        this.disconnect();
-      }
-    };
-
-    this.eventSource.onerror = (error) => {
-      console.error('EventSource error:', error);
-      onError?.(error);
-      this.disconnect();
-    };
-  }
-  
-  /**
-   * Disconnect from the SSE stream
-   */
-  disconnect(): void {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-  }
-  
-  /**
-   * Check if currently connected
-   */
-  isConnected(): boolean {
-    return this.eventSource !== null && this.eventSource.readyState === EventSource.OPEN;
-  }
-}
 
 // ============================================================================
 // ERROR HANDLING

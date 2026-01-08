@@ -41,8 +41,6 @@ export interface MessageContentRendererProps {
   message: Message;
   /** Whether this is the last message in the conversation (affects form interactivity) */
   isLastMessage?: boolean;
-  /** Whether the message is currently streaming */
-  isStreaming?: boolean;
   /** Whether this is being rendered in admin/read-only mode */
   readOnly?: boolean;
   /** Callback when form is submitted (only used when not readOnly and isLastMessage) */
@@ -140,7 +138,6 @@ function analyzeMessageContent(
 export const MessageContentRenderer: React.FC<MessageContentRendererProps> = ({
   message,
   isLastMessage = false,
-  isStreaming = false,
   readOnly = false,
   onFormSubmit,
   isFormSubmitting = false,
@@ -200,7 +197,7 @@ export const MessageContentRenderer: React.FC<MessageContentRendererProps> = ({
         );
       }
       // Fallback to markdown
-      return <MarkdownRenderer content={message.content} isStreaming={isStreaming} />;
+      return <MarkdownRenderer content={message.content} />;
 
     case 'form':
       // Active form - render interactive or read-only based on readOnly prop
@@ -221,11 +218,11 @@ export const MessageContentRenderer: React.FC<MessageContentRendererProps> = ({
             formDefinition={renderResult.formDefinition}
             onSubmit={onFormSubmit || (() => {})}
             isSubmitting={isFormSubmitting}
-            disabled={isStreaming}
+            disabled={false}
           />
         );
       }
-      return <MarkdownRenderer content={message.content} isStreaming={isStreaming} />;
+      return <MarkdownRenderer content={message.content} />;
 
     case 'form-historical':
       // Historical form - show with user's selections
@@ -238,12 +235,12 @@ export const MessageContentRenderer: React.FC<MessageContentRendererProps> = ({
           />
         );
       }
-      return <MarkdownRenderer content={message.content} isStreaming={isStreaming} />;
+      return <MarkdownRenderer content={message.content} />;
 
     case 'markdown':
     default:
       // Regular markdown content
-      return <MarkdownRenderer content={message.content} isStreaming={isStreaming} />;
+      return <MarkdownRenderer content={message.content} />;
   }
 };
 

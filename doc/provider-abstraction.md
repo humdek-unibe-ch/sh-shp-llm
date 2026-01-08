@@ -33,12 +33,10 @@ Each provider implements the following methods:
 - `getProviderId()` - Unique identifier (e.g., 'gpustack', 'bfh')
 - `getProviderName()` - Human-readable name
 - `canHandle($baseUrl)` - Check if provider handles this URL
-- `supportsStreaming()` - Whether provider supports streaming
 
 ### Response Normalization
 
 - `normalizeResponse($rawResponse)` - Convert provider-specific response to standard format
-- `normalizeStreamingChunk($chunk)` - Normalize streaming chunks
 
 ### Request Configuration
 
@@ -72,7 +70,6 @@ All providers return responses in this standard format:
 - **Base URL**: `https://gpustack.unibe.ch/v1`
 - **Provider ID**: `gpustack`
 - **Format**: OpenAI-compatible
-- **Streaming**: Yes
 - **Features**: Standard text/vision models
 
 ### BFH Inference API
@@ -80,7 +77,6 @@ All providers return responses in this standard format:
 - **Base URL**: `https://inference.mlmp.ti.bfh.ch/api/v1`
 - **Provider ID**: `bfh`
 - **Format**: Enhanced with reasoning content
-- **Streaming**: Yes
 - **Features**: 
   - Reasoning content via `reasoning_content` field
   - Provider-specific fields support
@@ -124,12 +120,9 @@ class MyCustomProvider extends BaseProvider
         ];
     }
 
-    public function normalizeStreamingChunk($chunk) {
-        // Handle your streaming format
         // Return content string, '[DONE]', '[USAGE:123]', or null
     }
 
-    public function supportsStreaming() {
         return true;
     }
 }
@@ -271,7 +264,6 @@ try {
 }
 ```
 
-Streaming errors are handled gracefully with fallback content.
 
 ## Future Extensions
 

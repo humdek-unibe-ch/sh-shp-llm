@@ -98,10 +98,9 @@ export interface UseChatStateReturn {
  * Custom hook for managing chat state
  *
  * @param config - LLM Chat configuration
- * @param stopStreaming - Optional function to stop streaming
  * @returns Chat state and actions
  */
-export function useChatState(config: LlmChatConfig, stopStreaming?: () => void): UseChatStateReturn {
+export function useChatState(config: LlmChatConfig): UseChatStateReturn {
   // Create section-specific API instances
   // These are memoized to avoid recreating on every render
   const conversationsApi = useMemo(
@@ -168,11 +167,6 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
             // Check if auto-start created a conversation
             const autoStarted = await checkAutoStartedConversation(autoStartApi);
             if (autoStarted) {
-              // Stop any active streaming before loading auto-started conversation
-              if (stopStreaming) {
-                stopStreaming();
-              }
-
               // Load the auto-started conversation directly
               setCurrentConversation(autoStarted.conversation);
               setMessages(autoStarted.messages);
@@ -234,7 +228,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     } finally {
       setIsLoading(false);
     }
-  }, [config, conversationsApi, autoStartApi, stopStreaming, loadConversationMessagesInternal]);
+  }, [config, conversationsApi, autoStartApi, loadConversationMessagesInternal]);
   
   /**
    * Load messages for a specific conversation
@@ -355,7 +349,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
   }, [currentConversation?.model, config.configuredModel]);
 
   /**
-   * Send a message (non-streaming mode)
+   * Send a message
    */
   const sendMessage = useCallback(async (
     message: string,
@@ -461,7 +455,6 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
           conversation_id: responseIdStr,
           message: response.message,
           is_new_conversation: isNewConversation,
-          streaming: false,
           progress: response.progress
         };
       }
@@ -513,7 +506,7 @@ export function useChatState(config: LlmChatConfig, stopStreaming?: () => void):
     return currentConversationIdRef.current;
   };
   
-  // Expose ref for streaming hook
+  // Expose ref for external access
   (useChatState as any).getCurrentConversationId = getCurrentConversationId;
   
   return {

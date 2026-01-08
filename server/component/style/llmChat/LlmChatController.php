@@ -8,7 +8,6 @@ require_once __DIR__ . "/../../../../../../component/BaseController.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/LlmFileUploadService.php";
 require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
-require_once __DIR__ . "/../../../service/LlmStreamingService.php";
 require_once __DIR__ . "/../../../service/LlmStrictConversationService.php";
 require_once __DIR__ . "/../../../service/LlmFormModeService.php";
 require_once __DIR__ . "/../../../service/LlmFloatingModeService.php";
@@ -53,8 +52,6 @@ class LlmChatController extends BaseController
     /** @var LlmFileUploadService File upload service */
     private $file_upload_service;
     
-    /** @var LlmStreamingService Streaming service */
-    private $streaming_service;
     
     /** @var LlmFormModeService Form mode service */
     private $form_mode_service;
@@ -131,10 +128,9 @@ class LlmChatController extends BaseController
         if ($requested_section_id === null) {
             // Allow regular page loads - no API action
             $action = $_GET['action'] ?? $_POST['action'] ?? null;
-            $is_streaming = ($action === 'streaming');
 
-            // If no action and not streaming, this is a page load - allow it
-            if ($action === null && !$is_streaming) {
+            // If no action, this is a page load - allow it
+            if ($action === null) {
                 return true;
             }
             
@@ -159,12 +155,11 @@ class LlmChatController extends BaseController
         $this->form_mode_service = new LlmFormModeService();
         $this->data_saving_service = new LlmDataSavingService($services);
         
-        // Context and streaming services
+        // Context services
         $floating_mode_service = new LlmFloatingModeService();
         $strict_conversation_service = new LlmStrictConversationService($this->llm_service);
         $api_formatter_service = new LlmApiFormatterService();
         
-        $this->streaming_service = new LlmStreamingService($this->llm_service);
         
         // Progress tracking service - created before context service so it can be injected
         $this->progress_tracking_service = new LlmProgressTrackingService($services);
@@ -274,9 +269,6 @@ class LlmChatController extends BaseController
             case 'debug_progress':
                 $this->handleDebugProgress();
                 break;
-            case 'streaming':
-                $this->handleStreaming();
-                break;
             default:
                 // Regular page load - no auto-start logic here anymore
                 // Auto-start is now handled client-side after page load
@@ -288,8 +280,6 @@ class LlmChatController extends BaseController
 
     /**
      * Handle send message request
-     * 
-     * Supports both regular and streaming preparation modes.
      */
     private function handleSendMessage()
     {
@@ -302,7 +292,6 @@ class LlmChatController extends BaseController
         }
 
         $conversation_id = $_POST['conversation_id'] ?? null;
-        $is_streaming_prep = ($_POST['prepare_streaming'] ?? '') === '1';
         $section_id = $this->model->getSectionId();
 
         // ========== CONVERSATION BLOCKING CHECK ==========
@@ -355,12 +344,6 @@ class LlmChatController extends BaseController
             // Update rate limiting
             $this->request_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
-            // If streaming preparation, return early
-            if ($is_streaming_prep) {
-                $this->sendStreamingPrepResponse($conversation_id, $is_new_conversation, $message_id, $message, $uploaded_files);
-                return;
-            }
-
             // Send to LLM and get response
             $this->sendLlmRequestAndRespond($conversation_id, $is_new_conversation);
 
@@ -379,7 +362,6 @@ class LlmChatController extends BaseController
         $form_values_json = $_POST['form_values'] ?? '{}';
         $readable_text = trim($_POST['readable_text'] ?? '');
         $conversation_id = $_POST['conversation_id'] ?? null;
-        $is_streaming_prep = ($_POST['prepare_streaming'] ?? '') === '1';
         $section_id = $this->model->getSectionId();
 
         // ========== CONVERSATION BLOCKING CHECK ==========
@@ -458,12 +440,6 @@ class LlmChatController extends BaseController
             // Update rate limiting
             $this->request_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
-            // If streaming preparation, return early
-            if ($is_streaming_prep) {
-                $this->sendStreamingPrepResponse($conversation_id, $is_new_conversation, $message_id, $readable_text, $form_metadata);
-                return;
-            }
-
             // Send to LLM and get response
             $this->sendLlmRequestAndRespond($conversation_id, $is_new_conversation);
 
@@ -480,7 +456,6 @@ class LlmChatController extends BaseController
         $user_id = $this->validateUserOrFail();
         
         $conversation_id = $_POST['conversation_id'] ?? null;
-        $is_streaming_prep = ($_POST['prepare_streaming'] ?? '') === '1';
         $section_id = $this->model->getSectionId();
 
         if (!$conversation_id) {
@@ -506,12 +481,6 @@ class LlmChatController extends BaseController
             // Update rate limiting
             $this->request_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
-            // If streaming preparation, return early
-            if ($is_streaming_prep) {
-                $this->sendStreamingPrepResponse($conversation_id, false, $message_id, $continue_message, null);
-                return;
-            }
-
             // Send to LLM and get response
             $this->sendLlmRequestAndRespond($conversation_id, false);
 
@@ -521,7 +490,7 @@ class LlmChatController extends BaseController
     }
 
     /**
-     * Send request to LLM and respond (non-streaming or streaming)
+     * Send request to LLM and respond
      * 
      * @param int $conversation_id The conversation ID
      * @param bool $is_new_conversation Whether this is a new conversation
@@ -547,35 +516,7 @@ class LlmChatController extends BaseController
 
         $context_messages = $this->context_service->getContextForTracking();
 
-        // Check if streaming is enabled
-        if ($this->context_service->isStreamingEnabled()) {
-            $model = $this->context_service->getConfiguredModel();
-
-            // Prepare progress data if progress tracking is enabled
-            $progress_data = null;
-            if ($this->model->isProgressTrackingEnabled()) {
-                $progress_data = $this->calculateConversationProgress($conversation_id, $messages);
-            }
-
-            // Set safety services for post-stream safety detection
-            $this->streaming_service->setSafetyServices(
-                $this->response_service,
-                $this->danger_detection_service,
-                $this->model
-            );
-
-            $this->streaming_service->startStreamingResponse(
-                $conversation_id,
-                $api_messages,
-                $model,
-                $is_new_conversation,
-                $context_messages,
-                $progress_data
-            );
-            return;
-        }
-
-        // Non-streaming: call API with schema validation and retry logic
+        // Call API with schema validation and retry logic
         $llm_callable = function($messages) {
             return $this->request_service->callLlmApi($messages);
         };
@@ -614,7 +555,6 @@ class LlmChatController extends BaseController
         $response_data = [
             'conversation_id' => $conversation_id,
             'message' => $assistant_message,
-            'streaming' => false,
             'is_new_conversation' => $is_new_conversation
         ];
 
@@ -722,89 +662,6 @@ class LlmChatController extends BaseController
             // Log error but don't fail the detection
             error_log('LLM Controller: Failed to log safety detection transaction: ' . $e->getMessage());
         }
-    }
-
-    /**
-     * Send streaming preparation response
-     */
-    private function sendStreamingPrepResponse($conversation_id, $is_new_conversation, $message_id, $content, $attachments)
-    {
-        $_SESSION['streaming_conversation_id'] = $conversation_id;
-        $_SESSION['streaming_message'] = $content;
-        $_SESSION['streaming_model'] = $this->model->getConfiguredModel();
-
-        $this->sendJsonResponse([
-            'status' => 'prepared',
-            'conversation_id' => $conversation_id,
-            'is_new_conversation' => $is_new_conversation,
-            'user_message' => [
-                'id' => $message_id,
-                'role' => 'user',
-                'content' => $content,
-                'attachments' => $attachments,
-                'model' => $this->model->getConfiguredModel(),
-                'created_at' => date('Y-m-d H:i:s')
-            ]
-        ]);
-    }
-
-    /* Streaming **************************************************************/
-
-    /**
-     * Handle streaming request
-     */
-    private function handleStreaming()
-    {
-        $conversation_id = $_GET['conversation_id'] ?? null;
-        if (!$conversation_id) {
-            $this->sendSSE(['type' => 'error', 'message' => 'Conversation ID required']);
-            exit;
-        }
-
-        $user_id = $this->model->getUserId();
-        if (!$user_id) {
-            $this->sendSSE(['type' => 'error', 'message' => 'User not authenticated']);
-            exit;
-        }
-
-        $section_id = $this->model->getSectionId();
-        $conversation = $this->request_service->getConversation($conversation_id, $user_id, $section_id);
-        if (!$conversation) {
-            $this->sendSSE(['type' => 'error', 'message' => 'Conversation not found']);
-            exit;
-        }
-
-        $messages = $this->request_service->getConversationMessages($conversation_id, 50);
-        if (empty($messages)) {
-            $this->sendSSE(['type' => 'error', 'message' => 'No messages found in conversation']);
-            exit;
-        }
-
-        // Build API messages with progress tracking context if enabled
-        $api_messages = $this->context_service->buildApiMessages($messages, $conversation_id, $section_id);
-        if (empty($api_messages)) {
-            $this->sendSSE(['type' => 'error', 'message' => 'No valid messages to send']);
-            exit;
-        }
-
-        $context_messages = $this->context_service->getContextForTracking();
-        $model = $this->context_service->getConfiguredModel();
-
-        // Prepare progress data if progress tracking is enabled
-        $progress_data = null;
-        if ($this->model->isProgressTrackingEnabled()) {
-            $progress_data = $this->calculateConversationProgress($conversation_id, $messages);
-            error_log("LLM Streaming: Progress data calculated - percentage: " . ($progress_data['percentage'] ?? 'null') . ", topics_covered: " . ($progress_data['topics_covered'] ?? 'null'));
-        }
-
-        $this->streaming_service->startStreamingResponse(
-            $conversation_id,
-            $api_messages,
-            $model,
-            false,
-            $context_messages,
-            $progress_data
-        );
     }
 
     /* Conversation Management ************************************************/
@@ -1440,7 +1297,6 @@ class LlmChatController extends BaseController
             'configuredModel' => $this->model->getConfiguredModel(),
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
             'maxFileSize' => LLM_MAX_FILE_SIZE,
-            'streamingEnabled' => $this->model->isStreamingEnabled(),
             'enableConversationsList' => $this->model->isConversationsListEnabled(),
             'enableFileUploads' => $this->model->isFileUploadsEnabled(),
             'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
@@ -1487,8 +1343,6 @@ class LlmChatController extends BaseController
             'clearButtonLabel' => $this->model->getClearButtonLabel(),
             'submitButtonLabel' => $this->model->getSubmitButtonLabel(),
             'emptyMessageError' => $this->model->getEmptyMessageError(),
-            'streamingActiveError' => $this->model->getStreamingActiveError(),
-            'streamingInterruptionError' => $this->model->getStreamingInterruptionError(),
             'defaultChatTitle' => $this->model->getDefaultChatTitle(),
             'deleteButtonTitle' => $this->model->getDeleteButtonTitle(),
             'conversationTitlePlaceholder' => $this->model->getConversationTitlePlaceholder(),
@@ -1497,7 +1351,6 @@ class LlmChatController extends BaseController
             'emptyStateTitle' => $this->model->getEmptyStateTitle(),
             'emptyStateDescription' => $this->model->getEmptyStateDescription(),
             'loadingMessagesText' => $this->model->getLoadingMessagesText(),
-            'streamingInProgressPlaceholder' => $this->model->getStreamingInProgressPlaceholder(),
             'attachFilesTitle' => $this->model->getAttachFilesTitle(),
             'noVisionSupportTitle' => $this->model->getNoVisionSupportTitle(),
             'noVisionSupportText' => $this->model->getNoVisionSupportText(),
@@ -1680,25 +1533,6 @@ class LlmChatController extends BaseController
 
         // All topics covered, return null
         return null;
-    }
-
-    /**
-     * Send SSE event
-     * 
-     * @param array $data Event data
-     */
-    private function sendSSE($data)
-    {
-        echo "data: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n\n";
-
-        if (ob_get_level() > 0) {
-            ob_flush();
-        }
-        flush();
-
-        if (isset($data['type']) && $data['type'] === 'chunk') {
-            usleep(5000);
-        }
     }
 
     /**

@@ -10,7 +10,6 @@
  * - Assistant messages (left-aligned, white with border)
  * - Avatar icons
  * - Markdown rendering with syntax highlighting
- * - Streaming message with typing cursor
  * - Thinking indicator
  * - Form mode: renders JSON Schema forms from assistant messages
  * 
@@ -38,13 +37,9 @@ import { StructuredResponseRenderer } from './StructuredResponseRenderer';
 interface MessageListProps {
   /** Array of messages to display */
   messages: Message[];
-  /** Whether currently streaming */
-  isStreaming: boolean;
-  /** Current streaming content */
-  streamingContent: string;
   /** Whether loading initial data */
   isLoading: boolean;
-  /** Whether processing non-streaming request */
+  /** Whether processing request */
   isProcessing?: boolean;
   /** Component configuration */
   config: LlmChatConfig;
@@ -73,8 +68,6 @@ interface MessageListProps {
 interface MessageItemProps {
   /** The message to display */
   message: Message;
-  /** Whether this is a streaming message */
-  isStreaming?: boolean;
   /** Configuration */
   config: LlmChatConfig;
   /** Whether this is the last message (for form rendering) */
@@ -176,7 +169,6 @@ const UserFormSubmissionDisplay: React.FC<{
  */
 const MessageItem: React.FC<MessageItemProps> = ({ 
   message, 
-  isStreaming = false, 
   config,
   isLastMessage = false,
   onFormSubmit,
@@ -201,7 +193,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
     (message.content.includes('"content":') || message.content.includes('"text_blocks":') || message.content.includes('"forms":'))
   );
 
-  // Try to parse responses even during streaming for better UX
+  // Try to parse responses
   let isIncompleteStructuredResponse = false;
   if (!isUser) {
     // First, try to parse as structured response (new format)
@@ -287,7 +279,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             // Incomplete structured response: show error message
             <div className="alert alert-warning">
               <i className="fas fa-exclamation-triangle mr-2"></i>
-              {config.streamingInterruptionError}
+              The AI response was interrupted. Please try again.
             </div>
           ) : formDefinition ? (
             // Active form: render interactive form
@@ -295,13 +287,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
               formDefinition={formDefinition}
               onSubmit={onFormSubmit || (() => {})}
               isSubmitting={isFormSubmitting}
-              disabled={isStreaming}
+              disabled={false}
             />
           ) : (
             // Regular assistant messages: render with markdown
             <MarkdownRenderer
               content={message.content}
-              isStreaming={isStreaming}
             />
           )}
         </div>
@@ -339,7 +330,7 @@ const ThinkingIndicator: React.FC<{ text: string }> = ({ text }) => (
     </div>
     <div className="message-bubble">
       <div className="d-flex align-items-center">
-        <div className="streaming-dots mr-3">
+        <div className="thinking-dots mr-3">
           <span className="dot"></span>
           <span className="dot"></span>
           <span className="dot"></span>
@@ -463,8 +454,6 @@ const RetryForm: React.FC<{
  */
 export const MessageList: React.FC<MessageListProps> = ({
   messages,
-  isStreaming,
-  streamingContent,
   isLoading,
   isProcessing = false,
   config,
@@ -481,14 +470,13 @@ export const MessageList: React.FC<MessageListProps> = ({
   }
 
   // Show empty state
-  if (messages.length === 0 && !isStreaming) {
+  if (messages.length === 0) {
     return <EmptyState config={config} />;
   }
   
   // Check if we need to show the thinking indicator
-  // Only show for non-streaming processing (streaming has its own footer indicator)
   const lastMessage = messages[messages.length - 1];
-  const showThinking = !isStreaming && isProcessing && lastMessage?.role === 'user';
+  const showThinking = isProcessing && lastMessage?.role === 'user';
   
   // Pre-compute form definitions for each assistant message
   // This allows us to pass the previous form definition to user messages
@@ -518,7 +506,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   // Only show when we're at a dead end (no form to answer) in form mode
   // UNIFIED: Uses messageHasForm() which checks BOTH legacy forms AND structured response forms
   const shouldShowContinueButton = () => {
-    if (!config.enableFormMode || !onContinue || isStreaming || messages.length === 0) {
+    if (!config.enableFormMode || !onContinue || messages.length === 0) {
       return false;
     }
 
@@ -542,7 +530,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   // Determine if we should show the retry form
   // Show when there's a failed form submission (either from state or detected from conversation)
   const shouldShowRetryForm = () => {
-    if (!config.enableFormMode || isStreaming || messages.length === 0) {
+    if (!config.enableFormMode || messages.length === 0) {
       return false;
     }
 
@@ -598,7 +586,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   // Determine if we should show thinking indicator for Continue button area
   // This shows when Continue was clicked and we're waiting for response
   const shouldShowContinueThinking = () => {
-    if (!config.enableFormMode || isStreaming || messages.length === 0) {
+    if (!config.enableFormMode || messages.length === 0) {
       return false;
     }
     
@@ -623,16 +611,6 @@ export const MessageList: React.FC<MessageListProps> = ({
     <div className="message-stack">
       {/* Render all messages */}
       {messages.map((message, index) => {
-        // Check if this is a streaming message (last assistant message during streaming)
-        // Don't treat as streaming if we have a valid form
-        // UNIFIED: messageHasForm checks both legacy FormDefinition AND StructuredResponse.forms
-        const hasForm = message.role === 'assistant' && messageHasForm(message.content);
-        const isStreamingMessage = !!(isStreaming &&
-          streamingContent &&
-          index === messages.length - 1 &&
-          message.role === 'assistant' &&
-          !hasForm);
-        
         // Check if this is the last message (for form rendering)
         const isLastMessage = index === messages.length - 1;
         
@@ -648,7 +626,6 @@ export const MessageList: React.FC<MessageListProps> = ({
           <MessageItem
             key={message.id || `msg-${index}`}
             message={message}
-            isStreaming={isStreamingMessage}
             config={config}
             isLastMessage={isLastMessage}
             onFormSubmit={onFormSubmit}

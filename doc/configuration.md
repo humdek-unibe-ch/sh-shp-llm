@@ -40,7 +40,6 @@ See [Provider Abstraction](provider-abstraction.md) for more details on adding c
 | `llm_default_model` | select | `qwen3-vl-8b-instruct` | Default model for new conversations |
 | `llm_max_tokens` | number | `2048` | Maximum tokens per response |
 | `llm_temperature` | text | `1` | Response randomness (0-2) |
-| `llm_streaming_enabled` | checkbox | `true` | Enable streaming globally |
 
 ### Temperature Guide
 
@@ -63,7 +62,6 @@ These settings override global defaults for specific chat instances.
 | `llm_model` | select | (global) | Override model for this component |
 | `llm_temperature` | text | (global) | Override temperature |
 | `llm_max_tokens` | number | (global) | Override max tokens |
-| `llm_streaming_enabled` | checkbox | (global) | Override streaming setting |
 
 ### Feature Toggles
 
@@ -71,7 +69,6 @@ These settings override global defaults for specific chat instances.
 |-------|------|---------|-------------|
 | `enable_conversations_list` | checkbox | `true` | Show conversation sidebar |
 | `enable_file_uploads` | checkbox | `true` | Allow file attachments |
-| `enable_full_page_reload` | checkbox | `false` | Reload page after streaming (vs. React refresh) |
 | `strict_conversation_mode` | checkbox | `false` | Enable strict conversation mode to keep AI focused on defined topics |
 | `enable_form_mode` | checkbox | `false` | Enable Interactive Form Mode - LLM returns structured forms instead of text |
 | `enable_data_saving` | checkbox | `false` | Save form data to SelfHelp UserInput system (see [Form Data Saving](form-data-saving.md)) |
@@ -717,7 +714,6 @@ All UI text is configurable and supports SelfHelp translations:
 |-------|---------|-------------|
 | `chat_description` | "Chat with AI assistant" | Description above chat |
 | `message_placeholder` | "Type your message here..." | Input placeholder |
-| `ai_thinking_text` | "AI is thinking..." | Streaming indicator |
 | `default_chat_title` | "AI Chat" | Default conversation title |
 
 #### Buttons
@@ -786,7 +782,6 @@ All UI text is configurable and supports SelfHelp translations:
 | Field | Default | Description |
 |-------|---------|-------------|
 | `empty_message_error` | "Please enter a message" | Empty input error |
-| `streaming_active_error` | "Please wait for the current..." | Concurrent send error |
 
 #### Button Tooltips
 
@@ -794,7 +789,6 @@ All UI text is configurable and supports SelfHelp translations:
 |-------|---------|-------------|
 | `delete_button_title` | "Delete conversation" | Delete tooltip |
 | `send_message_title` | "Send message" | Send tooltip |
-| `streaming_in_progress_placeholder` | "Streaming in progress..." | Streaming placeholder |
 
 ## Admin Console Configuration
 

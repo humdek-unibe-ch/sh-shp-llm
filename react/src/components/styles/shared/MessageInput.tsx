@@ -378,7 +378,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         <Form.Control
           ref={textareaRef}
           as="textarea"
-          placeholder={disabled ? config.streamingInProgressPlaceholder : config.messagePlaceholder}
+          placeholder={config.messagePlaceholder}
           value={message}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}

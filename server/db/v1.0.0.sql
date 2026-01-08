@@ -17,8 +17,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_default_model', get_field_type_id('select-llm-model'), '0'),
 (NULL, 'llm_timeout', get_field_type_id('number'), '0'),
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
-(NULL, 'llm_temperature', get_field_type_id('text'), '0'),
-(NULL, 'llm_streaming_enabled', get_field_type_id('checkbox'), '0');
+(NULL, 'llm_temperature', get_field_type_id('text'), '0');
 
 -- link fields to page type
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
@@ -28,8 +27,7 @@ INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_streaming_enabled'), '0', 'Enable real-time response streaming');
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.');
 
 -- set variables for parent pages
 SET @id_page_modules = (SELECT id FROM pages WHERE keyword = 'sh_modules');
@@ -49,8 +47,7 @@ INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `he
 (@id_page_llm_config, get_field_id('llm_default_model'), 'qwen3-vl-8b-instruct', 'Default LLM model to use'),
 (@id_page_llm_config, get_field_id('llm_timeout'), '30', 'Request timeout in seconds'),
 (@id_page_llm_config, get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
-(@id_page_llm_config, get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
-(@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0', 'Enable real-time response streaming');
+(@id_page_llm_config, get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.');
 
 -- add translation for LLM config page
 INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
@@ -75,7 +72,6 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_model', get_field_type_id('select-llm-model'), '0'),
 (NULL, 'llm_temperature', get_field_type_id('text'), '0'),
 (NULL, 'llm_max_tokens', get_field_type_id('number'), '0'),
-(NULL, 'llm_streaming_enabled', get_field_type_id('checkbox'), '0'),
 (NULL, 'enable_conversations_list', get_field_type_id('checkbox'), '0'),
 (NULL, 'enable_file_uploads', get_field_type_id('checkbox'), '0'),
 (NULL, 'enable_full_page_reload', get_field_type_id('checkbox'), '0');
@@ -109,8 +105,6 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'confirm_delete_button_label', get_field_type_id('text'), '1'),
 (NULL, 'cancel_delete_button_label', get_field_type_id('text'), '1'),
 (NULL, 'empty_message_error', get_field_type_id('text'), '1'),
-(NULL, 'streaming_active_error', get_field_type_id('text'), '1'),
-(NULL, 'streaming_interruption_error', get_field_type_id('text'), '1'),
 (NULL, 'default_chat_title', get_field_type_id('text'), '1'),
 (NULL, 'delete_button_title', get_field_type_id('text'), '1'),
 (NULL, 'conversation_title_placeholder', get_field_type_id('text'), '1'),
@@ -119,7 +113,6 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'empty_state_title', get_field_type_id('text'), '1'),
 (NULL, 'empty_state_description', get_field_type_id('text'), '1'),
 (NULL, 'loading_messages_text', get_field_type_id('text'), '1'),
-(NULL, 'streaming_in_progress_placeholder', get_field_type_id('text'), '1'),
 (NULL, 'attach_files_title', get_field_type_id('text'), '1'),
 (NULL, 'no_vision_support_title', get_field_type_id('text'), '1'),
 (NULL, 'no_vision_support_text', get_field_type_id('text'), '1'),
@@ -135,10 +128,9 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('llm_model'), '', 'Select AI model from dropdown. Admin can configure multiple llmChat components with different models if needed.'),
 (get_style_id('llmChat'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2): Lowering results in less random completions. As the temperature approaches zero, the model will become deterministic and repetitive.'),
 (get_style_id('llmChat'), get_field_id('llm_max_tokens'), '2048', 'The maximum number of tokens to generate. The total length of input tokens and generated tokens is limited by the models context length.'),
-(get_style_id('llmChat'), get_field_id('llm_streaming_enabled'), '0', 'Enable real-time streaming responses'),
 (get_style_id('llmChat'), get_field_id('enable_conversations_list'), '0', 'Enable conversations list on the left side. When disabled, only one conversation is allowed.'),
 (get_style_id('llmChat'), get_field_id('enable_file_uploads'), '0', 'Enable file upload functionality. When enabled, users can attach files to their messages. File types accepted depend on the selected AI model.'),
-(get_style_id('llmChat'), get_field_id('enable_full_page_reload'), '0', 'When enabled, full page reloads after streaming completion instead of React component refresh. Use this if you need to reload other page elements after chat interaction.'),
+(get_style_id('llmChat'), get_field_id('enable_full_page_reload'), '0', 'When enabled, full page reloads after AI response instead of React component refresh. Use this if you need to reload other page elements after chat interaction.'),
 (get_style_id('llmChat'), get_field_id('submit_button_label'), 'Send Message', 'Text for the send message button'),
 (get_style_id('llmChat'), get_field_id('new_chat_button_label'), 'New Conversation', 'Text for the new conversation button'),
 (get_style_id('llmChat'), get_field_id('delete_chat_button_label'), 'Delete Chat', 'Text for the delete conversation button'),
@@ -151,7 +143,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('no_messages_message'), 'No messages yet. Send your first message!', 'Message shown when conversation has no messages'),
 (get_style_id('llmChat'), get_field_id('tokens_used_suffix'), ' tokens', 'Suffix text for token count display'),
 (get_style_id('llmChat'), get_field_id('loading_text'), 'Loading...', 'Text for screen readers during loading'),
-(get_style_id('llmChat'), get_field_id('ai_thinking_text'), 'AI is thinking...', 'Text shown during AI response streaming'),
+(get_style_id('llmChat'), get_field_id('ai_thinking_text'), 'AI is thinking...', 'Text shown while waiting for AI response'),
 (get_style_id('llmChat'), get_field_id('upload_image_label'), 'Upload Image (Vision Models)', 'Label for image upload field'),
 (get_style_id('llmChat'), get_field_id('upload_help_text'), 'Supported formats: JPG, PNG, GIF, WebP (max 10MB)', 'Help text for image upload'),
 (get_style_id('llmChat'), get_field_id('message_placeholder'), 'Type your message here...', 'Placeholder text for message input'),
@@ -166,8 +158,6 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('confirm_delete_button_label'), 'Delete', 'Text for the confirm delete button'),
 (get_style_id('llmChat'), get_field_id('cancel_delete_button_label'), 'Cancel', 'Text for the cancel delete button'),
 (get_style_id('llmChat'), get_field_id('empty_message_error'), 'Please enter a message', 'Error message when user tries to send empty message'),
-(get_style_id('llmChat'), get_field_id('streaming_active_error'), 'Please wait for the current response to complete', 'Error message when streaming is active'),
-(get_style_id('llmChat'), get_field_id('streaming_interruption_error'), 'The AI response was interrupted. Please try again.', 'Error message shown when streaming response is incomplete or malformed'),
 (get_style_id('llmChat'), get_field_id('default_chat_title'), 'AI Chat', 'Default title for conversations'),
 (get_style_id('llmChat'), get_field_id('delete_button_title'), 'Delete conversation', 'Tooltip/title for delete conversation button'),
 (get_style_id('llmChat'), get_field_id('conversation_title_placeholder'), 'Enter conversation title (optional)', 'Placeholder text for conversation title input'),
@@ -176,7 +166,6 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('empty_state_title'), 'Start a conversation', 'Title shown when no messages exist'),
 (get_style_id('llmChat'), get_field_id('empty_state_description'), 'Send a message to start chatting with the AI assistant.', 'Description shown when no messages exist'),
 (get_style_id('llmChat'), get_field_id('loading_messages_text'), 'Loading messages...', 'Text shown while loading messages'),
-(get_style_id('llmChat'), get_field_id('streaming_in_progress_placeholder'), 'Streaming in progress...', 'Placeholder text when streaming is active'),
 (get_style_id('llmChat'), get_field_id('attach_files_title'), 'Attach files', 'Tooltip/title for attach files button'),
 (get_style_id('llmChat'), get_field_id('no_vision_support_title'), 'Current model does not support image uploads', 'Tooltip when vision model is not selected'),
 (get_style_id('llmChat'), get_field_id('no_vision_support_text'), 'No vision', 'Text shown when vision model is not selected'),
@@ -254,7 +243,7 @@ CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- create LLM messages table - Industry Standard Schema
--- NOTE: Removed is_streaming and last_chunk_at fields - no longer needed with event-driven streaming
+-- NOTE: All LLM calls are synchronous HTTP POST requests
 CREATE TABLE IF NOT EXISTS `llmMessages` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
     `id_llmConversations` int(10) UNSIGNED ZEROFILL NOT NULL,
@@ -383,8 +372,7 @@ VALUES (@id_page_llm_config, get_field_id('llm_base_url'), '0000000001', 'https:
        (@id_page_llm_config, get_field_id('llm_default_model'), '0000000001', 'qwen3-vl-8b-instruct'),
        (@id_page_llm_config, get_field_id('llm_timeout'), '0000000001', '30'),
        (@id_page_llm_config, get_field_id('llm_max_tokens'), '0000000001', '2048'),
-       (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '1'),
-       (@id_page_llm_config, get_field_id('llm_streaming_enabled'), '0000000001', '0');
+       (@id_page_llm_config, get_field_id('llm_temperature'), '0000000001', '1');
 
 -- =====================================================
 -- FORM DATA SAVING FIELDS

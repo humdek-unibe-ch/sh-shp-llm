@@ -323,7 +323,7 @@ class LlmRequestService
     }
 
     /**
-     * Call LLM API (non-streaming)
+     * Call LLM API
      * 
      * @param array $api_messages Messages in API format
      * @return array API response

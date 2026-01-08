@@ -190,11 +190,8 @@ The system automatically:
 
 No additional configuration is required beyond setting the base URL.
 
-## Streaming Support
 
-The BFH provider supports real-time streaming responses via Server-Sent Events (SSE). The streaming implementation uses the same endpoint with `stream: true` in the request payload.
 
-### Streaming Response Format
 
 ```
 data: {"choices":[{"delta":{"content":"Hello"}}]}
@@ -206,7 +203,6 @@ data: {"choices":[{"finish_reason":"stop"}]}
 data: [DONE]
 ```
 
-The `normalizeStreamingChunk()` method handles these chunks and returns plain text content.
 
 ## Benefits of the Update
 
@@ -245,7 +241,6 @@ If you're currently using the old BFH endpoint:
 3. **Verify Operation**
    - Test with a simple chat message
    - Check that reasoning content is captured (if available)
-   - Verify streaming responses work correctly
 
 ### For New Installations
 
@@ -295,7 +290,6 @@ The following documentation files have been updated to reflect the new BFH endpo
 The BFH provider maintains compatibility with:
 - OpenAI-compatible request format
 - Standard chat completion structure
-- SSE streaming protocol
 - Industry-standard authentication (Bearer token)
 
 ## Future Considerations

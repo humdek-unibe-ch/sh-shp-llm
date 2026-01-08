@@ -31,10 +31,6 @@ define('LLM_ADMIN_DEFAULT_PAGE_SIZE', 25);
 define('LLM_API_CHAT_COMPLETIONS', '/chat/completions');
 define('LLM_API_MODELS', '/models');
 
-// SSE streaming
-define('LLM_SSE_RETRY_MS', 3000);
-define('LLM_SSE_HEARTBEAT_INTERVAL', 30);
-
 // Transaction logging
 define('TRANSACTION_BY_LLM_PLUGIN', 'by_llm_plugin');
 

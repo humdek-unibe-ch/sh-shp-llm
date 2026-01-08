@@ -502,7 +502,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
    */
   const renderContentSection = (content: string, index: number) => (
     <div key={`content-${index}`} className="form-content-section mb-4">
-      <MarkdownRenderer content={content} isStreaming={false} />
+      <MarkdownRenderer content={content} />
     </div>
   );
 

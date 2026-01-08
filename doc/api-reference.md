@@ -36,7 +36,6 @@ Fetch complete chat configuration for the current component.
     "configuredModel": "qwen3-vl-8b-instruct",
     "maxFilesPerMessage": 5,
     "maxFileSize": 10485760,
-    "streamingEnabled": true,
     "enableConversationsList": true,
     "enableFileUploads": true,
     "enableFullPageReload": false,
@@ -176,24 +175,19 @@ Send a message and get AI response.
 - `max_tokens`: Max tokens (optional)
 - `uploaded_files[]`: File attachments (optional, multiple)
 
-**Response (Non-streaming):**
 ```json
 {
   "conversation_id": "0000000001",
   "message": "AI response content",
-  "streaming": false,
   "is_new_conversation": false
 }
 ```
 
-#### POST `action=send_message` with `prepare_streaming=1`
 
-Prepare for streaming response.
 
 **Body (FormData):**
 - `action`: `send_message`
 - `message`: Message content (required)
-- `prepare_streaming`: `1`
 - `conversation_id`: Target conversation (optional)
 - `model`: Model to use (optional)
 - `uploaded_files[]`: File attachments (optional)
@@ -215,14 +209,11 @@ Prepare for streaming response.
 }
 ```
 
-### Streaming
 
-#### GET `?streaming=1&conversation={id}`
 
 Connect to SSE stream for real-time response.
 
 **Parameters:**
-- `streaming`: `1`
 - `conversation`: Conversation ID
 
 **SSE Events:**
@@ -242,7 +233,6 @@ data: {"type": "close"}
 **Event Types:**
 - `connected`: Connection established
 - `chunk`: Content chunk (append to response)
-- `done`: Streaming complete with token count
 - `error`: Error occurred
 - `close`: Connection should be closed
 

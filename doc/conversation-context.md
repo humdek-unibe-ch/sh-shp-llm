@@ -87,8 +87,6 @@ $api_messages = $this->api_formatter_service->convertToApiFormat(
     $context_messages  // Context prepended here
 );
 
-// For streaming, context is tracked
-$this->streaming_service->startStreamingResponse(
     $conversation_id,
     $api_messages,
     $model,
@@ -337,7 +335,6 @@ Wichtige Richtlinien:
 
 1. Ensure database migration was run
 2. Check `sent_context` column exists in `llmMessages`
-3. Verify streaming service is passing context to addMessage
 
 ### Translation Issues
 

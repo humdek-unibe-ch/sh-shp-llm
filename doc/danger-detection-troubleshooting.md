@@ -362,8 +362,6 @@ A: Check server logs for "LLM Danger Detection:" messages. Enable PHP error logg
 **Q: Does this work in form mode?**
 A: Yes, form submissions are also scanned for danger keywords.
 
-**Q: Does this work in streaming mode?**
-A: Yes, detection happens during preparation phase before streaming starts.
 
 ## Support
 

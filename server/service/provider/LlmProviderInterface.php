@@ -37,7 +37,7 @@ interface LlmProviderInterface
     public function canHandle($baseUrl);
 
     /**
-     * Normalize a non-streaming API response to standard format
+     * Normalize an API response to standard format
      * 
      * Converts provider-specific response format to a normalized structure:
      * [
@@ -58,27 +58,6 @@ interface LlmProviderInterface
      * @throws Exception If response cannot be normalized
      */
     public function normalizeResponse($rawResponse);
-
-    /**
-     * Normalize a streaming chunk to standard format
-     * 
-     * Converts provider-specific streaming chunk format:
-     * - Content chunks: return the text content string
-     * - Done marker: return '[DONE]'
-     * - Usage marker: return '[USAGE:123]'
-     * - Skip other chunks: return null
-     * 
-     * @param string $chunk Raw streaming chunk data
-     * @return string|null Normalized chunk or null to skip
-     */
-    public function normalizeStreamingChunk($chunk);
-
-    /**
-     * Check if provider supports streaming responses
-     * 
-     * @return bool True if streaming is supported
-     */
-    public function supportsStreaming();
 
     /**
      * Get the complete API endpoint URL for a specific endpoint

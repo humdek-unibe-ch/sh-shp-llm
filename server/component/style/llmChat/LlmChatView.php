@@ -94,7 +94,6 @@ class LlmChatView extends StyleView
 
         // Error messages
         $empty_message_error = $this->model->getEmptyMessageError();
-        $streaming_active_error = $this->model->getStreamingActiveError();
         $default_chat_title = $this->model->getDefaultChatTitle();
 
         // Additional UI labels
@@ -111,7 +110,6 @@ class LlmChatView extends StyleView
         $loading_messages_text = $this->model->getLoadingMessagesText();
 
         // Message input labels
-        $streaming_in_progress_placeholder = $this->model->getStreamingInProgressPlaceholder();
         $attach_files_title = $this->model->getAttachFilesTitle();
         $no_vision_support_title = $this->model->getNoVisionSupportTitle();
         $no_vision_support_text = $this->model->getNoVisionSupportText();
@@ -169,7 +167,6 @@ class LlmChatView extends StyleView
             'configuredModel' => $this->model->getConfiguredModel(),
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
             'maxFileSize' => LLM_MAX_FILE_SIZE,
-            'streamingEnabled' => $this->model->isStreamingEnabled(),
             'enableConversationsList' => $this->model->isConversationsListEnabled(),
             'enableFileUploads' => $this->model->isFileUploadsEnabled(),
             'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
@@ -207,8 +204,6 @@ class LlmChatView extends StyleView
             'clearButtonLabel' => $this->model->getClearButtonLabel(),
             'submitButtonLabel' => $this->model->getSubmitButtonLabel(),
             'emptyMessageError' => $this->model->getEmptyMessageError(),
-            'streamingActiveError' => $this->model->getStreamingActiveError(),
-            'streamingInterruptionError' => $this->model->getStreamingInterruptionError(),
             'defaultChatTitle' => $this->model->getDefaultChatTitle(),
             'deleteButtonTitle' => $this->model->getDeleteButtonTitle(),
             'conversationTitlePlaceholder' => $this->model->getConversationTitlePlaceholder(),
@@ -217,7 +212,6 @@ class LlmChatView extends StyleView
             'emptyStateTitle' => $this->model->getEmptyStateTitle(),
             'emptyStateDescription' => $this->model->getEmptyStateDescription(),
             'loadingMessagesText' => $this->model->getLoadingMessagesText(),
-            'streamingInProgressPlaceholder' => $this->model->getStreamingInProgressPlaceholder(),
             'attachFilesTitle' => $this->model->getAttachFilesTitle(),
             'noVisionSupportTitle' => $this->model->getNoVisionSupportTitle(),
             'noVisionSupportText' => $this->model->getNoVisionSupportText(),

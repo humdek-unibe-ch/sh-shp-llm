@@ -202,7 +202,6 @@ The system does NOT permanently block conversations. This approach:
   "conversation_id": "12345",
   "message": "AI response content...",
   "is_new_conversation": false,
-  "streaming": false
 }
 ```
 

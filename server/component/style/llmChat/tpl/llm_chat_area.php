@@ -100,13 +100,5 @@
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
-
-        <!-- Streaming indicator -->
-        <div class="d-none p-3 border-top bg-light" id="streaming-indicator">
-            <div class="d-flex align-items-center">
-                <i class="fas fa-spinner fa-spin mr-2 text-primary" role="status" aria-hidden="true"></i>
-                <small class="text-muted"><?php echo htmlspecialchars($ai_thinking_text); ?></small>
-            </div>
-        </div>
     <?php endif; ?>
 </div>

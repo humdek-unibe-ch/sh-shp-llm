@@ -263,16 +263,6 @@ class LlmContextService
     }
 
     /**
-     * Check if streaming is enabled
-     * 
-     * @return bool
-     */
-    public function isStreamingEnabled()
-    {
-        return $this->model->isStreamingEnabled();
-    }
-
-    /**
      * Get the configured model
      * 
      * @return string

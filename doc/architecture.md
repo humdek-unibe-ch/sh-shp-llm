@@ -36,7 +36,6 @@ server/plugins/sh-shp-llm/
 │   ├── service/                   # Business logic
 │   │   ├── globals.php           # Constants
 │   │   ├── LlmService.php        # Core service
-│   │   ├── LlmStreamingService.php
 │   │   ├── LlmApiFormatterService.php
 │   │   ├── LlmFileUploadService.php
 │   │   └── provider/             # Provider abstraction
@@ -78,7 +77,6 @@ server/plugins/sh-shp-llm/
 ┌─────────────────────────────────────────────────────────┐
 │                    Services                              │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│  │ LlmService   │ │ Streaming    │ │ ApiFormatter │    │
 │  │ - DB ops     │ │ - SSE        │ │ - Messages   │    │
 │  │ - API calls  │ │ - Buffering  │ │ - Multimodal │    │
 │  └──────────────┘ └──────────────┘ └──────────────┘    │
@@ -108,7 +106,6 @@ server/plugins/sh-shp-llm/
 ┌─────────────────────────────────────────────────────────┐
 │                    LlmChat Component                     │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│  │ useChatState │ │ useStreaming │ │ useSmartScrl │    │
 │  │ - Convs      │ │ - SSE        │ │ - Auto scroll│    │
 │  │ - Messages   │ │ - Chunks     │ │              │    │
 │  └──────────────┘ └──────────────┘ └──────────────┘    │
@@ -175,7 +172,6 @@ The plugin uses a provider abstraction layer to support multiple LLM APIs seamle
 │              LlmProviderInterface                         │
 │  ┌─────────────────────────────────────────────────┐     │
 │  │ • normalizeResponse(rawResponse)                │     │
-│  │ • normalizeStreamingChunk(chunk)               │     │
 │  │ • getApiUrl(baseUrl, endpoint)                 │     │
 │  │ • getAuthHeaders(apiKey)                       │     │
 │  │ • canHandle(baseUrl)                           │     │
@@ -253,7 +249,6 @@ React Component (MessageInput or FormRenderer)
     │                        ▼
     │                   LLM API → JSON Form Response
     │
-    ├─[Non-Streaming]─► messagesApi.send()
     │                        │
     │                        ▼
     │                   LlmChatController::handleMessageSubmission()
@@ -273,10 +268,8 @@ React Component (MessageInput or FormRenderer)
     │                        ▼
     │                   JSON Response
     │
-    └─[Streaming]──────► messagesApi.prepareStreaming()
                               │
                               ▼
-                         LlmChatController (prepare_streaming)
                               │
                               ▼
                          LlmService::addMessage() (user)
@@ -285,13 +278,10 @@ React Component (MessageInput or FormRenderer)
                          Return conversation_id
                               │
                               ▼
-                         StreamingApi.connect() (SSE)
                               │
                               ▼
-                         LlmChatController::handleStreamingRequest()
                               │
                               ▼
-                         LlmStreamingService::startStreamingResponse()
                               │
                               ▼
                          LlmService::streamLlmResponse()
@@ -439,9 +429,7 @@ users (SelfHelp Core)
 - Rate limit data cached for 1 minute
 - LLM config cached in static variable
 
-### Streaming Optimization
 
-- Zero database writes during streaming
 - Memory buffering with atomic commit
 - SSE with disabled nginx buffering
 - 2ms delay between chunks for smooth rendering

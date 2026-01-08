@@ -157,12 +157,10 @@ class LlmProviderRegistry
             $info['providers'][] = [
                 'id' => $provider->getProviderId(),
                 'name' => $provider->getProviderName(),
-                'supports_streaming' => $provider->supportsStreaming()
+                
             ];
         }
 
         return $info;
     }
 }
-?>
-

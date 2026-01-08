@@ -87,8 +87,7 @@ class LlmService
                 'llm_default_model' => LLM_DEFAULT_MODEL,
                 'llm_timeout' => LLM_DEFAULT_TIMEOUT,
                 'llm_max_tokens' => LLM_DEFAULT_MAX_TOKENS,
-                'llm_temperature' => LLM_DEFAULT_TEMPERATURE,
-                'llm_streaming_enabled' => '1'
+                'llm_temperature' => LLM_DEFAULT_TEMPERATURE
             ], $config);
         }
 
@@ -685,8 +684,9 @@ class LlmService
      * 
      * Uses provider abstraction to handle different API formats.
      * Returns normalized response structure.
+     * All calls are synchronous HTTP POST requests.
      */
-    public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null, $stream = false)
+    public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null)
     {
         $config = $this->getLlmConfig();
 
@@ -709,7 +709,7 @@ class LlmService
             'messages' => $messages,
             'temperature' => $temp_value,
             'max_tokens' => $max_tokens_value,
-            'stream' => $stream
+            'stream' => false
         ];
 
         // Merge provider-specific parameters
@@ -752,147 +752,6 @@ class LlmService
             error_log('LLM Provider normalization error: ' . $e->getMessage());
             error_log('Raw response: ' . json_encode($response));
             throw new Exception('Failed to normalize LLM response: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Stream LLM response
-     * Note: Uses direct curl calls as BaseModel::execute_curl_call doesn't support streaming with callbacks
-     */
-    public function streamLlmResponse($messages, $model, $temperature = null, $max_tokens = null, $callback = null)
-    {
-        $config = $this->getLlmConfig();
-
-        // Get API URL using provider
-        $url = $this->provider->getApiUrl($config['llm_base_url'], LLM_API_CHAT_COMPLETIONS);
-
-        // Validate and clamp temperature to valid range (0.0 - 2.0)
-        $temp_value = (float)($temperature ?: $config['llm_temperature']);
-        if ($temp_value < 0.0) $temp_value = 0.0;
-        if ($temp_value > 2.0) $temp_value = 2.0;
-        
-        // Validate max_tokens
-        $max_tokens_value = (int)($max_tokens ?: $config['llm_max_tokens']);
-        if ($max_tokens_value < 1) $max_tokens_value = 2048;
-        if ($max_tokens_value > 16384) $max_tokens_value = 16384;
-
-        // Build standard payload
-        $payload = [
-            'model' => $model,
-            'messages' => $messages,
-            'temperature' => $temp_value,
-            'max_tokens' => $max_tokens_value,
-            'stream' => true
-        ];
-
-        // Merge provider-specific parameters
-        $providerParams = $this->provider->getAdditionalRequestParams($payload);
-        $payload = array_merge($payload, $providerParams);
-
-        // Get authentication headers from provider
-        $headers = $this->provider->getAuthHeaders($config['llm_api_key']);
-        $headers[] = 'Accept: text/event-stream';
-        $headers[] = 'Cache-Control: no-cache';
-
-        // Track if we received any content
-        $received_content = false;
-        $chunk_buffer = ''; // Buffer for incomplete chunks
-
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_TIMEOUT => $config['llm_timeout'],
-            CURLOPT_CONNECTTIMEOUT => 10, // Connection timeout
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_FOLLOWLOCATION => true, // Follow redirects
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1, // Force HTTP/1.1 for SSE
-            CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback, &$received_content, &$chunk_buffer) {
-                // Append to buffer and process complete lines
-                $chunk_buffer .= $data;
-                
-                // Process complete lines (ending with \n)
-                while (($pos = strpos($chunk_buffer, "\n")) !== false) {
-                    $line = substr($chunk_buffer, 0, $pos);
-                    $chunk_buffer = substr($chunk_buffer, $pos + 1);
-                    
-                    // Use provider to normalize streaming chunk
-                    $normalizedChunk = $this->provider->normalizeStreamingChunk($line);
-                    
-                    if ($normalizedChunk === null) {
-                        continue; // Skip this chunk
-                    }
-                    
-                    if ($normalizedChunk === '[DONE]') {
-                        if ($callback) $callback('[DONE]');
-                        return strlen($data);
-                    }
-                    
-                    if (strpos($normalizedChunk, '[USAGE:') === 0) {
-                        if ($callback) $callback($normalizedChunk);
-                        continue;
-                    }
-                    
-                    // Regular content chunk
-                    if ($callback && $normalizedChunk !== '') {
-                        $received_content = true;
-                        $callback($normalizedChunk);
-                    }
-                }
-                return strlen($data);
-            }
-        ]);
-
-        $result = curl_exec($ch);
-        $error = curl_error($ch);
-        $errno = curl_errno($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        // If we got a curl error, throw an exception
-        if ($errno) {
-            throw new Exception('Curl error during streaming: ' . $error . ' (code: ' . $errno . ')');
-        }
-
-        // If we got an HTTP error, throw an exception with better error message
-        if ($http_code >= 400) {
-            $error_message = 'LLM API request failed';
-            switch ($http_code) {
-                case 401:
-                    $error_message = 'Authentication failed. Please check your API key.';
-                    break;
-                case 403:
-                    $error_message = 'Access denied. Please check your API permissions.';
-                    break;
-                case 429:
-                    $error_message = 'Too many requests. Please wait and try again.';
-                    break;
-                case 500:
-                case 502:
-                case 503:
-                case 504:
-                    $error_message = 'Server error. Please try again later.';
-                    break;
-                default:
-                    $error_message = "Request failed with status $http_code";
-            }
-            throw new Exception($error_message);
-        }
-
-        // If we didn't receive any content and didn't get an explicit [DONE], something went wrong
-        if (!$received_content && !empty($chunk_buffer)) {
-            // Try to parse remaining buffer as error
-            $parsed = json_decode($chunk_buffer, true);
-            if ($parsed && isset($parsed['error'])) {
-                $error_msg = is_array($parsed['error']) 
-                    ? ($parsed['error']['message'] ?? json_encode($parsed['error']))
-                    : $parsed['error'];
-                throw new Exception('LLM API error: ' . $error_msg);
-            }
         }
     }
 

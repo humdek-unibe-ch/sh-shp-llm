@@ -6,7 +6,6 @@
  * Provides the same functionality as the vanilla JS implementation:
  * - Conversation management (create, delete, select)
  * - Message sending with file attachments
- * - Real-time streaming via SSE
  * - Responsive Bootstrap-based UI
  * 
  * @module components/LlmChat
@@ -17,12 +16,11 @@ import { Container, Row, Col, Alert, Card } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
-import { StreamingIndicator } from '../shared/StreamingIndicator';
+import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { ProgressIndicator } from '../shared/ProgressIndicator';
 import { useChatState } from '../../../hooks/useChatState';
-import { useStreaming } from '../../../hooks/useStreaming';
-import { createFormApi, createContinueApi, StreamingApi, progressApi } from '../../../utils/api';
-import type { LlmChatConfig, SelectedFile, Message, ProgressData, Conversation } from '../../../types';
+import { createFormApi, createContinueApi, progressApi } from '../../../utils/api';
+import type { LlmChatConfig, SelectedFile, Message, ProgressData } from '../../../types';
 import './LlmChat.css';
 
 /**
@@ -116,7 +114,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   // Local state for file attachments
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
 
-  // Local state for tracking non-streaming processing
+  // Local state for tracking message processing
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Local state for form submission (form mode)
@@ -187,70 +185,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     }
   }, [config.enableProgressTracking, config.sectionId]);
 
-  // Set up proper error handling and message refresh for streaming
-  const streamingErrorHandler = useCallback((err: string) => {
-    setError(err);
-  }, [setError]);
-
-  const messageRefreshHandler = useCallback(async (conversationId: string) => {
-    await loadConversationMessages(conversationId);
-    if (config.enableConversationsList) {
-      await loadConversations();
-    }
-    // Note: Progress is already updated via onDone callback from streaming response
-    // No need to fetch again here - it would cause a redundant API call
-  }, [loadConversationMessages, loadConversations, config.enableConversationsList]);
-
-  const newConversationHandler = useCallback((conversationId: string, model: string) => {
-    // Update current conversation for single conversation mode
-    if (!config.enableConversationsList) {
-      const newConversation = {
-        id: conversationId,
-        title: 'New Conversation',
-        model: model,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      setCurrentConversation(newConversation);
-    }
-  }, [config.enableConversationsList, setCurrentConversation]);
-
-  // Streaming state management (comes after chat state)
-  const {
-    isStreaming,
-    streamingContent,
-    sendStreamingMessage,
-    stopStreaming,
-    clearStreamingContent
-  } = useStreaming({
-    config,
-    onChunk: useCallback(() => {
-      // No auto-scroll during streaming - let user stay where they are to read the incoming response
-    }, []),
-    onDone: useCallback((tokensUsed: number, progressData?: ProgressData) => {
-      // Update progress immediately if provided
-      if (progressData && config.enableProgressTracking) {
-        setProgress(progressData);
-      }
-    }, [config.enableProgressTracking]),
-    onError: streamingErrorHandler,
-    onStart: useCallback(() => {
-      // Content clearing handled by hook
-    }, []),
-    onRefreshMessages: messageRefreshHandler,
-    onNewConversation: newConversationHandler,
-    getActiveModel: useCallback(() => config.configuredModel, [config.configuredModel]),
-    onUpdateConversation: useCallback((updates: Partial<Conversation>) => {
-      if (currentConversation) {
-        setCurrentConversation({
-          ...currentConversation,
-          ...updates
-        });
-      }
-    }, [currentConversation])
-  });
-
-
   /**
    * Initialize chat on mount
    */
@@ -301,8 +235,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     }
     
     // Prevent concurrent sends
-    if (isStreaming) {
-      setError(config.streamingActiveError);
+    if (isProcessing) {
       return;
     }
     
@@ -319,41 +252,31 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     const conversationId = currentConversation?.id || null;
     
     try {
-      if (config.streamingEnabled) {
-        // Use streaming mode
-        await sendStreamingMessage(message, conversationId, files);
-      } else {
-        // Use regular AJAX mode
-        setIsProcessing(true);
-        try {
-          const result = await sendMessage(message, files);
-          
-          // Handle danger detection blocked response
-          // Show safety message as an assistant response (not an error)
-          if (result.blocked && result.type === 'danger_detected') {
-            // The safety message should be shown as an assistant response
-            // This is handled by adding it to the messages list
-            // Note: The user's message was already added above, but it wasn't saved to DB
-            // We don't remove it from UI - it shows what triggered the safety response
-            if (result.message) {
-              // The safety message is returned as a regular assistant message
-              // The hook already handles adding it to the UI
-            }
-            return;
-          }
-          
-          if (result.error) {
-            setError(result.error);
-            return;
-          }
-
-          // Update progress if included in response
-          if (result.progress && config.enableProgressTracking) {
-            setProgress(result.progress);
-          }
-        } finally {
-          setIsProcessing(false);
+      setIsProcessing(true);
+      try {
+        const result = await sendMessage(message, files);
+        
+        // Handle danger detection blocked response
+        // Show safety message as an assistant response (not an error)
+        if (result.blocked && result.type === 'danger_detected') {
+          // The safety message should be shown as an assistant response
+          // This is handled by adding it to the messages list
+          // Note: The user's message was already added above, but it wasn't saved to DB
+          // We don't remove it from UI - it shows what triggered the safety response
+          return;
         }
+        
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+
+        // Update progress if included in response
+        if (result.progress && config.enableProgressTracking) {
+          setProgress(result.progress);
+        }
+      } finally {
+        setIsProcessing(false);
       }
     } catch (error) {
       // If sending fails, remove the user message from UI since it wasn't actually sent
@@ -361,17 +284,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       // The error will be shown via the error state
     }
   }, [
-    isStreaming,
+    isProcessing,
     currentConversation,
-    config.streamingEnabled,
-    config.enableConversationsList,
     config.emptyMessageError,
-    config.streamingActiveError,
     config.enableProgressTracking,
     addUserMessage,
     sendMessage,
-    sendStreamingMessage,
-    loadConversations,
     setError,
     forceScrollToBottom
   ]);
@@ -401,14 +319,10 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   /**
    * Handle Continue button click (form mode only)
    * Sends a continue request to the backend to get the next LLM response
-   * 
-   * For streaming mode: This directly starts the SSE connection after preparing,
-   * without going through sendStreamingMessage (which would try to prepare again).
    */
   const handleContinue = useCallback(async () => {
     // Prevent concurrent requests
-    if (isStreaming || isProcessing) {
-      setError(config.streamingActiveError);
+    if (isProcessing) {
       return;
     }
 
@@ -423,77 +337,25 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     forceScrollToBottom();
 
     try {
-      if (config.streamingEnabled) {
-        // Use streaming mode for continue
-        // The continue_conversation action with prepare_streaming=1 saves the continue message
-        // Then we directly start the SSE connection (don't use sendStreamingMessage which would prepare again)
-        setIsProcessing(true);
-        setIsFormSubmitting(true);
+      setIsProcessing(true);
+      setIsFormSubmitting(true);
+      try {
+        const result = await continueApi.continue(conversationId, config.configuredModel);
         
-        // Prepare streaming by sending continue action (with section_id)
-        const result = await continueApi.continueAndPrepareStreaming(
-          conversationId,
-          config.configuredModel
-        );
-
         if (result.error) {
           throw new Error(result.error);
         }
-
-        // Refresh messages to show the continue message immediately
-        await loadConversationMessages(conversationId);
-
-        // Keep processing states active during streaming
-        // States will be reset when streaming completes or fails
-
-        // Use StreamingApi for proper SSE handling with section_id
-        const streamingApi = new StreamingApi(conversationId, config.sectionId);
-
-        streamingApi.connect(
-          async (event) => {
-            if (event.type === 'done' || event.type === 'error' || event.type === 'close') {
-              streamingApi.disconnect();
-
-              if (event.type === 'error') {
-                setError(event.message || 'Streaming error');
-              }
-
-              // Reset states and refresh messages after streaming completes
-              setIsProcessing(false);
-              setIsFormSubmitting(false);
-              await loadConversationMessages(conversationId);
-            }
-          },
-          () => {
-            setError('Streaming connection error');
-            setIsProcessing(false);
-            setIsFormSubmitting(false);
-            // Refresh messages anyway to show any partial response
-            loadConversationMessages(conversationId);
-          }
-        );
-      } else {
-        // Non-streaming mode
-        setIsProcessing(true);
-        setIsFormSubmitting(true);
-        try {
-          const result = await continueApi.continue(conversationId, config.configuredModel);
-          
-          if (result.error) {
-            throw new Error(result.error);
-          }
-          
-          // Update progress if included in response
-          if (result.progress && config.enableProgressTracking) {
-            setProgress(result.progress);
-          }
-          
-          // Refresh messages
-          await loadConversationMessages(conversationId);
-        } finally {
-          setIsProcessing(false);
-          setIsFormSubmitting(false);
+        
+        // Update progress if included in response
+        if (result.progress && config.enableProgressTracking) {
+          setProgress(result.progress);
         }
+        
+        // Refresh messages
+        await loadConversationMessages(conversationId);
+      } finally {
+        setIsProcessing(false);
+        setIsFormSubmitting(false);
       }
     } catch (error) {
       console.error('Failed to continue conversation:', error);
@@ -502,12 +364,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       setIsFormSubmitting(false);
     }
   }, [
-    isStreaming,
     isProcessing,
     currentConversation,
-    config.streamingEnabled,
     config.configuredModel,
-    config.sectionId,
     config.enableProgressTracking,
     continueApi,
     loadConversationMessages,
@@ -520,8 +379,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
    */
   const handleFormSubmit = useCallback(async (values: Record<string, string | string[]>, readableText: string) => {
     // Prevent concurrent submissions
-    if (isStreaming || isFormSubmitting) {
-      setError(config.streamingActiveError);
+    if (isFormSubmitting) {
       return;
     }
 
@@ -538,68 +396,30 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     setLastFailedFormSubmission(null);
 
     setIsFormSubmitting(true);
+    setIsProcessing(true);
 
     try {
-      if (config.streamingEnabled) {
-        // Prepare for streaming and get conversation ID
-        const prepResult = await formApi.submitAndPrepareStreaming(
-          values,
-          readableText,
-          conversationId,
-          config.configuredModel
-        );
+      const result = await formApi.submit(
+        values,
+        readableText,
+        conversationId,
+        config.configuredModel
+      );
 
-        if (prepResult.error) {
-          throw new Error(prepResult.error);
-        }
+      if (result.error) {
+        throw new Error(result.error);
+      }
 
-        if (!prepResult.conversation_id) {
-          throw new Error('No conversation ID returned');
-        }
+      // Update progress if included in response
+      if (result.progress && config.enableProgressTracking) {
+        setProgress(result.progress);
+      }
 
-        // Handle new conversation
-        if (prepResult.is_new_conversation && !config.enableConversationsList) {
-          const newConversation = {
-            id: prepResult.conversation_id,
-            title: 'New Conversation',
-            model: config.configuredModel,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          setCurrentConversation(newConversation);
-        }
-
-        // Start streaming using the streaming hook
-        await sendStreamingMessage(readableText, prepResult.conversation_id, []);
-      } else {
-        // Non-streaming mode
-        setIsProcessing(true);
-        try {
-          const result = await formApi.submit(
-            values,
-            readableText,
-            conversationId,
-            config.configuredModel
-          );
-
-          if (result.error) {
-            throw new Error(result.error);
-          }
-
-          // Update progress if included in response
-          if (result.progress && config.enableProgressTracking) {
-            setProgress(result.progress);
-          }
-
-          // Refresh messages
-          if (result.conversation_id) {
-            await loadConversationMessages(result.conversation_id);
-            if (config.enableConversationsList) {
-              await loadConversations();
-            }
-          }
-        } finally {
-          setIsProcessing(false);
+      // Refresh messages
+      if (result.conversation_id) {
+        await loadConversationMessages(result.conversation_id);
+        if (config.enableConversationsList) {
+          await loadConversations();
         }
       }
     } catch (error) {
@@ -615,21 +435,18 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       });
     } finally {
       setIsFormSubmitting(false);
+      setIsProcessing(false);
     }
   }, [
-    isStreaming,
     isFormSubmitting,
     currentConversation,
-    config.streamingEnabled,
     config.configuredModel,
     config.enableConversationsList,
     config.enableProgressTracking,
     addUserMessage,
-    sendStreamingMessage,
     loadConversationMessages,
     loadConversations,
     setError,
-    setCurrentConversation,
     forceScrollToBottom
   ]);
 
@@ -736,17 +553,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     return config.configuredModel;
   }, [currentConversation?.model, config.configuredModel]);
 
-  // Build messages array with streaming message if active
-  const displayMessages: Message[] = [...messages];
-  if (isStreaming && streamingContent) {
-    displayMessages.push({
-      id: 'streaming-' + Date.now(),
-      role: 'assistant',
-      content: streamingContent,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
   // Determine if model is mismatched
   const isModelMismatch = currentConversation?.model &&
     currentConversation.model !== config.configuredModel;
@@ -823,9 +629,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                 className="flex-grow-1 overflow-auto p-3"
               >
                 <MessageList
-                  messages={displayMessages}
-                  isStreaming={isStreaming}
-                  streamingContent={streamingContent}
+                  messages={messages}
                   isLoading={isLoading && messages.length === 0}
                   isProcessing={isProcessing}
                   config={config}
@@ -839,14 +643,14 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
               </div>
             </Card.Body>
 
-            {/* Streaming Indicator */}
-            {isStreaming && (
-              <StreamingIndicator text={config.aiThinkingText} />
+            {/* Processing Indicator */}
+            {isProcessing && (
+              <LoadingIndicator text={config.aiThinkingText} />
             )}
 
             {/* Auto-start Indicator */}
             {isAutoStarting && (
-              <StreamingIndicator text={config.loadingText || "Starting conversation..."} />
+              <LoadingIndicator text={config.loadingText || "Starting conversation..."} />
             )}
 
             {/* Message Input */}
@@ -863,7 +667,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
                   onSend={handleSendMessage}
                   selectedFiles={selectedFiles}
                   onFilesChange={handleFilesChange}
-                  disabled={isStreaming || isLoading || isAutoStarting}
+                  disabled={isProcessing || isLoading || isAutoStarting}
                   config={config}
                 />
               )}

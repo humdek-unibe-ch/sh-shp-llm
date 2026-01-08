@@ -24,8 +24,6 @@ import type { Components } from 'react-markdown';
 interface MarkdownRendererProps {
   /** The markdown content to render */
   content: string;
-  /** Whether this is a streaming message (show cursor) */
-  isStreaming?: boolean;
   /** Additional CSS class */
   className?: string;
 }
@@ -395,7 +393,6 @@ const markdownComponents: Components = {
  */
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
-  isStreaming = false,
   className = ''
 }) => {
   return (
@@ -407,9 +404,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       >
         {content}
       </ReactMarkdown>
-      {isStreaming && (
-        <span className="streaming-cursor"></span>
-      )}
     </div>
   );
 };

@@ -38,7 +38,6 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                  LlmProviderInterface                           │
 │  • normalizeResponse($rawResponse)                              │
-│  • normalizeStreamingChunk($chunk)                              │
 │  • getApiUrl($baseUrl, $endpoint)                               │
 │  • getAuthHeaders($apiKey)                                      │
 │  • canHandle($baseUrl)                                          │
@@ -57,7 +56,6 @@
 └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
-## Request Flow - Non-Streaming
 
 ```
 User Request
@@ -92,13 +90,10 @@ Controller saves message with reasoning
 Response sent to user
 ```
 
-## Request Flow - Streaming
 
 ```
-User Request (streaming)
     │
     ▼
-Controller starts streaming
     │
     ▼
 LlmService.streamLlmResponse()
@@ -111,13 +106,11 @@ LlmService.streamLlmResponse()
     │
     ├─→ For each chunk received:
     │       │
-    │       ├─→ provider.normalizeStreamingChunk(chunk)
     │       │
     │       ├─→ If content: send to client
     │       ├─→ If [DONE]: finalize and save
     │       └─→ If [USAGE:X]: track tokens
     │
-    └─→ StreamingBuffer.finalize()
          │
          └─→ Save complete message to database
 ```
