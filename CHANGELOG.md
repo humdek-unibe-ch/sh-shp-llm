@@ -128,7 +128,6 @@
 
 #### Core Features
 - Complete LLM chat plugin implementation for SelfHelp CMS
-- Real-time streaming responses via Server-Sent Events (SSE)
 - Support for multiple LLM models including vision-capable models
 - File upload functionality for images and documents
 - Conversation management (create, view, delete conversations)
@@ -183,9 +182,8 @@
 #### Conversation Context Processing
 - `LlmChatModel`: New `conversation_context` property with JSON/text parsing
 - `LlmApiFormatterService`: Updated `convertToApiFormat()` accepts context parameter
-- `LlmStreamingService`: Updated to track and store sent context
 - `LlmService`: Updated `addMessage()` accepts `$sent_context` parameter
-- `LlmChatController`: Context processing in both streaming and non-streaming paths
+- `LlmChatController`: Context processing in message handling
 
 #### Strict Conversation Mode Implementation
 - `LlmStrictConversationService`: New service for topic enforcement and context enhancement
@@ -207,7 +205,6 @@
 - New `auto_start_message` markdown field for custom auto-start messages
 
 #### Architecture
-- **Streaming Architecture**: Event-driven SSE implementation with zero partial saves
 - **Database Design**: Optimized schema with proper foreign keys and indexing
 - **Security**: Input validation, rate limiting, and secure file handling
 - **API Integration**: Flexible OpenAI-compatible API client
@@ -219,7 +216,7 @@
 
 ### Files Created
 - Database schema (`server/db/v1.0.0.sql`)
-- Core services (`LlmService.php`, `LlmStreamingService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `LlmStrictConversationService.php`)
+- Core services (`LlmService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `LlmStrictConversationService.php`)
 - MVC components (`LlmChatModel.php`, `LlmChatView.php`, `LlmChatController.php`)
 - Plugin hooks (`LlmHooks.php`)
 - Admin components (`moduleLlmAdminConsole/` - comprehensive admin console component with configurable pageType_fields)
@@ -239,7 +236,6 @@
 - **File Upload Handling**: Fixed upload path issues and API formatting, ensured files require accompanying messages
 - **Vision Model Detection**: Fixed vision model detection and upload path handling
 - **Conversation URL Behavior**: Corrected URL handling when conversations list is disabled
-- **Streaming Response Display**: Fixed display issues with streaming responses and parameter validation
 - **Textarea Focus Styling**: Removed blue border on textarea focus for cleaner appearance
 - **Conversation Selection**: Fixed conversation selection behavior during creation
 
@@ -303,11 +299,10 @@
 - **Visual Blocked Indicators**: Blocked conversations show in conversation list with ban icon, "Blocked" badge, and grayed appearance
 - **CMS-Configurable Blocked Message**: `danger_blocked_message` CMS field now controls the blocked conversation message with HTML support
 - **Transaction Logging**: All critical/emergency AI detections logged to transactions table for audit purposes
-- **Streaming Safety Support**: Safety detection works for both streaming and non-streaming responses
 
 **Safety Enhancement Details:**
 - Emergency/critical detections trigger automatic conversation blocking
-- Transaction logging with event types: `llm_safety_detection`, `llm_streaming_safety_detection`
+- Transaction logging with event types: `llm_safety_detection`
 - Frontend immediately updates conversation state when blocked
 - Blocked conversations remain visible in sidebar with visual indicators
 - HTML rendering support for rich blocked messages from CMS
@@ -315,7 +310,7 @@
 **New Features:**
 - `conversationBlockedMessage` config field populated from `danger_blocked_message` CMS field
 - Visual indicators for blocked conversations in sidebar
-- Immediate UI state updates for streaming safety detections
+- Immediate UI state updates for safety detections
 - Enhanced error logging with cleaned up debug messages
 
 ### Known Limitations

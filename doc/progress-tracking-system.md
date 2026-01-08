@@ -313,7 +313,7 @@ The `ProgressIndicator` component displays:
 ### Automatic Updates
 
 Progress updates automatically when:
-1. Streaming response completes (progress included in response)
+1. AI response completes (progress included in response)
 2. Form submission triggers topic confirmation
 3. Page/conversation loads (fetches current progress)
 

@@ -96,20 +96,19 @@ Response sent to user
     ▼
     │
     ▼
-LlmService.streamLlmResponse()
+LlmService.callLlmResponse()
     │
     ├─→ Get provider from registry
     │
     ├─→ Build API URL using provider
     │
-    ├─→ Open SSE connection
+    ├─→ Send API request
     │
-    ├─→ For each chunk received:
+    ├─→ Receive complete response
     │       │
-    │       │
-    │       ├─→ If content: send to client
-    │       ├─→ If [DONE]: finalize and save
-    │       └─→ If [USAGE:X]: track tokens
+    │       ├─→ Parse response content
+    │       ├─→ Extract token usage
+    │       └─→ Validate response format
     │
          │
          └─→ Save complete message to database

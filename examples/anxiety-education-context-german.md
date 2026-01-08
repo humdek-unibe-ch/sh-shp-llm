@@ -7,7 +7,6 @@ Dieses Beispiel demonstriert eine schrittweise geführte Bildungserfahrung zum L
 ```
 Stil: llmChat
 Modell: gpt-4o-mini
-Streaming aktivieren: Ja
 Form-Modus aktivieren: Ja
 Datenspeicherung aktivieren: Ja
 Datentabellenname: "Angst-Bildungsfortschritt"

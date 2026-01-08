@@ -7,7 +7,6 @@ This example demonstrates using vision-capable models for image analysis.
 ```
 Style: llmChat
 Model: internvl3-8b-instruct (or qwen3-vl-8b-instruct)
-Enable Streaming: Yes
 Enable File Uploads: Yes
 Max Files Per Message: 5
 Max File Size: 10485760 (10MB)

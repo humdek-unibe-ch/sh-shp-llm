@@ -7,7 +7,6 @@ This example demonstrates a step-by-step guided experience that saves user progr
 ```
 Style: llmChat
 Model: gpt-oss-120b
-Enable Streaming: Yes
 Enable Form Mode: Yes
 Enable Data Saving: Yes
 Data Table Name: "Fitness Plan Progress"

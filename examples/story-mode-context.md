@@ -7,7 +7,6 @@ This example demonstrates an interactive storytelling experience with choices.
 ```
 Style: llmChat
 Model: gpt-oss-120b
-Enable Streaming: Yes
 Enable Form Mode: Yes
 Enable Conversations List: No (single story per session)
 Enable Data Saving: Yes (optional - to track story progress)

@@ -77,8 +77,8 @@ server/plugins/sh-shp-llm/
 ┌─────────────────────────────────────────────────────────┐
 │                    Services                              │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│  │ - DB ops     │ │ - SSE        │ │ - Messages   │    │
-│  │ - API calls  │ │ - Buffering  │ │ - Multimodal │    │
+│  │ - DB ops     │ │ - API calls  │ │ - Messages   │    │
+│  │ - Validation │ │ - Response   │ │ - Multimodal │    │
 │  └──────────────┘ └──────────────┘ └──────────────┘    │
 │                           │                             │
 │                           ▼                             │
@@ -106,8 +106,8 @@ server/plugins/sh-shp-llm/
 ┌─────────────────────────────────────────────────────────┐
 │                    LlmChat Component                     │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
-│  │ - Convs      │ │ - SSE        │ │ - Auto scroll│    │
-│  │ - Messages   │ │ - Chunks     │ │              │    │
+│  │ - Convs      │ │ - Responses  │ │ - Auto scroll│    │
+│  │ - Messages   │ │ - Validation │ │              │    │
 │  └──────────────┘ └──────────────┘ └──────────────┘    │
 │                                                         │
 │  ┌────────────────────────────────────────────────┐    │
@@ -284,10 +284,10 @@ React Component (MessageInput or FormRenderer)
                               ▼
                               │
                               ▼
-                         LlmService::streamLlmResponse()
+                         LlmService::callLlmResponse()
                               │
                               ▼
-                         SSE Events → React UI
+                         API Response → React UI
 ```
 
 ## Multi-Section Support
@@ -430,9 +430,9 @@ users (SelfHelp Core)
 - LLM config cached in static variable
 
 
-- Memory buffering with atomic commit
-- SSE with disabled nginx buffering
-- 2ms delay between chunks for smooth rendering
+- Response validation with schema enforcement
+- JSON schema compliance checking
+- Automatic retry logic for invalid responses
 
 ### React Optimization
 

@@ -7,7 +7,6 @@ This example demonstrates the floating chat button feature for embedding a chat 
 ```
 Style: llmChat
 Model: gpt-oss-120b
-Enable Streaming: Yes
 Enable Floating Button: Yes
 Floating Button Position: bottom-right (or: bottom-left, top-right, top-left, bottom-center, top-center)
 Floating Button Icon: fa-comments (or: fa-robot, fa-headset, fa-message)

@@ -31,7 +31,6 @@ Configure these settings in the llmChat component in the CMS:
 | Setting | Value | Description |
 |---------|-------|-------------|
 | `llm_model` | `gpt-oss-120b` or `qwen3-vl-8b-instruct` | Any capable instruction-following model |
-| `llm_streaming_enabled` | ✅ Enabled | For real-time response streaming |
 | `enable_conversations_list` | ❌ Disabled | Single learning session per child |
 | `strict_conversation_mode` | ✅ **ENABLED** | Keep children on topic |
 | `auto_start_conversation` | ✅ Enabled | Start immediately with welcome |

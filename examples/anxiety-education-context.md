@@ -7,7 +7,6 @@ This example demonstrates a step-by-step guided educational experience for learn
 ```
 Style: llmChat
 Model: gpt-4o-mini
-Enable Streaming: Yes
 Enable Form Mode: Yes
 Enable Data Saving: Yes
 Data Table Name: "Anxiety Education Progress"

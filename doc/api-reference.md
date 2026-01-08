@@ -211,21 +211,22 @@ Send a message and get AI response.
 
 
 
-Connect to SSE stream for real-time response.
+Returns the complete AI response.
 
-**Parameters:**
-- `conversation`: Conversation ID
-
-**SSE Events:**
-
-```
-data: {"type": "connected", "conversation_id": "0000000001"}
-
-data: {"type": "chunk", "content": "Hello"}
-
-data: {"type": "chunk", "content": " there"}
-
-data: {"type": "done", "tokens_used": 15}
+**Response:**
+```json
+{
+  "status": "success",
+  "conversation_id": "0000000001",
+  "message": {
+    "id": "0000000004",
+    "role": "assistant",
+    "content": "Complete AI response content",
+    "model": "qwen3-vl-8b-instruct",
+    "tokens_used": 15,
+    "created_at": "2024-12-10 15:00:01"
+  }
+}
 
 data: {"type": "close"}
 ```

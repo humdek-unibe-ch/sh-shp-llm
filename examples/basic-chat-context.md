@@ -7,7 +7,6 @@ This example demonstrates a simple conversational AI assistant without any speci
 ```
 Style: llmChat
 Model: gpt-oss-120b (or any available model)
-Enable Streaming: Yes
 Enable Conversations List: Yes (optional)
 Enable Form Mode: No
 Enable Data Saving: No
@@ -35,7 +34,7 @@ Guidelines:
 
 ## Expected Behavior
 
-- Messages stream in real-time
+- AI responds with complete messages
 - Conversation history is maintained
 - No forms or special UI elements appear
 - Standard chat interface is displayed

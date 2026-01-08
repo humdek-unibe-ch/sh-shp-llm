@@ -17,7 +17,6 @@ The system now automatically detects the user's language preference from `$_SESS
 ```
 Style: llmChat
 Model: gpt-4o-mini
-Enable Streaming: Yes
 Enable Form Mode: No
 Enable Data Saving: No
 Enable Progress Tracking: Yes

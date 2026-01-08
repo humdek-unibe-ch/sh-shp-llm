@@ -6,7 +6,6 @@ A comprehensive LLM integration plugin for SelfHelp CMS, enabling real-time AI c
 
 ### Core Features
 - 🤖 **Real-time Chat Interface** - Interactive conversations with LLMs
-- 🔄 **Streaming Responses** - Real-time SSE-based response streaming
 - 📁 **File Uploads** - Image and document uploads for vision models
 - 💬 **Conversation Management** - Create, view, delete conversations
 - ⚡ **Rate Limiting** - Built-in protection (10 req/min, 3 concurrent conversations)
@@ -50,7 +49,7 @@ npm run build
 
 1. Create/edit a page in CMS
 2. Add section with style `llmChat`
-3. Configure model, streaming, and other settings
+3. Configure model and other settings
 4. Save and test
 
 ## Configuration
@@ -65,7 +64,6 @@ npm run build
 | `llm_timeout` | Request timeout (seconds) | `30` |
 | `llm_max_tokens` | Max tokens per response | `2048` |
 | `llm_temperature` | Response randomness (0-2) | `1` |
-| `llm_streaming_enabled` | Enable streaming globally | `true` |
 
 ### Component Settings
 
@@ -213,7 +211,6 @@ The system automatically detects the correct provider based on your `llm_base_ur
 | Chat not loading | Check LLM configuration settings |
 | API errors | Verify API endpoint and key |
 | File uploads failing | Check upload directory permissions |
-| Streaming not working | Ensure SSE support in browser |
 
 See SelfHelp logs for detailed error information.
 
@@ -221,7 +218,6 @@ See SelfHelp logs for detailed error information.
 
 ### 1.0.0 (December 2024)
 - Initial release with full LLM chat functionality
-- Real-time streaming via SSE
 - Multi-model support including vision models
 - Conversation context module for configurable AI behavior
 - Admin console for conversation monitoring

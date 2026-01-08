@@ -7,7 +7,6 @@ This example demonstrates the Form Mode feature where the AI returns JSON Schema
 ```
 Style: llmChat
 Model: gpt-oss-120b
-Enable Streaming: Yes
 Enable Form Mode: Yes
 Form Mode Active Title: "Please complete the form"
 Form Mode Active Description: "Fill out the form below and click Submit to continue"
