@@ -239,8 +239,32 @@ class LlmChatView extends StyleView
 
     public function output_content_mobile()
     {
-        // not implemented
-        return;
+        // Check CMS editing mode (same as web version)
+        if (
+            (method_exists($this->model, 'is_cms_page') && $this->model->is_cms_page()) &&
+            (method_exists($this->model, 'is_cms_page_editing') && $this->model->is_cms_page_editing())
+        ) {
+            return []; // Return empty array for CMS editing
+        }
+
+        // Get all DB fields directly (this is what mobile expects)
+        $style = parent::output_content_mobile();
+
+        // Only add minimal additional data needed for mobile functionality
+        // The mobile app gets all configuration from DB fields directly
+
+        // Add current conversation data if needed for mobile state
+        if ($this->model->getCurrentConversation()) {
+            $style['current_conversation'] = $this->model->getCurrentConversation();
+            $style['messages'] = $this->model->getConversationMessages();
+            $style['conversations'] = $this->model->getUserConversations();
+        }
+
+        // Add user/section context for mobile app
+        $style['user_id'] = $this->model->getUserId();
+        $style['section_id'] = $this->model->getSectionId();
+
+        return $style;
     }
 
     /**

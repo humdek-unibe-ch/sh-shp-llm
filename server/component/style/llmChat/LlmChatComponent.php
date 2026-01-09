@@ -55,10 +55,5 @@ class LlmChatComponent extends BaseComponent
         return parent::has_access();
     }
 
-    public function output_content_mobile()
-    {
-        // not implemented
-        return;
-    }
 }
 ?>

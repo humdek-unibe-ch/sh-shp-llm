@@ -188,6 +188,13 @@ class LlmChatController extends BaseController
      */
     private function handleRequest()
     {
+        // Check if this is a mobile rendering request (no action, just structure)
+        if (isset($_POST['mobile']) && $_POST['mobile'] && !isset($_POST['action']) && !isset($_GET['action'])) {
+            // This is a mobile request for component structure, not an action
+            // Skip request handling and let the view render normally
+            return;
+        }
+
         // Handle POST requests
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $action = $_POST['action'] ?? 'send_message';
