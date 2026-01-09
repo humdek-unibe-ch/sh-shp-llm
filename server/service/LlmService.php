@@ -313,7 +313,7 @@ class LlmService extends BaseLlmService
      */
     public function getConversation($conversation_id, $user_id, $section_id = null)
     {
-        $sql = "SELECT * FROM llmConversations WHERE id = ? AND id_users = ?";
+        $sql = "SELECT * FROM llmConversations WHERE id = ? AND id_users = ? AND deleted = 0";
         $params = [$conversation_id, $user_id];
 
         if ($section_id !== null) {

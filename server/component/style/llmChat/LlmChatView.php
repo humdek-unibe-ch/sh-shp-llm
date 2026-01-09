@@ -258,6 +258,10 @@ class LlmChatView extends StyleView
             $style['current_conversation'] = $this->model->getCurrentConversation();
             $style['messages'] = $this->model->getConversationMessages();
             $style['conversations'] = $this->model->getUserConversations();
+            // Format message content with markdown parsing
+            foreach ($style['messages'] as &$message) {
+                $message['formatted_content'] = $this->model->formatMessageContent($message['content']);
+            }
         }
 
         // Add user/section context for mobile app
