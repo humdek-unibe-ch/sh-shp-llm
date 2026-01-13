@@ -661,10 +661,14 @@ class LlmService extends BaseLlmService
         $temp_value = LlmValidator::temperature($temperature, $config['llm_temperature']);
         $max_tokens_value = LlmValidator::maxTokens($max_tokens, $config['llm_max_tokens']);
 
+        // Convert messages for model compatibility (handles system role support)
+        require_once __DIR__ . '/LlmModelCapabilities.php';
+        $converted_messages = LlmModelCapabilities::convertMessagesForModel($messages, $model);
+
         // Build standard payload
         $payload = [
             'model' => $model,
-            'messages' => $messages,
+            'messages' => $converted_messages,
             'temperature' => $temp_value,
             'max_tokens' => $max_tokens_value,
             'stream' => false

@@ -644,14 +644,19 @@ RETRY;
     /**
      * Call LLM API with retry logic for schema validation
      *
+     * IMPORTANT: This method now NEVER throws exceptions for validation failures.
+     * Instead, it returns a fallback response so the user always sees something.
+     * The 'valid' flag indicates whether the response matched the schema.
+     *
      * @param callable $callable Function that makes the LLM API call
      * @param array $api_messages Messages to send to LLM
-     * @return array ['response' => parsed_response, 'attempts' => int, 'valid' => bool]
-     * @throws Exception If all retry attempts fail
+     * @return array ['response' => parsed_response, 'attempts' => int, 'valid' => bool, 'raw_response' => response]
      */
     public function callLlmWithSchemaValidation($callable, $api_messages)
     {
         $max_attempts = self::MAX_RETRY_ATTEMPTS;
+        $last_response = null;
+        $last_parsed = null;
         $last_error = null;
 
         for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
@@ -664,9 +669,11 @@ RETRY;
                 }
 
                 $assistant_message = $response['content'];
+                $last_response = $response;
 
                 // Parse and validate the response
                 $parsed = $this->parseResponse($assistant_message);
+                $last_parsed = $parsed;
 
                 if ($parsed['valid']) {
                     // Response is valid, return it
@@ -682,9 +689,8 @@ RETRY;
                 $error_msg = 'Schema validation failed on attempt ' . $attempt . ': ' . implode(', ', $parsed['errors']);
                 error_log($error_msg);
 
-                // If this is the last attempt, don't retry
+                // If this is the last attempt, don't retry - return fallback
                 if ($attempt >= $max_attempts) {
-                    $last_error = new Exception('All retry attempts failed. Last error: ' . $error_msg);
                     break;
                 }
 
@@ -705,9 +711,9 @@ RETRY;
             } catch (Exception $e) {
                 $error_msg = 'LLM API call failed on attempt ' . $attempt . ': ' . $e->getMessage();
                 error_log($error_msg);
+                $last_error = $e;
 
                 if ($attempt >= $max_attempts) {
-                    $last_error = $e;
                     break;
                 }
 
@@ -716,8 +722,314 @@ RETRY;
             }
         }
 
-        // All attempts failed
-        throw $last_error ?: new Exception('All retry attempts failed');
+        // All attempts failed - return fallback response instead of throwing
+        // This ensures the user ALWAYS sees the response, even if it doesn't match schema
+        
+        if ($last_response && isset($last_response['content'])) {
+            // We have a response but it didn't validate - create fallback
+            $fallback = $this->createFallbackResponse($last_response['content'], $last_parsed);
+            return [
+                'response' => $fallback,
+                'attempts' => $max_attempts,
+                'valid' => false,
+                'raw_response' => $last_response,
+                'validation_errors' => $last_parsed['errors'] ?? []
+            ];
+        }
+
+        // No response at all - create error fallback
+        $error_message = $last_error ? $last_error->getMessage() : 'Failed to get response from LLM';
+        $error_fallback = $this->createErrorFallback($error_message);
+        return [
+            'response' => $error_fallback,
+            'attempts' => $max_attempts,
+            'valid' => false,
+            'raw_response' => null,
+            'error' => $error_message
+        ];
+    }
+
+    /**
+     * Create a fallback structured response from raw content
+     * 
+     * This method attempts to extract useful content from a response that
+     * didn't match the expected JSON schema. It tries multiple strategies:
+     * 1. If there's partial JSON data, use what we can
+     * 2. If it's plain text, wrap it in a proper structure
+     * 3. If we can extract JSON from markdown blocks, try that
+     *
+     * @param string $rawContent Raw response content from LLM
+     * @param array|null $parsedAttempt Previous parse attempt result
+     * @return array Fallback response with 'valid' => true (so it renders) and 'data'
+     */
+    public function createFallbackResponse($rawContent, $parsedAttempt = null)
+    {
+        $model = 'unknown';
+        
+        // If we have partially parsed data, try to use it
+        if ($parsedAttempt && isset($parsedAttempt['data']) && is_array($parsedAttempt['data'])) {
+            $data = $parsedAttempt['data'];
+            
+            // Try to extract text content from partial data
+            $textContent = $this->extractTextFromPartialResponse($data, $rawContent);
+            
+            return [
+                'valid' => true, // Mark as valid so it renders
+                'data' => $this->buildFallbackStructure($textContent, $model),
+                'errors' => [],
+                'is_fallback' => true,
+                'original_errors' => $parsedAttempt['errors'] ?? []
+            ];
+        }
+        
+        // Try to extract any JSON from the content
+        $extractedText = $this->extractTextContent($rawContent);
+        
+        return [
+            'valid' => true, // Mark as valid so it renders
+            'data' => $this->buildFallbackStructure($extractedText, $model),
+            'errors' => [],
+            'is_fallback' => true
+        ];
+    }
+
+    /**
+     * Extract text content from partial/invalid response data
+     *
+     * @param array $data Partially parsed response data
+     * @param string $rawContent Original raw content as fallback
+     * @return string Extracted text content
+     */
+    private function extractTextFromPartialResponse($data, $rawContent)
+    {
+        $textParts = [];
+        
+        // Try to get text_blocks content
+        if (isset($data['content']['text_blocks']) && is_array($data['content']['text_blocks'])) {
+            foreach ($data['content']['text_blocks'] as $block) {
+                if (isset($block['content']) && is_string($block['content'])) {
+                    $textParts[] = $block['content'];
+                }
+            }
+        }
+        
+        // Try to get direct content
+        if (empty($textParts) && isset($data['content']) && is_string($data['content'])) {
+            $textParts[] = $data['content'];
+        }
+        
+        // If we found text in the structure, use it
+        if (!empty($textParts)) {
+            return implode("\n\n", $textParts);
+        }
+        
+        // Fall back to raw content extraction
+        return $this->extractTextContent($rawContent);
+    }
+
+    /**
+     * Extract readable text from raw content
+     * Handles JSON, markdown code blocks, and plain text
+     *
+     * @param string $rawContent Raw content string
+     * @return string Extracted text
+     */
+    private function extractTextContent($rawContent)
+    {
+        if (empty($rawContent)) {
+            return 'No response content available.';
+        }
+        
+        $content = trim($rawContent);
+        
+        // Remove markdown code block wrappers
+        if (preg_match('/^```(?:json)?\s*\n?(.*?)\n?```\s*$/s', $content, $matches)) {
+            $content = trim($matches[1]);
+        }
+        
+        // Try to parse as JSON and extract text
+        $decoded = json_decode($content, true);
+        if ($decoded !== null && is_array($decoded)) {
+            return $this->extractTextFromJson($decoded);
+        }
+        
+        // If it looks like truncated JSON, try to salvage what we can
+        if (substr($content, 0, 1) === '{' || substr($content, 0, 1) === '[') {
+            $salvaged = $this->salvageTruncatedJson($content);
+            if ($salvaged) {
+                return $salvaged;
+            }
+        }
+        
+        // Return as-is (plain text response)
+        return $content;
+    }
+
+    /**
+     * Extract text from a JSON structure
+     *
+     * @param array $json Decoded JSON data
+     * @return string Extracted text
+     */
+    private function extractTextFromJson($json)
+    {
+        $texts = [];
+        
+        // Look for text_blocks
+        if (isset($json['content']['text_blocks'])) {
+            foreach ($json['content']['text_blocks'] as $block) {
+                if (isset($block['content'])) {
+                    $texts[] = $block['content'];
+                }
+            }
+        }
+        
+        // Look for direct content
+        if (isset($json['content']) && is_string($json['content'])) {
+            $texts[] = $json['content'];
+        }
+        
+        // Look for message content
+        if (isset($json['message'])) {
+            $texts[] = $json['message'];
+        }
+        
+        // Look for text field
+        if (isset($json['text'])) {
+            $texts[] = $json['text'];
+        }
+        
+        if (!empty($texts)) {
+            return implode("\n\n", $texts);
+        }
+        
+        // Last resort: pretty print the JSON
+        return json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * Try to salvage text from truncated JSON
+     *
+     * @param string $content Potentially truncated JSON
+     * @return string|null Salvaged text or null
+     */
+    private function salvageTruncatedJson($content)
+    {
+        // Look for content patterns in the truncated JSON
+        $patterns = [
+            '/"content"\s*:\s*"([^"]+)"/s',
+            '/"text"\s*:\s*"([^"]+)"/s',
+            '/"message"\s*:\s*"([^"]+)"/s',
+        ];
+        
+        $texts = [];
+        foreach ($patterns as $pattern) {
+            if (preg_match_all($pattern, $content, $matches)) {
+                foreach ($matches[1] as $match) {
+                    // Unescape JSON string escapes
+                    $unescaped = json_decode('"' . $match . '"');
+                    if ($unescaped) {
+                        $texts[] = $unescaped;
+                    } else {
+                        $texts[] = $match;
+                    }
+                }
+            }
+        }
+        
+        if (!empty($texts)) {
+            return implode("\n\n", array_unique($texts));
+        }
+        
+        return null;
+    }
+
+    /**
+     * Build a proper fallback structure that will render correctly
+     *
+     * @param string $textContent Text content to wrap
+     * @param string $model Model name
+     * @return array Structured response data
+     */
+    private function buildFallbackStructure($textContent, $model = 'unknown')
+    {
+        return [
+            'type' => 'response',
+            'safety' => [
+                'is_safe' => true,
+                'danger_level' => null,
+                'detected_concerns' => [],
+                'requires_intervention' => false,
+                'safety_message' => null
+            ],
+            'content' => [
+                'text_blocks' => [
+                    [
+                        'type' => 'text',
+                        'content' => $textContent,
+                        'style' => 'default'
+                    ]
+                ],
+                'form' => null,
+                'media' => [],
+                'suggestions' => []
+            ],
+            'progress' => null,
+            'metadata' => [
+                'model' => $model,
+                'tokens_used' => null,
+                'is_fallback' => true
+            ]
+        ];
+    }
+
+    /**
+     * Create error fallback when no response was received at all
+     *
+     * @param string $errorMessage Error message to display
+     * @return array Fallback response structure
+     */
+    private function createErrorFallback($errorMessage)
+    {
+        return [
+            'valid' => true, // Mark as valid so it renders
+            'data' => [
+                'type' => 'response',
+                'safety' => [
+                    'is_safe' => true,
+                    'danger_level' => null,
+                    'detected_concerns' => [],
+                    'requires_intervention' => false,
+                    'safety_message' => null
+                ],
+                'content' => [
+                    'text_blocks' => [
+                        [
+                            'type' => 'warning',
+                            'content' => 'There was an issue getting a response. Please try again.',
+                            'style' => 'default'
+                        ],
+                        [
+                            'type' => 'text',
+                            'content' => 'Technical details: ' . $errorMessage,
+                            'style' => 'default'
+                        ]
+                    ],
+                    'form' => null,
+                    'media' => [],
+                    'suggestions' => []
+                ],
+                'progress' => null,
+                'metadata' => [
+                    'model' => 'unknown',
+                    'tokens_used' => null,
+                    'is_error_fallback' => true
+                ]
+            ],
+            'errors' => [],
+            'is_fallback' => true,
+            'is_error' => true
+        ];
     }
 }
 ?>
