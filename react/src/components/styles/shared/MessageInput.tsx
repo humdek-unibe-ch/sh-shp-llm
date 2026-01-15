@@ -79,8 +79,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // Ref to always have current message value (avoids stale closure issues)
+  const messageRef = useRef<string>(message);
+  
   // Maximum recording duration (60 seconds) to prevent payload too large errors
   const MAX_RECORDING_DURATION_MS = 60000;
+  
+  // Keep messageRef in sync with message state
+  useEffect(() => {
+    messageRef.current = message;
+  }, [message]);
   
   // File config
   const { fileConfig } = config;
@@ -428,6 +436,66 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   }, [isRecording]);
 
   /**
+   * Safely append transcribed text to the message
+   * 
+   * RULES:
+   * 1. NEVER overwrite existing text
+   * 2. ALWAYS append at the current cursor position
+   * 3. ALWAYS move cursor to end of appended text
+   * 4. ALWAYS add proper spacing
+   * 
+   * @param transcribedText - The text to append
+   */
+  const appendTranscribedText = useCallback((transcribedText: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    // Get the CURRENT message from ref (not stale closure)
+    const currentMessage = messageRef.current;
+    
+    // Get current cursor position (where we will insert)
+    const cursorPos = textarea.selectionStart ?? currentMessage.length;
+    
+    // Split message at cursor position
+    const textBefore = currentMessage.substring(0, cursorPos);
+    const textAfter = currentMessage.substring(cursorPos);
+    
+    // Determine spacing needed
+    // Space BEFORE: if there's text before and it doesn't end with whitespace
+    const needsSpaceBefore = textBefore.length > 0 && 
+      !/[\s]$/.test(textBefore);
+    
+    // Space AFTER: add trailing space for easy continuation
+    const trailingSpace = ' ';
+    
+    // Build the new text: [existing before] + [space?] + [transcribed] + [trailing space] + [existing after]
+    const spaceBefore = needsSpaceBefore ? ' ' : '';
+    const newMessage = textBefore + spaceBefore + transcribedText + trailingSpace + textAfter;
+    
+    // Calculate new cursor position (after the transcribed text + trailing space)
+    const newCursorPos = textBefore.length + spaceBefore.length + transcribedText.length + trailingSpace.length;
+    
+    // Update state
+    setMessage(newMessage);
+    
+    // Update ref immediately for any subsequent operations
+    messageRef.current = newMessage;
+    
+    // Set cursor position after React re-renders
+    requestAnimationFrame(() => {
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        
+        // Ensure textarea height is adjusted
+        textarea.style.height = 'auto';
+        const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
+        textarea.style.height = `${newHeight}px`;
+      }
+    });
+  }, []);
+
+  /**
    * Process the recorded audio blob and send to server for transcription
    */
   const processAudioBlob = useCallback(async (audioBlob: Blob) => {
@@ -455,25 +523,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       const result = await response.json();
 
       if (result.success && result.text) {
-        // ALWAYS append transcribed text at the end - simple and reliable
-        const textarea = textareaRef.current;
+        // Get the transcribed text (trimmed)
         const transcribedText = result.text.trim();
         
-        // Add space before if there's existing text that doesn't end with space/newline
-        const spaceBefore = message.length > 0 && !message.endsWith(' ') && !message.endsWith('\n') ? ' ' : '';
-        
-        const newText = message + spaceBefore + transcribedText;
-        setMessage(newText);
-        
-        // Move cursor to the end after state update
-        setTimeout(() => {
-          if (textarea) {
-            textarea.focus();
-            const endPos = newText.length;
-            textarea.setSelectionRange(endPos, endPos);
-          }
-          adjustTextareaHeight();
-        }, 0);
+        if (transcribedText) {
+          // Use the safe append function - NEVER overwrites, ALWAYS appends
+          appendTranscribedText(transcribedText);
+        }
       } else if (result.success && !result.text) {
         setSpeechError('No speech detected. Please try again.');
       } else {
@@ -487,7 +543,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     } finally {
       setIsProcessingSpeech(false);
     }
-  }, [config.sectionId, message, adjustTextareaHeight]);
+  }, [config.sectionId, appendTranscribedText]);
 
   /**
    * Toggle recording state
