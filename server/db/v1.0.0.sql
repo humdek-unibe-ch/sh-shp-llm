@@ -4,7 +4,7 @@ VALUES ('llm', 'v1.0.0');
 
 -- Uncomment the following line to upgrade the database to utf8mb4,
 -- which is required for storing emojis and other extended Unicode characters:
-ALTER DATABASE llm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- ALTER DATABASE LLM CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 
 -- add page type sh_module_llm for configuration
