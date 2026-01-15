@@ -78,6 +78,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorPositionRef = useRef<number>(0); // Store cursor position when recording starts
   
   // Maximum recording duration (60 seconds) to prevent payload too large errors
   const MAX_RECORDING_DURATION_MS = 60000;
@@ -330,6 +331,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     if (!isSpeechAvailable || isRecording) return;
 
     setSpeechError(null);
+    
+    // Save cursor position before recording starts (textarea may lose focus when clicking button)
+    if (textareaRef.current) {
+      cursorPositionRef.current = textareaRef.current.selectionStart ?? message.length;
+    } else {
+      cursorPositionRef.current = message.length;
+    }
 
     try {
       // Request microphone permission
@@ -455,13 +463,37 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       const result = await response.json();
 
       if (result.success && result.text) {
-        // Append transcribed text to existing message
-        const newText = message + (message.trim() ? ' ' : '') + result.text.trim();
-        setMessage(newText);
-        adjustTextareaHeight();
+        // Insert transcribed text at the saved cursor position (from when recording started)
+        const textarea = textareaRef.current;
+        const transcribedText = result.text.trim();
         
-        // Focus the textarea
-        textareaRef.current?.focus();
+        // Use the saved cursor position from when recording started
+        const cursorPos = Math.min(cursorPositionRef.current, message.length);
+        const beforeCursor = message.substring(0, cursorPos);
+        const afterCursor = message.substring(cursorPos);
+        
+        // Add space before if there's text before cursor and it doesn't end with space/newline
+        const spaceBefore = beforeCursor.length > 0 && !beforeCursor.endsWith(' ') && !beforeCursor.endsWith('\n') ? ' ' : '';
+        // Add space after if there's text after cursor and it doesn't start with space/newline
+        const spaceAfter = afterCursor.length > 0 && !afterCursor.startsWith(' ') && !afterCursor.startsWith('\n') ? ' ' : '';
+        
+        const newText = beforeCursor + spaceBefore + transcribedText + spaceAfter + afterCursor;
+        setMessage(newText);
+        
+        // Calculate new cursor position after the inserted text
+        const newCursorPos = cursorPos + spaceBefore.length + transcribedText.length;
+        
+        // Update the saved cursor position for subsequent recordings
+        cursorPositionRef.current = newCursorPos;
+        
+        // Use setTimeout to ensure state update completes before setting cursor
+        setTimeout(() => {
+          if (textarea) {
+            textarea.focus();
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+          }
+          adjustTextareaHeight();
+        }, 0);
       } else if (result.success && !result.text) {
         setSpeechError('No speech detected. Please try again.');
       } else {
