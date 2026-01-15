@@ -87,6 +87,36 @@ define('LLM_VISION_MODELS', [
     'qwen3-vl-8b-instruct', 
 ]);
 
+// Speech-to-text (Whisper) models
+// Models capable of transcribing audio to text
+define('LLM_AUDIO_MODELS', [
+    'faster-whisper-large-v3',
+    'whisper-large-v3',
+    'whisper-medium',
+    'whisper-small'
+]);
+
+// Default speech-to-text model
+define('LLM_DEFAULT_SPEECH_MODEL', 'faster-whisper-large-v3');
+
+// Audio API endpoint
+define('LLM_API_AUDIO_TRANSCRIPTIONS', '/audio/transcriptions');
+
+// Maximum audio file size (25MB - OpenAI API limit)
+define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
+
+// Supported audio MIME types for speech-to-text
+define('LLM_ALLOWED_AUDIO_TYPES', [
+    'audio/webm',
+    'audio/webm;codecs=opus',
+    'audio/wav',
+    'audio/mp3',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/ogg',
+    'audio/flac'
+]);
+
 // Cache keys
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
 define('LLM_CACHE_CONVERSATION_MESSAGES', 'llm_conversation_messages');
@@ -154,6 +184,23 @@ function llm_get_file_type_category($extension) {
  */
 function llm_is_vision_model($model) {
     return in_array($model, LLM_VISION_MODELS);
+}
+
+/**
+ * Check if a model is an audio/speech-to-text model
+ *
+ * @param string $model Model identifier
+ * @return bool True if model is an audio model
+ */
+function llm_is_audio_model($model) {
+    $modelLower = strtolower($model);
+    // Check explicit list first
+    if (in_array($model, LLM_AUDIO_MODELS)) {
+        return true;
+    }
+    // Fallback: check if model name contains whisper/speech/audio
+    return strpos($modelLower, 'whisper') !== false 
+        || strpos($modelLower, 'speech') !== false;
 }
 
 /**

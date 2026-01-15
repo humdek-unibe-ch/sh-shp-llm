@@ -130,6 +130,11 @@ class LlmChatModel extends StyleModel
     private $danger_notification_emails;
     private $danger_blocked_message;
 
+    // Speech-to-text (Whisper) configuration
+    // Enables voice input for easier message composition
+    private $enable_speech_to_text;
+    private $speech_to_text_model;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -287,6 +292,10 @@ class LlmChatModel extends StyleModel
         $this->danger_notification_emails = $this->get_db_field('danger_notification_emails', '');
         $this->danger_blocked_message = $this->get_db_field('danger_blocked_message', 
             "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you're in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*");
+
+        // Speech-to-text configuration
+        $this->enable_speech_to_text = $this->get_db_field('enable_speech_to_text', '0');
+        $this->speech_to_text_model = $this->get_db_field('speech_to_text_model', '');
 
         // Initialize dataTable for this section if data saving is enabled
         $this->initializeDataTableIfNeeded();
@@ -1535,6 +1544,32 @@ EOT;
         ];
     }
 
+    // ===== Speech-to-Text Configuration =====
+
+    /**
+     * Check if speech-to-text is enabled
+     * 
+     * Speech-to-text is only functional when:
+     * 1. The enable checkbox is checked
+     * 2. An audio model is selected
+     *
+     * @return bool True if speech-to-text is enabled and configured
+     */
+    public function isSpeechToTextEnabled()
+    {
+        return $this->enable_speech_to_text === '1' && !empty($this->speech_to_text_model);
+    }
+
+    /**
+     * Get the selected speech-to-text model
+     *
+     * @return string The Whisper model identifier (e.g., 'faster-whisper-large-v3')
+     */
+    public function getSpeechToTextModel()
+    {
+        return $this->speech_to_text_model;
+    }
+
     /**
      * Format message content with markdown parsing
      * Uses Parsedown to convert markdown to HTML with safe mode enabled
@@ -1553,15 +1588,6 @@ EOT;
 
     // ===== UI Generation Helpers =====
     // These methods generate consistent HTML for different UI elements
-
-
-
-
-
-
-
-
-
 
     public function return_data($key)
     {

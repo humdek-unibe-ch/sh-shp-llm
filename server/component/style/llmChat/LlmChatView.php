@@ -233,7 +233,10 @@ class LlmChatView extends StyleView
             'progressCompleteMessage' => $this->model->getProgressCompleteMessage(),
             'progressShowTopics' => $this->model->shouldShowProgressTopics(),
             // Structured response mode - LLM always returns JSON schema
-            'enableStructuredResponse' => $this->model->isStructuredResponseEnabled()
+            'enableStructuredResponse' => $this->model->isStructuredResponseEnabled(),
+            // Speech-to-text config
+            'enableSpeechToText' => $this->model->isSpeechToTextEnabled(),
+            'speechToTextModel' => $this->model->getSpeechToTextModel()
         ]);
     }
 

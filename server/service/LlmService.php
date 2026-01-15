@@ -64,61 +64,6 @@ class LlmService extends BaseLlmService
      * CONFIGURATION
      * ========================================================================= */
 
-    /**
-     * Get LLM configuration
-     * 
-     * Retrieves configuration from database with caching.
-     * Falls back to defaults if not configured.
-     * 
-     * @return array Configuration array
-     */
-    public function getLlmConfig()
-    {
-        static $config = null;
-
-        if ($config === null) {
-            $config = [];
-
-            // Get the LLM configuration page
-            $page = $this->db->query_db_first(
-                "SELECT id FROM pages WHERE keyword = ?",
-                [PAGE_LLM_CONFIG]
-            );
-
-            if ($page) {
-                try {
-                    // Use the proper stored procedure to get page fields
-                    $page_data = $this->db->query_db_first(
-                        'CALL get_page_fields(?, ?, ?, ?, ?)',
-                        [$page['id'], 1, 1, '', '']
-                    );
-
-                    if ($page_data) {
-                        // Extract LLM configuration fields from the page data
-                        foreach ($page_data as $key => $value) {
-                            if (strpos($key, 'llm_') === 0) {
-                                $config[$key] = $value;
-                            }
-                        }
-                    }
-                } catch (Exception $e) {
-                    $this->logWarning('LLM config retrieval failed', ['error' => $e->getMessage()]);
-                }
-            }
-
-            // Set defaults if not configured
-            $config = array_merge([
-                'llm_base_url' => 'http://localhost:8080',
-                'llm_api_key' => '',
-                'llm_default_model' => LLM_DEFAULT_MODEL,
-                'llm_timeout' => LLM_DEFAULT_TIMEOUT,
-                'llm_max_tokens' => LLM_DEFAULT_MAX_TOKENS,
-                'llm_temperature' => LLM_DEFAULT_TEMPERATURE
-            ], $config);
-        }
-
-        return $config;
-    }
 
     /* =========================================================================
      * RATE LIMITING

@@ -4,6 +4,38 @@
 
 ### Added
 
+#### Speech-to-Text Input (Whisper Integration) (January 15, 2026)
+- **Voice Input**: Users can speak into their microphone and have speech converted to text
+- **Whisper Integration**: Uses GPUStack faster-whisper-large-v3 model for transcription
+- **Accessibility**: Supports users with motor impairments or typing difficulties
+- **Modern UX**: Microphone button in message input area with visual recording feedback
+- **Privacy-First**: No permanent storage of audio data - processed in real-time
+
+**Configuration:**
+- `enable_speech_to_text`: Checkbox to enable/disable voice input
+- `speech_to_text_model`: Dropdown to select Whisper model (requires select-audio-model field type)
+
+**Technical Implementation:**
+- `LlmSpeechToTextService.php`: New service for audio transcription via GPUStack API
+- `speech_transcribe` action in `LlmChatController.php`
+- MediaRecorder API integration in React frontend
+- WebM/Opus audio format with fallback support
+- Automatic language detection from user session
+
+**User Experience:**
+- Click microphone button to start recording (button turns red with pulsing animation)
+- Click stop to end recording and process audio
+- Transcribed text appears in message input for review/editing
+- Clear error messages for permission issues or processing failures
+
+**Requirements:**
+- Both enable checkbox AND audio model must be configured for microphone to appear
+- Modern browser with MediaRecorder API support
+- HTTPS connection (required for microphone access)
+- User must grant microphone permission in browser
+
+**Documentation:** See [doc/speech-to-text.md](doc/speech-to-text.md) for complete documentation.
+
 #### Unified JSON Response Schema (December 23, 2025)
 - **Mandatory Structured Responses**: All LLM responses now follow a unified JSON schema
 - **Predictable Parsing**: Frontend knows exactly what to expect from every response

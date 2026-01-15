@@ -130,6 +130,16 @@ function parseConfig(container: HTMLElement) {
     container.dataset.progressShowTopics === 'true' ||
     jsonConfig.progressShowTopics === true;
 
+  // Speech-to-text configuration
+  const enableSpeechToText =
+    container.dataset.enableSpeechToText === '1' ||
+    container.dataset.enableSpeechToText === 'true' ||
+    jsonConfig.enableSpeechToText === true;
+
+  const speechToTextModel = container.dataset.speechToTextModel ||
+    jsonConfig.speechToTextModel ||
+    '';
+
   const enableFloatingButton =
     container.dataset.enableFloatingButton === '1' ||
     container.dataset.enableFloatingButton === 'true' ||
@@ -348,6 +358,8 @@ function parseConfig(container: HTMLElement) {
     progressBarLabel,
     progressCompleteMessage,
     progressShowTopics,
+    enableSpeechToText,
+    speechToTextModel,
     enableFloatingButton,
     floatingButtonPosition,
     floatingButtonIcon,

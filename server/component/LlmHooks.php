@@ -225,6 +225,115 @@ class LlmHooks extends BaseHooks
     }
 
     /**
+     * Output select audio model field for speech-to-text
+     * @param string $value
+     * Value of the field
+     * @param string $name
+     * The name of the fields
+     * @param int $disabled 0 or 1
+     * If the field is in edit mode or view mode (disabled)
+     * @return object
+     * Return instance of BaseStyleComponent -> select style
+     */
+    private function outputSelectAudioModelField($value, $name, $disabled)
+    {
+        try {
+            require_once __DIR__ . "/../service/LlmSpeechToTextService.php";
+            $speechService = new LlmSpeechToTextService($this->services);
+            $models = $speechService->getAvailableAudioModels();
+
+            // Transform models array to select format
+            $items = array(
+                array('value' => '', 'text' => '-- Select Audio Model --')
+            );
+            foreach ($models as $model) {
+                $items[] = array(
+                    'value' => $model['id'],
+                    'text' => $model['id']
+                );
+            }
+
+            return new BaseStyleComponent("select", array(
+                "value" => $value,
+                "name" => $name,
+                "max" => 10,
+                "live_search" => 1,
+                "is_required" => 0,
+                "disabled" => $disabled,
+                "items" => $items
+            ));
+        } catch (Exception $e) {
+            // Fallback in case of error
+            return new BaseStyleComponent("select", array(
+                "value" => $value,
+                "name" => $name,
+                "max" => 10,
+                "live_search" => 0,
+                "is_required" => 0,
+                "disabled" => $disabled,
+                "items" => array(
+                    array('value' => '', 'text' => '-- Select Audio Model --'),
+                    array('value' => 'faster-whisper-large-v3', 'text' => 'faster-whisper-large-v3')
+                )
+            ));
+        }
+    }
+
+    /**
+     * Return a BaseStyleComponent object for audio model field
+     * 
+     * This hook is triggered for any field with type 'select-audio-model'.
+     * The hook name 'field-audio-model-edit' matches the field type
+     * 'select-audio-model' following SelfHelp's hook naming convention.
+     * 
+     * @param object $args Params passed to the method
+     * @param int $disabled 0 or 1 - If the field is in edit mode or view mode (disabled)
+     * @return object Return a BaseStyleComponent object
+     */
+    private function returnSelectAudioModelField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        if ($field['name'] === 'speech_to_text_model') {
+            $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+            $selectField = $this->outputSelectAudioModelField($field['content'], $field_name_prefix . "[content]", $disabled);
+
+            if ($selectField && $res) {
+                $children = $res->get_view()->get_children();
+                $children[] = $selectField;
+                $res->get_view()->set_children($children);
+            }
+        }
+
+        return $res;
+    }
+
+    /**
+     * Return a BaseStyleComponent object for audio model edit mode
+     * @param object $args
+     * Params passed to the method
+     * @return object
+     * Return a BaseStyleComponent object
+     */
+    public function outputFieldAudioModelEdit($args)
+    {
+        return $this->returnSelectAudioModelField($args, 0);
+    }
+
+    /**
+     * Return a BaseStyleComponent object for audio model view mode
+     * @param object $args
+     * Params passed to the method
+     * @return object
+     * Return a BaseStyleComponent object
+     */
+    public function outputFieldAudioModelView($args)
+    {
+        return $this->returnSelectAudioModelField($args, 1);
+    }
+
+    /**
      * Build the LLM admin panel with quick links.
      */
     private function outputLlmPanel()

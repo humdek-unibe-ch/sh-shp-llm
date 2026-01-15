@@ -286,6 +286,12 @@ export interface LlmChatConfig {
   /** Whether to show the topic list */
   progressShowTopics: boolean;
 
+  // ===== Speech-to-Text Configuration =====
+  /** Whether speech-to-text input is enabled */
+  enableSpeechToText: boolean;
+  /** The Whisper model used for speech recognition */
+  speechToTextModel: string;
+
   // ===== Floating Button Configuration =====
   /** Whether floating button mode is enabled */
   enableFloatingButton: boolean;
@@ -407,6 +413,9 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   progressBarLabel: 'Progress',
   progressCompleteMessage: 'Great job! You have covered all topics.',
   progressShowTopics: false,
+  // Speech-to-text defaults
+  enableSpeechToText: false,
+  speechToTextModel: '',
   // Floating button defaults
   enableFloatingButton: false,
   floatingButtonPosition: 'bottom-right',

@@ -6,6 +6,7 @@
  * - Text input with auto-resize
  * - File attachment button and drop zone
  * - File preview and management
+ * - Speech-to-text input via microphone
  * - Send button
  * - Character count
  * 
@@ -14,7 +15,7 @@
  * @module components/MessageInput
  */
 
-import React, { useState, useRef, useCallback, KeyboardEvent, DragEvent } from 'react';
+import React, { useState, useRef, useCallback, useEffect, KeyboardEvent, DragEvent } from 'react';
 import { Form, Button, Alert, Badge, CloseButton } from 'react-bootstrap';
 import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../types';
 import { FILE_ERRORS, formatBytes } from '../../../types';
@@ -61,15 +62,42 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   
+  // Speech-to-text state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  
   // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileHashesRef = useRef<Set<string>>(new Set());
   const attachmentIdCounterRef = useRef(0);
   
+  // Speech-to-text refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  
   // File config
   const { fileConfig } = config;
   const maxLength = 4000; // Default max message length
+  
+  // Check if speech-to-text is available
+  const isSpeechAvailable = config.enableSpeechToText &&
+    config.speechToTextModel &&
+    typeof navigator !== 'undefined' &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === 'function';
+
+
+  // Cleanup audio stream on unmount
+  useEffect(() => {
+    return () => {
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
   
   /**
    * Handle form submission
@@ -285,6 +313,153 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       textareaRef.current.style.height = 'auto';
     }
   }, [onFilesChange]);
+
+  // ===== Speech-to-Text Handlers =====
+
+  /**
+   * Start recording audio from the microphone
+   */
+  const handleStartRecording = useCallback(async () => {
+    if (!isSpeechAvailable || isRecording) return;
+
+    setSpeechError(null);
+
+    try {
+      // Request microphone permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000
+        }
+      });
+
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      // Create MediaRecorder with WebM/Opus format (widely supported)
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/mp4';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Process the recorded audio
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+          await processAudioBlob(audioBlob);
+        }
+        
+        // Cleanup
+        audioChunksRef.current = [];
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      setIsRecording(true);
+
+    } catch (error: unknown) {
+      console.error('Failed to start recording:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
+        setSpeechError('Microphone access denied. Please allow microphone access in your browser settings.');
+      } else {
+        setSpeechError('Failed to start recording: ' + errorMessage);
+      }
+    }
+  }, [isSpeechAvailable, isRecording]);
+
+  /**
+   * Stop recording and process the audio
+   */
+  const handleStopRecording = useCallback(() => {
+    if (!isRecording || !mediaRecorderRef.current) return;
+
+    // Stop the MediaRecorder (this triggers onstop which processes the audio)
+    if (mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+
+    // Stop all tracks in the stream
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+    }
+
+    setIsRecording(false);
+  }, [isRecording]);
+
+  /**
+   * Process the recorded audio blob and send to server for transcription
+   */
+  const processAudioBlob = useCallback(async (audioBlob: Blob) => {
+    if (audioBlob.size === 0) {
+      setSpeechError('No audio recorded');
+      return;
+    }
+
+    setIsProcessingSpeech(true);
+    setSpeechError(null);
+
+    try {
+      // Create form data for the API request
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.webm');
+      formData.append('action', 'speech_transcribe');
+      formData.append('section_id', config.sectionId?.toString() || '0');
+
+      // Send to the server for transcription
+      const response = await fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.text) {
+        // Append transcribed text to existing message
+        const newText = message + (message.trim() ? ' ' : '') + result.text.trim();
+        setMessage(newText);
+        adjustTextareaHeight();
+        
+        // Focus the textarea
+        textareaRef.current?.focus();
+      } else if (result.success && !result.text) {
+        setSpeechError('No speech detected. Please try again.');
+      } else {
+        setSpeechError(result.error || 'Speech transcription failed');
+      }
+
+    } catch (error: unknown) {
+      console.error('Speech processing error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setSpeechError('Speech processing failed: ' + errorMessage);
+    } finally {
+      setIsProcessingSpeech(false);
+    }
+  }, [config.sectionId, message, adjustTextareaHeight]);
+
+  /**
+   * Toggle recording state
+   */
+  const handleMicrophoneClick = useCallback(() => {
+    if (isRecording) {
+      handleStopRecording();
+    } else {
+      handleStartRecording();
+    }
+  }, [isRecording, handleStartRecording, handleStopRecording]);
   
   // Drag and drop handlers
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -340,6 +515,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </Alert>
       )}
       
+      {/* Speech Error Alert */}
+      {speechError && (
+        <Alert variant="warning" dismissible onClose={() => setSpeechError(null)} className="mb-2">
+          <small>
+            <i className="fas fa-microphone-slash mr-1"></i>
+            {speechError}
+          </small>
+        </Alert>
+      )}
+      
       {/* File Attachments Preview */}
       {selectedFiles.length > 0 && (
         <div className="mb-2">
@@ -391,14 +576,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         
         {/* Action Buttons */}
         <div className="d-flex justify-content-between align-items-center p-2 border-top bg-light message-input-actions">
-          {/* Left side - Attachment button */}
-          <div>
+          {/* Left side - Attachment and Microphone buttons */}
+          <div className="d-flex align-items-center">
             {config.enableFileUploads && config.isVisionModel && (
               <Button
                 variant="outline-secondary"
                 size="sm"
                 onClick={handleAttachmentClick}
-                disabled={disabled}
+                disabled={disabled || isRecording}
                 title={config.attachFilesTitle}
                 className="message-action-btn"
               >
@@ -411,6 +596,26 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 <small className="text-muted ml-1">{config.noVisionSupportText}</small>
               </Button>
             )}
+            
+            {/* Speech-to-Text Microphone Button */}
+            {isSpeechAvailable && (
+                <Button
+                  variant={isRecording ? 'danger' : 'outline-secondary'}
+                  size="sm"
+                  onClick={handleMicrophoneClick}
+                  disabled={disabled || isProcessingSpeech}
+                  title={isRecording ? 'Stop recording' : 'Start voice input'}
+                  className={`message-action-btn ml-1 ${isRecording ? 'speech-recording-active' : ''}`}
+                >
+                  {isProcessingSpeech ? (
+                    <i className="fas fa-spinner fa-spin"></i>
+                  ) : isRecording ? (
+                    <i className="fas fa-stop"></i>
+                  ) : (
+                    <i className="fas fa-microphone"></i>
+                  )}
+                </Button>
+              )}
           </div>
 
           {/* Character Count - Center */}

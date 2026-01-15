@@ -532,3 +532,33 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
  'Email addresses to notify when danger keywords are detected.\nOne email per line or separated by semicolons.\n\n**Example:**\nadmin@example.com\nresearcher@example.com\n\n**Note:** If empty, only audit logging occurs (no email notifications). Emails are sent immediately via SelfHelp job scheduler.'),(get_style_id('llmChat'), get_field_id('danger_blocked_message'), 
  'I noticed some concerning content in your message. While I want to help, I''m not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you''re in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*',
  'Message shown to users when danger keywords are detected. Supports markdown formatting.\n\nThis message replaces the AI response when the conversation is blocked. The conversation remains active - users can continue with different messages.');
+
+-- =====================================================
+-- SPEECH-TO-TEXT FEATURE (Whisper Integration)
+-- =====================================================
+-- Enables voice input using Whisper speech recognition model.
+-- Users can speak into their microphone and have their speech
+-- converted to text in real-time for easier message composition.
+
+-- Add new field type for audio model selection
+INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`) VALUES (NULL, 'select-audio-model', '9');
+
+-- Add speech-to-text configuration fields
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_speech_to_text', get_field_type_id('checkbox'), '0'),
+(NULL, 'speech_to_text_model', get_field_type_id('select-audio-model'), '0');
+
+-- Link speech-to-text fields to llmChat style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('enable_speech_to_text'), '0', 
+ 'Enable speech-to-text input. When enabled and an audio model is selected, a microphone button appears in the message input area. Users can click to record voice input which is transcribed to text in real-time.\n\n**Requirements:**\n- An audio model must be selected below\n- User must grant microphone permissions\n- Modern browser with MediaRecorder API support\n\n**Privacy:** Audio is processed in real-time and not stored permanently.'),
+
+(get_style_id('llmChat'), get_field_id('speech_to_text_model'), 'faster-whisper-large-v3', 
+ 'Select the Whisper model for speech recognition. The model processes audio and returns transcribed text.\n\n**Recommended:** faster-whisper-large-v3 for best accuracy.\n\n**Note:** The microphone button will only appear when both this field is set AND the enable checkbox above is checked.');
+
+-- Register hooks for audio model field selection
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-edit', 'Output select audio model field - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldAudioModelEdit', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-view', 'Output select audio model field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldAudioModelView', 5);

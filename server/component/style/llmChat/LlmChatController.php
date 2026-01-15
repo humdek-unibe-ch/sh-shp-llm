@@ -17,6 +17,7 @@ require_once __DIR__ . "/../../../service/LlmContextService.php";
 require_once __DIR__ . "/../../../service/LlmProgressTrackingService.php";
 require_once __DIR__ . "/../../../service/LlmResponseService.php";
 require_once __DIR__ . "/../../../service/LlmDangerDetectionService.php";
+require_once __DIR__ . "/../../../service/LlmSpeechToTextService.php";
 
 /**
  * LLM Chat Controller
@@ -67,6 +68,9 @@ class LlmChatController extends BaseController
 
     /** @var LlmResponseService Unified response parsing and validation */
     private $response_service;
+
+    /** @var LlmSpeechToTextService Speech-to-text transcription service */
+    private $speech_service;
 
     /** @var float Request start time for activity logging */
     private $request_start_time;
@@ -181,6 +185,9 @@ class LlmChatController extends BaseController
             $api_formatter_service,
             $this->progress_tracking_service  // Pass progress tracking service for context building
         );
+        
+        // Speech-to-text service (standalone, separate from LLM chat)
+        $this->speech_service = new LlmSpeechToTextService($services);
     }
 
     /**
@@ -237,6 +244,9 @@ class LlmChatController extends BaseController
                 break;
             case 'confirm_topic':
                 $this->handleConfirmTopic();
+                break;
+            case 'speech_transcribe':
+                $this->handleSpeechTranscribe();
                 break;
             default:
                 // Legacy: handle direct message POST
@@ -927,6 +937,100 @@ class LlmChatController extends BaseController
         }
     }
 
+    /* Speech-to-Text *********************************************************/
+
+    /**
+     * Handle speech-to-text transcription request
+     * 
+     * Receives audio data from the client and returns transcribed text.
+     * This is completely separate from the LLM chat functionality and
+     * only provides voice-to-text conversion for easier message input.
+     * 
+     * No permanent storage of audio data (privacy-first approach).
+     */
+    private function handleSpeechTranscribe()
+    {
+        // Validate user is logged in
+        $user_id = $this->validateUserOrFail();
+        
+        // Check if speech-to-text is enabled for this section
+        if (!$this->model->isSpeechToTextEnabled()) {
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'Speech-to-text is not enabled for this chat'
+            ], 400);
+            return;
+        }
+        
+        // Check if audio model is configured
+        $speechModel = $this->model->getSpeechToTextModel();
+        if (empty($speechModel)) {
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'No speech-to-text model configured'
+            ], 400);
+            return;
+        }
+        
+        // Validate audio file was uploaded
+        if (!isset($_FILES['audio']) || $_FILES['audio']['error'] !== UPLOAD_ERR_OK) {
+            $uploadError = isset($_FILES['audio']) ? $_FILES['audio']['error'] : 'No file';
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'No audio file provided or upload failed (error: ' . $uploadError . ')'
+            ], 400);
+            return;
+        }
+        
+        $audioFile = $_FILES['audio'];
+        
+        // Validate file size
+        if ($audioFile['size'] > LLM_MAX_AUDIO_SIZE) {
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'Audio file too large. Maximum size is 25MB.'
+            ], 400);
+            return;
+        }
+        
+        // Validate MIME type
+        $mimeType = $audioFile['type'] ?? '';
+        if (!$this->speech_service->isValidAudioType($mimeType)) {
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'Invalid audio format. Supported: WebM, WAV, MP3, OGG, FLAC'
+            ], 400);
+            return;
+        }
+        
+        try {
+            // Get user's language from session for better transcription accuracy
+            $language = $this->speech_service->getUserLanguage();
+            
+            // Transcribe the audio
+            $result = $this->speech_service->transcribeAudio(
+                $audioFile['tmp_name'],
+                $speechModel,
+                $language
+            );
+            
+            // Clean up temporary file (PHP does this automatically, but be explicit)
+            if (file_exists($audioFile['tmp_name'])) {
+                @unlink($audioFile['tmp_name']);
+            }
+            
+            // Return the result
+            $this->sendJsonResponse($result);
+            
+        } catch (Exception $e) {
+            error_log("Speech transcription error: " . $e->getMessage());
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'Speech transcription failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     /**
      * Calculate progress for a conversation
      * 
@@ -1319,6 +1423,9 @@ class LlmChatController extends BaseController
             'continueButtonLabel' => $this->model->getContinueButtonLabel(),
             'enableDataSaving' => $this->model->isDataSavingEnabled(),
             'enableMediaRendering' => $this->model->isMediaRenderingEnabled(),
+            // Speech-to-text configuration
+            'enableSpeechToText' => $this->model->isSpeechToTextEnabled(),
+            'speechToTextModel' => $this->model->getSpeechToTextModel(),
             // Floating button configuration
             'enableFloatingButton' => $this->model->isFloatingButtonEnabled(),
             'floatingButtonPosition' => $this->model->getFloatingButtonPosition(),
