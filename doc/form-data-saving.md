@@ -342,6 +342,4 @@ Verify:
 
 Field IDs are sanitized to valid column names. Check the sanitization rules above.
 
-### Data Not Linked to Messages
-
-Ensure the form submission includes the message ID in the request. This is handled automatically by the frontend.
+### Data Not Linked to MessagesEnsure the form submission includes the message ID in the request. This is handled automatically by the frontend.

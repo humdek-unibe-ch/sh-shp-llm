@@ -77,6 +77,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Maximum recording duration (60 seconds) to prevent payload too large errors
+  const MAX_RECORDING_DURATION_MS = 60000;
   
   // File config
   const { fileConfig } = config;
@@ -90,11 +94,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     typeof navigator.mediaDevices.getUserMedia === 'function';
 
 
-  // Cleanup audio stream on unmount
+  // Cleanup audio stream and timeout on unmount
   useEffect(() => {
     return () => {
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
       }
     };
   }, []);
@@ -338,13 +345,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       audioChunksRef.current = [];
 
       // Create MediaRecorder with WebM/Opus format (widely supported)
+      // Use lower bitrate to reduce file size and avoid "Payload Too Large" errors
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
           ? 'audio/webm'
           : 'audio/mp4';
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      // Configure MediaRecorder with lower bitrate for smaller file sizes
+      // 16kbps is sufficient for speech recognition
+      const mediaRecorder = new MediaRecorder(stream, { 
+        mimeType,
+        audioBitsPerSecond: 16000 // 16 kbps - optimized for speech
+      });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
@@ -367,6 +380,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       // Start recording
       mediaRecorder.start();
       setIsRecording(true);
+      
+      // Auto-stop recording after max duration to prevent payload too large errors
+      recordingTimeoutRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          console.log('Auto-stopping recording after max duration');
+          handleStopRecording();
+        }
+      }, MAX_RECORDING_DURATION_MS);
 
     } catch (error: unknown) {
       console.error('Failed to start recording:', error);
@@ -385,6 +406,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
    */
   const handleStopRecording = useCallback(() => {
     if (!isRecording || !mediaRecorderRef.current) return;
+
+    // Clear the auto-stop timeout
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
 
     // Stop the MediaRecorder (this triggers onstop which processes the audio)
     if (mediaRecorderRef.current.state === 'recording') {

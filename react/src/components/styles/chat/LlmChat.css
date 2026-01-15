@@ -535,6 +535,15 @@
   }
 }
 
+/* Ensure consistent icon sizes for speech-to-text button */
+.message-action-btn .fa-microphone,
+.message-action-btn .fa-stop,
+.message-action-btn .fa-microphone-slash {
+  font-size: 14px;
+  width: 14px;
+  text-align: center;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .llm-chat-container {

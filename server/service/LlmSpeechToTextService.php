@@ -95,6 +95,10 @@ class LlmSpeechToTextService extends BaseLlmService
         
         // Validate file size
         $fileSize = filesize($audioFilePath);
+        
+        // Log file info for debugging
+        error_log("Speech-to-text: Processing audio file - Path: {$audioFilePath}, Size: {$fileSize} bytes");
+        
         if ($fileSize > self::MAX_AUDIO_SIZE) {
             return [
                 'success' => false,
@@ -121,76 +125,88 @@ class LlmSpeechToTextService extends BaseLlmService
         
         try {
             $config = $this->getLlmConfig();
-            
+
             // Build the API URL for audio transcriptions
             $apiUrl = rtrim($config['llm_base_url'], '/') . self::AUDIO_TRANSCRIPTIONS_ENDPOINT;
-            
+
             // Prepare the multipart form data using cURL file
-            $audioFile = new CURLFile($audioFilePath, 'audio/webm', 'audio.webm');
-            
+            // Detect MIME type from file or use default
+            $mimeType = mime_content_type($audioFilePath) ?: 'audio/webm';
+            $audioFile = new CURLFile($audioFilePath, $mimeType, 'audio.webm');
+
             $postData = [
                 'file' => $audioFile,
                 'model' => $model,
                 'response_format' => 'json'
             ];
-            
+
             // Add language if not auto-detect
             if ($language !== 'auto' && !empty($language)) {
                 $postData['language'] = $language;
             }
-            
-            // Execute the API call
-            $ch = curl_init();
-            
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $apiUrl,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => $postData,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => (int)($config['llm_timeout'] ?? 60),
-                CURLOPT_HTTPHEADER => [
-                    'Authorization: Bearer ' . $config['llm_api_key']
-                ]
-            ]);
-            
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlError = curl_error($ch);
-            
-            curl_close($ch);
-            
-            // Check for cURL errors
-            if ($curlError) {
-                error_log("Speech-to-text cURL error: " . $curlError);
+
+            // Use dedicated multipart curl call instead of BaseModel::execute_curl_call
+            // BaseModel doesn't properly handle multipart form data with CURLFile
+            $response = $this->executeMultipartCurlCall(
+                $apiUrl,
+                $postData,
+                $config['llm_api_key'],
+                $config['llm_timeout']
+            );
+
+            if ($response === false) {
                 return [
                     'success' => false,
-                    'error' => 'Connection error: ' . $curlError
+                    'error' => 'Connection error: No response from speech recognition service'
                 ];
             }
-            
-            // Check HTTP status code
-            if ($httpCode !== 200) {
-                error_log("Speech-to-text API error: HTTP $httpCode - $response");
-                return [
-                    'success' => false,
-                    'error' => "API error (HTTP $httpCode)"
-                ];
-            }
-            
-            // Parse the response
+
+            // Parse JSON response
             $responseData = json_decode($response, true);
-            
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                error_log("Speech-to-text JSON parse error: " . json_last_error_msg());
+            if ($responseData === null) {
+                error_log("Speech-to-text JSON parse error: " . json_last_error_msg() . " - Response: " . substr($response, 0, 500));
                 return [
                     'success' => false,
                     'error' => 'Invalid response from speech recognition service'
                 ];
             }
+
+            // Check for API error response
+            if (isset($responseData['error'])) {
+                $errorMsg = is_array($responseData['error']) 
+                    ? ($responseData['error']['message'] ?? json_encode($responseData['error']))
+                    : $responseData['error'];
+                error_log("Speech-to-text API error: " . $errorMsg . " - File size: {$fileSize} bytes");
+                
+                // Provide user-friendly error messages for common errors
+                if (stripos($errorMsg, 'Payload Too Large') !== false || stripos($errorMsg, '413') !== false) {
+                    return [
+                        'success' => false,
+                        'error' => 'Audio recording is too large. Please try a shorter recording (under 30 seconds).'
+                    ];
+                }
+                
+                return [
+                    'success' => false,
+                    'error' => 'Speech recognition service error: ' . $errorMsg
+                ];
+            }
             
+            // Check for message field (some APIs use this for errors)
+            if (isset($responseData['message']) && !isset($responseData['text'])) {
+                $msg = $responseData['message'];
+                if (stripos($msg, 'Payload Too Large') !== false || stripos($msg, 'too large') !== false) {
+                    error_log("Speech-to-text: Payload too large error - File size: {$fileSize} bytes");
+                    return [
+                        'success' => false,
+                        'error' => 'Audio recording is too large. Please try a shorter recording (under 30 seconds).'
+                    ];
+                }
+            }
+
             // Extract transcribed text
             $text = $responseData['text'] ?? '';
-            
+
             if (empty($text)) {
                 return [
                     'success' => true,
@@ -198,13 +214,13 @@ class LlmSpeechToTextService extends BaseLlmService
                     'message' => 'No speech detected in audio'
                 ];
             }
-            
+
             return [
                 'success' => true,
                 'text' => trim($text),
                 'language' => $responseData['language'] ?? $language
             ];
-            
+
         } catch (Exception $e) {
             error_log("Speech-to-text exception: " . $e->getMessage());
             return [
@@ -233,6 +249,86 @@ class LlmSpeechToTextService extends BaseLlmService
         $supported = ['en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh', 'ko'];
         
         return in_array($lang, $supported) ? $lang : 'auto';
+    }
+    
+    /**
+     * Execute a multipart form data cURL call
+     * 
+     * This method is specifically designed for file uploads (like audio transcription)
+     * where we need to send multipart/form-data with CURLFile objects.
+     * The standard BaseModel::execute_curl_call doesn't properly handle this case.
+     * 
+     * @param string $url The API endpoint URL
+     * @param array $postData Array containing form fields and CURLFile objects
+     * @param string $apiKey The API key for authorization
+     * @param int $timeout Request timeout in seconds
+     * @return string|false Raw response string or false on failure
+     */
+    private function executeMultipartCurlCall($url, $postData, $apiKey, $timeout = 60)
+    {
+        try {
+            $curl = curl_init();
+            
+            // Set curl options for multipart form data
+            curl_setopt_array($curl, [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'POST',
+                // For multipart/form-data, pass array directly - curl will set Content-Type automatically
+                CURLOPT_POSTFIELDS => $postData,
+                // Only set Authorization header - let curl handle Content-Type for multipart
+                CURLOPT_HTTPHEADER => [
+                    'Authorization: Bearer ' . $apiKey
+                ]
+            ]);
+            
+            // Skip SSL verification in debug mode
+            if (defined('DEBUG') && DEBUG) {
+                curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+            }
+            
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($curl);
+            
+            curl_close($curl);
+            
+            // Log errors for debugging
+            if ($response === false || !empty($curlError)) {
+                error_log("Speech-to-text cURL error: " . $curlError);
+                return false;
+            }
+            
+            // Log non-2xx responses
+            if ($httpCode < 200 || $httpCode >= 300) {
+                error_log("Speech-to-text API returned HTTP {$httpCode}: " . substr($response, 0, 500));
+                
+                // Handle specific HTTP errors with better messages
+                if ($httpCode === 413) {
+                    // Get file size for error message
+                    $fileSize = 0;
+                    if (isset($postData['file']) && $postData['file'] instanceof CURLFile) {
+                        $filePath = $postData['file']->getFilename();
+                        if (file_exists($filePath)) {
+                            $fileSize = filesize($filePath);
+                        }
+                    }
+                    error_log("Speech-to-text: Payload Too Large - File size: {$fileSize} bytes. Server may have request size limits.");
+                }
+            }
+            
+            return $response;
+            
+        } catch (Exception $e) {
+            error_log("Speech-to-text cURL exception: " . $e->getMessage());
+            return false;
+        }
     }
     
     /**

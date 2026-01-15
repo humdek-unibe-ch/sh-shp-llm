@@ -558,7 +558,5 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 
 -- Register hooks for audio model field selection
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
-VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-edit', 'Output select audio model field - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldAudioModelEdit', 5);
-
-INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-edit', 'Output select audio model field - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldAudioModelEdit', 5);INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-view', 'Output select audio model field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldAudioModelView', 5);
