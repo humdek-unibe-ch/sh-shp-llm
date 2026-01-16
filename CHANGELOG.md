@@ -4,6 +4,36 @@
 
 ### Added
 
+#### File Naming Convention Redesign (January 16, 2026)
+- **Contextual File Naming**: All uploaded files now include user ID, section ID, conversation ID, and message ID for better traceability
+- **User-Based Directory Structure**: Files organized in user-specific directories (`upload/{user_id}/`) for better isolation and management
+- **Audio File Storage**: Speech-to-text recordings are now permanently saved with proper naming conventions
+- **Modular Naming Service**: Centralized `LlmFileNamingService.php` handles all file naming logic consistently across the application
+
+**New File Naming Patterns:**
+- **Finalized uploads**: `{user_id}_{section_id}_{conversation_id}_{message_id}_{random}.{ext}`
+- **Temporary uploads**: `{user_id}_{section_id}_{conversation_id}_temp_{timestamp}_{random}.{ext}`
+- **Audio recordings**: `{user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}.{ext}`
+
+**Example Files:**
+- `42_15_123_456_a1b2c3d4e5f6g7h8.png` (finalized image upload)
+- `42_15_123_temp_1765876608_a1b2c3d4.png` (temporary upload before message ID)
+- `42_15_123_audio_1765876608_a1b2c3d4.webm` (audio recording)
+
+**Security & Organization Benefits:**
+- **User Isolation**: Files stored in user-specific directories for better access control
+- **Ownership Verification**: Filename parsing allows validation of file ownership
+- **Audit Trail**: Complete context (user, section, conversation, message) embedded in filename
+- **Collision Prevention**: 16-character random suffix (8 bytes entropy) prevents filename conflicts
+
+**Technical Implementation:**
+- `LlmFileNamingService.php`: Centralized naming logic with parsing and validation methods
+- Updated `LlmFileUploadService.php`: Uses naming service for consistent file handling
+- Updated `LlmSpeechToTextService.php`: Saves audio files with proper naming convention
+- Modified `LlmChatController.php`: Passes additional context parameters to file services
+
+**Documentation:** See [doc/file-naming-conventions.md](doc/file-naming-conventions.md) for complete naming system documentation.
+
 #### Speech-to-Text Input (Whisper Integration) (January 15, 2026)
 - **Voice Input**: Users can speak into their microphone and have speech converted to text
 - **Whisper Integration**: Uses GPUStack faster-whisper-large-v3 model for transcription

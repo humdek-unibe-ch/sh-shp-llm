@@ -144,6 +144,7 @@ sh-shp-llm/
 | [Conversation Context](doc/conversation-context.md) | Context module configuration guide |
 | [API Reference](doc/api-reference.md) | Controller actions and endpoints |
 | [Configuration](doc/configuration.md) | Complete configuration reference |
+| [File Naming Conventions](doc/file-naming-conventions.md) | File upload and audio recording naming system |
 
 ## Development
 

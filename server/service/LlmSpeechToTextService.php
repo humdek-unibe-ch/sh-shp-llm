@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmLanguageUtility.php';
+require_once __DIR__ . '/LlmFileNamingService.php';
 
 /**
  * LLM Speech-to-Text Service
@@ -16,8 +17,15 @@ require_once __DIR__ . '/LlmLanguageUtility.php';
  * Key Features:
  * - Real-time audio transcription using Whisper models
  * - Automatic language detection based on user session
- * - No permanent storage of audio data (privacy-first)
+ * - Audio files saved with consistent naming convention
  * - Clean separation from LLM chat logic
+ * 
+ * File Naming Convention:
+ * =======================
+ * Audio files are saved as: {user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}.{ext}
+ * Example: 42_15_123_audio_1765876608_a1b2c3d4e5f6.webm
+ * 
+ * @see LlmFileNamingService for full naming documentation
  * 
  * @package LLM Plugin
  * @version 1.0.0
@@ -73,12 +81,122 @@ class LlmSpeechToTextService extends BaseLlmService
      * ========================================================================= */
 
     /**
-     * Transcribe audio data to text
+     * Save and transcribe audio data to text
+     * 
+     * Saves the audio file with proper naming convention, then sends it to 
+     * the Whisper model via GPUStack API for transcription.
+     * 
+     * @param array $audioFile The $_FILES['audio'] array
+     * @param int $userId User ID
+     * @param int $sectionId Section ID
+     * @param int|null $conversationId Conversation ID (null if no active conversation)
+     * @param string $model Whisper model to use (default: faster-whisper-large-v3)
+     * @param string|null $language Language code for transcription (null = auto-detect)
+     * @param bool $keepFile Whether to keep the audio file after transcription (default: true)
+     * @return array Result with 'success', 'text', 'audio_file' info, and optionally 'error'
+     */
+    public function saveAndTranscribeAudio($audioFile, $userId, $sectionId, $conversationId = null, $model = null, $language = null, $keepFile = true)
+    {
+        // Validate audio file
+        if (!isset($audioFile['tmp_name']) || !file_exists($audioFile['tmp_name'])) {
+            return [
+                'success' => false,
+                'error' => 'Audio file not found'
+            ];
+        }
+        
+        // Validate file size
+        $fileSize = $audioFile['size'] ?? filesize($audioFile['tmp_name']);
+        
+        if ($fileSize > self::MAX_AUDIO_SIZE) {
+            return [
+                'success' => false,
+                'error' => 'Audio file too large. Maximum size is 25MB.'
+            ];
+        }
+        
+        if ($fileSize === 0) {
+            return [
+                'success' => false,
+                'error' => 'Audio file is empty'
+            ];
+        }
+        
+        // Determine file extension from MIME type
+        $mimeType = $audioFile['type'] ?? mime_content_type($audioFile['tmp_name']) ?? 'audio/webm';
+        $extension = LlmFileNamingService::getExtensionFromMimeType($mimeType) ?? 'webm';
+        
+        // Generate filename using naming service
+        $filename = LlmFileNamingService::generateAudioFilename(
+            $userId,
+            $sectionId,
+            $conversationId,
+            $extension
+        );
+        
+        // Build paths
+        $relativePath = LlmFileNamingService::buildRelativePath($userId, $filename);
+        $fullPath = LlmFileNamingService::buildFullPath($userId, $filename);
+        
+        // Ensure user directory exists
+        try {
+            LlmFileNamingService::ensureUserDirectoryExists($userId);
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'error' => 'Failed to create upload directory: ' . $e->getMessage()
+            ];
+        }
+        
+        // Save the audio file
+        if (!move_uploaded_file($audioFile['tmp_name'], $fullPath)) {
+            // Try copy as fallback (in case tmp file was already moved)
+            if (!copy($audioFile['tmp_name'], $fullPath)) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to save audio file'
+                ];
+            }
+        }
+        
+        // Set proper file permissions
+        chmod($fullPath, 0644);
+        
+        // Log file info for debugging
+        error_log("Speech-to-text: Saved audio file - Path: {$fullPath}, Size: {$fileSize} bytes");
+        
+        // Transcribe the saved audio file
+        $result = $this->transcribeAudio($fullPath, $model, $language);
+        
+        // Add audio file info to result
+        $result['audio_file'] = [
+            'filename' => $filename,
+            'path' => $relativePath,
+            'url' => LlmFileNamingService::buildFileUrl($relativePath),
+            'size' => $fileSize,
+            'type' => $mimeType,
+            'extension' => $extension,
+            'user_id' => $userId,
+            'section_id' => $sectionId,
+            'conversation_id' => $conversationId
+        ];
+        
+        // Optionally delete the file after transcription
+        if (!$keepFile && file_exists($fullPath)) {
+            @unlink($fullPath);
+            $result['audio_file']['deleted'] = true;
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Transcribe audio data to text from a file path
      * 
      * Sends audio data to the Whisper model via GPUStack API and returns
-     * the transcribed text. No data is stored permanently.
+     * the transcribed text. This is the core transcription method.
      * 
-     * @param string $audioFilePath Path to the uploaded audio file
+     * @param string $audioFilePath Path to the audio file
      * @param string $model Whisper model to use (default: faster-whisper-large-v3)
      * @param string|null $language Language code for transcription (null = auto-detect)
      * @return array Result with 'success', 'text', and optionally 'error'

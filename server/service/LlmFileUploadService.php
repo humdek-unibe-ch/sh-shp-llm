@@ -1,11 +1,23 @@
 <?php
 /**
  * LLM File Upload Service
- * Handles file upload validation, processing, and management for LLM chat
+ * 
+ * Handles file upload validation, processing, and management for LLM chat.
+ * Supports image and document uploads for vision-capable models.
+ * 
+ * File Naming Convention:
+ * =======================
+ * Uses LlmFileNamingService for consistent naming across all file operations.
+ * 
+ * Temporary uploads: {user_id}_{section_id}_{conversation_id}_temp_{timestamp}_{random}.{ext}
+ * Final uploads:     {user_id}_{section_id}_{conversation_id}_{message_id}_{random}.{ext}
+ * 
+ * @see LlmFileNamingService for full naming documentation
  */
 
-// Include utility classes
+require_once __DIR__ . "/globals.php";
 require_once __DIR__ . "/LlmFileUtility.php";
+require_once __DIR__ . "/LlmFileNamingService.php";
 
 class LlmFileUploadService
 {
@@ -18,14 +30,16 @@ class LlmFileUploadService
 
     /**
      * Handle file uploads for messages
-     * Saves files to the upload directory with conversation/message structure
+     * Saves files to the upload directory with user-based structure
      * Includes comprehensive validation for file type, size, MIME type, and duplicates
      *
+     * @param int $userId The user ID
+     * @param int $sectionId The section ID
      * @param int $conversationId The conversation ID
      * @return array|null Array of uploaded file information or null if no files
      * @throws Exception When validation fails
      */
-    public function handleFileUploads($conversationId)
+    public function handleFileUploads($userId, $sectionId, $conversationId)
     {
         // Check for files uploaded via FormData (uploaded_files[])
         if (!empty($_FILES['uploaded_files'])) {
@@ -60,7 +74,7 @@ class LlmFileUploadService
                         'error' => $files['error'][$i],
                         'size' => $files['size'][$i]
                     ];
-                    $processedFile = $this->processUploadedFile($file, $conversationId, $processedHashes);
+                    $processedFile = $this->processUploadedFile($file, $userId, $sectionId, $conversationId, $processedHashes);
                     if ($processedFile) {
                         $uploadedFiles[] = $processedFile;
                         $processedHashes[] = $processedFile['hash'];
@@ -81,7 +95,7 @@ class LlmFileUploadService
         } elseif (isset($files['name']) && !empty($files['name'])) {
             // Single file
             if ($files['error'] === UPLOAD_ERR_OK) {
-                $processedFile = $this->processUploadedFile($files, $conversationId, $processedHashes);
+                $processedFile = $this->processUploadedFile($files, $userId, $sectionId, $conversationId, $processedHashes);
                 if ($processedFile) {
                     $uploadedFiles[] = $processedFile;
                 }
@@ -98,12 +112,14 @@ class LlmFileUploadService
      * Performs comprehensive validation including MIME type checking and duplicate detection
      *
      * @param array $file The file array from $_FILES
+     * @param int $userId The user ID
+     * @param int $sectionId The section ID
      * @param int $conversationId The conversation ID
      * @param array $processedHashes Array of already processed file hashes for duplicate detection
      * @return array|null File information array or null if file should be skipped
      * @throws Exception When validation fails critically
      */
-    private function processUploadedFile($file, $conversationId, $processedHashes = [])
+    private function processUploadedFile($file, $userId, $sectionId, $conversationId, $processedHashes = [])
     {
         // Sanitize filename to prevent path traversal and invalid characters
         $originalName = $this->sanitizeFileName($file['name']);
@@ -152,22 +168,21 @@ class LlmFileUploadService
         // Determine file type category
         $fileCategory = llm_get_file_type_category($extension);
 
-        // Generate secure filename with conversation context
-        $timestamp = time();
-        $random = bin2hex(random_bytes(8));
-        $secureFileName = "temp_{$conversationId}_{$timestamp}_{$random}.{$extension}";
-        $relativePath = LLM_UPLOAD_FOLDER . "/{$conversationId}/{$secureFileName}";
-        // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
-        $fullPath = __DIR__ . "/../../{$relativePath}";
+        // Generate secure filename using the naming service
+        // Initially save as temp file (message ID not yet known)
+        $secureFileName = LlmFileNamingService::generateTempUploadFilename(
+            $userId,
+            $sectionId,
+            $conversationId,
+            $extension
+        );
+        
+        // Build paths using naming service
+        $relativePath = LlmFileNamingService::buildRelativePath($userId, $secureFileName);
+        $fullPath = LlmFileNamingService::buildFullPath($userId, $secureFileName);
 
-        // Create directory with proper permissions if it doesn't exist
-        $directory = dirname($fullPath);
-
-        if (!is_dir($directory)) {
-            if (!mkdir($directory, 0755, true)) {
-                throw new Exception('Failed to create upload directory');
-            }
-        }
+        // Ensure user directory exists
+        LlmFileNamingService::ensureUserDirectoryExists($userId);
 
         // Move uploaded file securely
         if (!move_uploaded_file($file['tmp_name'], $fullPath)) {
@@ -187,43 +202,63 @@ class LlmFileUploadService
             'extension' => $extension,
             'category' => $fileCategory,
             'hash' => $fileHash,
-            'url' => "?file_path={$relativePath}",
-            'is_image' => $fileCategory === LLM_FILE_TYPE_IMAGE
+            'url' => LlmFileNamingService::buildFileUrl($relativePath),
+            'is_image' => $fileCategory === LLM_FILE_TYPE_IMAGE,
+            // Store context for later filename update
+            'user_id' => $userId,
+            'section_id' => $sectionId,
+            'conversation_id' => $conversationId
         ];
     }
 
     /**
      * Update file names to include message ID after message is saved
+     * Renames temp files to final format with message ID
      *
+     * @param int $userId The user ID
+     * @param int $sectionId The section ID  
      * @param int $conversationId The conversation ID
      * @param int $messageId The message ID
      * @param array $uploadedFiles Array of uploaded file information
+     * @return array Updated file information array
      */
-    public function updateFileNamesWithMessageId($conversationId, $messageId, $uploadedFiles)
+    public function updateFileNamesWithMessageId($userId, $sectionId, $conversationId, $messageId, $uploadedFiles)
     {
+        $updatedFiles = [];
+        
         foreach ($uploadedFiles as $file) {
-            // Extract current filename parts
-            // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
-            $currentPath = __DIR__ . "/../../{$file['path']}";
+            $currentPath = LlmFileNamingService::buildFullPath($userId, $file['filename']);
             $extension = pathinfo($file['filename'], PATHINFO_EXTENSION);
 
-            // Create new filename with message ID
-            $newFileName = "conv_{$conversationId}_msg_{$messageId}_" . bin2hex(random_bytes(8)) . ".{$extension}";
-            $newRelativePath = LLM_UPLOAD_FOLDER . "/{$conversationId}/{$newFileName}";
-            $newFullPath = __DIR__ . "/../../{$newRelativePath}";
+            // Generate new filename with message ID
+            $newFileName = LlmFileNamingService::generateUploadFilename(
+                $userId,
+                $sectionId,
+                $conversationId,
+                $messageId,
+                $extension
+            );
+            
+            $newRelativePath = LlmFileNamingService::buildRelativePath($userId, $newFileName);
+            $newFullPath = LlmFileNamingService::buildFullPath($userId, $newFileName);
 
             // Rename the file
             if (file_exists($currentPath) && rename($currentPath, $newFullPath)) {
                 // Update the file info with new path
                 $file['filename'] = $newFileName;
                 $file['path'] = $newRelativePath;
-                $file['url'] = "?file_path={$newRelativePath}";
+                $file['url'] = LlmFileNamingService::buildFileUrl($newRelativePath);
+                $file['message_id'] = $messageId;
             }
+            
+            $updatedFiles[] = $file;
         }
 
         // Update the message in database with corrected file attachments
-        $attachmentsJson = json_encode($uploadedFiles);
+        $attachmentsJson = json_encode($updatedFiles);
         $this->llm_service->updateMessage($messageId, ['attachments' => $attachmentsJson]);
+        
+        return $updatedFiles;
     }
 
     /**

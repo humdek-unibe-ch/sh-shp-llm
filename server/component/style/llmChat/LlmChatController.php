@@ -348,14 +348,14 @@ class LlmChatController extends BaseController
             }
 
             // Handle file uploads
-            $uploaded_files = $this->file_upload_service->handleFileUploads($conversation_id);
+            $uploaded_files = $this->file_upload_service->handleFileUploads($user_id, $section_id, $conversation_id);
 
             // Save user message
             $message_id = $this->request_service->addUserMessage($conversation_id, $message, $uploaded_files);
 
             // Update file names with message ID
             if ($uploaded_files && $message_id) {
-                $this->file_upload_service->updateFileNamesWithMessageId($conversation_id, $message_id, $uploaded_files);
+                $this->file_upload_service->updateFileNamesWithMessageId($user_id, $section_id, $conversation_id, $message_id, $uploaded_files);
             }
 
             // Update rate limiting
@@ -1004,22 +1004,26 @@ class LlmChatController extends BaseController
         }
         
         try {
+            // Get context information for file naming
+            $section_id = $this->model->getSectionId();
+            $conversation_id = $_POST['conversation_id'] ?? null;
+            
             // Get user's language from session for better transcription accuracy
             $language = $this->speech_service->getUserLanguage();
             
-            // Transcribe the audio
-            $result = $this->speech_service->transcribeAudio(
-                $audioFile['tmp_name'],
+            // Save audio file and transcribe
+            // Audio files are saved with naming: {user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}.{ext}
+            $result = $this->speech_service->saveAndTranscribeAudio(
+                $audioFile,
+                $user_id,
+                $section_id,
+                $conversation_id,
                 $speechModel,
-                $language
+                $language,
+                true  // Keep the audio file after transcription
             );
             
-            // Clean up temporary file (PHP does this automatically, but be explicit)
-            if (file_exists($audioFile['tmp_name'])) {
-                @unlink($audioFile['tmp_name']);
-            }
-            
-            // Return the result
+            // Return the result (includes audio_file info)
             $this->sendJsonResponse($result);
             
         } catch (Exception $e) {
