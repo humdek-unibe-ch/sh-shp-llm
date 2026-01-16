@@ -222,7 +222,7 @@ class LlmApiFormatterService
         if ($fileSize > self::MAX_IMAGE_FILE_SIZE) {
             $sizeMb = round($fileSize / (1024 * 1024), 2);
             $maxMb = round(self::MAX_IMAGE_FILE_SIZE / (1024 * 1024), 1);
-            error_log("LLM: Image file too large: {$originalName} ({$sizeMb}MB > {$maxMb}MB limit)");
+            $this->logWarning("Image file too large: {$originalName} ({$sizeMb}MB > {$maxMb}MB limit)");
             return [
                 'type' => 'text',
                 'text' => "\n[Image file too large: {$originalName} ({$sizeMb}MB). Maximum file size is {$maxMb}MB.]\n"
@@ -247,7 +247,7 @@ class LlmApiFormatterService
         $originalSizeKb = round($fileSize / 1024, 1);
         $finalSizeKb = round(strlen($imageData) / 1024, 1);
         $reduction = round((1 - $finalSizeKb / $originalSizeKb) * 100, 1);
-        error_log("LLM: Image optimized for API: {$originalName} ({$originalSizeKb}KB -> {$finalSizeKb}KB, -{$reduction}%)");
+        $this->logDebug("Image optimized for API: {$originalName} ({$originalSizeKb}KB -> {$finalSizeKb}KB, -{$reduction}%)");
 
         return [
             'type' => 'image_url',
@@ -274,7 +274,7 @@ class LlmApiFormatterService
         // Check if GD is available
         if (!function_exists('imagecreatefromstring')) {
             // GD not available, return original file with warning
-            error_log("LLM WARNING: GD library not available, using original image (may cause token overflow): {$originalName}");
+            $this->logWarning("GD library not available, using original image (may cause token overflow): {$originalName}");
             return file_get_contents($fullPath);
         }
 
@@ -287,7 +287,7 @@ class LlmApiFormatterService
         $imageInfo = getimagesizefromstring($imageData);
         if ($imageInfo === false) {
             // Not a valid image
-            error_log("LLM: Invalid image data: {$originalName}");
+            $this->logError("Invalid image data: {$originalName}");
             return false;
         }
 
@@ -307,7 +307,7 @@ class LlmApiFormatterService
         // Create image resource from string
         $srcImage = @imagecreatefromstring($imageData);
         if ($srcImage === false) {
-            error_log("LLM: Could not create image from data: {$originalName}");
+            $this->logError("Could not create image from data: {$originalName}");
             return false;
         }
 
@@ -356,7 +356,7 @@ class LlmApiFormatterService
 
         // If still too large after quality reduction, resize dimensions further
         if ($resizedData && strlen($resizedData) > self::MAX_OUTPUT_SIZE) {
-            error_log("LLM: Image still too large after quality reduction, reducing dimensions further: {$originalName}");
+            $this->logWarning("Image still too large after quality reduction, reducing dimensions further: {$originalName}");
             
             // Reduce dimensions by 50%
             $smallerWidth = (int)($newWidth * 0.5);

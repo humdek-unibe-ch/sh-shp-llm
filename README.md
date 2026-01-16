@@ -19,6 +19,7 @@ A comprehensive LLM integration plugin for SelfHelp CMS, enabling real-time AI c
 - 📊 **Token Tracking** - Usage monitoring and logging
 - 🔍 **Context Debugging** - Track context sent with each message
 - ✅ **Schema Validation & Retry** - Guaranteed structured responses with automatic error correction
+- 🐛 **Message Validation Tracking** - Debug all LLM attempts with payload inspection
 
 ## Quick Start
 
@@ -142,6 +143,7 @@ sh-shp-llm/
 | [Provider Abstraction](doc/provider-abstraction.md) | Multi-provider API support system |
 | [Provider Architecture Diagrams](doc/provider-architecture-diagram.md) | Visual architecture and flow diagrams |
 | [Conversation Context](doc/conversation-context.md) | Context module configuration guide |
+| [Message Validation Tracking](doc/message-validation-tracking.md) | Debug payload tracking and validation status system |
 | [API Reference](doc/api-reference.md) | Controller actions and endpoints |
 | [Configuration](doc/configuration.md) | Complete configuration reference |
 | [File Naming Conventions](doc/file-naming-conventions.md) | File upload and audio recording naming system |
