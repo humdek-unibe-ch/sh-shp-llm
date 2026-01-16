@@ -21,20 +21,23 @@ When a user uploads files with a message, they are initially saved as temporary 
 
 **Pattern:**
 ```
-{user_id}_{section_id}_{conversation_id}_{message_id}_{random}.{ext}
+{user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}
 ```
 
 **Example:**
 ```
-42_15_123_456_a1b2c3d4e5f6g7h8.png
+42_section_15_conv_123_msg_456_a1b2c3d4e5f6g7h8.png
 ```
 
 **Components:**
 | Component | Description | Example |
 |-----------|-------------|---------|
 | `user_id` | The user's ID in the system | `42` |
+| `section_` | Literal prefix for section ID | `section_` |
 | `section_id` | The page section ID where uploaded | `15` |
+| `conv_` | Literal prefix for conversation ID | `conv_` |
 | `conversation_id` | The conversation ID | `123` |
+| `msg_` | Literal prefix for message ID | `msg_` |
 | `message_id` | The message ID this file is attached to | `456` |
 | `random` | 16-character hex random string | `a1b2c3d4e5f6g7h8` |
 | `ext` | File extension (lowercase) | `png` |
@@ -45,19 +48,21 @@ Before a message is saved, uploaded files use a temporary naming pattern.
 
 **Pattern:**
 ```
-{user_id}_{section_id}_{conversation_id}_temp_{timestamp}_{random}.{ext}
+{user_id}_section_{section_id}_conv_{conversation_id}_temp_{timestamp}_{random}.{ext}
 ```
 
 **Example:**
 ```
-42_15_123_temp_1765876608_a1b2c3d4e5f6.png
+42_section_15_conv_123_temp_1765876608_a1b2c3d4e5f6.png
 ```
 
 **Components:**
 | Component | Description | Example |
 |-----------|-------------|---------|
 | `user_id` | The user's ID | `42` |
+| `section_` | Literal prefix for section ID | `section_` |
 | `section_id` | The page section ID | `15` |
+| `conv_` | Literal prefix for conversation ID | `conv_` |
 | `conversation_id` | The conversation ID | `123` |
 | `temp` | Literal string indicating temporary file | `temp` |
 | `timestamp` | Unix timestamp when uploaded | `1765876608` |
@@ -70,19 +75,21 @@ Audio recordings from the speech-to-text feature are saved separately. They don'
 
 **Pattern:**
 ```
-{user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}.{ext}
+{user_id}_section_{section_id}_conv_{conversation_id}_audio_{timestamp}_{random}.{ext}
 ```
 
 **Example:**
 ```
-42_15_123_audio_1765876608_a1b2c3d4e5f6.webm
+42_section_15_conv_123_audio_1765876608_a1b2c3d4e5f6.webm
 ```
 
 **Components:**
 | Component | Description | Example |
 |-----------|-------------|---------|
 | `user_id` | The user's ID | `42` |
+| `section_` | Literal prefix for section ID | `section_` |
 | `section_id` | The page section ID | `15` |
+| `conv_` | Literal prefix for conversation ID | `conv_` |
 | `conversation_id` | The conversation ID (0 if none) | `123` |
 | `audio` | Literal string indicating audio file | `audio` |
 | `timestamp` | Unix timestamp when recorded | `1765876608` |
@@ -96,9 +103,9 @@ Files are organized by user ID to keep each user's files together:
 ```
 upload/
 ├── 42/                                          # User ID 42's files
-│   ├── 42_15_123_456_a1b2c3d4e5f6g7h8.png      # Finalized upload
-│   ├── 42_15_123_457_b2c3d4e5f6g7h8i9.jpg      # Another upload
-│   └── 42_15_123_audio_1765876608_c3d4e5f6.webm # Audio recording
+│   ├── 42_section_15_conv_123_msg_456_a1b2c3d4e5f6g7h8.png      # Finalized upload
+│   ├── 42_section_15_conv_123_msg_457_b2c3d4e5f6g7h8i9.jpg      # Another upload
+│   └── 42_section_15_conv_123_audio_1765876608_c3d4e5f6.webm     # Audio recording
 ├── 43/                                          # User ID 43's files
 │   └── ...
 └── 44/                                          # User ID 44's files
@@ -131,7 +138,7 @@ $filename = LlmFileNamingService::generateTempUploadFilename(
     $conversationId, // 123
     'png'
 );
-// Result: "42_15_123_temp_1765876608_a1b2c3d4e5f6.png"
+// Result: "42_section_15_conv_123_temp_1765876608_a1b2c3d4e5f6.png"
 
 // Generate final upload filename
 $filename = LlmFileNamingService::generateUploadFilename(
@@ -141,7 +148,7 @@ $filename = LlmFileNamingService::generateUploadFilename(
     $messageId,   // 456
     'png'
 );
-// Result: "42_15_123_456_a1b2c3d4e5f6g7h8.png"
+// Result: "42_section_15_conv_123_msg_456_a1b2c3d4e5f6g7h8.png"
 
 // Generate audio filename
 $filename = LlmFileNamingService::generateAudioFilename(
@@ -150,10 +157,10 @@ $filename = LlmFileNamingService::generateAudioFilename(
     $conversationId, // 123
     'webm'
 );
-// Result: "42_15_123_audio_1765876608_a1b2c3d4e5f6.webm"
+// Result: "42_section_15_conv_123_audio_1765876608_a1b2c3d4e5f6.webm"
 
 // Parse a filename to extract components
-$parsed = LlmFileNamingService::parseFilename('42_15_123_456_a1b2c3d4e5f6g7h8.png');
+$parsed = LlmFileNamingService::parseFilename('42_section_15_conv_123_msg_456_a1b2c3d4e5f6g7h8.png');
 // Result:
 // [
 //     'user_id' => 42,
@@ -180,7 +187,9 @@ $parsed = LlmFileNamingService::parseFilename('42_15_123_456_a1b2c3d4e5f6g7h8.pn
 ## Migration Notes
 
 This naming convention was introduced to replace the previous format:
-- Old: `temp_{conversation_id}_{timestamp}_{random}.{ext}` or `conv_{conversation_id}_msg_{message_id}_{random}.{ext}`
-- New: Includes user_id and section_id for better traceability
+- Old: `{user_id}_{section_id}_{conversation_id}_{message_id}_{random}.{ext}`
+- New: `{user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}`
 
-Existing files in the old format will continue to work but new uploads will use the new naming convention.
+The new format includes descriptive prefixes (`section_`, `conv_`, `msg_`) for better readability and easier file searching. The prefixes make it immediately clear what each number represents when browsing files.
+
+Existing files in the old format will continue to work but new uploads will use the new naming convention with prefixes.

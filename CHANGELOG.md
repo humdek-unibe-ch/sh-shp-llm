@@ -4,21 +4,27 @@
 
 ### Added
 
-#### File Naming Convention Redesign (January 16, 2026)
-- **Contextual File Naming**: All uploaded files now include user ID, section ID, conversation ID, and message ID for better traceability
+#### File Naming Convention Redesign with Prefixes (January 16, 2026)
+- **Contextual File Naming with Prefixes**: All uploaded files now include descriptive prefixes (`section_`, `conv_`, `msg_`) for better readability and searchability
 - **User-Based Directory Structure**: Files organized in user-specific directories (`upload/{user_id}/`) for better isolation and management
 - **Audio File Storage**: Speech-to-text recordings are now permanently saved with proper naming conventions
 - **Modular Naming Service**: Centralized `LlmFileNamingService.php` handles all file naming logic consistently across the application
 
-**New File Naming Patterns:**
-- **Finalized uploads**: `{user_id}_{section_id}_{conversation_id}_{message_id}_{random}.{ext}`
-- **Temporary uploads**: `{user_id}_{section_id}_{conversation_id}_temp_{timestamp}_{random}.{ext}`
-- **Audio recordings**: `{user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}.{ext}`
+**New File Naming Patterns with Prefixes:**
+- **Finalized uploads**: `{user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}`
+- **Temporary uploads**: `{user_id}_section_{section_id}_conv_{conversation_id}_temp_{timestamp}_{random}.{ext}`
+- **Audio recordings**: `{user_id}_section_{section_id}_conv_{conversation_id}_audio_{timestamp}_{random}.{ext}`
 
-**Example Files:**
-- `42_15_123_456_a1b2c3d4e5f6g7h8.png` (finalized image upload)
-- `42_15_123_temp_1765876608_a1b2c3d4.png` (temporary upload before message ID)
-- `42_15_123_audio_1765876608_a1b2c3d4.webm` (audio recording)
+**Example Files with Clear Prefixes:**
+- `42_section_15_conv_123_msg_456_a1b2c3d4e5f6g7h8.png` (finalized image upload)
+- `42_section_15_conv_123_temp_1765876608_a1b2c3d4.png` (temporary upload before message ID)
+- `42_section_15_conv_123_audio_1765876608_a1b2c3d4.webm` (audio recording)
+
+**Benefits of Prefixes:**
+- **Easy File Searching**: Instantly identify file types and components by prefix
+- **Human-Readable**: Clear separation between different ID types
+- **Better Organization**: Visual distinction between user, section, conversation, and message IDs
+- **Search-Friendly**: Can easily search for files by conversation (`conv_123`) or section (`section_15`)
 
 **Security & Organization Benefits:**
 - **User Isolation**: Files stored in user-specific directories for better access control

@@ -59,9 +59,9 @@ class LlmFileNamingService
 
     /**
      * Generate filename for a temporary upload (before message ID is known)
-     * 
-     * Format: {user_id}_{section_id}_{conversation_id}_temp_{timestamp}_{random}.{ext}
-     * 
+     *
+     * Format: {user_id}_section_{section_id}_conv_{conversation_id}_temp_{timestamp}_{random}.{ext}
+     *
      * @param int $userId User ID
      * @param int $sectionId Section ID where the upload originated
      * @param int $conversationId Conversation ID
@@ -73,9 +73,9 @@ class LlmFileNamingService
         $timestamp = time();
         $random = self::generateRandomSuffix();
         $extension = strtolower(trim($extension, '.'));
-        
+
         return sprintf(
-            '%d_%d_%d_temp_%d_%s.%s',
+            '%d_section_%d_conv_%d_temp_%d_%s.%s',
             (int)$userId,
             (int)$sectionId,
             (int)$conversationId,
@@ -87,9 +87,9 @@ class LlmFileNamingService
 
     /**
      * Generate filename for a finalized upload (with message ID)
-     * 
-     * Format: {user_id}_{section_id}_{conversation_id}_{message_id}_{random}.{ext}
-     * 
+     *
+     * Format: {user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}
+     *
      * @param int $userId User ID
      * @param int $sectionId Section ID where the upload originated
      * @param int $conversationId Conversation ID
@@ -101,9 +101,9 @@ class LlmFileNamingService
     {
         $random = self::generateRandomSuffix();
         $extension = strtolower(trim($extension, '.'));
-        
+
         return sprintf(
-            '%d_%d_%d_%d_%s.%s',
+            '%d_section_%d_conv_%d_msg_%d_%s.%s',
             (int)$userId,
             (int)$sectionId,
             (int)$conversationId,
@@ -115,12 +115,12 @@ class LlmFileNamingService
 
     /**
      * Generate filename for an audio recording (speech-to-text)
-     * 
-     * Format: {user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}.{ext}
-     * 
+     *
+     * Format: {user_id}_section_{section_id}_conv_{conversation_id}_audio_{timestamp}_{random}.{ext}
+     *
      * Audio files don't have a message ID because they are recorded before
      * the message is sent. The timestamp helps with chronological ordering.
-     * 
+     *
      * @param int $userId User ID
      * @param int $sectionId Section ID where the recording originated
      * @param int|null $conversationId Conversation ID (null if no active conversation)
@@ -132,12 +132,12 @@ class LlmFileNamingService
         $timestamp = time();
         $random = self::generateRandomSuffix();
         $extension = strtolower(trim($extension, '.'));
-        
+
         // Use 0 for conversation ID if not yet created
         $convId = $conversationId ?? 0;
-        
+
         return sprintf(
-            '%d_%d_%d_audio_%d_%s.%s',
+            '%d_section_%d_conv_%d_audio_%d_%s.%s',
             (int)$userId,
             (int)$sectionId,
             (int)$convId,
@@ -247,10 +247,10 @@ class LlmFileNamingService
         // Remove extension
         $extension = pathinfo($filename, PATHINFO_EXTENSION);
         $basename = pathinfo($filename, PATHINFO_FILENAME);
-        
-        // Try to match finalized upload: {user_id}_{section_id}_{conversation_id}_{message_id}_{random}
-        // Pattern: digits_digits_digits_digits_hex
-        if (preg_match('/^(\d+)_(\d+)_(\d+)_(\d+)_([a-f0-9]+)$/i', $basename, $matches)) {
+
+        // Try to match finalized upload: {user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}
+        // Pattern: digits_section_digits_conv_digits_msg_digits_hex
+        if (preg_match('/^(\d+)_section_(\d+)_conv_(\d+)_msg_(\d+)_([a-f0-9]+)$/i', $basename, $matches)) {
             return [
                 'user_id' => (int)$matches[1],
                 'section_id' => (int)$matches[2],
@@ -262,9 +262,9 @@ class LlmFileNamingService
                 'extension' => $extension
             ];
         }
-        
-        // Try to match temp upload: {user_id}_{section_id}_{conversation_id}_temp_{timestamp}_{random}
-        if (preg_match('/^(\d+)_(\d+)_(\d+)_temp_(\d+)_([a-f0-9]+)$/i', $basename, $matches)) {
+
+        // Try to match temp upload: {user_id}_section_{section_id}_conv_{conversation_id}_temp_{timestamp}_{random}
+        if (preg_match('/^(\d+)_section_(\d+)_conv_(\d+)_temp_(\d+)_([a-f0-9]+)$/i', $basename, $matches)) {
             return [
                 'user_id' => (int)$matches[1],
                 'section_id' => (int)$matches[2],
@@ -276,9 +276,9 @@ class LlmFileNamingService
                 'extension' => $extension
             ];
         }
-        
-        // Try to match audio: {user_id}_{section_id}_{conversation_id}_audio_{timestamp}_{random}
-        if (preg_match('/^(\d+)_(\d+)_(\d+)_audio_(\d+)_([a-f0-9]+)$/i', $basename, $matches)) {
+
+        // Try to match audio: {user_id}_section_{section_id}_conv_{conversation_id}_audio_{timestamp}_{random}
+        if (preg_match('/^(\d+)_section_(\d+)_conv_(\d+)_audio_(\d+)_([a-f0-9]+)$/i', $basename, $matches)) {
             return [
                 'user_id' => (int)$matches[1],
                 'section_id' => (int)$matches[2],
@@ -290,7 +290,7 @@ class LlmFileNamingService
                 'extension' => $extension
             ];
         }
-        
+
         return null;
     }
 
