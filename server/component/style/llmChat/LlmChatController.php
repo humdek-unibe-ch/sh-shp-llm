@@ -162,7 +162,7 @@ class LlmChatController extends BaseController
         // Context services
         $floating_mode_service = new LlmFloatingModeService();
         $strict_conversation_service = new LlmStrictConversationService($this->llm_service);
-        $api_formatter_service = new LlmApiFormatterService();
+        $api_formatter_service = new LlmApiFormatterService($services);
         
         
         // Progress tracking service - created before context service so it can be injected
