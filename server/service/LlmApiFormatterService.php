@@ -6,18 +6,21 @@
 
 // Include utility classes
 require_once __DIR__ . "/LlmFileUtility.php";
+require_once __DIR__ . "/base/BaseLlmService.php";
 
-class LlmApiFormatterService
+class LlmApiFormatterService extends BaseLlmService
 {
     private $model;
 
     /**
      * Constructor
-     * 
+     *
+     * @param object $services The services container
      * @param string|null $model The model to use for determining capabilities
      */
-    public function __construct($model = null)
+    public function __construct($services, $model = null)
     {
+        parent::__construct($services);
         $this->model = $model;
     }
 
