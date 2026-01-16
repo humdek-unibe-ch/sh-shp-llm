@@ -154,6 +154,10 @@ export interface Message {
   model?: string;
   /** JSON snapshot of context sent with this message for debugging/audit */
   sent_context?: string;
+  /** Whether the message passed JSON schema validation (1=valid, 0=invalid/retry attempt) */
+  is_validated?: number | boolean | string;
+  /** JSON payload sent to LLM API for debugging (stored on assistant messages) */
+  request_payload?: string;
 }
 
 /**

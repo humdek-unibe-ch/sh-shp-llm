@@ -650,7 +650,14 @@ RETRY;
      *
      * @param callable $callable Function that makes the LLM API call
      * @param array $api_messages Messages to send to LLM
-     * @return array ['response' => parsed_response, 'attempts' => int, 'valid' => bool, 'raw_response' => response]
+     * @return array [
+     *   'response' => parsed_response,
+     *   'attempts' => int,
+     *   'valid' => bool,
+     *   'raw_response' => response,
+     *   'request_payload' => array (the full API payload including model, temperature, etc.),
+     *   'all_attempts' => array (all attempts with their full payloads and responses for debugging)
+     * ]
      */
     public function callLlmWithSchemaValidation($callable, $api_messages)
     {
@@ -658,11 +665,28 @@ RETRY;
         $last_response = null;
         $last_parsed = null;
         $last_error = null;
+        $last_full_payload = null;
+        $all_attempts = []; // Track all attempts for debugging/admin view
+        $current_messages = $api_messages; // Keep track of current messages (modified with retry instructions)
 
         for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
+            $attempt_data = [
+                'attempt' => $attempt,
+                'request_payload' => null, // Will be set to full payload from API response
+                'response' => null,
+                'parsed' => null,
+                'valid' => false,
+                'error' => null
+            ];
+
             try {
                 // Make the LLM API call
-                $response = $callable($api_messages);
+                $response = $callable($current_messages);
+
+                // Extract the full request payload from the response (includes model, temperature, etc.)
+                $full_payload = $response['request_payload'] ?? null;
+                $last_full_payload = $full_payload;
+                $attempt_data['request_payload'] = $full_payload;
 
                 if (!isset($response['content'])) {
                     throw new Exception('Invalid response from LLM API - missing content');
@@ -670,10 +694,16 @@ RETRY;
 
                 $assistant_message = $response['content'];
                 $last_response = $response;
+                $attempt_data['response'] = $response;
 
                 // Parse and validate the response
                 $parsed = $this->parseResponse($assistant_message);
                 $last_parsed = $parsed;
+                $attempt_data['parsed'] = $parsed;
+                $attempt_data['valid'] = $parsed['valid'];
+
+                // Record this attempt
+                $all_attempts[] = $attempt_data;
 
                 if ($parsed['valid']) {
                     // Response is valid, return it
@@ -681,7 +711,9 @@ RETRY;
                         'response' => $parsed,
                         'attempts' => $attempt,
                         'valid' => true,
-                        'raw_response' => $response
+                        'raw_response' => $response,
+                        'request_payload' => $full_payload,
+                        'all_attempts' => $all_attempts
                     ];
                 }
 
@@ -703,7 +735,7 @@ RETRY;
                 ];
 
                 // Prepend retry instruction to messages
-                array_unshift($api_messages, $retry_instruction);
+                array_unshift($current_messages, $retry_instruction);
 
                 // Small delay before retry to avoid overwhelming the API
                 usleep(500000); // 0.5 seconds
@@ -712,6 +744,16 @@ RETRY;
                 $error_msg = 'LLM API call failed on attempt ' . $attempt . ': ' . $e->getMessage();
                 error_log($error_msg);
                 $last_error = $e;
+                $attempt_data['error'] = $e->getMessage();
+                
+                // Try to get the payload from the exception if available (for normalization failures)
+                if (method_exists($e, 'getRequestPayload')) {
+                    $attempt_data['request_payload'] = $e->getRequestPayload();
+                    $last_full_payload = $attempt_data['request_payload'];
+                }
+                
+                // Record this attempt even if it failed
+                $all_attempts[] = $attempt_data;
 
                 if ($attempt >= $max_attempts) {
                     break;
@@ -733,7 +775,9 @@ RETRY;
                 'attempts' => $max_attempts,
                 'valid' => false,
                 'raw_response' => $last_response,
-                'validation_errors' => $last_parsed['errors'] ?? []
+                'validation_errors' => $last_parsed['errors'] ?? [],
+                'request_payload' => $last_full_payload,
+                'all_attempts' => $all_attempts
             ];
         }
 
@@ -745,7 +789,9 @@ RETRY;
             'attempts' => $max_attempts,
             'valid' => false,
             'raw_response' => null,
-            'error' => $error_message
+            'error' => $error_message,
+            'request_payload' => $last_full_payload,
+            'all_attempts' => $all_attempts
         ];
     }
 

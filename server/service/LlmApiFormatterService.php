@@ -164,7 +164,42 @@ class LlmApiFormatterService
     }
 
     /**
+     * Maximum image dimension (width or height) in pixels
+     * Images larger than this will be resized to fit within these bounds
+     * Vision models work well with images up to 768-1024px
+     */
+    const MAX_IMAGE_DIMENSION = 768;
+
+    /**
+     * Maximum image file size in bytes (10MB) - original file limit
+     * Files larger than this are rejected outright
+     */
+    const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
+
+    /**
+     * Target maximum base64 size after resizing (~300KB binary = ~400KB base64)
+     * This keeps images under 1MB total and reduces token count
+     */
+    const TARGET_BASE64_SIZE = 400000;
+
+    /**
+     * Maximum allowed output size in bytes (~750KB = ~1MB base64)
+     * Images will be progressively compressed to fit under this limit
+     */
+    const MAX_OUTPUT_SIZE = 750000;
+
+    /**
+     * JPEG quality for resized images (0-100)
+     * 70% provides good balance of quality and size
+     */
+    const RESIZE_JPEG_QUALITY = 70;
+
+    /**
      * Encode image file as base64 data URL for vision API
+     * 
+     * ALWAYS resizes and optimizes images for best LLM performance.
+     * Vision models work well with smaller images and this reduces token count.
+     * Uses GD library for image processing.
      *
      * @param string $fullPath Full path to image file
      * @param array $attachment Attachment info
@@ -172,21 +207,181 @@ class LlmApiFormatterService
      */
     private function encodeImageForApi($fullPath, $attachment)
     {
-        $imageData = file_get_contents($fullPath);
-        if ($imageData === false) {
-            return null;
+        $originalName = $attachment['original_name'] ?? basename($fullPath);
+        
+        // Check file size before reading
+        $fileSize = filesize($fullPath);
+        if ($fileSize === false) {
+            return [
+                'type' => 'text',
+                'text' => "\n[Could not read image: {$originalName}]\n"
+            ];
+        }
+
+        // Reject extremely large files
+        if ($fileSize > self::MAX_IMAGE_FILE_SIZE) {
+            $sizeMb = round($fileSize / (1024 * 1024), 2);
+            $maxMb = round(self::MAX_IMAGE_FILE_SIZE / (1024 * 1024), 1);
+            error_log("LLM: Image file too large: {$originalName} ({$sizeMb}MB > {$maxMb}MB limit)");
+            return [
+                'type' => 'text',
+                'text' => "\n[Image file too large: {$originalName} ({$sizeMb}MB). Maximum file size is {$maxMb}MB.]\n"
+            ];
         }
 
         $mimeType = $attachment['type'] ?? LlmFileUtility::detectMimeType($fullPath) ?? 'image/jpeg';
+        
+        // ALWAYS optimize images for LLM - smaller is better for vision models
+        $imageData = $this->getOptimizedImageData($fullPath, $mimeType, $originalName);
+        
+        if ($imageData === false || $imageData === null) {
+            return [
+                'type' => 'text',
+                'text' => "\n[Could not process image: {$originalName}]\n"
+            ];
+        }
+
         $base64Data = base64_encode($imageData);
+        
+        // Log optimization results
+        $originalSizeKb = round($fileSize / 1024, 1);
+        $finalSizeKb = round(strlen($imageData) / 1024, 1);
+        $reduction = round((1 - $finalSizeKb / $originalSizeKb) * 100, 1);
+        error_log("LLM: Image optimized for API: {$originalName} ({$originalSizeKb}KB -> {$finalSizeKb}KB, -{$reduction}%)");
 
         return [
             'type' => 'image_url',
             'image_url' => [
-                'url' => "data:{$mimeType};base64,{$base64Data}"
+                'url' => "data:image/jpeg;base64,{$base64Data}"
             ]
         ];
     }
+
+    /**
+     * Get optimized image data for API
+     * 
+     * ALWAYS resizes and optimizes images for vision models.
+     * Vision models work well with smaller images (768px max dimension).
+     * Ensures output is under 1MB for optimal token usage.
+     *
+     * @param string $fullPath Full path to image file
+     * @param string $mimeType Original MIME type
+     * @param string $originalName Original filename for logging
+     * @return string|false Optimized image data or false on failure
+     */
+    private function getOptimizedImageData($fullPath, $mimeType, $originalName)
+    {
+        // Check if GD is available
+        if (!function_exists('imagecreatefromstring')) {
+            // GD not available, return original file with warning
+            error_log("LLM WARNING: GD library not available, using original image (may cause token overflow): {$originalName}");
+            return file_get_contents($fullPath);
+        }
+
+        $imageData = file_get_contents($fullPath);
+        if ($imageData === false) {
+            return false;
+        }
+
+        // Get image dimensions
+        $imageInfo = getimagesizefromstring($imageData);
+        if ($imageInfo === false) {
+            // Not a valid image
+            error_log("LLM: Invalid image data: {$originalName}");
+            return false;
+        }
+
+        $width = $imageInfo[0];
+        $height = $imageInfo[1];
+        
+        // ALWAYS resize to max dimension for optimal LLM processing
+        $newWidth = $width;
+        $newHeight = $height;
+        
+        if ($width > self::MAX_IMAGE_DIMENSION || $height > self::MAX_IMAGE_DIMENSION) {
+            $ratio = min(self::MAX_IMAGE_DIMENSION / $width, self::MAX_IMAGE_DIMENSION / $height);
+            $newWidth = (int)($width * $ratio);
+            $newHeight = (int)($height * $ratio);
+        }
+
+        // Create image resource from string
+        $srcImage = @imagecreatefromstring($imageData);
+        if ($srcImage === false) {
+            error_log("LLM: Could not create image from data: {$originalName}");
+            return false;
+        }
+
+        // Create destination image
+        $dstImage = imagecreatetruecolor($newWidth, $newHeight);
+        if ($dstImage === false) {
+            imagedestroy($srcImage);
+            return false;
+        }
+
+        // Fill with white background (removes transparency, reduces size)
+        $white = imagecolorallocate($dstImage, 255, 255, 255);
+        imagefilledrectangle($dstImage, 0, 0, $newWidth, $newHeight, $white);
+
+        // Resize with high quality resampling
+        $success = imagecopyresampled(
+            $dstImage, $srcImage,
+            0, 0, 0, 0,
+            $newWidth, $newHeight, $width, $height
+        );
+
+        imagedestroy($srcImage);
+
+        if (!$success) {
+            imagedestroy($dstImage);
+            return false;
+        }
+
+        // Progressive quality reduction to ensure output is under MAX_OUTPUT_SIZE
+        $quality = self::RESIZE_JPEG_QUALITY;
+        $resizedData = null;
+        
+        while ($quality >= 30) {
+            ob_start();
+            imagejpeg($dstImage, null, $quality);
+            $resizedData = ob_get_clean();
+            
+            if (strlen($resizedData) <= self::MAX_OUTPUT_SIZE) {
+                break; // Size is acceptable
+            }
+            
+            $quality -= 10; // Try lower quality
+        }
+
+        imagedestroy($dstImage);
+
+        // If still too large after quality reduction, resize dimensions further
+        if ($resizedData && strlen($resizedData) > self::MAX_OUTPUT_SIZE) {
+            error_log("LLM: Image still too large after quality reduction, reducing dimensions further: {$originalName}");
+            
+            // Reduce dimensions by 50%
+            $smallerWidth = (int)($newWidth * 0.5);
+            $smallerHeight = (int)($newHeight * 0.5);
+            
+            $srcImage = @imagecreatefromstring($imageData);
+            if ($srcImage !== false) {
+                $dstImage = imagecreatetruecolor($smallerWidth, $smallerHeight);
+                if ($dstImage !== false) {
+                    $white = imagecolorallocate($dstImage, 255, 255, 255);
+                    imagefilledrectangle($dstImage, 0, 0, $smallerWidth, $smallerHeight, $white);
+                    imagecopyresampled($dstImage, $srcImage, 0, 0, 0, 0, $smallerWidth, $smallerHeight, $width, $height);
+                    imagedestroy($srcImage);
+                    
+                    ob_start();
+                    imagejpeg($dstImage, null, 60);
+                    $resizedData = ob_get_clean();
+                    imagedestroy($dstImage);
+                }
+            }
+        }
+
+        return $resizedData ?: false;
+    }
+
 
     /**
      * Encode document file content for API

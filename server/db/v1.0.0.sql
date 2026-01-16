@@ -256,12 +256,15 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     `sent_context` longtext DEFAULT NULL, -- JSON snapshot of context sent with this message for debugging/audit
     `reasoning` longtext DEFAULT NULL, -- Optional reasoning/thinking process from LLM (provider-specific)
     `id_dataRows` int(10) UNSIGNED ZEROFILL DEFAULT NULL, -- Link to saved form data in dataRows table
+    `is_validated` TINYINT(1) DEFAULT 1 NOT NULL COMMENT 'Whether the message passed JSON schema validation (1=valid, 0=invalid/retry attempt)',
+    `request_payload` longtext DEFAULT NULL COMMENT 'JSON payload sent to LLM API for debugging (stored on assistant messages)',
     `deleted` TINYINT(1) DEFAULT 0 NOT NULL,
     `timestamp` timestamp DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_conversation_time` (`id_llmConversations`, `timestamp`),
     KEY `idx_deleted` (`deleted`),
     KEY `idx_dataRows` (`id_dataRows`),
+    KEY `idx_validated` (`is_validated`),
 CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

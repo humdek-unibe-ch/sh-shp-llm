@@ -364,11 +364,13 @@ class LlmService extends BaseLlmService
      * @param array|null $raw_response Raw API response data
      * @param array|null $sent_context Context messages sent with this message
      * @param string|null $reasoning Optional reasoning from LLM
+     * @param bool $is_validated Whether the message passed schema validation (default: true)
+     * @param array|null $request_payload The request payload sent to LLM API (for debugging)
      * @return int Message ID
      * @throws LlmValidationException If content is invalid
      * @throws LlmException If conversation not found
      */
-    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null)
+    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null, $is_validated = true, $request_payload = null)
     {
         // Validate content
         $content = LlmValidator::messageContent($content);
@@ -393,6 +395,11 @@ class LlmService extends BaseLlmService
         // Process sent context
         $sentContextData = $this->jsonEncode($sent_context);
 
+        // Process request payload (for assistant messages, stores the API request for debugging)
+        // Sanitize to remove large base64 image data before storing
+        $sanitizedPayload = $this->sanitizePayloadForStorage($request_payload);
+        $requestPayloadData = $this->jsonEncode($sanitizedPayload);
+
         $data = [
             'id_llmConversations' => $conversation_id,
             'role' => $role,
@@ -402,7 +409,9 @@ class LlmService extends BaseLlmService
             'tokens_used' => $tokens_used,
             'raw_response' => $rawResponseData,
             'sent_context' => $sentContextData,
-            'reasoning' => $reasoning
+            'reasoning' => $reasoning,
+            'is_validated' => $is_validated ? 1 : 0,
+            'request_payload' => $requestPayloadData
         ];
 
         // Final validation to prevent JSON in content field
@@ -474,11 +483,11 @@ class LlmService extends BaseLlmService
     }
 
     /**
-     * Get conversation messages
+     * Get conversation messages (only validated messages for user-facing chat)
      * 
      * @param int $conversation_id Conversation ID
      * @param int $limit Maximum messages to return
-     * @return array Array of messages
+     * @return array Array of validated messages
      */
     public function getConversationMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
     {
@@ -488,12 +497,13 @@ class LlmService extends BaseLlmService
             return $cached;
         }
 
+        // Only return validated messages (is_validated = 1) for user-facing chat
         $messages = $this->db->query_db(
             "SELECT m.id, m.role, m.content, m.attachments, m.model, m.tokens_used, m.timestamp, m.sent_context
              FROM llmMessages m
              INNER JOIN (
                  SELECT id FROM llmMessages
-                 WHERE id_llmConversations = :conversation_id AND deleted = 0
+                 WHERE id_llmConversations = :conversation_id AND deleted = 0 AND is_validated = 1
                  ORDER BY timestamp DESC
                  LIMIT " . (int)$limit . "
              ) recent ON m.id = recent.id
@@ -592,7 +602,7 @@ class LlmService extends BaseLlmService
      * @param string $model Model name
      * @param float|null $temperature Temperature setting
      * @param int|null $max_tokens Max tokens setting
-     * @return array Normalized response
+     * @return array Normalized response with 'request_payload' containing the full API request
      * @throws LlmApiException If API call fails
      */
     public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null)
@@ -653,10 +663,13 @@ class LlmService extends BaseLlmService
 
         // Normalize response using provider
         try {
-            return $this->provider->normalizeResponse($response);
+            $normalized = $this->provider->normalizeResponse($response);
+            // Include the full request payload in the response for debugging
+            $normalized['request_payload'] = $payload;
+            return $normalized;
         } catch (Exception $e) {
             $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
-            throw LlmApiException::normalizationFailed($this->provider->getProviderName(), $e->getMessage(), $response);
+            throw LlmApiException::normalizationFailed($this->provider->getProviderName(), $e->getMessage(), $response, $payload);
         }
     }
 }

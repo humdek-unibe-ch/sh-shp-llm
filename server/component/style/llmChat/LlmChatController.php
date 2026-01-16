@@ -509,6 +509,9 @@ class LlmChatController extends BaseController
     /**
      * Send request to LLM and respond
      * 
+     * Saves ALL LLM response attempts (including failed validation attempts) to the database.
+     * Failed attempts are marked with is_validated=0 and are only visible in admin mode.
+     * 
      * @param int $conversation_id The conversation ID
      * @param bool $is_new_conversation Whether this is a new conversation
      */
@@ -541,17 +544,60 @@ class LlmChatController extends BaseController
         $result = $this->response_service->callLlmWithSchemaValidation($llm_callable, $api_messages);
         $parsed = $result['response'];
         $response = $result['raw_response'];
+        $all_attempts = $result['all_attempts'] ?? [];
 
-        // Extract response data
+        // ========== SAVE ALL ATTEMPTS (INCLUDING FAILED ONES) ==========
+        // Save failed validation attempts for admin debugging
+        // These are marked as is_validated=0 and not shown to users
+        $saved_failed_count = 0;
+        if (count($all_attempts) > 1) {
+            // Save all failed attempts (all except the last one if it was valid)
+            for ($i = 0; $i < count($all_attempts) - 1; $i++) {
+                $attempt = $all_attempts[$i];
+                if (!$attempt['valid']) {
+                    // Get content - either from successful response or error message
+                    $attempt_content = null;
+                    $attempt_tokens = null;
+                    $attempt_reasoning = null;
+                    $attempt_raw = null;
+                    
+                    if (isset($attempt['response']['content'])) {
+                        $attempt_content = $attempt['response']['content'];
+                        $attempt_tokens = $attempt['response']['usage']['total_tokens'] ?? null;
+                        $attempt_reasoning = $attempt['response']['reasoning'] ?? null;
+                        $attempt_raw = $attempt['response']['raw_response'] ?? $attempt['response'];
+                    } elseif (isset($attempt['error'])) {
+                        // API call failed - save error message as content
+                        $attempt_content = '[API ERROR] ' . $attempt['error'];
+                        $attempt_raw = ['error' => $attempt['error']];
+                    }
+                    
+                    if ($attempt_content) {
+                        // Save failed attempt with is_validated=0 and the full request payload
+                        $this->request_service->addAssistantMessage(
+                            $conversation_id,
+                            $attempt_content,
+                            $attempt_tokens,
+                            $attempt_raw,
+                            $context_messages,
+                            $attempt_reasoning,
+                            false, // is_validated = false (failed validation)
+                            $attempt['request_payload'] // Store the full API payload that was sent
+                        );
+                        $saved_failed_count++;
+                    }
+                }
+            }
+            error_log('LLM response required ' . $result['attempts'] . ' attempts to match schema - saved ' . $saved_failed_count . ' failed attempts');
+        }
+        // ============================================
+
+        // Extract response data from the final (valid or fallback) response
         $assistant_message = $response['content'];
         $tokens_used = $response['usage']['total_tokens'] ?? null;
         $reasoning = $response['reasoning'] ?? null;
         $raw_response = $response['raw_response'] ?? $response;
-
-        // Log retry attempts if more than 1 was needed
-        if ($result['attempts'] > 1) {
-            error_log('LLM response required ' . $result['attempts'] . ' attempts to match schema');
-        }
+        $request_payload = $result['request_payload'] ?? $api_messages;
 
         // ========== SAFETY DETECTION FROM LLM RESPONSE ==========
         if ($parsed['valid'] && isset($parsed['data'])) {
@@ -560,13 +606,17 @@ class LlmChatController extends BaseController
         }
         // ============================================
 
+        // Save the final response (validated or fallback)
+        // is_validated reflects whether the response passed schema validation
         $this->request_service->addAssistantMessage(
             $conversation_id,
             $assistant_message,
             $tokens_used,
             $raw_response,
             $context_messages,
-            $reasoning
+            $reasoning,
+            $result['valid'], // is_validated
+            $request_payload  // request_payload for debugging
         );
 
         $response_data = [

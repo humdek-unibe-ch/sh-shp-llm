@@ -256,6 +256,204 @@ const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHide }) =>
   );
 };
 
+// Payload Popup Component - Shows the request payload sent to LLM API
+interface PayloadPopupProps {
+  message: Message;
+  show: boolean;
+  onHide: () => void;
+}
+
+const PayloadPopup: React.FC<PayloadPopupProps> = ({ message, show, onHide }) => {
+  const [copied, setCopied] = useState(false);
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  // Handle ESC key and click outside to close
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && show) {
+        onHide();
+      }
+    };
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (backdropRef.current && event.target === backdropRef.current) {
+        onHide();
+      }
+    };
+
+    if (show) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.addEventListener('mousedown', handleClickOutside);
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.body.style.overflow = '';
+      };
+    }
+  }, [show, onHide]);
+
+  // Safety check for null message
+  if (!message || !message.request_payload || typeof message.request_payload !== 'string' || message.request_payload.trim() === '') {
+    return null;
+  }
+
+  if (!show) return null;
+
+  const handleCopy = async () => {
+    if (message.request_payload) {
+      try {
+        // Format JSON for better readability when copying
+        let textToCopy = message.request_payload;
+        try {
+          const parsed = JSON.parse(message.request_payload);
+          textToCopy = JSON.stringify(parsed, null, 2);
+        } catch {
+          // Keep original if not valid JSON
+        }
+        
+        await navigator.clipboard.writeText(textToCopy);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy payload:', err);
+      }
+    }
+  };
+
+  // Format the payload for display
+  const formatPayload = (payload: string) => {
+    try {
+      const parsed = JSON.parse(payload);
+      
+      // If it's an array of messages, render each one
+      if (Array.isArray(parsed)) {
+        return (
+          <div className="payload-messages">
+            {parsed.map((msg, index) => (
+              <div key={index} className="card mb-3">
+                <div className="card-header bg-light py-2 d-flex align-items-center">
+                  <i className={`fas ${msg.role === 'system' ? 'fa-cogs' : msg.role === 'user' ? 'fa-user' : 'fa-robot'} mr-2 text-primary`}></i>
+                  <span className="font-weight-bold text-uppercase small">
+                    {msg.role?.charAt(0).toUpperCase() + msg.role?.slice(1) || 'Unknown'}
+                  </span>
+                  <span className="ml-auto badge badge-secondary">Message {index + 1}</span>
+                </div>
+                <div className="card-body py-2">
+                  <pre className="mb-0" style={{ 
+                    fontSize: '0.75rem', 
+                    whiteSpace: 'pre-wrap', 
+                    wordBreak: 'break-word',
+                    maxHeight: '200px',
+                    overflow: 'auto',
+                    backgroundColor: '#f8f9fa',
+                    padding: '0.5rem',
+                    borderRadius: '4px'
+                  }}>
+                    {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      
+      // Otherwise just show formatted JSON
+      return (
+        <pre style={{ 
+          fontSize: '0.75rem', 
+          whiteSpace: 'pre-wrap', 
+          wordBreak: 'break-word',
+          maxHeight: '400px',
+          overflow: 'auto',
+          backgroundColor: '#f8f9fa',
+          padding: '1rem',
+          borderRadius: '4px'
+        }}>
+          {JSON.stringify(parsed, null, 2)}
+        </pre>
+      );
+    } catch {
+      // Not valid JSON, show as-is
+      return (
+        <pre style={{ 
+          fontSize: '0.75rem', 
+          whiteSpace: 'pre-wrap', 
+          wordBreak: 'break-word',
+          maxHeight: '400px',
+          overflow: 'auto',
+          backgroundColor: '#f8f9fa',
+          padding: '1rem',
+          borderRadius: '4px'
+        }}>
+          {payload}
+        </pre>
+      );
+    }
+  };
+
+  // Check if message passed validation (handles string values from DB)
+  const val = message.is_validated;
+  const isValidated = val === true || val === 1 || val === '1';
+
+  return (
+    <div ref={backdropRef} className="context-modal-backdrop">
+      <div className="context-modal bg-white rounded shadow-lg overflow-hidden" style={{ maxWidth: '900px' }}>
+        {/* Modal Header */}
+        <div className="d-flex align-items-center justify-content-between p-3 bg-light border-bottom">
+          <div className="d-flex align-items-center">
+            <div className={`${isValidated ? 'bg-primary' : 'bg-warning'} text-white rounded d-flex align-items-center justify-content-center mr-3`} style={{ width: '40px', height: '40px' }}>
+              <i className="fas fa-paper-plane"></i>
+            </div>
+            <div>
+              <h5 className="mb-0 font-weight-bold">
+                API Request Payload
+                {!isValidated && (
+                  <Badge variant="warning" className="ml-2">
+                    <i className="fas fa-exclamation-triangle mr-1"></i>
+                    Failed Validation
+                  </Badge>
+                )}
+              </h5>
+              <small className="text-muted">The exact payload sent to the LLM API (copy for Postman/testing)</small>
+            </div>
+          </div>
+          <button 
+            className="btn btn-outline-secondary btn-sm" 
+            onClick={onHide} 
+            title="Close (Esc)"
+          >
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+        
+        {/* Modal Body */}
+        <div className="context-modal-body p-3">
+          {formatPayload(message.request_payload)}
+        </div>
+        
+        {/* Modal Footer */}
+        <div className="d-flex align-items-center justify-content-between p-3 bg-light border-top">
+          <small className="text-muted">
+            <i className="fas fa-info-circle mr-1"></i>
+            Copy this payload to test in Postman or other API tools
+          </small>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleCopy}
+            title="Copy payload as JSON"
+          >
+            <i className={`fas ${copied ? 'fa-check' : 'fa-copy'} mr-1`}></i>
+            {copied ? 'Copied!' : 'Copy Payload'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Helper function to get today's date in YYYY-MM-DD format
 const getTodayDate = (): string => {
   const today = new Date();
@@ -287,12 +485,14 @@ const formatDateBadge = (dateString: string): string => {
  * Admin Message List Component
  * Renders messages with proper form detection and display
  * Uses the shared MessageContentRenderer for consistent rendering with the chat view
+ * Shows validation status and payload for debugging failed schema validations
  */
 const AdminMessageList: React.FC<{
   messages: Message[];
   formatDate: (date: string) => string;
   setContextPopup: (popup: { show: boolean; message: Message | null; target: HTMLElement | null }) => void;
-}> = ({ messages, formatDate, setContextPopup }) => {
+  setPayloadPopup: (popup: { show: boolean; message: Message | null }) => void;
+}> = ({ messages, formatDate, setContextPopup, setPayloadPopup }) => {
   // Pre-compute form definitions for each assistant message using shared utility
   const formDefinitionsMap = useMemo(() => buildFormDefinitionsMap(messages), [messages]);
 
@@ -310,6 +510,24 @@ const AdminMessageList: React.FC<{
     }
   };
 
+  // Check if message passed validation
+  // Returns true for validated messages (is_validated = 1 or true or "1")
+  // Returns true for old messages without this field (backward compatibility)
+  // Returns false for explicitly failed messages (is_validated = 0 or false or "0")
+  const isValidated = (message: Message): boolean => {
+    const val = message.is_validated;
+    // Explicit false, 0, or "0" means validation failed
+    if (val === false || val === 0 || val === '0') {
+      return false;
+    }
+    // Explicit true, 1, or "1" means validated
+    if (val === true || val === 1 || val === '1') {
+      return true;
+    }
+    // undefined or null means old message without validation tracking (assume valid for backward compat)
+    return true;
+  };
+
   return (
     <div className="message-stack">
       {messages.map((message, index) => {
@@ -317,6 +535,7 @@ const AdminMessageList: React.FC<{
         const attachmentInfo = getAttachmentInfo(message.attachments);
         const isLastMessage = index === messages.length - 1;
         const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
+        const validated = isValidated(message);
         
         // Get previous assistant's form definition for user form submissions
         const previousAssistantFormDef = isUser 
@@ -326,18 +545,41 @@ const AdminMessageList: React.FC<{
         return (
           <div
             key={message.id}
-            className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}
+            className={`message-wrapper ${isUser ? 'user' : 'assistant'} ${!validated ? 'validation-failed' : ''}`}
+            style={!validated ? { opacity: 0.7 } : {}}
           >
             {/* Avatar */}
-            <div className="message-avatar">
+            <div className="message-avatar" style={!validated ? { backgroundColor: '#ffc107' } : {}}>
               <i className={`fas ${isUser ? 'fa-user' : 'fa-robot'}`}></i>
             </div>
             
             {/* Message Bubble */}
-            <div className={`message-bubble ${isUser ? 'user-message' : 'assistant-message'}`}>
-              {/* Context button for assistant messages */}
-              {message.sent_context && (
-                <div className="d-flex justify-content-end mb-2">
+            <div className={`message-bubble ${isUser ? 'user-message' : 'assistant-message'}`} style={!validated ? { borderColor: '#ffc107' } : {}}>
+              {/* Validation Failed Banner */}
+              {!validated && (
+                <div className="alert alert-warning py-1 px-2 mb-2 d-flex align-items-center" style={{ fontSize: '0.75rem' }}>
+                  <i className="fas fa-exclamation-triangle mr-2"></i>
+                  <span className="font-weight-bold">Failed Schema Validation</span>
+                  <span className="text-muted ml-2">(retry attempt - not shown to user)</span>
+                </div>
+              )}
+              
+              {/* Action buttons row */}
+              <div className="d-flex justify-content-end mb-2 flex-wrap" style={{ gap: '4px' }}>
+                {/* Validation status badge */}
+                {!isUser && (
+                  <Badge 
+                    variant={validated ? 'success' : 'warning'} 
+                    className="py-1 px-2"
+                    style={{ fontSize: '0.65rem' }}
+                  >
+                    <i className={`fas ${validated ? 'fa-check-circle' : 'fa-exclamation-triangle'} mr-1`}></i>
+                    {validated ? 'Valid' : 'Invalid'}
+                  </Badge>
+                )}
+                
+                {/* Context button */}
+                {message.sent_context && (
                   <button
                     className="btn btn-outline-info btn-sm py-0 px-2"
                     style={{ fontSize: '0.7rem' }}
@@ -353,8 +595,26 @@ const AdminMessageList: React.FC<{
                     <i className="fas fa-layer-group mr-1"></i>
                     Context
                   </button>
-                </div>
-              )}
+                )}
+                
+                {/* Payload button (for assistant messages) */}
+                {!isUser && message.request_payload && (
+                  <button
+                    className={`btn btn-sm py-0 px-2 ${validated ? 'btn-outline-primary' : 'btn-warning'}`}
+                    style={{ fontSize: '0.7rem' }}
+                    onClick={() => {
+                      setPayloadPopup({
+                        show: true,
+                        message
+                      });
+                    }}
+                    title="View API request payload (copy for Postman)"
+                  >
+                    <i className="fas fa-paper-plane mr-1"></i>
+                    Payload
+                  </button>
+                )}
+              </div>
               
               {/* Message Content - Using shared MessageContentRenderer */}
               <div className="message-content">
@@ -422,6 +682,12 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     message: Message | null;
     target: HTMLElement | null;
   }>({ show: false, message: null, target: null });
+
+  // Payload popup state (for viewing API request payload)
+  const [payloadPopup, setPayloadPopup] = useState<{
+    show: boolean;
+    message: Message | null;
+  }>({ show: false, message: null });
 
   // Confirmation modal state
   const [confirmModal, setConfirmModal] = useState<ConfirmationModal>({
@@ -1187,7 +1453,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       <div className="text-muted">No messages in this conversation</div>
                     </div>
                   ) : (
-                    <AdminMessageList messages={messages} formatDate={formatDate} setContextPopup={setContextPopup} />
+                    <AdminMessageList messages={messages} formatDate={formatDate} setContextPopup={setContextPopup} setPayloadPopup={setPayloadPopup} />
                   )}
                 </Card.Body>
               </>
@@ -1202,6 +1468,15 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
           message={contextPopup.message}
           show={contextPopup.show}
           onHide={() => setContextPopup({ show: false, message: null, target: null })}
+        />
+      )}
+
+      {/* Payload Popup Modal */}
+      {payloadPopup.show && payloadPopup.message && (
+        <PayloadPopup
+          message={payloadPopup.message}
+          show={payloadPopup.show}
+          onHide={() => setPayloadPopup({ show: false, message: null })}
         />
       )}
 

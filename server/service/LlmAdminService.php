@@ -144,8 +144,9 @@ class LlmAdminService extends LlmService
             return null;
         }
 
-        // Get messages (reuse existing method from parent)
-        $messages = $this->getConversationMessages($conversation_id);
+        // Get ALL messages including unvalidated ones (admin view)
+        // Use getAdminMessages instead of getConversationMessages to include failed attempts
+        $messages = $this->getAdminMessages($conversation_id);
 
         return [
             'conversation' => $conversation,
@@ -215,6 +216,9 @@ class LlmAdminService extends LlmService
 
     /**
      * Get messages for admin view (no cache to ensure fresh auditing)
+     * 
+     * Returns ALL messages including unvalidated ones (failed schema validation attempts).
+     * This is for debugging purposes - users only see validated messages.
      */
     public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
     {
@@ -227,7 +231,9 @@ class LlmAdminService extends LlmService
                 m.model,
                 m.tokens_used,
                 m.timestamp,
-                m.sent_context
+                m.sent_context,
+                m.is_validated,
+                m.request_payload
              FROM llmMessages m
              WHERE m.id_llmConversations = :conversation_id
              ORDER BY m.timestamp ASC

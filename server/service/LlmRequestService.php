@@ -222,9 +222,11 @@ class LlmRequestService
      * @param array|null $raw_response Raw API response
      * @param array|null $context_messages Context messages sent
      * @param string|null $reasoning Optional reasoning content from LLM
+     * @param bool $is_validated Whether the response passed schema validation (default: true)
+     * @param array|null $request_payload The request payload sent to LLM API (for debugging)
      * @return int Message ID
      */
-    public function addAssistantMessage($conversation_id, $content, $tokens_used = null, $raw_response = null, $context_messages = null, $reasoning = null)
+    public function addAssistantMessage($conversation_id, $content, $tokens_used = null, $raw_response = null, $context_messages = null, $reasoning = null, $is_validated = true, $request_payload = null)
     {
         $model = $this->model->getConfiguredModel();
         return $this->llm_service->addMessage(
@@ -236,7 +238,9 @@ class LlmRequestService
             $tokens_used,
             $raw_response,
             $context_messages,
-            $reasoning
+            $reasoning,
+            $is_validated,
+            $request_payload
         );
     }
 

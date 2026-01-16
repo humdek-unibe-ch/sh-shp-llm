@@ -4,6 +4,78 @@
 
 ### Added
 
+#### Automatic Image Resizing for Vision Models (January 16, 2026)
+- **Automatic Image Optimization**: Large images are automatically resized before sending to the LLM to prevent context window overflow
+- **Smart Resizing**: Images larger than 1024x1024 are resized while maintaining aspect ratio
+- **Quality Optimization**: Images are converted to JPEG with optimized quality (75%) to reduce token count
+- **Payload Sanitization**: Base64 image data is removed from stored payloads to prevent database bloat and memory issues
+- **Graceful Degradation**: If GD library is unavailable, original images are used with size warnings
+
+**Technical Details:**
+- Maximum image dimension: 1024px (configurable via `MAX_IMAGE_DIMENSION`)
+- Target base64 size: ~500KB (configurable via `TARGET_BASE64_SIZE`)
+- JPEG quality: 75% (configurable via `RESIZE_JPEG_QUALITY`)
+- Payload sanitization replaces base64 data with: `[BASE64_IMAGE_REMOVED: image/png, ~150KB - stored in attachments field]`
+
+**Benefits:**
+- Prevents "decoder prompt longer than maximum model length" errors
+- Reduces memory usage when loading conversations
+- Faster database queries with smaller payload sizes
+- Images still work correctly - only the stored debug payload is sanitized
+
+#### Message Validation Tracking & Debug Payload Feature (January 16, 2026)
+- **Schema Validation Tracking**: All LLM response attempts are now saved to the database with validation status
+- **Failed Attempt Logging**: When schema validation fails and retries are needed, each failed attempt is saved for debugging
+- **API Error Logging**: When API calls fail (e.g., normalization errors), the error is saved as a message for debugging
+- **Full Request Payload Storage**: The **complete API payload** (model, temperature, max_tokens, messages) is stored with each assistant message
+- **Admin Console Enhancements**: New UI elements to view validation status and copy payloads for testing
+
+**New Database Fields:**
+- `is_validated`: Boolean flag indicating whether the message passed JSON schema validation (1=valid, 0=failed)
+- `request_payload`: **Complete** JSON payload sent to the LLM API (includes model, temperature, max_tokens, stream, messages)
+
+**Payload Structure Example:**
+```json
+{
+  "model": "gpt-oss-120b",
+  "temperature": 0,
+  "max_tokens": 2048,
+  "stream": false,
+  "response_format": "json",
+  "messages": [
+    {"role": "system", "content": "..."},
+    {"role": "user", "content": "..."}
+  ]
+}
+```
+
+**Admin Console Features:**
+- **Validation Status Badge**: Each assistant message shows a green "Valid" or yellow "Invalid" badge
+- **Failed Attempt Highlighting**: Messages that failed validation are visually distinct (yellow border, reduced opacity)
+- **Payload Popup**: Click "Payload" button to view the exact API request sent to the LLM
+- **Copy Payload**: One-click copy of the payload JSON for testing in Postman or other API tools
+
+**User Experience:**
+- Users only see validated messages in the chat interface
+- Failed validation attempts are hidden from users but visible to admins
+- Final responses (even if fallback) are always shown to users
+
+**Benefits:**
+- **Easier Debugging**: Identify exactly what was sent to the LLM when validation fails
+- **Reproducible Testing**: Copy payloads to Postman to reproduce issues
+- **Audit Trail**: Complete history of all LLM interactions including failed attempts
+- **Schema Compliance Monitoring**: Track how often the LLM fails to follow the response schema
+
+**Technical Implementation:**
+- `LlmService::callLlmApi()` now returns the full payload in `request_payload`
+- `LlmService::addMessage()` accepts `is_validated` and `request_payload` parameters
+- `LlmResponseService::callLlmWithSchemaValidation()` tracks all attempts with their full payloads
+- `LlmChatController::sendLlmRequestAndRespond()` saves all attempts including API errors
+- `LlmAdminService::getAdminMessages()` returns all messages including unvalidated ones
+- Frontend `AdminConsole.tsx` displays validation status and payload popup
+
+**Documentation:** See [doc/message-validation-tracking.md](doc/message-validation-tracking.md) for complete documentation.
+
 #### File Naming Convention Redesign with Prefixes (January 16, 2026)
 - **Contextual File Naming with Prefixes**: All uploaded files now include descriptive prefixes (`section_`, `conv_`, `msg_`) for better readability and searchability
 - **User-Based Directory Structure**: Files organized in user-specific directories (`upload/{user_id}/`) for better isolation and management

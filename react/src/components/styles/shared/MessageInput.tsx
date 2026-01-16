@@ -133,6 +133,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     setMessage('');
     setFileError(null);
     
+    // Clear file hashes so user can attach the same file again in future messages
+    fileHashesRef.current.clear();
+    
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';

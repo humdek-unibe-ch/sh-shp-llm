@@ -220,6 +220,107 @@ abstract class BaseLlmService
     }
 
     /**
+     * Sanitize payload for database storage
+     * 
+     * Removes large base64 image data to prevent memory issues and database bloat.
+     * Replaces base64 data with a placeholder showing the image was included.
+     * 
+     * @param array|null $payload The request payload to sanitize
+     * @return array|null Sanitized payload
+     */
+    protected function sanitizePayloadForStorage($payload)
+    {
+        if (!$payload || !is_array($payload)) {
+            return $payload;
+        }
+
+        // Deep clone to avoid modifying original
+        $sanitized = $this->deepSanitizePayload($payload);
+        return $sanitized;
+    }
+
+    /**
+     * Recursively sanitize payload, removing base64 image data
+     * 
+     * @param mixed $data Data to sanitize
+     * @return mixed Sanitized data
+     */
+    private function deepSanitizePayload($data)
+    {
+        if (!is_array($data)) {
+            // Check if it's a base64 data URL string
+            if (is_string($data) && $this->isBase64DataUrl($data)) {
+                return $this->createBase64Placeholder($data);
+            }
+            return $data;
+        }
+
+        $sanitized = [];
+        foreach ($data as $key => $value) {
+            // Check for image_url structure with base64 data
+            if ($key === 'image_url' && is_array($value) && isset($value['url'])) {
+                if ($this->isBase64DataUrl($value['url'])) {
+                    $sanitized[$key] = [
+                        'url' => $this->createBase64Placeholder($value['url'])
+                    ];
+                    continue;
+                }
+            }
+
+            // Check for base64 string in 'url' key
+            if ($key === 'url' && is_string($value) && $this->isBase64DataUrl($value)) {
+                $sanitized[$key] = $this->createBase64Placeholder($value);
+                continue;
+            }
+
+            // Recursively process arrays
+            if (is_array($value)) {
+                $sanitized[$key] = $this->deepSanitizePayload($value);
+            } else {
+                $sanitized[$key] = $value;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * Check if a string is a base64 data URL
+     * 
+     * @param string $str String to check
+     * @return bool True if it's a base64 data URL
+     */
+    private function isBase64DataUrl($str)
+    {
+        if (!is_string($str)) {
+            return false;
+        }
+        return preg_match('/^data:[^;]+;base64,/', $str) === 1;
+    }
+
+    /**
+     * Create a placeholder for base64 data
+     * 
+     * @param string $base64Url The base64 data URL
+     * @return string Placeholder with metadata
+     */
+    private function createBase64Placeholder($base64Url)
+    {
+        // Extract mime type from data URL
+        $mimeType = 'unknown';
+        if (preg_match('/^data:([^;]+);base64,/', $base64Url, $matches)) {
+            $mimeType = $matches[1];
+        }
+
+        // Calculate approximate original size
+        $base64Data = preg_replace('/^data:[^;]+;base64,/', '', $base64Url);
+        $estimatedSize = strlen($base64Data) * 0.75; // Base64 is ~33% larger than binary
+        $sizeKb = round($estimatedSize / 1024, 1);
+
+        return "[BASE64_IMAGE_REMOVED: {$mimeType}, ~{$sizeKb}KB - stored in attachments field]";
+    }
+
+    /**
      * Safely decode JSON string
      * 
      * @param string $json JSON string to decode

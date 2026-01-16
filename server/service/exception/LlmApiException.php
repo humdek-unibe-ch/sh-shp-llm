@@ -40,6 +40,9 @@ class LlmApiException extends LlmException
     /** @var string|null API endpoint that failed */
     protected $endpoint;
 
+    /** @var array|null Request payload that was sent (for debugging) */
+    protected $requestPayload;
+
     /**
      * Constructor
      * 
@@ -53,6 +56,17 @@ class LlmApiException extends LlmException
         $this->rawResponse = $rawResponse;
         $this->provider = $context['provider'] ?? null;
         $this->endpoint = $context['endpoint'] ?? null;
+        $this->requestPayload = $context['request_payload'] ?? null;
+    }
+
+    /**
+     * Get request payload that was sent
+     * 
+     * @return array|null Request payload
+     */
+    public function getRequestPayload()
+    {
+        return $this->requestPayload;
     }
 
     /**
@@ -180,16 +194,18 @@ class LlmApiException extends LlmException
      * @param string $provider Provider name
      * @param string $error Error message
      * @param array|string|null $rawResponse Raw response
+     * @param array|null $requestPayload Request payload that was sent
      * @return self
      */
-    public static function normalizationFailed($provider, $error, $rawResponse = null)
+    public static function normalizationFailed($provider, $error, $rawResponse = null, $requestPayload = null)
     {
         return new self(
             "Failed to normalize {$provider} response: {$error}",
             $rawResponse,
             [
                 'error_type' => 'normalization_failed',
-                'provider' => $provider
+                'provider' => $provider,
+                'request_payload' => $requestPayload
             ]
         );
     }
