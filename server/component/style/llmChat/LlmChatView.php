@@ -131,7 +131,7 @@ class LlmChatView extends StyleView
                 $version = filemtime($css_file) ?: time();
                 $local = array($css_file . "?v=" . $version);
             } else {
-                $local = array($css_file . "?v=" . rtrim(shell_exec("git describe --tags")));
+                $local = array($css_file . "?v=" . rtrim(shell_exec("git describe --tags") ?: ""));
             }
         }
         return parent::get_css_includes($local);
@@ -149,7 +149,7 @@ class LlmChatView extends StyleView
                 $version = filemtime($js_file) ?: time();
                 $local = array($js_file . "?v=" . $version);
             } else {
-                $local = array($js_file . "?v=" . rtrim(shell_exec("git describe --tags")));
+                $local = array($js_file . "?v=" . rtrim(shell_exec("git describe --tags") ?: ""));
             }
         }
         return parent::get_js_includes($local);
