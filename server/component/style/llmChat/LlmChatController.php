@@ -593,10 +593,21 @@ class LlmChatController extends BaseController
         // ============================================
 
         // Extract response data from the final (valid or fallback) response
-        $assistant_message = $response['content'];
-        $tokens_used = $response['usage']['total_tokens'] ?? null;
-        $reasoning = $response['reasoning'] ?? null;
-        $raw_response = $response['raw_response'] ?? $response;
+        // $response can be null if API completely failed - in that case, extract from fallback
+        if ($response && isset($response['content'])) {
+            $assistant_message = $response['content'];
+            $tokens_used = $response['usage']['total_tokens'] ?? null;
+            $reasoning = $response['reasoning'] ?? null;
+            $raw_response = $response['raw_response'] ?? $response;
+        } else {
+            // API failed completely - extract message from the fallback response
+            // $parsed is the fallback structure created by LlmResponseService
+            $fallback_data = $parsed['data'] ?? $parsed;
+            $assistant_message = $this->extractMessageFromFallback($fallback_data);
+            $tokens_used = null;
+            $reasoning = null;
+            $raw_response = ['error' => $result['error'] ?? 'LLM API request failed'];
+        }
         $request_payload = $result['request_payload'] ?? $api_messages;
 
         // ========== SAFETY DETECTION FROM LLM RESPONSE ==========
@@ -1701,6 +1712,39 @@ class LlmChatController extends BaseController
 
         // All topics covered, return null
         return null;
+    }
+
+    /**
+     * Extract message content from a fallback response structure
+     * 
+     * When LLM API fails completely, LlmResponseService creates a fallback
+     * structure that needs to be converted to a displayable message.
+     * 
+     * @param array $fallback_data The fallback response data
+     * @return string Message content to display
+     */
+    private function extractMessageFromFallback($fallback_data)
+    {
+        // Try to get text from text_blocks
+        if (isset($fallback_data['content']['text_blocks'])) {
+            $texts = [];
+            foreach ($fallback_data['content']['text_blocks'] as $block) {
+                if (isset($block['content'])) {
+                    $texts[] = $block['content'];
+                }
+            }
+            if (!empty($texts)) {
+                return implode("\n\n", $texts);
+            }
+        }
+        
+        // Try direct content field
+        if (isset($fallback_data['content']) && is_string($fallback_data['content'])) {
+            return $fallback_data['content'];
+        }
+        
+        // Fallback to generic error message
+        return '[API ERROR] LLM API request failed - no response received';
     }
 
     /**

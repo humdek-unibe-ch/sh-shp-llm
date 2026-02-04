@@ -594,6 +594,97 @@ class LlmService extends BaseLlmService
     }
 
     /**
+     * Execute a curl call to the LLM API with detailed error handling
+     * 
+     * Unlike BaseModel::execute_curl_call, this method provides:
+     * - Actual curl error messages
+     * - HTTP status codes
+     * - Raw response even on failure (for debugging)
+     * - Proper timeout handling
+     * 
+     * @param string $url API endpoint URL
+     * @param array $headers HTTP headers
+     * @param array $payload Request payload
+     * @param int $timeout Request timeout in seconds
+     * @return array ['error' => bool, 'response' => mixed, 'http_code' => int, 'error_message' => string, 'raw_response' => string]
+     */
+    private function executeLlmCurlCall($url, $headers, $payload, $timeout = 120)
+    {
+        $curl = curl_init();
+        
+        $curl_options = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => "",
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => 'POST',
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_HTTPHEADER => $headers
+        ];
+        
+        // Skip SSL verification in debug mode (for local testing)
+        if (defined('DEBUG') && DEBUG) {
+            $curl_options[CURLOPT_SSL_VERIFYHOST] = false;
+            $curl_options[CURLOPT_SSL_VERIFYPEER] = false;
+        }
+        
+        curl_setopt_array($curl, $curl_options);
+        
+        $raw_response = curl_exec($curl);
+        $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $curl_error = curl_error($curl);
+        $curl_errno = curl_errno($curl);
+        
+        curl_close($curl);
+        
+        // Check for curl errors
+        if ($curl_errno !== 0) {
+            return [
+                'error' => true,
+                'response' => null,
+                'http_code' => $http_code,
+                'error_message' => "Curl error {$curl_errno}: {$curl_error}",
+                'raw_response' => $raw_response
+            ];
+        }
+        
+        // Check for HTTP errors
+        if ($http_code >= 400) {
+            return [
+                'error' => true,
+                'response' => null,
+                'http_code' => $http_code,
+                'error_message' => "HTTP error {$http_code}",
+                'raw_response' => $raw_response
+            ];
+        }
+        
+        // Try to decode JSON
+        $decoded = json_decode($raw_response, true);
+        if ($decoded === null && json_last_error() !== JSON_ERROR_NONE) {
+            return [
+                'error' => true,
+                'response' => null,
+                'http_code' => $http_code,
+                'error_message' => "Invalid JSON response: " . json_last_error_msg(),
+                'raw_response' => $raw_response
+            ];
+        }
+        
+        // Success
+        return [
+            'error' => false,
+            'response' => $decoded,
+            'http_code' => $http_code,
+            'error_message' => null,
+            'raw_response' => $raw_response
+        ];
+    }
+
+    /**
      * Call LLM API for chat completion
      * 
      * Uses provider abstraction to handle different API formats.
@@ -636,19 +727,29 @@ class LlmService extends BaseLlmService
         // Get authentication headers from provider
         $headers = $this->provider->getAuthHeaders($config['llm_api_key']);
 
-        $data = [
-            'URL' => $url,
-            'request_type' => 'POST',
-            'header' => $headers,
-            'post_params' => json_encode($payload),
-            'timeout' => $config['llm_timeout']
-        ];
-
-        $response = BaseModel::execute_curl_call($data);
-
-        if (!$response) {
-            throw LlmApiException::noResponse();
+        // Make API request with detailed error handling
+        $curl_result = $this->executeLlmCurlCall($url, $headers, $payload, $config['llm_timeout']);
+        
+        if ($curl_result['error']) {
+            $error_msg = $curl_result['error_message'] ?? 'Unknown curl error';
+            $http_code = $curl_result['http_code'] ?? 0;
+            $raw_response = $curl_result['raw_response'] ?? null;
+            
+            // Log detailed error for debugging
+            $this->logWarning('LLM API curl failed', [
+                'error' => $error_msg,
+                'http_code' => $http_code,
+                'url' => $url,
+                'raw_response_preview' => $raw_response ? substr($raw_response, 0, 500) : null
+            ]);
+            
+            if ($http_code >= 400) {
+                throw LlmApiException::httpError($http_code, $raw_response, $payload);
+            }
+            throw LlmApiException::connectionFailed($url, $error_msg, $payload);
         }
+        
+        $response = $curl_result['response'];
 
         // If response is a string, try to decode it as JSON
         if (is_string($response)) {

@@ -163,12 +163,14 @@ class LlmApiException extends LlmException
     /**
      * Create exception for no response received
      * 
+     * @param array|null $requestPayload The request payload that was sent (for debugging)
      * @return self
      */
-    public static function noResponse()
+    public static function noResponse($requestPayload = null)
     {
         return new self('LLM API request failed - no response received', null, [
-            'error_type' => 'no_response'
+            'error_type' => 'no_response',
+            'request_payload' => $requestPayload
         ]);
     }
 
@@ -235,9 +237,10 @@ class LlmApiException extends LlmException
      * 
      * @param string $url API URL
      * @param string|null $curlError cURL error message
+     * @param array|null $requestPayload Request payload that was sent (for debugging)
      * @return self
      */
-    public static function connectionFailed($url, $curlError = null)
+    public static function connectionFailed($url, $curlError = null, $requestPayload = null)
     {
         $message = "Failed to connect to LLM API: {$url}";
         if ($curlError) {
@@ -247,7 +250,8 @@ class LlmApiException extends LlmException
         return new self($message, null, [
             'error_type' => 'connection_failed',
             'url' => $url,
-            'curl_error' => $curlError
+            'curl_error' => $curlError,
+            'request_payload' => $requestPayload
         ]);
     }
 
@@ -256,9 +260,10 @@ class LlmApiException extends LlmException
      * 
      * @param int $statusCode HTTP status code
      * @param array|string|null $rawResponse Raw response
+     * @param array|null $requestPayload Request payload that was sent (for debugging)
      * @return self
      */
-    public static function httpError($statusCode, $rawResponse = null)
+    public static function httpError($statusCode, $rawResponse = null, $requestPayload = null)
     {
         $statusMessages = [
             400 => 'Bad Request',
@@ -278,7 +283,8 @@ class LlmApiException extends LlmException
             $rawResponse,
             [
                 'error_type' => 'http_error',
-                'http_status' => $statusCode
+                'http_status' => $statusCode,
+                'request_payload' => $requestPayload
             ]
         );
     }
