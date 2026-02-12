@@ -234,6 +234,9 @@ class ModuleLlmAdminConsoleController extends BaseController
             header('Content-Type: application/json');
         }
 
+        // Log user activity before exiting so it is recorded in user_activity table.
+        $this->model->get_services()->get_router()->log_user_activity();
+
         echo json_encode($data);
         exit;
     }
