@@ -22,9 +22,12 @@ import {
   parseFormDefinition, 
   parseFormSubmissionMetadata, 
   parseStructuredResponse, 
-  messageHasForm,
-  extractFormFromMessage
+  messageHasForm
 } from '../../../types';
+import { 
+  buildFormDefinitionsMap, 
+  findPreviousAssistantFormDefinition 
+} from '../../shared/MessageContentRenderer';
 import { formatTime } from '../../../utils/formatters';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer } from './FormRenderer';
@@ -113,52 +116,6 @@ const AttachmentIndicator: React.FC<{ count: number; isUser: boolean; config: Ll
         {fileText}
       </small>
     </div>
-  );
-};
-
-/**
- * Render a historical form as a read-only display
- * Shows the form with the user's selections highlighted
- * Uses the same FormDisplay component as admin for consistency
- * 
- * To find the user's selections, we look at the next user message's attachments
- * which contain the form_submission metadata
- */
-interface HistoricalFormDisplayProps {
-  formDefinition: FormDefinition;
-  /** The user's submitted values (from next message's attachments) */
-  submittedValues?: Record<string, string | string[]>;
-}
-
-const HistoricalFormDisplay: React.FC<HistoricalFormDisplayProps> = ({ 
-  formDefinition, 
-  submittedValues 
-}) => {
-  // Use the FormDisplay component with submitted values
-  // compact=false to match admin view style
-  return (
-    <FormDisplay
-      formDefinition={formDefinition}
-      submittedValues={submittedValues}
-      compact={false}
-    />
-  );
-};
-
-/**
- * Render a user's form submission
- * Uses the same FormDisplay component as admin for consistency
- */
-const UserFormSubmissionDisplay: React.FC<{
-  formDefinition: FormDefinition;
-  submittedValues: Record<string, string | string[]>;
-}> = ({ formDefinition, submittedValues }) => {
-  return (
-    <FormDisplay
-      formDefinition={formDefinition}
-      submittedValues={submittedValues}
-      compact={false}
-    />
   );
 };
 
@@ -252,9 +209,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
             // User messages
             isUserFormSubmission && userFormDefinition && userFormValues ? (
               // User form submission: show as summary with selections
-              <UserFormSubmissionDisplay
+              <FormDisplay
                 formDefinition={userFormDefinition}
                 submittedValues={userFormValues}
+                compact={false}
               />
             ) : (
               // Regular user message: plain text with preserved whitespace
@@ -271,9 +229,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
             />
           ) : formDefinition && isHistoricalForm ? (
             // Historical form: show with user's selections
-            <HistoricalFormDisplay 
+            <FormDisplay 
               formDefinition={formDefinition} 
               submittedValues={userSubmittedValues}
+              compact={false}
             />
           ) : isIncompleteStructuredResponse ? (
             // Incomplete structured response: show error message
@@ -479,28 +438,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   const showThinking = isProcessing && lastMessage?.role === 'user';
   
   // Pre-compute form definitions for each assistant message
-  // This allows us to pass the previous form definition to user messages
-  // UNIFIED: Uses extractFormFromMessage() which extracts from BOTH legacy forms AND structured response forms
-  const formDefinitionsMap = new Map<number, FormDefinition>();
-  messages.forEach((message, index) => {
-    if (message.role === 'assistant') {
-      // UNIFIED: extractFormFromMessage checks both legacy FormDefinition AND StructuredResponse.forms
-      const formDef = extractFormFromMessage(message.content);
-      if (formDef) {
-        formDefinitionsMap.set(index, formDef);
-      }
-    }
-  });
-
-  // Find the previous assistant's form definition for a given index
-  const findPreviousAssistantFormDefinition = (currentIndex: number): FormDefinition | undefined => {
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant') {
-        return formDefinitionsMap.get(i);
-      }
-    }
-    return undefined;
-  };
+  // Uses shared utility that extracts from BOTH legacy forms AND structured response forms
+  const formDefinitionsMap = buildFormDefinitionsMap(messages);
 
   // Determine if we should show the Continue button or thinking state
   // Only show when we're at a dead end (no form to answer) in form mode
@@ -568,7 +507,7 @@ export const MessageList: React.FC<MessageListProps> = ({
       const submissionMeta = parseFormSubmissionMetadata(lastMessage.attachments);
       if (submissionMeta) {
         // Find the form definition from previous assistant message
-        const previousFormDef = findPreviousAssistantFormDefinition(messages.length - 1);
+        const previousFormDef = findPreviousAssistantFormDefinition(messages, messages.length - 1, formDefinitionsMap);
         if (previousFormDef) {
           return {
             values: submissionMeta.values,
@@ -619,7 +558,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         
         // Get previous assistant's form definition (for user form submissions)
         const previousAssistantFormDefinition = message.role === 'user' 
-          ? findPreviousAssistantFormDefinition(index) 
+          ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap) 
           : undefined;
         
         return (

@@ -28,6 +28,7 @@ import {
   truncateFileName,
   isImageExtension
 } from '../../../utils/formatters';
+import { useSpeechToText } from '../../../hooks/useSpeechToText';
 
 /**
  * Props for MessageInput component
@@ -62,57 +63,65 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   
-  // Speech-to-text state
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
-  const [speechError, setSpeechError] = useState<string | null>(null);
-  
   // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileHashesRef = useRef<Set<string>>(new Set());
   const attachmentIdCounterRef = useRef(0);
   
-  // Speech-to-text refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
   // Ref to always have current message value (avoids stale closure issues)
   const messageRef = useRef<string>(message);
-  
-  // Maximum recording duration (60 seconds) to prevent payload too large errors
-  const MAX_RECORDING_DURATION_MS = 60000;
   
   // Keep messageRef in sync with message state
   useEffect(() => {
     messageRef.current = message;
   }, [message]);
   
+  /**
+   * Safely append transcribed text to the message textarea.
+   * NEVER overwrites existing text - always inserts at cursor position.
+   */
+  const appendTranscribedText = useCallback((transcribedText: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    const currentMessage = messageRef.current;
+    const cursorPos = textarea.selectionStart ?? currentMessage.length;
+    
+    const textBefore = currentMessage.substring(0, cursorPos);
+    const textAfter = currentMessage.substring(cursorPos);
+    
+    const needsSpaceBefore = textBefore.length > 0 && !/[\s]$/.test(textBefore);
+    const spaceBefore = needsSpaceBefore ? ' ' : '';
+    const trailingSpace = ' ';
+    const newMessage = textBefore + spaceBefore + transcribedText + trailingSpace + textAfter;
+    const newCursorPos = textBefore.length + spaceBefore.length + transcribedText.length + trailingSpace.length;
+    
+    setMessage(newMessage);
+    messageRef.current = newMessage;
+    
+    requestAnimationFrame(() => {
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+        textarea.style.height = 'auto';
+        const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
+        textarea.style.height = `${newHeight}px`;
+      }
+    });
+  }, []);
+  
+  // Speech-to-text hook
+  const speech = useSpeechToText({
+    enabled: config.enableSpeechToText,
+    model: config.speechToTextModel || '',
+    sectionId: config.sectionId,
+    onTranscription: appendTranscribedText,
+  });
+  
   // File config
   const { fileConfig } = config;
   const maxLength = 4000; // Default max message length
-  
-  // Check if speech-to-text is available
-  const isSpeechAvailable = config.enableSpeechToText &&
-    config.speechToTextModel &&
-    typeof navigator !== 'undefined' &&
-    navigator.mediaDevices &&
-    typeof navigator.mediaDevices.getUserMedia === 'function';
-
-
-  // Cleanup audio stream and timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current);
-      }
-    };
-  }, []);
   
   /**
    * Handle form submission
@@ -332,232 +341,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [onFilesChange]);
 
-  // ===== Speech-to-Text Handlers =====
-
-  /**
-   * Start recording audio from the microphone
-   */
-  const handleStartRecording = useCallback(async () => {
-    if (!isSpeechAvailable || isRecording) return;
-
-    setSpeechError(null);
-
-    try {
-      // Request microphone permission
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 16000
-        }
-      });
-
-      audioStreamRef.current = stream;
-      audioChunksRef.current = [];
-
-      // Create MediaRecorder with WebM/Opus format (widely supported)
-      // Use lower bitrate to reduce file size and avoid "Payload Too Large" errors
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : 'audio/mp4';
-
-      // Configure MediaRecorder with lower bitrate for smaller file sizes
-      // 16kbps is sufficient for speech recognition
-      const mediaRecorder = new MediaRecorder(stream, { 
-        mimeType,
-        audioBitsPerSecond: 16000 // 16 kbps - optimized for speech
-      });
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        // Process the recorded audio
-        if (audioChunksRef.current.length > 0) {
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          await processAudioBlob(audioBlob);
-        }
-        
-        // Cleanup
-        audioChunksRef.current = [];
-      };
-
-      // Start recording
-      mediaRecorder.start();
-      setIsRecording(true);
-      
-      // Auto-stop recording after max duration to prevent payload too large errors
-      recordingTimeoutRef.current = setTimeout(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          console.log('Auto-stopping recording after max duration');
-          handleStopRecording();
-        }
-      }, MAX_RECORDING_DURATION_MS);
-
-    } catch (error: unknown) {
-      console.error('Failed to start recording:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
-        setSpeechError('Microphone access denied. Please allow microphone access in your browser settings.');
-      } else {
-        setSpeechError('Failed to start recording: ' + errorMessage);
-      }
-    }
-  }, [isSpeechAvailable, isRecording]);
-
-  /**
-   * Stop recording and process the audio
-   */
-  const handleStopRecording = useCallback(() => {
-    if (!isRecording || !mediaRecorderRef.current) return;
-
-    // Clear the auto-stop timeout
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current);
-      recordingTimeoutRef.current = null;
-    }
-
-    // Stop the MediaRecorder (this triggers onstop which processes the audio)
-    if (mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-    }
-
-    // Stop all tracks in the stream
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach(track => track.stop());
-      audioStreamRef.current = null;
-    }
-
-    setIsRecording(false);
-  }, [isRecording]);
-
-  /**
-   * Safely append transcribed text to the message
-   * 
-   * RULES:
-   * 1. NEVER overwrite existing text
-   * 2. ALWAYS append at the current cursor position
-   * 3. ALWAYS move cursor to end of appended text
-   * 4. ALWAYS add proper spacing
-   * 
-   * @param transcribedText - The text to append
-   */
-  const appendTranscribedText = useCallback((transcribedText: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    
-    // Get the CURRENT message from ref (not stale closure)
-    const currentMessage = messageRef.current;
-    
-    // Get current cursor position (where we will insert)
-    const cursorPos = textarea.selectionStart ?? currentMessage.length;
-    
-    // Split message at cursor position
-    const textBefore = currentMessage.substring(0, cursorPos);
-    const textAfter = currentMessage.substring(cursorPos);
-    
-    // Determine spacing needed
-    // Space BEFORE: if there's text before and it doesn't end with whitespace
-    const needsSpaceBefore = textBefore.length > 0 && 
-      !/[\s]$/.test(textBefore);
-    
-    // Space AFTER: add trailing space for easy continuation
-    const trailingSpace = ' ';
-    
-    // Build the new text: [existing before] + [space?] + [transcribed] + [trailing space] + [existing after]
-    const spaceBefore = needsSpaceBefore ? ' ' : '';
-    const newMessage = textBefore + spaceBefore + transcribedText + trailingSpace + textAfter;
-    
-    // Calculate new cursor position (after the transcribed text + trailing space)
-    const newCursorPos = textBefore.length + spaceBefore.length + transcribedText.length + trailingSpace.length;
-    
-    // Update state
-    setMessage(newMessage);
-    
-    // Update ref immediately for any subsequent operations
-    messageRef.current = newMessage;
-    
-    // Set cursor position after React re-renders
-    requestAnimationFrame(() => {
-      if (textarea) {
-        textarea.focus();
-        textarea.setSelectionRange(newCursorPos, newCursorPos);
-        
-        // Ensure textarea height is adjusted
-        textarea.style.height = 'auto';
-        const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
-        textarea.style.height = `${newHeight}px`;
-      }
-    });
-  }, []);
-
-  /**
-   * Process the recorded audio blob and send to server for transcription
-   */
-  const processAudioBlob = useCallback(async (audioBlob: Blob) => {
-    if (audioBlob.size === 0) {
-      setSpeechError('No audio recorded');
-      return;
-    }
-
-    setIsProcessingSpeech(true);
-    setSpeechError(null);
-
-    try {
-      // Create form data for the API request
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.webm');
-      formData.append('action', 'speech_transcribe');
-      formData.append('section_id', config.sectionId?.toString() || '0');
-
-      // Send to the server for transcription
-      const response = await fetch(window.location.href, {
-        method: 'POST',
-        body: formData
-      });
-
-      const result = await response.json();
-
-      if (result.success && result.text) {
-        // Get the transcribed text (trimmed)
-        const transcribedText = result.text.trim();
-        
-        if (transcribedText) {
-          // Use the safe append function - NEVER overwrites, ALWAYS appends
-          appendTranscribedText(transcribedText);
-        }
-      } else if (result.success && !result.text) {
-        setSpeechError('No speech detected. Please try again.');
-      } else {
-        setSpeechError(result.error || 'Speech transcription failed');
-      }
-
-    } catch (error: unknown) {
-      console.error('Speech processing error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setSpeechError('Speech processing failed: ' + errorMessage);
-    } finally {
-      setIsProcessingSpeech(false);
-    }
-  }, [config.sectionId, appendTranscribedText]);
-
-  /**
-   * Toggle recording state
-   */
-  const handleMicrophoneClick = useCallback(() => {
-    if (isRecording) {
-      handleStopRecording();
-    } else {
-      handleStartRecording();
-    }
-  }, [isRecording, handleStartRecording, handleStopRecording]);
   
   // Drag and drop handlers
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -614,11 +397,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       )}
       
       {/* Speech Error Alert */}
-      {speechError && (
-        <Alert variant="warning" dismissible onClose={() => setSpeechError(null)} className="mb-2">
+      {speech.error && (
+        <Alert variant="warning" dismissible onClose={speech.clearError} className="mb-2">
           <small>
             <i className="fas fa-microphone-slash mr-1"></i>
-            {speechError}
+            {speech.error}
           </small>
         </Alert>
       )}
@@ -681,7 +464,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 variant="outline-secondary"
                 size="sm"
                 onClick={handleAttachmentClick}
-                disabled={disabled || isRecording}
+                disabled={disabled || speech.isRecording}
                 title={config.attachFilesTitle}
                 className="message-action-btn"
               >
@@ -696,18 +479,18 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             )}
             
             {/* Speech-to-Text Microphone Button */}
-            {isSpeechAvailable && (
+            {speech.isAvailable && (
                 <Button
-                  variant={isRecording ? 'danger' : 'outline-secondary'}
+                  variant={speech.isRecording ? 'danger' : 'outline-secondary'}
                   size="sm"
-                  onClick={handleMicrophoneClick}
-                  disabled={disabled || isProcessingSpeech}
-                  title={isRecording ? 'Stop recording' : 'Start voice input'}
-                  className={`message-action-btn ml-1 ${isRecording ? 'speech-recording-active' : ''}`}
+                  onClick={speech.toggleRecording}
+                  disabled={disabled || speech.isProcessing}
+                  title={speech.isRecording ? 'Stop recording' : 'Start voice input'}
+                  className={`message-action-btn ml-1 ${speech.isRecording ? 'speech-recording-active' : ''}`}
                 >
-                  {isProcessingSpeech ? (
+                  {speech.isProcessing ? (
                     <i className="fas fa-spinner fa-spin"></i>
-                  ) : isRecording ? (
+                  ) : speech.isRecording ? (
                     <i className="fas fa-stop"></i>
                   ) : (
                     <i className="fas fa-microphone"></i>

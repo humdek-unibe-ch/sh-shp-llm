@@ -311,22 +311,10 @@ class LlmChatController extends BaseController
         $conversation_id = $_POST['conversation_id'] ?? null;
         $section_id = $this->model->getSectionId();
 
-        // ========== CONVERSATION BLOCKING CHECK ==========
-        // Check if conversation is blocked before allowing any messages
-        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
-            $this->sendJsonResponse([
-                'blocked' => true,
-                'type' => 'conversation_blocked',
-                'message' => 'This conversation has been blocked due to safety concerns. Please start a new conversation.',
-                'error' => 'Conversation blocked'
-            ]);
+        // Check if conversation is blocked before allowing messages
+        if ($this->guardConversationBlocked($conversation_id)) {
             return;
         }
-        // ============================================
-
-        // NOTE: Danger detection is now handled by the LLM via structured response schema.
-        // The LLM evaluates message safety and returns it in the safety field.
-        // See LlmResponseService for schema details.
 
         try {
             // Check rate limiting
@@ -381,18 +369,10 @@ class LlmChatController extends BaseController
         $conversation_id = $_POST['conversation_id'] ?? null;
         $section_id = $this->model->getSectionId();
 
-        // ========== CONVERSATION BLOCKING CHECK ==========
-        // Check if conversation is blocked before allowing any messages
-        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
-            $this->sendJsonResponse([
-                'blocked' => true,
-                'type' => 'conversation_blocked',
-                'message' => 'This conversation has been blocked due to safety concerns. Please start a new conversation.',
-                'error' => 'Conversation blocked'
-            ]);
+        // Check if conversation is blocked before allowing messages
+        if ($this->guardConversationBlocked($conversation_id)) {
             return;
         }
-        // ============================================
 
         // Parse and validate form values
         $form_values = $this->form_mode_service->parseFormValues($form_values_json);
@@ -1285,40 +1265,6 @@ class LlmChatController extends BaseController
     /* Auto-Start *************************************************************/
 
     /**
-     * Check and perform auto-start conversation if needed
-     */
-    private function checkAndAutoStartConversation()
-    {
-        if (!$this->model->isAutoStartConversationEnabled()) {
-            return;
-        }
-
-        $user_id = $this->model->getUserId();
-        if (!$user_id) {
-            return;
-        }
-
-        // Check if conversation already exists
-        if ($this->model->getCurrentConversation()) {
-            return;
-        }
-
-        // Check existing conversations
-        if ($this->model->isConversationsListEnabled()) {
-            $user_conversations = $this->llm_service->getUserConversations(
-                $user_id,
-                1,
-                $this->model->getConfiguredModel()
-            );
-            if (!empty($user_conversations)) {
-                return;
-            }
-        }
-
-        $this->performAutoStartConversation();
-    }
-
-    /**
      * Perform auto-start conversation
      */
     private function performAutoStartConversation()
@@ -1441,6 +1387,26 @@ class LlmChatController extends BaseController
     }
 
     /* Helper Methods *********************************************************/
+
+    /**
+     * Check if conversation is blocked and send error response if so
+     * 
+     * @param string|null $conversation_id The conversation ID to check
+     * @return bool True if conversation is blocked (response already sent)
+     */
+    private function guardConversationBlocked($conversation_id)
+    {
+        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
+            $this->sendJsonResponse([
+                'blocked' => true,
+                'type' => 'conversation_blocked',
+                'message' => 'This conversation has been blocked due to safety concerns. Please start a new conversation.',
+                'error' => 'Conversation blocked'
+            ]);
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Validate user is authenticated or send error response
@@ -1789,7 +1755,6 @@ class LlmChatController extends BaseController
         $this->model->get_services()->get_router()->log_user_activity();
 
         echo json_encode($data);
-        exit;
 
         if (function_exists('uopz_allow_exit')) {
             uopz_allow_exit(true);

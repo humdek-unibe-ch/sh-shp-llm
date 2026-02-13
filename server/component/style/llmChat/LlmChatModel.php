@@ -158,7 +158,7 @@ class LlmChatModel extends StyleModel
         $this->user_id = $_SESSION['id_user'] ?? null;
         $this->conversation_id = $_GET['conversation'] ?? null;
 
-        // Initialize configuration properties first
+        // Initialize configuration properties
         $this->conversation_limit = $this->get_db_field('conversation_limit', LLM_DEFAULT_CONVERSATION_LIMIT);
         $this->enable_conversations_list = $this->get_db_field('enable_conversations_list', '0');
 
@@ -180,9 +180,6 @@ class LlmChatModel extends StyleModel
                 $this->conversation_id = $conversations[0]['id'];
             }
         }
-
-        // Initialize configuration properties
-        $this->conversation_limit = $this->get_db_field('conversation_limit', LLM_DEFAULT_CONVERSATION_LIMIT);
         $this->message_limit = $this->get_db_field('message_limit', LLM_DEFAULT_MESSAGE_LIMIT);
         $this->llm_model = $this->get_db_field('llm_model', '');
         $this->llm_temperature = $this->get_db_field('llm_temperature', '0.7');
@@ -505,73 +502,6 @@ class LlmChatModel extends StyleModel
     public function modelHasCapability($capability)
     {
         return llm_model_has_capability($this->getConfiguredModel(), $capability);
-    }
-
-    /**
-     * Get a human-readable description of the model's capabilities
-     *
-     * @return string Description of model capabilities
-     */
-    public function getModelCapabilityDescription()
-    {
-        $capabilities = $this->getModelCapabilities();
-        $descriptions = [];
-
-        if (in_array(LLM_CAPABILITY_VISION, $capabilities)) {
-            $descriptions[] = 'Vision (image analysis)';
-        }
-        if (in_array(LLM_CAPABILITY_CODE, $capabilities)) {
-            $descriptions[] = 'Code generation';
-        }
-        if (in_array(LLM_CAPABILITY_REASONING, $capabilities)) {
-            $descriptions[] = 'Advanced reasoning';
-        }
-        if (in_array(LLM_CAPABILITY_TEXT, $capabilities)) {
-            $descriptions[] = 'Text processing';
-        }
-
-        return implode(', ', $descriptions);
-    }
-
-    /**
-     * Get model status indicator for UI display
-     *
-     * @return array Array with 'type', 'icon', 'text', and 'class' for UI display
-     */
-    public function getModelStatusIndicator()
-    {
-        $model = $this->getConfiguredModel();
-        $capabilities = $this->getModelCapabilities();
-
-        if (in_array(LLM_CAPABILITY_VISION, $capabilities)) {
-            return [
-                'type' => 'vision',
-                'icon' => 'fas fa-eye',
-                'text' => 'Vision Model',
-                'class' => 'badge-success'
-            ];
-        } elseif (in_array(LLM_CAPABILITY_CODE, $capabilities)) {
-            return [
-                'type' => 'code',
-                'icon' => 'fas fa-code',
-                'text' => 'Code Model',
-                'class' => 'badge-primary'
-            ];
-        } elseif (in_array(LLM_CAPABILITY_REASONING, $capabilities)) {
-            return [
-                'type' => 'reasoning',
-                'icon' => 'fas fa-brain',
-                'text' => 'Reasoning Model',
-                'class' => 'badge-info'
-            ];
-        } else {
-            return [
-                'type' => 'text',
-                'icon' => 'fas fa-file-alt',
-                'text' => 'Text Model',
-                'class' => 'badge-secondary'
-            ];
-        }
     }
 
     /**
@@ -1239,26 +1169,6 @@ EOT;
     public function getFormModeActiveDescription()
     {
         return $this->form_mode_active_description;
-    }
-
-    /**
-     * Check if structured response mode is enabled
-     * 
-     * ALWAYS RETURNS TRUE - Structured response mode is now mandatory.
-     * All LLM responses use the standardized JSON schema defined in doc/response-schema.md
-     * 
-     * Features:
-     * - Safety detection integrated at LLM level
-     * - Flexible forms + free text interaction
-     * - Progress tracking integration
-     * - Rich content with text blocks, forms, media
-     * - Predictable parsing and validation
-     *
-     * @return bool Always returns true
-     */
-    public function isStructuredResponseEnabled()
-    {
-        return true;
     }
 
     // ===== Data Saving Methods =====
