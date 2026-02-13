@@ -163,7 +163,9 @@ class LlmSpeechToTextService extends BaseLlmService
         chmod($fullPath, 0644);
         
         // Log file info for debugging
-        error_log("Speech-to-text: Saved audio file - Path: {$fullPath}, Size: {$fileSize} bytes");
+        if (defined('DEBUG') && DEBUG) {
+            error_log("Speech-to-text: Saved audio file - Path: {$fullPath}, Size: {$fileSize} bytes");
+        }
         
         // Transcribe the saved audio file
         $result = $this->transcribeAudio($fullPath, $model, $language);
@@ -215,7 +217,9 @@ class LlmSpeechToTextService extends BaseLlmService
         $fileSize = filesize($audioFilePath);
         
         // Log file info for debugging
-        error_log("Speech-to-text: Processing audio file - Path: {$audioFilePath}, Size: {$fileSize} bytes");
+        if (defined('DEBUG') && DEBUG) {
+            error_log("Speech-to-text: Processing audio file - Path: {$audioFilePath}, Size: {$fileSize} bytes");
+        }
         
         if ($fileSize > self::MAX_AUDIO_SIZE) {
             return [

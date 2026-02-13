@@ -412,7 +412,9 @@ EOT;
         }
 
         // Debug logging for notification attempts
-        error_log('LLM Danger Detection: Sending notifications for keywords: ' . implode(', ', $detected_keywords));
+        if (defined('DEBUG') && DEBUG) {
+            error_log('LLM Danger Detection: Sending notifications for keywords: ' . implode(', ', $detected_keywords));
+        }
 
         try {
             $job_scheduler = $this->services->get_job_scheduler();
@@ -450,18 +452,24 @@ EOT;
                 ];
 
                 // Schedule and immediately execute the email job
-                error_log('LLM Danger Detection: Attempting to send email to: ' . $email);
+                if (defined('DEBUG') && DEBUG) {
+                    error_log('LLM Danger Detection: Attempting to send email to: ' . $email);
+                }
                 $result = $job_scheduler->add_and_execute_job($mail_data, transactionBy_by_system);
                 if ($result) {
                     $sent = true;
-                    error_log('LLM Danger Detection: Email sent successfully to: ' . $email);
+                    if (defined('DEBUG') && DEBUG) {
+                        error_log('LLM Danger Detection: Email sent successfully to: ' . $email);
+                    }
                 } else {
                     error_log('LLM Danger Detection: Failed to send email to: ' . $email . ' - add_and_execute_job returned false');
                 }
             }
 
             if ($sent) {
-                error_log('LLM Danger Detection: Email notifications completed successfully');
+                if (defined('DEBUG') && DEBUG) {
+                    error_log('LLM Danger Detection: Email notifications completed successfully');
+                }
             } else {
                 error_log('LLM Danger Detection: No emails were sent successfully');
             }

@@ -568,7 +568,9 @@ class LlmChatController extends BaseController
                     }
                 }
             }
-            error_log('LLM response required ' . $result['attempts'] . ' attempts to match schema - saved ' . $saved_failed_count . ' failed attempts');
+            if (defined('DEBUG') && DEBUG) {
+                error_log('LLM response required ' . $result['attempts'] . ' attempts to match schema - saved ' . $saved_failed_count . ' failed attempts');
+            }
         }
         // ============================================
 
@@ -658,20 +660,25 @@ class LlmChatController extends BaseController
 
         $section_id = $this->model->getSectionId();
         $detected_concerns = $safety['detected_concerns'];
+        $is_critical = in_array($safety['danger_level'], ['critical', 'emergency']);
 
         // ALWAYS log critical and emergency detections to transactions (safety requirement)
-        if (!empty($detected_concerns) && in_array($safety['danger_level'], ['critical', 'emergency'])) {
+        if (!empty($detected_concerns) && $is_critical) {
             $this->logSafetyDetection($detected_concerns, $parsed_response, $user_id, $conversation_id, $section_id, $safety);
         }
 
         // ALWAYS block conversation for critical/emergency levels (critical safety measure)
-        if (in_array($safety['danger_level'], ['critical', 'emergency'])) {
+        if ($is_critical) {
             $reason = strtoupper($safety['danger_level']) . ': LLM detected danger: ' . implode(', ', $detected_concerns);
             $this->danger_detection_service->blockConversation($conversation_id, $detected_concerns, $reason);
         }
 
-        // Send notifications if intervention required AND danger detection is enabled
-        if ($safety['requires_intervention'] && $this->danger_detection_service->isEnabled()) {
+        // Send notifications when:
+        // 1. Conversation was blocked (critical/emergency) - ALWAYS notify, regardless of requires_intervention
+        // 2. OR when requires_intervention is true (lower danger levels that still need attention)
+        // In both cases, danger detection must be enabled (email recipients configured)
+        $should_notify = ($is_critical || $safety['requires_intervention']) && $this->danger_detection_service->isEnabled();
+        if ($should_notify) {
             $this->danger_detection_service->sendNotifications(
                 $detected_concerns,
                 $safety['safety_message'] ?? 'Dangerous content detected by AI',
@@ -715,7 +722,9 @@ class LlmChatController extends BaseController
                 $log_data
             );
 
-            error_log('LLM Controller: Safety detection logged to transactions for user ' . $user_id);
+            if (defined('DEBUG') && DEBUG) {
+                error_log('LLM Controller: Safety detection logged to transactions for user ' . $user_id);
+            }
         } catch (Exception $e) {
             // Log error but don't fail the detection
             error_log('LLM Controller: Failed to log safety detection transaction: ' . $e->getMessage());
@@ -1544,7 +1553,9 @@ class LlmChatController extends BaseController
 
             if ($record_id) {
                 $this->request_service->updateMessage($message_id, ['id_dataRows' => $record_id]);
-                error_log("LLM: Form data saved to dataRow {$record_id} for message {$message_id}");
+                if (defined('DEBUG') && DEBUG) {
+                    error_log("LLM: Form data saved to dataRow {$record_id} for message {$message_id}");
+                }
             }
         } catch (Exception $e) {
             error_log('LLM saveFormDataToUserInput error: ' . $e->getMessage());
@@ -1658,7 +1669,9 @@ class LlmChatController extends BaseController
             $all_topics = $this->progress_tracking_service->extractTopicsFromContext($context);
 
             $this->progress_tracking_service->confirmTopic($conversation_id, $section_id, $topic_id, $all_topics);
-            error_log("LLM: Topic {$topic_id} confirmed for conversation {$conversation_id} (level: {$understanding_level})");
+            if (defined('DEBUG') && DEBUG) {
+                error_log("LLM: Topic {$topic_id} confirmed for conversation {$conversation_id} (level: {$understanding_level})");
+            }
         }
     }
 
