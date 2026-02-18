@@ -372,9 +372,32 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
       .catch(() => setError('Failed to copy raw response'));
   };
 
+  const getRequestPayloadFromTestResult = (): unknown => {
+    if (!testResult) return null;
+
+    const resultAny = testResult as any;
+    const data = resultAny?.data as any;
+
+    if (resultAny?.request_payload) return resultAny.request_payload;
+    if (data?.request_payload) return data.request_payload;
+
+    const raw = data?.raw_response ?? resultAny?.raw_response;
+    if (!raw) return null;
+
+    let parsedRaw: any = raw;
+    if (typeof raw === 'string') {
+      try {
+        parsedRaw = JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+
+    return parsedRaw?.request_payload ?? null;
+  };
+
   const copyPayload = () => {
-    if (!testResult) return;
-    const payload = (testResult as any).context || null;
+    const payload = getRequestPayloadFromTestResult();
     if (!payload) {
       setError('No payload available to copy');
       return;
@@ -906,7 +929,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                     className="mr-2 py-0"
                     onClick={copyPayload}
                     title="Copy payload"
-                    disabled={!(testResult as any)?.context}
+                    disabled={!getRequestPayloadFromTestResult()}
                   >
                     <i className={`fas ${copiedType === 'payload' ? 'fa-check' : 'fa-copy'} mr-1`}></i>
                     {copiedType === 'payload' ? 'Copied Payload' : 'Copy Payload'}
