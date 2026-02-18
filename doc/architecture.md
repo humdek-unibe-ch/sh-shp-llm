@@ -22,20 +22,36 @@ server/plugins/sh-shp-llm/
 │   └── package.json
 ├── react/                         # React frontend
 │   ├── src/
-│   │   ├── LlmChat.tsx           # Entry point
+│   │   ├── LlmChat.tsx           # Chat entry point
+│   │   ├── admin.tsx             # Admin console entry point
+│   │   ├── scripts.tsx           # LLM Scripts entry point
 │   │   ├── types/                # TypeScript definitions
 │   │   ├── components/           # React components
+│   │   │   ├── scripts/          # LLM Scripts manager
+│   │   │   │   ├── ScriptsManager.tsx
+│   │   │   │   ├── ScriptsManager.css
+│   │   │   │   └── scriptsApi.ts
+│   │   │   └── ...               # Chat and admin components
 │   │   ├── hooks/                # Custom hooks
 │   │   └── utils/                # Utilities
-│   └── vite.config.ts
+│   ├── vite.config.ts            # Chat build config
+│   ├── vite.admin.config.ts      # Admin console build config
+│   └── vite.scripts.config.ts    # LLM Scripts build config
 ├── server/
+│   ├── ajax/                      # AJAX endpoints
+│   │   └── AjaxLlmScripts.php    # LLM Scripts CRUD API
 │   ├── component/                 # MVC components
 │   │   ├── LlmHooks.php          # Plugin hooks
 │   │   ├── moduleLlmAdminConsole/ # Admin console
-│   │   └── style/llmchat/        # Chat component
+│   │   ├── moduleLlmScript/       # LLM Scripts (React wrapper)
+│   │   ├── moduleLlmScriptMode/   # LLM Scripts mode routing
+│   │   └── style/                 # Style components
+│   │       ├── llmchat/           # Chat component
+│   │       └── llmResponse/       # LLM Response display style
 │   ├── service/                   # Business logic
 │   │   ├── globals.php           # Constants
-│   │   ├── LlmService.php        # Core service
+│   │   ├── LlmService.php        # Core LLM service
+│   │   ├── LlmScriptService.php  # LLM Scripts management & execution
 │   │   ├── LlmApiFormatterService.php
 │   │   ├── LlmFileUploadService.php
 │   │   └── provider/             # Provider abstraction
@@ -91,6 +107,71 @@ server/plugins/sh-shp-llm/
 │  └─────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### LLM Scripts Module
+
+```
+┌─────────────────────────────────────────────────────────┐
+│           React UI (ScriptsManager.tsx)                   │
+│  - List / Create / Edit / Delete / Test scripts          │
+│  - Monaco Editor for prompt templates                    │
+│  - Config: async, model, temperature, max_tokens, etc.   │
+└──────────────────────────┬──────────────────────────────┘
+                           │ AJAX (FormData POST)
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│           AjaxLlmScripts.php (Plugin AJAX)               │
+│  - dispatch(): routes list/get/create/update/delete/test │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│           LlmScriptService.php                           │
+│  - CRUD for llm_scripts table                            │
+│  - execute_llm_script() → LlmService::callLlmApi()      │
+│  - log_execution() → UserInput::save_data()              │
+│  - insert_refresh_event() → core refresh_events table    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Refresh Events (Core Integration)
+
+The refresh events mechanism is a **core SelfHelp feature** (v7.8.0), not a plugin
+feature. The LLM plugin generates events; core handles polling and page refresh.
+
+```
+┌─────────────┐  async script   ┌──────────────────┐
+│ LLM Script  │  completes      │ LlmScriptService │
+│ Execution   │ ───────────────→│ insert_refresh_  │
+│ (cron job)  │                 │ event()          │
+└─────────────┘                 └────────┬─────────┘
+                                         │ INSERT INTO
+                                         ▼
+                              ┌──────────────────────┐
+                              │ refresh_events (core) │
+                              │ refresh_events_       │
+                              │ sections (core)       │
+                              └──────────┬───────────┘
+                                         │ polled by
+                                         ▼
+┌──────────────────┐          ┌──────────────────────┐
+│ event-listener.js│ ◀────── │ AjaxRefreshEvents    │
+│ (core JS)        │  JSON    │ ::check() (core PHP) │
+│ polls every Ns   │          └──────────────────────┘
+└────────┬─────────┘
+         │ silent AJAX refresh
+         ▼
+┌──────────────────┐
+│ Page sections    │
+│ #section-{id}    │
+│ updated in DOM   │
+└──────────────────┘
+```
+
+**Configuration**: Enable via CMS page fields `enable_event_listener` (checkbox)
+and `event_listener_interval` (seconds). Available on page types: core (2),
+experiment (3), emails (7). Core `BasePage::output_event_listener()` handles
+injection automatically — no plugin hook required.
 
 ### Frontend (React)
 

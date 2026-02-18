@@ -20,7 +20,7 @@ class LlmAdminService extends LlmService
     /* Public Methods *********************************************************/
 
     /**
-     * Get admin filter options (users and sections with conversations)
+     * Get admin filter options (users, sections, and scripts with conversations)
      */
     public function getAdminFilterOptions()
     {
@@ -44,9 +44,18 @@ class LlmAdminService extends LlmService
              ORDER BY s.name ASC"
         );
 
+        $scripts = $this->db->query_db(
+            "SELECT DISTINCT ls.id, ls.name
+             FROM llm_scripts ls
+             INNER JOIN llmConversations lc ON lc.id_llm_scripts = ls.id
+             WHERE ls.name IS NOT NULL AND ls.name != ''
+             ORDER BY ls.name ASC"
+        );
+
         return [
             'users' => $users ?: [],
-            'sections' => $sections ?: []
+            'sections' => $sections ?: [],
+            'scripts' => $scripts ?: []
         ];
     }
 
@@ -67,6 +76,11 @@ class LlmAdminService extends LlmService
         if (!empty($filters['section_id'])) {
             $where[] = "lc.id_sections = ?";
             $params[] = $filters['section_id'];
+        }
+
+        if (!empty($filters['script_id'])) {
+            $where[] = "lc.id_llm_scripts = ?";
+            $params[] = $filters['script_id'];
         }
 
         if (!empty($filters['query'])) {
@@ -94,19 +108,23 @@ class LlmAdminService extends LlmService
         $count_sql = "SELECT COUNT(DISTINCT lc.id) as total
                       FROM llmConversations lc
                       LEFT JOIN users u ON lc.id_users = u.id
+                      LEFT JOIN sections s ON lc.id_sections = s.id
+                      LEFT JOIN llm_scripts ls ON lc.id_llm_scripts = ls.id
                       {$where_clause}";
         $total_result = $this->db->query_db_first($count_sql, $params);
         $total = $total_result['total'] ?? 0;
 
-        // Get conversations with user, section details
+        // Get conversations with user, section, and script details
         $sql = "SELECT lc.*,
                        u.name as user_name,
                        u.email as user_email,
                        s.name as section_name,
+                       ls.name as script_name,
                        (SELECT COUNT(*) FROM llmMessages lm WHERE lm.id_llmConversations = lc.id) as message_count
                 FROM llmConversations lc
                 LEFT JOIN users u ON lc.id_users = u.id
                 LEFT JOIN sections s ON lc.id_sections = s.id
+                LEFT JOIN llm_scripts ls ON lc.id_llm_scripts = ls.id
                 {$where_clause}
                 ORDER BY lc.updated_at DESC
                 LIMIT {$per_page} OFFSET {$offset}";

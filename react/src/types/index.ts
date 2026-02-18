@@ -622,6 +622,7 @@ export interface AdminFiltersResponse {
   filters: {
     users: AdminFilterOption[];
     sections: { id: number; name: string }[];
+    scripts: { id: number; name: string }[];
   };
   error?: string;
 }
@@ -629,9 +630,11 @@ export interface AdminFiltersResponse {
 export interface AdminConversation extends Conversation {
   id_users?: number;
   id_sections?: number;
+  id_llm_scripts?: number;
   user_name?: string;
   user_email?: string;
   section_name?: string;
+  script_name?: string;
   message_count?: number;
   /** Whether conversation is blocked */
   blocked?: boolean | number;

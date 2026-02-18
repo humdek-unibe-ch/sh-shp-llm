@@ -7,6 +7,7 @@
 require_once __DIR__ . "/../../../../component/BaseHooks.php";
 require_once __DIR__ . "/../../../../component/style/BaseStyleComponent.php";
 require_once __DIR__ . "/../service/LlmService.php";
+require_once __DIR__ . "/../service/LlmScriptService.php";
 
 /**
  * The class to define the hooks for the LLM plugin.
@@ -348,6 +349,12 @@ class LlmHooks extends BaseHooks
                     "label" => "LLM Conversations",
                     "url" => $this->get_link_url(LLM_ADMIN_PAGE_KEYWORD),
                     "type" => "secondary",
+                    "css" => "btn-sm mr-3"
+                )),
+                new BaseStyleComponent("button", array(
+                    "label" => "LLM Scripts",
+                    "url" => $this->get_link_url(LLM_SCRIPTS_PAGE_KEYWORD),
+                    "type" => "secondary",
                     "css" => "btn-sm"
                 ))
             )
@@ -369,6 +376,170 @@ class LlmHooks extends BaseHooks
                 $res->get_view()->set_children($children);
             }
         }
+        return $res;
+    }
+
+    /* =========================================================================
+     * LLM SCRIPT JOB INTEGRATION HOOKS
+     * ========================================================================= */
+
+    /**
+     * Execute LLM script task when job_type is llm_script.
+     * Hook on Task::execute_task (priority 11, coexists with R Serve at 10).
+     *
+     * @param array $args Hook arguments including task_info, user, etc.
+     * @return bool Success
+     */
+    public function execute_llm_task($args)
+    {
+        if ($args['task_info']['config']['type'] == ACTION_JOB_TYPE_LLM_SCRIPT) {
+            return $this->execute_llm_script_from_job($args);
+        } else {
+            return $this->execute_private_method($args);
+        }
+    }
+
+    /**
+     * Internal: execute an LLM script from a scheduled job.
+     */
+    private function execute_llm_script_from_job($args)
+    {
+        $scriptService = new LlmScriptService($this->services);
+        $script_info = $scriptService->fetch_script($args['task_info']['config'][ACTION_JOB_TYPE_LLM_SCRIPT]);
+
+        if (!$script_info) {
+            $this->transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_SCRIPT,
+                null, null, null, false,
+                "The LLM script was not found; " . json_encode($args)
+            );
+            return false;
+        }
+
+        $form_values = $this->user_input->get_form_values($args['task_info']['config']['form_data']['form_fields']);
+        $data_config = $script_info['data_config'] ? json_decode($script_info['data_config'], true) : null;
+
+        $result = $scriptService->execute_llm_script(
+            $script_info['script'],
+            $data_config,
+            $form_values,
+            $args['user']['id_users'],
+            $script_info['model'],
+            $script_info['temperature'] !== null ? floatval($script_info['temperature']) : null,
+            $script_info['max_tokens'] !== null ? intval($script_info['max_tokens']) : null
+        );
+
+        $save_success = $scriptService->save_llm_results(
+            $result,
+            $args['user']['id_users'],
+            $args['user']['id_scheduledJobs'],
+            $script_info['generated_id']
+        );
+
+        $scriptService->log_script_execution(
+            $script_info['id'],
+            $script_info['name'],
+            $result,
+            $script_info['model'],
+            $script_info['temperature'] !== null ? floatval($script_info['temperature']) : null,
+            $script_info['max_tokens'] !== null ? intval($script_info['max_tokens']) : null
+        );
+
+        if ($save_success && $script_info['refresh_sections']) {
+            $section_ids = json_decode($script_info['refresh_sections'], true);
+            if (is_array($section_ids) && !empty($section_ids)) {
+                $scriptService->insert_refresh_event(
+                    $args['user']['id_users'],
+                    $section_ids,
+                    'llm_script_completed',
+                    json_encode(array('generated_id' => $script_info['generated_id']))
+                );
+            }
+        }
+
+        return $save_success;
+    }
+
+    /**
+     * Add llm_script option to the jobConfig JSON schema.
+     * Hook on JobConfigView::get_json_schema (priority 11).
+     */
+    public function get_json_schema($args)
+    {
+        $llm_scripts = $this->db->fetch_table_as_select_values(LLM_TABLE_SCRIPTS, 'id', array('generated_id', 'name'));
+        $enum_titles = array();
+        $enum = array();
+        foreach ($llm_scripts as $value) {
+            $enum_titles[] = $value['text'];
+            $enum[] = $value['value'];
+        }
+
+        $res = (string) $this->execute_private_method($args);
+        $res = json_decode($res, true);
+
+        $llm_script_field = array(
+            "type" => "string",
+            "options" => array(
+                "grid_columns" => 12,
+                "enum_titles" => $enum_titles,
+                "dependencies" => array(
+                    "job_type" => array(ACTION_JOB_TYPE_LLM_SCRIPT)
+                )
+            ),
+            "title" => "LLM script",
+            "description" => "Select LLM script to execute",
+            "enum" => $enum
+        );
+
+        $res['definitions']['job_ref']['properties']['job_type']['enum'][] = ACTION_JOB_TYPE_LLM_SCRIPT;
+        $res['definitions']['job_ref']['properties']['job_type']['options']['enum_titles'][] = "LLM script";
+        $res['definitions']['job_ref']['properties'][ACTION_JOB_TYPE_LLM_SCRIPT] = $llm_script_field;
+
+        return json_encode($res);
+    }
+
+    /**
+     * Build task config for LLM script jobs.
+     * Hook on UserInput::get_task_config (priority 11).
+     */
+    public function get_task_config($args)
+    {
+        $job = $args['job'];
+        if ($job['job_type'] == ACTION_JOB_TYPE_LLM_SCRIPT) {
+            return array(
+                "type" => $job[ACTION_JOB_TYPE],
+                "description" => isset($job['job_name']) ? $job['job_name'] : "Schedule task (LLM script) by form: " . $args['form_data']['form_name'],
+                ACTION_JOB_TYPE_LLM_SCRIPT => $job[ACTION_JOB_TYPE_LLM_SCRIPT],
+                "form_data" => $args['form_data'],
+                "id_users" => $_SESSION['id_user']
+            );
+        } else {
+            return $this->execute_private_method($args);
+        }
+    }
+
+    /**
+     * Return jobTypes_task for llm_script job type.
+     * Hook on UserInput::get_job_type (priority 11).
+     */
+    public function get_job_type($args)
+    {
+        $res = $this->execute_private_method($args);
+        if ($args['job']['job_type'] == ACTION_JOB_TYPE_LLM_SCRIPT) {
+            return jobTypes_task;
+        }
+        return $res;
+    }
+
+    /**
+     * Add moduleLlmScriptMode to sensible pages list.
+     * Hook on Router::get_sensible_pages.
+     */
+    public function get_sensible_pages($args)
+    {
+        $res = $this->execute_private_method($args);
+        $res[] = LLM_SCRIPTS_PAGE_KEYWORD;
         return $res;
     }
 

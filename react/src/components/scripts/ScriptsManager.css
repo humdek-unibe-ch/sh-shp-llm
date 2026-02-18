@@ -1,0 +1,54 @@
+.llm-scripts-manager .cursor-pointer {
+  cursor: pointer;
+}
+
+.llm-scripts-manager .scripts-table tbody tr:hover {
+  background-color: rgba(0, 0, 0, 0.075);
+}
+
+.llm-scripts-manager .monaco-editor-container {
+  min-height: 500px;
+  border-top: 1px solid #dee2e6;
+}
+
+.llm-scripts-manager .monaco-editor-container-small {
+  min-height: 180px;
+  border-top: 1px solid #dee2e6;
+}
+
+.llm-scripts-manager .pre-wrap {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.llm-scripts-manager .font-monospace {
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.llm-scripts-manager code {
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+}
+
+.llm-scripts-manager .card-header code {
+  background: transparent;
+  color: inherit;
+}
+
+.llm-scripts-manager .sections-dropdown-menu {
+  min-width: 100%;
+  padding-top: 0.5rem;
+}
+
+.llm-scripts-manager .sections-dropdown-menu .dropdown-item.active {
+  background-color: #e8f4fd;
+  color: #212529;
+}
+
+.llm-scripts-manager .sections-dropdown-menu .dropdown-item:hover {
+  background-color: #f8f9fa;
+}
+
+.llm-scripts-manager .sections-dropdown-menu .dropdown-item.active:hover {
+  background-color: #d0eafb;
+}

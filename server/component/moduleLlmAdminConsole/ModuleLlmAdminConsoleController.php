@@ -92,6 +92,9 @@ class ModuleLlmAdminConsoleController extends BaseController
         if (!empty($_GET['section_id'])) {
             $filters['section_id'] = $_GET['section_id'];
         }
+        if (!empty($_GET['script_id'])) {
+            $filters['script_id'] = $_GET['script_id'];
+        }
         if (!empty($_GET['q'])) {
             $filters['query'] = $_GET['q'];
         }

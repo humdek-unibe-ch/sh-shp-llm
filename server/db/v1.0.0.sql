@@ -238,6 +238,8 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     KEY `idx_section` (`id_sections`),
     KEY `idx_deleted` (`deleted`),
     KEY `idx_blocked` (`blocked`),
+    `id_llm_scripts` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Link to llm_scripts for script-generated conversations',
+    KEY `idx_llm_scripts` (`id_llm_scripts`),
     CONSTRAINT `fk_llmConversations_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE,
 CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -557,9 +559,87 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
  'Enable speech-to-text input. When enabled and an audio model is selected, a microphone button appears in the message input area. Users can click to record voice input which is transcribed to text in real-time.\n\n**Requirements:**\n- An audio model must be selected below\n- User must grant microphone permissions\n- Modern browser with MediaRecorder API support\n\n**Privacy:** Audio is processed in real-time and not stored permanently.'),
 
 (get_style_id('llmChat'), get_field_id('speech_to_text_model'), 'faster-whisper-large-v3', 
- 'Select the Whisper model for speech recognition. The model processes audio and returns transcribed text.\n\n**Recommended:** faster-whisper-large-v3 for best accuracy.\n\n**Note:** The microphone button will only appear when both this field is set AND the enable checkbox above is checked.');
-
--- Register hooks for audio model field selection
+ 'Select the Whisper model for speech recognition. The model processes audio and returns transcribed text.\n\n**Recommended:** faster-whisper-large-v3 for best accuracy.\n\n**Note:** The microphone button will only appear when both this field is set AND the enable checkbox above is checked.');-- Register hooks for audio model field selection
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-edit', 'Output select audio model field - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldAudioModelEdit', 5);INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-audio-model-view', 'Output select audio model field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldAudioModelView', 5);
+
+-- =====================================================
+-- LLM SCRIPTS MODULE
+-- =====================================================
+
+-- Add LLM scripts table
+CREATE TABLE IF NOT EXISTS `llm_scripts` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL PRIMARY KEY AUTO_INCREMENT,
+    `generated_id` VARCHAR(20) NOT NULL,
+    `name` VARCHAR(100) NOT NULL,
+    `script` LONGTEXT,
+    `data_config` TEXT,
+    `test_variables` TEXT,
+    `async` BOOLEAN DEFAULT FALSE,
+    `model` VARCHAR(100) DEFAULT NULL,
+    `temperature` DECIMAL(3,2) DEFAULT NULL,
+    `max_tokens` INT DEFAULT NULL,
+    `refresh_sections` TEXT DEFAULT NULL COMMENT 'JSON array of section IDs to refresh after async execution',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Add FK from llmConversations to llm_scripts (llm_scripts table now exists)
+ALTER TABLE `llmConversations`
+    ADD CONSTRAINT `fk_llmConversations_llm_scripts`
+    FOREIGN KEY (`id_llm_scripts`) REFERENCES `llm_scripts` (`id`) ON DELETE SET NULL;
+
+-- Add transaction type for LLM scripts
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES ('transactionBy', 'by_llm_script', 'By LLM Script', 'The action was done by an LLM script');
+
+-- Register LLM script hooks (priority 11 to coexist with R Serve at priority 10)
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'llm-execute-llm-task', 'Execute LLM script task', 'Task', 'execute_task', 'LlmHooks', 'execute_llm_task', 11);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'llm-jobConfig-schema', 'Add LLM Script to jobConfig schema', 'JobConfigView', 'get_json_schema', 'LlmHooks', 'get_json_schema', 11);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'llm-get-task-config', 'Get task config for LLM script task', 'UserInput', 'get_task_config', 'LlmHooks', 'get_task_config', 11);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'llm-get-job-type', 'Get job type for LLM script', 'UserInput', 'get_job_type', 'LlmHooks', 'get_job_type', 11);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return' LIMIT 0,1), 'llm-get-sensible-pages', 'Add sensible page for LLM script editing', 'Router', 'get_sensible_pages', 'LlmHooks', 'get_sensible_pages', 1);
+
+-- Add LLM Scripts list page
+SET @id_page_modules = (SELECT id FROM pages WHERE keyword = 'sh_modules');
+
+INSERT IGNORE INTO `pages` (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
+VALUES (NULL, 'moduleLlmScript', '/admin/llm_scripts', 'GET|POST', (SELECT id FROM actions WHERE `name` = 'component' LIMIT 1), NULL, NULL, '0', NULL, NULL, '0000000001', (SELECT id FROM lookups WHERE type_code = 'pageAccessTypes' AND lookup_code = 'mobile_and_web'));
+SET @id_page_llm_scripts = (SELECT id FROM pages WHERE keyword = 'moduleLlmScript');
+
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`) VALUES (@id_page_llm_scripts, get_field_id('title'), '0000000001', 'LLM Scripts');
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`) VALUES (@id_page_llm_scripts, get_field_id('title'), '0000000002', 'LLM Skripte');
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`) VALUES ('0000000001', @id_page_llm_scripts, '1', '1', '1', '1');
+
+-- =====================================================
+-- LLM RESPONSE STYLE
+-- =====================================================
+
+INSERT IGNORE INTO `styles` (`name`, `id_type`, `id_group`, `description`)
+VALUES ('llmResponse', (SELECT id FROM styleType WHERE `name` = 'component'), (SELECT id FROM styleGroup WHERE `name` = 'Form'), 'LLM Response display with optional editing. Extends markdown with {{}} interpolation from LLM response data.');
+
+-- Add fields for llmResponse style
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'enable_editing', get_field_type_id('checkbox'), '0');
+
+-- Link fields to llmResponse style
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmResponse'), get_field_id('css'), NULL, 'Allows to assign CSS classes to the root item of the style.'),
+(get_style_id('llmResponse'), get_field_id('css_mobile'), NULL, 'Allows to assign CSS classes to the root item of the style for the mobile version.'),
+(get_style_id('llmResponse'), get_field_id('text_md'), '', 'Template text with {{field.path}} interpolation from LLM response JSON data. Supports full markdown formatting. Example: **Result:** {{response.content}}'),
+(get_style_id('llmResponse'), get_field_id('data_config'), '', 'Data configuration to load LLM response data from dataTables. The loaded data fields can be referenced in text_md using {{field_name}} syntax.'),
+(get_style_id('llmResponse'), get_field_id('name'), '', 'Field name for form submission when editing is enabled. This name is used as the form field identifier.'),
+(get_style_id('llmResponse'), get_field_id('enable_editing'), '0', 'When enabled, renders as an editable textarea instead of read-only markdown. The interpolated content becomes the default value that users can modify. The field participates in form submission using the configured name.');
+
+-- LLM Scripts CRUD is handled by ModuleLlmScriptController via ?action=
+-- No separate AJAX endpoint needed - ACL is enforced by the llm_scripts page itself.

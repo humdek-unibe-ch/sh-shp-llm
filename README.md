@@ -24,7 +24,7 @@ A comprehensive LLM integration plugin for SelfHelp CMS, enabling real-time AI c
 ## Quick Start
 
 ### Requirements
-- SelfHelp v7.0+
+- SelfHelp v7.7+
 - PHP 8.2+ with cURL extension
 - MySQL 8.0+
 - gpustack or OpenAI-compatible API

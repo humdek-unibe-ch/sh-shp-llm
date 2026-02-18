@@ -4,6 +4,45 @@
 
 ### Added
 
+#### LLM Scripts Module (February 2026)
+- **LLM Scripts CRUD**: Full create, read, update, delete interface for reusable LLM prompt templates
+- **React-Based UI**: Scripts manager built with React 18, React-Bootstrap, and Monaco Editor for script editing
+- **Script Configuration**: Per-script settings for name, async/sync execution mode, model override, temperature, max tokens, data config, and test variables
+- **Script Testing**: Test scripts directly from the UI with configurable test variables and data config
+- **Refresh Sections**: Scripts can specify which page sections to refresh after async execution
+- **Job Scheduler Integration**: LLM scripts can be assigned as scheduled job actions, supporting both synchronous and asynchronous execution
+- **Execution Logging**: Script results saved to dataTables via `UserInput::save_data()` following the R Serve pattern
+- **Controller Pattern**: All CRUD and test operations use the `ModuleLlmScriptController` via `?action=` parameters (no separate AJAX endpoint)
+- **One Conversation Per Script**: Script executions reuse a single conversation per script in `llmConversations` (linked via `id_llm_scripts` FK), appending messages on each run
+- **Full Execution Context**: Script test/execution results store the original template, data_config, test variables, resolved data, and interpolated prompt in `sent_context` for full audit trail
+- **Admin Script Filtering**: Admin conversations page includes a "Script" filter dropdown to view script-linked conversations
+- **Vite Build**: Separate Vite configuration (`vite.scripts.config.ts`) for building the scripts React app
+
+**New Files:**
+- `server/service/LlmScriptService.php` - Service layer for script management and execution
+- `server/component/moduleLlmScript/` - PHP MVC wrapper (Component, Model, View, Controller) for React UI
+- `react/src/scripts.tsx` - React entry point
+- `react/src/components/scripts/ScriptsManager.tsx` - Main React component
+- `react/src/components/scripts/scriptsApi.ts` - TypeScript API client
+- `react/src/components/scripts/ScriptsManager.css` - Component styles
+- `react/vite.scripts.config.ts` - Vite build configuration
+
+**Database Tables:**
+- `llm_scripts` - Stores script definitions with generated IDs, prompt templates, and configuration
+- `llmConversations.id_llm_scripts` - FK linking conversations to scripts for one-conversation-per-script tracking
+
+#### LLM Response Style (February 2026)
+- **New `llmResponse` Style**: Extension of markdown for visualizing LLM response data
+- **JSON Interpolation**: Supports `{{field.path}}` syntax to interpolate values from LLM response JSON
+- **Editable Mode**: Optional editing capability controlled by `enable_editing` field
+- **Data Config**: Configurable data source for loading LLM response data from dataTables
+
+#### Refresh Events (February 2026)
+- **Note**: The refresh events mechanism (polling for background task completions) was implemented as a **core SelfHelp feature** in v7.8.0, not as a plugin feature
+- The LLM plugin generates refresh events via `LlmScriptService::insert_refresh_event()` when async scripts complete
+- Page-level `enable_event_listener` and `event_listener_interval` fields are configured in core and available on experiment, core, and email page types
+- Core `BasePage::output_event_listener()` handles injection — no plugin hook needed
+
 #### Automatic Image Resizing for Vision Models (January 16, 2026)
 - **Automatic Image Optimization**: Large images are automatically resized before sending to the LLM to prevent context window overflow
 - **Smart Resizing**: Images larger than 1024x1024 are resized while maintaining aspect ratio

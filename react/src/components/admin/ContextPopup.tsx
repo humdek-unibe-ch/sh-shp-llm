@@ -81,9 +81,50 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
     );
   };
 
+  const renderScriptContext = (parsed: Record<string, unknown>) => {
+    const items: { label: string; icon: string; value: string }[] = [];
+
+    if (parsed.script_template) {
+      items.push({ label: 'Script Template', icon: 'fa-file-code', value: String(parsed.script_template) });
+    }
+    if (parsed.interpolated_prompt) {
+      items.push({ label: 'Interpolated Prompt (sent to LLM)', icon: 'fa-paper-plane', value: String(parsed.interpolated_prompt) });
+    }
+    if (parsed.test_variables && typeof parsed.test_variables === 'object' && Object.keys(parsed.test_variables as object).length > 0) {
+      items.push({ label: 'Test Variables', icon: 'fa-flask', value: JSON.stringify(parsed.test_variables, null, 2) });
+    }
+    if (parsed.data_config && ((Array.isArray(parsed.data_config) && (parsed.data_config as unknown[]).length > 0) || (!Array.isArray(parsed.data_config) && typeof parsed.data_config === 'object' && Object.keys(parsed.data_config as object).length > 0))) {
+      items.push({ label: 'Data Config', icon: 'fa-database', value: JSON.stringify(parsed.data_config, null, 2) });
+    }
+    if (parsed.data_config_values && typeof parsed.data_config_values === 'object' && Object.keys(parsed.data_config_values as object).length > 0) {
+      items.push({ label: 'Resolved Data', icon: 'fa-table', value: JSON.stringify(parsed.data_config_values, null, 2) });
+    }
+    if (parsed.merged_variables && typeof parsed.merged_variables === 'object' && Object.keys(parsed.merged_variables as object).length > 0) {
+      items.push({ label: 'All Merged Variables', icon: 'fa-code-branch', value: JSON.stringify(parsed.merged_variables, null, 2) });
+    }
+
+    return items.map((item, index) => (
+      <div key={index} className="card mb-3">
+        <div className="card-header bg-light py-2 d-flex align-items-center">
+          <i className={`fas ${item.icon} mr-2 text-info`}></i>
+          <span className="font-weight-bold small">{item.label}</span>
+        </div>
+        <div className="card-body py-3">
+          <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.85rem' }}>{item.value}</pre>
+        </div>
+      </div>
+    ));
+  };
+
   const parseContext = (context: string) => {
     try {
       const parsed = JSON.parse(context);
+
+      // Script execution context (has script_template or interpolated_prompt)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed.script_template || parsed.interpolated_prompt)) {
+        return renderScriptContext(parsed);
+      }
+
       if (Array.isArray(parsed)) {
         const validMessages = parsed
           .filter((item) => item && typeof item === 'object' && item.content)

@@ -12,6 +12,7 @@ import './AdminConsole.css';
 interface AdminFilters {
   userId: string;
   sectionId: string;
+  scriptId: string;
   query: string;
   dateFrom: string;
   dateTo: string;
@@ -65,6 +66,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   const [filters, setFilters] = useState<AdminFilters>({ 
     userId: '', 
     sectionId: '', 
+    scriptId: '',
     query: '',
     dateFrom: getTodayDate(),
     dateTo: getTodayDate()
@@ -72,7 +74,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   const [filterOptions, setFilterOptions] = useState<{
     users: FilterOption[];
     sections: { id: number; name: string }[];
-  }>({ users: [], sections: [] });
+    scripts: { id: number; name: string }[];
+  }>({ users: [], sections: [], scripts: [] });
   const [conversations, setConversations] = useState<AdminConversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<AdminConversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -193,6 +196,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         per_page: config.pageSize,
         user_id: filters.userId || undefined,
         section_id: filters.sectionId || undefined,
+        script_id: filters.scriptId || undefined,
         q: filters.query || undefined,
         date_from: filters.dateFrom || undefined,
         date_to: filters.dateTo || undefined
@@ -245,6 +249,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     setFilters({ 
       userId: '', 
       sectionId: '', 
+      scriptId: '',
       query: '',
       dateFrom: getTodayDate(),
       dateTo: getTodayDate()
@@ -391,7 +396,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     return nameParts.length > 0 ? nameParts.join(' ') : `User ${user.id}`;
   };
 
-  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.query;
+  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.query;
 
   // Prepare options for react-select
   const userOptions = [
@@ -407,6 +412,14 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     ...filterOptions.sections.map(section => ({
       value: section.id.toString(),
       label: section.name
+    }))
+  ];
+
+  const scriptOptions = [
+    { value: '', label: 'All scripts' },
+    ...(filterOptions.scripts || []).map(script => ({
+      value: script.id.toString(),
+      label: script.name
     }))
   ];
 
@@ -547,6 +560,28 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                     />
                   </div>
 
+                  {/* Script Filter */}
+                  {scriptOptions.length > 1 && (
+                    <div className="filter-col filter-col-half">
+                      <Form.Label className="small text-muted mb-1">
+                        <i className="fas fa-code mr-1"></i>
+                        Script
+                      </Form.Label>
+                      <Select
+                        value={scriptOptions.find(option => option.value === filters.scriptId)}
+                        onChange={(selectedOption) => handleFilterChange('scriptId', selectedOption?.value || '')}
+                        options={scriptOptions}
+                        isSearchable={true}
+                        isClearable={false}
+                        placeholder="All scripts..."
+                        className="react-select-container filter-select"
+                        classNamePrefix="react-select"
+                        menuPortalTarget={document.body}
+                        styles={compactSelectStyles}
+                      />
+                    </div>
+                  )}
+
                   {/* Search Filter */}
                   <div className="filter-col filter-col-half">
                     <Form.Label className="small text-muted mb-1">
@@ -629,6 +664,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         <>
                           <i className="fas fa-folder mr-1"></i>
                           {conversation.section_name}
+                          <span className="mx-1">•</span>
+                        </>
+                      )}
+                      {conversation.script_name && (
+                        <>
+                          <i className="fas fa-code mr-1"></i>
+                          {conversation.script_name}
                           <span className="mx-1">•</span>
                         </>
                       )}
@@ -719,6 +761,13 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                             <span className="mx-2">•</span>
                             <i className="fas fa-folder mr-1"></i>
                             {selectedConversation.section_name}
+                          </>
+                        )}
+                        {selectedConversation.script_name && (
+                          <>
+                            <span className="mx-2">•</span>
+                            <i className="fas fa-code mr-1"></i>
+                            {selectedConversation.script_name}
                           </>
                         )}
                         <span className="mx-2">•</span>

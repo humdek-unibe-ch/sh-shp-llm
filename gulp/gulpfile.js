@@ -46,7 +46,9 @@ const paths = {
       src: path.join(__dirname, '../server/component/style/llmchat/js/*.js'),
       dest: path.join(__dirname, '../js/ext')
     }
-  }
+  },
+  // LLM Scripts now use React (built via vite.scripts.config.ts)
+  // Output: js/ext/llm-scripts.umd.js, css/ext/llm-scripts.css
 };
 
 /**
@@ -187,6 +189,9 @@ gulp.task('js', function() {
     });
 });
 
+// LLM Scripts CSS/JS are now built via React (vite.scripts.config.ts)
+// See react/package.json build script for the full pipeline.
+
 /**
  * Watch legacy files for changes
  */
@@ -194,6 +199,7 @@ gulp.task('watch', function() {
   console.log('Watching legacy files for changes...');
   gulp.watch(paths.legacy.css.src, gulp.series('css'));
   gulp.watch(paths.legacy.js.src, gulp.series('js'));
+  // LLM Scripts use React watch via: cd react && npm run watch
 });
 
 /**

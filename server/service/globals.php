@@ -33,6 +33,12 @@ define('LLM_API_MODELS', '/models');
 
 // Transaction logging
 define('TRANSACTION_BY_LLM_PLUGIN', 'by_llm_plugin');
+define('TRANSACTION_BY_LLM_SCRIPT', 'by_llm_script');
+
+// LLM Script constants
+define('ACTION_JOB_TYPE_LLM_SCRIPT', 'llm_script');
+define('LLM_TABLE_SCRIPTS', 'llm_scripts');
+define('LLM_SCRIPTS_PAGE_KEYWORD', 'moduleLlmScript');
 
 // File upload limits
 define('LLM_MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB

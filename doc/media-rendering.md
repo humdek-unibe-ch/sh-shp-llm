@@ -329,9 +329,7 @@ Would you like to try this together?
 
 ## Media in Form Mode
 
-When using form mode with media, you can include images in the form's `contentBefore` or `contentAfter` fields:
-
-```json
+When using form mode with media, you can include images in the form's `contentBefore` or `contentAfter` fields:```json
 {
   "type": "form",
   "title": "Visual Feedback",
@@ -350,4 +348,3 @@ When using form mode with media, you can include images in the form's `contentBe
   ]
 }
 ```
-
