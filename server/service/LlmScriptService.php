@@ -423,7 +423,7 @@ class LlmScriptService extends BaseLlmService
 
     /**
      * Log an LLM script execution (including tests) as llmConversation messages.
-     * Uses one conversation per script: finds existing or creates new.
+     * Uses one conversation per script+model+user: finds existing or creates new.
      * Stores full execution context (template, data_config, variables, interpolated prompt).
      *
      * @param int|null $id_llm_scripts Script ID (null for ad-hoc tests)
@@ -451,13 +451,22 @@ class LlmScriptService extends BaseLlmService
 
             if ($id_llm_scripts) {
                 $existing = $this->db->query_db_first(
-                    "SELECT id FROM llmConversations WHERE id_llm_scripts = :sid ORDER BY id DESC LIMIT 1",
-                    array(':sid' => $id_llm_scripts)
+                    "SELECT id
+                     FROM llmConversations
+                     WHERE id_llm_scripts = :sid
+                       AND id_users = :uid
+                       AND IFNULL(model, '') = :model
+                     ORDER BY id DESC
+                     LIMIT 1",
+                    array(
+                        ':sid' => $id_llm_scripts,
+                        ':uid' => $user_id,
+                        ':model' => (string)$use_model,
+                    )
                 );
                 if ($existing) {
                     $conversation_id = $existing['id'];
                     $this->db->update_by_ids('llmConversations', [
-                        'model' => $use_model,
                         'temperature' => $use_temperature,
                         'max_tokens' => $use_max_tokens,
                         'title' => $title,
