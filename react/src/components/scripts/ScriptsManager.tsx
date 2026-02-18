@@ -32,6 +32,7 @@ interface AclPerms {
 
 export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) => {
   const api = useRef(createScriptsApi());
+  const copyFeedbackTimerRef = useRef<number | null>(null);
 
   const [scripts, setScripts] = useState<LlmScript[]>([]);
   const [selectedScript, setSelectedScript] = useState<LlmScript | null>(null);
@@ -41,6 +42,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   const [success, setSuccess] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
+  const [copiedType, setCopiedType] = useState<'raw' | 'payload' | null>(null);
   const [testing, setTesting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<LlmScript | null>(null);
   const [deleteInput, setDeleteInput] = useState('');
@@ -100,6 +102,14 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     // so Bootstrap can show/hide it independently of the wrapper's display:none
     const modal = document.querySelector('#data-config-builder-wrapper .data_config_builder_modal_holder');
     if (modal) document.body.appendChild(modal);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimerRef.current) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+    };
   }, []);
 
   const loadScripts = useCallback(async () => {
@@ -342,13 +352,37 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     }
   };
 
+  const setCopyFeedback = (type: 'raw' | 'payload') => {
+    setCopiedType(type);
+    if (copyFeedbackTimerRef.current) {
+      window.clearTimeout(copyFeedbackTimerRef.current);
+    }
+    copyFeedbackTimerRef.current = window.setTimeout(() => {
+      setCopiedType(null);
+      copyFeedbackTimerRef.current = null;
+    }, 1800);
+  };
+
   const copyRawResponse = () => {
     if (!testResult) return;
     const data = testResult.data as any;
     const raw = data?.raw_response || JSON.stringify(testResult, null, 2);
     navigator.clipboard.writeText(typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2))
-      .then(() => setSuccess('Raw response copied to clipboard'))
-      .catch(() => setError('Failed to copy to clipboard'));
+      .then(() => setCopyFeedback('raw'))
+      .catch(() => setError('Failed to copy raw response'));
+  };
+
+  const copyPayload = () => {
+    if (!testResult) return;
+    const payload = (testResult as any).context || null;
+    if (!payload) {
+      setError('No payload available to copy');
+      return;
+    }
+    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+    navigator.clipboard.writeText(payloadString)
+      .then(() => setCopyFeedback('payload'))
+      .catch(() => setError('Failed to copy payload'));
   };
 
   const openDataConfigModal = () => {
@@ -863,7 +897,19 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                     onClick={copyRawResponse}
                     title="Copy raw response"
                   >
-                    <i className="fas fa-copy mr-1"></i> Copy Raw
+                    <i className={`fas ${copiedType === 'raw' ? 'fa-check' : 'fa-copy'} mr-1`}></i>
+                    {copiedType === 'raw' ? 'Copied Raw' : 'Copy Raw'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline-light"
+                    className="mr-2 py-0"
+                    onClick={copyPayload}
+                    title="Copy payload"
+                    disabled={!(testResult as any)?.context}
+                  >
+                    <i className={`fas ${copiedType === 'payload' ? 'fa-check' : 'fa-copy'} mr-1`}></i>
+                    {copiedType === 'payload' ? 'Copied Payload' : 'Copy Payload'}
                   </Button>
                   <Button
                     size="sm"
