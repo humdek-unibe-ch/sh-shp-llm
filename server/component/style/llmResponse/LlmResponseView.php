@@ -31,9 +31,6 @@ class LlmResponseView extends StyleView
     /** @var string Field name for form submission */
     private $field_name;
 
-    /** @var int Section ID for form integration */
-    private $id_section;
-
     public function __construct($model)
     {
         parent::__construct($model);
@@ -41,7 +38,6 @@ class LlmResponseView extends StyleView
         $this->data_config = $this->model->get_db_field('data_config');
         $this->enable_editing = $this->model->get_db_field('enable_editing');
         $this->field_name = $this->model->get_db_field('name');
-        $this->id_section = $this->model->get_section_id();
     }
 
     public function output_content()

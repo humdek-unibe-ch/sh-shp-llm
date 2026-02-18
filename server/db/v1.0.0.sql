@@ -636,6 +636,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmResponse'), get_field_id('css'), NULL, 'Allows to assign CSS classes to the root item of the style.'),
 (get_style_id('llmResponse'), get_field_id('css_mobile'), NULL, 'Allows to assign CSS classes to the root item of the style for the mobile version.'),
+(get_style_id('llmResponse'), get_field_id('condition'), NULL, 'Set a condition that determines if this style is visible.'),
+(get_style_id('llmResponse'), get_field_id('debug'), '0', 'Enable to display debug information for this style.'),
 (get_style_id('llmResponse'), get_field_id('text_md'), '', 'Template text with {{field.path}} interpolation from LLM response JSON data. Supports full markdown formatting. Example: **Result:** {{response.content}}'),
 (get_style_id('llmResponse'), get_field_id('data_config'), '', 'Data configuration to load LLM response data from dataTables. The loaded data fields can be referenced in text_md using {{field_name}} syntax.'),
 (get_style_id('llmResponse'), get_field_id('name'), '', 'Field name for form submission when editing is enabled. This name is used as the form field identifier.'),
