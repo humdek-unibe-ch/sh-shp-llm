@@ -5,6 +5,7 @@ import {
 } from 'react-bootstrap';
 import type { ScriptsConfig } from '../../scripts';
 import { createScriptsApi, type LlmScript, type LlmModel, type SectionInfo, type LlmDefaults } from './scriptsApi';
+import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
 import './ScriptsManager.css';
 
 declare const monaco: any;
@@ -879,8 +880,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   <div>
                     <div className="mb-2">
                       <strong className="small">Content:</strong>
-                      <div className="p-2 bg-light border rounded mt-1 pre-wrap small">
-                        {(testResult as any).data.content}
+                      <div className="p-2 bg-light border rounded mt-1 small llm-scripts-test-markdown">
+                        <MarkdownRenderer content={(testResult as any).data.content || ''} />
                       </div>
                     </div>
                     <Row>

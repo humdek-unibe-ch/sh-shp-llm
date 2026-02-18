@@ -52,3 +52,42 @@
 .llm-scripts-manager .sections-dropdown-menu .dropdown-item.active:hover {
   background-color: #d0eafb;
 }
+
+.llm-scripts-manager .alert-dismissible {
+  padding-right: 3rem;
+}
+
+.llm-scripts-manager .alert-dismissible .close,
+.llm-scripts-manager .alert-dismissible .btn-close {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  transform: translateY(-50%);
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.llm-scripts-manager .alert-dismissible .close > span {
+  line-height: 1;
+}
+
+.llm-scripts-manager .llm-scripts-test-markdown .markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.llm-scripts-manager .llm-scripts-test-markdown .markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.llm-scripts-manager .llm-scripts-test-markdown .markdown-content th,
+.llm-scripts-manager .llm-scripts-test-markdown .markdown-content td {
+  border: 1px solid #dee2e6;
+  padding: 0.35rem 0.5rem;
+}
