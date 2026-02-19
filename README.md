@@ -120,6 +120,26 @@ The plugin ensures **100% schema compliance** through mandatory JSON response va
 
 See [doc/response-schema.md](doc/response-schema.md) for complete schema documentation.
 
+## LLM Response Loading UX
+
+The `llmResponse` component automatically provides loading feedback when used on pages with the event listener enabled.
+
+### How It Works
+
+1. User submits a form that triggers an async LLM script
+2. On form submit, the `llmResponse` section shows a **loading overlay** (spinner + "Processing..." label)
+3. The overlay persists across the full page reload (state saved in `sessionStorage`)
+4. When the LLM script completes and the event listener refreshes the section, the overlay is removed and a brief **blue highlight pulse** draws attention to the new content
+
+### Requirements
+
+- The page must have `enable_event_listener` enabled (core SelfHelp v7.8.0 feature)
+- The `llmResponse` template already includes `data-event-refresh-loading="1"` — no extra configuration needed
+
+### Technical Details
+
+This feature uses the **generic event refresh loading UX** from SelfHelp core (`js/ext/event-listener.js`). Any component can opt in by adding `data-event-refresh-loading="1"` to its wrapper element. The LLM plugin simply adds this attribute in `tpl_llmResponse.php`.
+
 ## File Structure
 
 ```

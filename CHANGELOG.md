@@ -36,6 +36,7 @@
 - **JSON Interpolation**: Supports `{{field.path}}` syntax to interpolate values from LLM response JSON
 - **Editable Mode**: Optional editing capability controlled by `enable_editing` field
 - **Data Config**: Configurable data source for loading LLM response data from dataTables
+- **Loading UX Integration**: The `llmResponse` template includes `data-event-refresh-loading="1"` to opt in to the core event refresh loading UX. When an async LLM script runs, the response section shows a spinner overlay until the result arrives, then highlights the new content with a brief animation. This uses the generic mechanism from SelfHelp v7.8.0 — no plugin-specific loading code is needed.
 
 #### Refresh Events (February 2026)
 - **Note**: The refresh events mechanism (polling for background task completions) was implemented as a **core SelfHelp feature** in v7.8.0, not as a plugin feature
