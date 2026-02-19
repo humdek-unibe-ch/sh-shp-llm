@@ -387,25 +387,146 @@ class LlmHooks extends BaseHooks
      * Execute LLM script task when job_type is llm_script.
      * Hook on Task::execute_task (priority 11, coexists with R Serve at 10).
      *
+     * When the script has async=1, spawns a background PHP process so the
+     * form submission returns immediately. The background worker executes the
+     * LLM API call, saves results, and triggers section refresh events.
+     *
      * @param array $args Hook arguments including task_info, user, etc.
      * @return bool Success
      */
     public function execute_llm_task($args)
     {
         if ($args['task_info']['config']['type'] == ACTION_JOB_TYPE_LLM_SCRIPT) {
-            return $this->execute_llm_script_from_job($args);
+            $scriptService = new LlmScriptService($this->services);
+            $script_info = $scriptService->fetch_script(
+                $args['task_info']['config'][ACTION_JOB_TYPE_LLM_SCRIPT]
+            );
+
+            if (!$script_info) {
+                $this->transaction->add_transaction(
+                    transactionTypes_insert,
+                    TRANSACTION_BY_LLM_SCRIPT,
+                    null, null, null, false,
+                    "The LLM script was not found; " . json_encode($args)
+                );
+                return false;
+            }
+
+            if (!empty($script_info['async'])) {
+                return $this->execute_llm_script_async($args, $script_info);
+            }
+
+            return $this->execute_llm_script_from_job($args, $script_info);
         } else {
             return $this->execute_private_method($args);
         }
     }
 
     /**
-     * Internal: execute an LLM script from a scheduled job.
+     * Spawn a background PHP process to execute the LLM script asynchronously.
+     * Returns true immediately so the form submission completes without waiting.
+     *
+     * @param array $args Hook arguments
+     * @param array $script_info Script record from DB
+     * @return bool Always true (job marked as done; real work happens in background)
      */
-    private function execute_llm_script_from_job($args)
+    private function execute_llm_script_async($args, $script_info)
+    {
+        $form_values = $this->user_input->get_form_values(
+            $args['task_info']['config']['form_data']['form_fields']
+        );
+
+        $worker_args = [
+            'script_id' => $script_info['id'],
+            'form_values' => $form_values,
+            'id_users' => $args['user']['id_users'],
+            'id_scheduledJobs' => $args['user']['id_scheduledJobs'],
+            'http_host' => $_SERVER['HTTP_HOST'] ?? 'localhost',
+        ];
+
+        $tmp_file = tempnam(sys_get_temp_dir(), 'llm_async_');
+        if (!$tmp_file || file_put_contents($tmp_file, json_encode($worker_args)) === false) {
+            error_log('LLM async: failed to write temp args file, falling back to sync');
+            return $this->execute_llm_script_from_job($args, $script_info);
+        }
+
+        $worker_script = realpath(__DIR__ . '/../service/llm_async_worker.php');
+        if (!$worker_script) {
+            error_log('LLM async: worker script not found, falling back to sync');
+            @unlink($tmp_file);
+            return $this->execute_llm_script_from_job($args, $script_info);
+        }
+
+        // PHP_BINARY returns httpd.exe when running as Apache module;
+        // derive the PHP CLI path from the extension_dir ini setting instead
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
+            $php_bin = PHP_BINARY;
+        } else {
+            $ext_dir = ini_get('extension_dir');
+            $php_dir = $ext_dir ? dirname(rtrim($ext_dir, '/\\')) : null;
+            $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+            $php_bin = $php_dir
+                ? $php_dir . DIRECTORY_SEPARATOR . ($is_win ? 'php.exe' : 'php')
+                : 'php';
+        }
+
+        if (!file_exists($php_bin)) {
+            error_log('LLM async: PHP CLI binary not found at: ' . $php_bin . ', falling back to sync');
+            @unlink($tmp_file);
+            return $this->execute_llm_script_from_job($args, $script_info);
+        }
+        $php_flags = '-d apc.enable_cli=1';
+        $log_file = realpath(__DIR__ . '/../..') . DIRECTORY_SEPARATOR . 'llm_async_worker.log';
+
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $cmd = 'start /B "" '
+                . '"' . $php_bin . '" '
+                . $php_flags . ' '
+                . '"' . $worker_script . '" '
+                . '"' . $tmp_file . '"'
+                . ' >> "' . $log_file . '" 2>&1';
+        } else {
+            $cmd = escapeshellarg($php_bin)
+                . ' ' . $php_flags
+                . ' ' . escapeshellarg($worker_script)
+                . ' ' . escapeshellarg($tmp_file)
+                . ' >> ' . escapeshellarg($log_file) . ' 2>&1 &';
+        }
+
+        error_log('LLM async: spawning command: ' . $cmd);
+
+        $handle = popen($cmd, 'r');
+        if ($handle) {
+            pclose($handle);
+        } else {
+            error_log('LLM async: popen failed, falling back to sync');
+            @unlink($tmp_file);
+            return $this->execute_llm_script_from_job($args, $script_info);
+        }
+
+        if (defined('DEBUG') && DEBUG) {
+            error_log('LLM async: spawned background worker for script '
+                . $script_info['name'] . ' (user=' . $args['user']['id_users'] . ')');
+        }
+
+        return true;
+    }
+
+    /**
+     * Internal: execute an LLM script from a scheduled job (synchronous).
+     *
+     * @param array $args Hook arguments
+     * @param array|null $script_info Pre-fetched script record (avoids double fetch)
+     */
+    private function execute_llm_script_from_job($args, $script_info = null)
     {
         $scriptService = new LlmScriptService($this->services);
-        $script_info = $scriptService->fetch_script($args['task_info']['config'][ACTION_JOB_TYPE_LLM_SCRIPT]);
+
+        if (!$script_info) {
+            $script_info = $scriptService->fetch_script(
+                $args['task_info']['config'][ACTION_JOB_TYPE_LLM_SCRIPT]
+            );
+        }
 
         if (!$script_info) {
             $this->transaction->add_transaction(
