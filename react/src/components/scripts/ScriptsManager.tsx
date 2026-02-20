@@ -265,7 +265,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     }
   };
 
+  const creatingRef = useRef(false);
   const handleCreate = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -276,6 +279,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      creatingRef.current = false;
     }
   };
 

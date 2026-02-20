@@ -53,19 +53,35 @@ class LlmScriptService extends BaseLlmService
     }
 
     /**
-     * Create or update a dataTable display name (same logic as BaseModel::set_dataTables_displayName)
+     * Create a dataTable entry for a new script.
+     * Uses INSERT ... ON DUPLICATE KEY UPDATE to be safe against re-runs.
      */
-    private function set_dataTables_displayName($name, $displayName)
+    private function create_dataTables_entry($name, $displayName)
     {
         $res = $this->db->insert(
             'dataTables',
             array(
                 "displayName" => $displayName,
-                'name' => is_int($name) ? sprintf('%010d', $name) : $name
+                'name' => $name
             ),
             array(
                 "displayName" => $displayName
             )
+        );
+        $this->db->clear_cache($this->db->get_cache()::CACHE_TYPE_SECTIONS);
+        return $res;
+    }
+
+    /**
+     * Update an existing dataTable's displayName by its name (generated_id).
+     * Uses a direct UPDATE to avoid accidentally creating duplicate rows.
+     */
+    private function update_dataTables_displayName($generated_id, $displayName)
+    {
+        $res = $this->db->update_by_ids(
+            'dataTables',
+            array("displayName" => $displayName),
+            array("name" => $generated_id)
         );
         $this->db->clear_cache($this->db->get_cache()::CACHE_TYPE_SECTIONS);
         return $res;
@@ -80,7 +96,7 @@ class LlmScriptService extends BaseLlmService
         try {
             $this->db->begin_transaction();
             $generated_id = "LLM_SCRIPT_" . substr(uniqid(), -9);
-            $this->set_dataTables_displayName($generated_id, $generated_id);
+            $this->create_dataTables_entry($generated_id, $generated_id);
             $sid = $this->db->insert(LLM_TABLE_SCRIPTS, array(
                 "generated_id" => $generated_id,
                 "name" => $generated_id
@@ -120,7 +136,7 @@ class LlmScriptService extends BaseLlmService
             $this->db->begin_transaction();
             $current = $this->fetch_script($sid);
             if ($current) {
-                $this->set_dataTables_displayName($current['generated_id'], $name);
+                $this->update_dataTables_displayName($current['generated_id'], $name);
             }
             $this->db->update_by_ids(LLM_TABLE_SCRIPTS, array(
                 "name" => $name,
