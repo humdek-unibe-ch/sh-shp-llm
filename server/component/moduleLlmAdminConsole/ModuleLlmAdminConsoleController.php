@@ -241,6 +241,10 @@ class ModuleLlmAdminConsoleController extends BaseController
         $this->model->get_services()->get_router()->log_user_activity();
 
         echo json_encode($data);
+
+        if (function_exists('uopz_allow_exit')) {
+            uopz_allow_exit(true);
+        }
         exit;
     }
 }

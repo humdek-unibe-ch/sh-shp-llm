@@ -79,7 +79,7 @@ class LlmScriptService extends BaseLlmService
     {
         try {
             $this->db->begin_transaction();
-            $generated_id = "LLM_SCRIPT_" . substr(uniqid(), -11);
+            $generated_id = "LLM_SCRIPT_" . substr(uniqid(), -9);
             $this->set_dataTables_displayName($generated_id, $generated_id);
             $sid = $this->db->insert(LLM_TABLE_SCRIPTS, array(
                 "generated_id" => $generated_id,

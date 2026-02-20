@@ -1427,8 +1427,10 @@ class LlmChatController extends BaseController
         $user_id = $this->model->getUserId();
         if (!$user_id) {
             $this->sendJsonResponse(['error' => 'User not authenticated'], 401);
-            // Log user activity before exiting so it is recorded in user_activity table.
             $this->model->get_services()->get_router()->log_user_activity();
+            if (function_exists('uopz_allow_exit')) {
+                uopz_allow_exit(true);
+            }
             exit;
         }
         return $user_id;

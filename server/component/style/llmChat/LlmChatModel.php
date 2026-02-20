@@ -1507,6 +1507,9 @@ EOT;
         }
         header('Content-Type: application/json');
         echo json_encode($result);
+        if (function_exists('uopz_allow_exit')) {
+            uopz_allow_exit(true);
+        }
         exit(0);
     }
 
