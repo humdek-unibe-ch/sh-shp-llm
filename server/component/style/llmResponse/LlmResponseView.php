@@ -57,12 +57,11 @@ class LlmResponseView extends StyleView
 
     public function output_content_mobile()
     {
-        return array(
-            "type" => "llmResponse",
-            "content" => $this->text_md,
-            "editable" => (bool)$this->enable_editing,
-            "name" => $this->field_name
-        );
+        $style = parent::output_content_mobile();
+        $style['content'] = $this->text_md;
+        $style['editable'] = (bool)$this->enable_editing;
+        $style['name'] = $this->field_name;
+        return $style;
     }
 }
 ?>
