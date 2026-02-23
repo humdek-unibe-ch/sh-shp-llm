@@ -61,6 +61,7 @@ class LlmResponseView extends StyleView
         $style['content'] = $this->text_md;
         $style['editable'] = (bool)$this->enable_editing;
         $style['name'] = $this->field_name;
+        $style['section_id'] = $this->model->get_db_field('id');
         return $style;
     }
 }

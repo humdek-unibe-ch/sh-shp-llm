@@ -2,6 +2,9 @@
 
 ## [1.0.0] - 2025-12-23
 
+### Mobile Enhancements
+- **llmResponse section_id** — `LlmResponseView::output_content_mobile()` now includes `section_id` in the response, enabling the mobile app to track per-section loading state during form submission
+
 ### Added
 
 #### LLM Scripts Module (February 2026)
