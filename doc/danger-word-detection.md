@@ -45,9 +45,9 @@ The Danger Word Detection System is a critical safety feature of the LLM Chat pl
 | Component | Location | Purpose |
 |-----------|----------|---------|
 | `LlmDangerDetectionService` | `server/service/LlmDangerDetectionService.php` | Core detection logic |
-| `LlmChatController` | `server/component/style/llmchat/LlmchatController.php` | Integration point |
+| `LlmChatController` | `server/component/style/llmChat/LlmChatController.php` | Integration point |
 | `LlmContextService` | `server/service/LlmContextService.php` | AI context injection |
-| `LlmchatModel` | `server/component/style/llmchat/LlmchatModel.php` | Configuration access |
+| `LlmChatModel` | `server/component/style/llmChat/LlmChatModel.php` | Configuration access |
 
 ## Configuration
 
@@ -171,16 +171,8 @@ When a dangerous keyword is detected:
 
 1. Their message appears in the chat (as they typed it)
 2. Instead of an AI response, they see the safety message
-3. The conversation remains active
-4. They can continue chatting with different messages
-
-### Conversation Not Permanently Blocked
-
-The system does NOT permanently block conversations. This approach:
-- Respects user autonomy
-- Doesn't punish users for a single concerning message
-- Allows users to correct course or ask for help
-- Enables researchers to review patterns
+3. **The conversation is BLOCKED** - no further messages can be sent in that conversation
+4. The user must start a new conversation to continue chatting
 
 ## API Response Format
 
@@ -269,9 +261,9 @@ The system does NOT permanently block conversations. This approach:
 
 ## Related Documentation
 
-- [Danger Keywords Examples](../toDos/danger_word_detection/danger_keywords_examples.md)
-- [Implementation Plan](../toDos/danger_word_detection/implementation_plan.md)
-- [Notification System Integration](../toDos/danger_word_detection/notification_system_integration.md)
+See the plugin source code for implementation details:
+- `server/service/LlmDangerDetectionService.php` - Core detection logic
+- `server/component/style/llmChat/LlmChatController.php` - Integration point
 
 ## Version History
 

@@ -220,12 +220,12 @@ EOT;
             );
             
             if ($result) {
-                error_log("LLM Danger Detection: Blocked conversation ID {$conversation_id}. Keywords: {$keywords_str}");
+                $this->logInfo('Blocked conversation', ['conversation_id' => $conversation_id, 'keywords' => $keywords_str]);
             }
             
             return $result;
         } catch (Exception $e) {
-            error_log('LLM Danger Detection: Failed to block conversation: ' . $e->getMessage());
+            $this->logError('Failed to block conversation', $e);
             return false;
         }
     }
@@ -250,7 +250,7 @@ EOT;
             
             return ($conversation && $conversation['blocked'] == 1);
         } catch (Exception $e) {
-            error_log('LLM Danger Detection: Failed to check if conversation is blocked: ' . $e->getMessage());
+            $this->logError('Failed to check if conversation is blocked', $e);
             return false;
         }
     }
@@ -385,7 +385,7 @@ EOT;
             );
         } catch (Exception $e) {
             // Log error but don't fail the detection
-            error_log('LLM Danger Detection: Failed to log transaction: ' . $e->getMessage());
+            $this->logError('Failed to log transaction', $e);
         }
     }
 
@@ -413,7 +413,7 @@ EOT;
 
         // Debug logging for notification attempts
         if (defined('DEBUG') && DEBUG) {
-            error_log('LLM Danger Detection: Sending notifications for keywords: ' . implode(', ', $detected_keywords));
+            $this->logDebug('Sending notifications for keywords', ['keywords' => $detected_keywords]);
         }
 
         try {
@@ -433,7 +433,7 @@ EOT;
             $sent = false;
             foreach ($emails as $email) {
                 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    error_log('LLM Danger Detection: Invalid email address skipped: ' . $email);
+                    $this->logWarning('Invalid email address skipped', ['email' => $email]);
                     continue;
                 }
 
@@ -453,31 +453,30 @@ EOT;
 
                 // Schedule and immediately execute the email job
                 if (defined('DEBUG') && DEBUG) {
-                    error_log('LLM Danger Detection: Attempting to send email to: ' . $email);
+                    $this->logDebug('Attempting to send email', ['email' => $email]);
                 }
                 $result = $job_scheduler->add_and_execute_job($mail_data, transactionBy_by_system);
                 if ($result) {
                     $sent = true;
                     if (defined('DEBUG') && DEBUG) {
-                        error_log('LLM Danger Detection: Email sent successfully to: ' . $email);
+                        $this->logDebug('Email sent successfully', ['email' => $email]);
                     }
                 } else {
-                    error_log('LLM Danger Detection: Failed to send email to: ' . $email . ' - add_and_execute_job returned false');
+                    $this->logWarning('Failed to send email - add_and_execute_job returned false', ['email' => $email]);
                 }
             }
 
             if ($sent) {
                 if (defined('DEBUG') && DEBUG) {
-                    error_log('LLM Danger Detection: Email notifications completed successfully');
+                    $this->logDebug('Email notifications completed successfully');
                 }
             } else {
-                error_log('LLM Danger Detection: No emails were sent successfully');
+                $this->logWarning('No emails were sent successfully');
             }
 
             return $sent;
         } catch (Exception $e) {
-            error_log('LLM Danger Detection: Exception while sending notifications: ' . $e->getMessage());
-            error_log('LLM Danger Detection: Stack trace: ' . $e->getTraceAsString());
+            $this->logError('Exception while sending notifications', $e);
             return false;
         }
     }

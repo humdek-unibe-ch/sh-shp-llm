@@ -149,16 +149,19 @@ public function addMessage(
 )
 ```
 
-### LlmRequestService::addAssistantMessage()
+### LlmService::addMessage()
 
 New parameters:
 ```php
-public function addAssistantMessage(
+public function addMessage(
     $conversation_id, 
+    $role,                     // 'user' | 'assistant' | 'system'
     $content, 
+    $attachments = null,
+    $model = null,
     $tokens_used = null, 
     $raw_response = null, 
-    $context_messages = null, 
+    $sent_context = null, 
     $reasoning = null,
     $is_validated = true,      // NEW: validation status
     $request_payload = null    // NEW: API request payload

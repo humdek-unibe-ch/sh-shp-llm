@@ -292,47 +292,5 @@ const TopicItem: React.FC<TopicItemProps> = ({ topic }) => {
   );
 };
 
-/**
- * Compact Progress Indicator
- * 
- * A smaller version for use in headers or tight spaces
- */
-interface CompactProgressProps {
-  percentage: number;
-  label?: string;
-}
-
-export const CompactProgress: React.FC<CompactProgressProps> = ({
-  percentage,
-  label
-}) => {
-  const getColor = (): string => {
-    if (percentage >= 100) return '#28a745';
-    if (percentage >= 50) return '#007bff';
-    return '#6c757d';
-  };
-
-  return (
-    <div className="compact-progress d-flex align-items-center">
-      {label && <small className="text-muted mr-2">{label}</small>}
-      <div 
-        className="progress flex-grow-1" 
-        style={{ height: '4px', width: '60px', backgroundColor: '#e9ecef' }}
-      >
-        <div 
-          className="progress-bar" 
-          style={{ 
-            width: `${Math.min(percentage, 100)}%`,
-            backgroundColor: getColor()
-          }}
-        />
-      </div>
-      <small className="ml-2 font-weight-bold" style={{ color: getColor(), minWidth: '40px' }}>
-        {percentage.toFixed(0)}%
-      </small>
-    </div>
-  );
-};
-
 export default ProgressIndicator;
 

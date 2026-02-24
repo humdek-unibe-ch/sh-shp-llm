@@ -119,12 +119,6 @@ class MyCustomProvider extends BaseProvider
             'raw_response' => $rawResponse
         ];
     }
-
-        // Return content string, '[DONE]', '[USAGE:123]', or null
-    }
-
-        return true;
-    }
 }
 ```
 

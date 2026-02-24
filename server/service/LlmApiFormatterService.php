@@ -445,9 +445,8 @@ class LlmApiFormatterService extends BaseLlmService
      */
     private function getConfiguredModel()
     {
-        // This would need to be injected or accessed via services
-        // For now, return a default
-        return 'qwen3-vl-8b-instruct';
+        $config = $this->getLlmConfig();
+        return $config['model'] ?? LLM_DEFAULT_MODEL;
     }
 }
 ?>

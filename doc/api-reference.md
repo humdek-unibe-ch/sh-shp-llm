@@ -2,7 +2,12 @@
 
 ## Overview
 
-The LLM Chat plugin exposes several API endpoints through the `LlmChatController`. All requests require authentication and use the current page's URL.
+The LLM Chat plugin exposes API endpoints through two controllers:
+
+- **LlmChatController** (`server/component/style/llmChat/LlmChatController.php`): Chat endpoints (config, conversations, messages, progress, speech-to-text). Used on pages with the llmChat component.
+- **ModuleLlmAdminConsoleController** (`server/component/moduleLlmAdminConsole/ModuleLlmAdminConsoleController.php`): Admin endpoints (filters, conversations, messages, delete, block, unblock). Used on the admin console page.
+
+All requests require authentication and use the current page's URL.
 
 ## Base URL
 
@@ -175,44 +180,6 @@ Send a message and get AI response.
 - `max_tokens`: Max tokens (optional)
 - `uploaded_files[]`: File attachments (optional, multiple)
 
-```json
-{
-  "conversation_id": "0000000001",
-  "message": "AI response content",
-  "is_new_conversation": false
-}
-```
-
-
-
-**Body (FormData):**
-- `action`: `send_message`
-- `message`: Message content (required)
-- `conversation_id`: Target conversation (optional)
-- `model`: Model to use (optional)
-- `uploaded_files[]`: File attachments (optional)
-
-**Response:**
-```json
-{
-  "status": "prepared",
-  "conversation_id": "0000000001",
-  "is_new_conversation": false,
-  "user_message": {
-    "id": "0000000003",
-    "role": "user",
-    "content": "Message content",
-    "attachments": null,
-    "model": "qwen3-vl-8b-instruct",
-    "created_at": "2024-12-10 15:00:00"
-  }
-}
-```
-
-
-
-Returns the complete AI response.
-
 **Response:**
 ```json
 {
@@ -227,19 +194,87 @@ Returns the complete AI response.
     "created_at": "2024-12-10 15:00:01"
   }
 }
-
-data: {"type": "close"}
 ```
 
-**Event Types:**
-- `connected`: Connection established
-- `chunk`: Content chunk (append to response)
-- `error`: Error occurred
-- `close`: Connection should be closed
+#### POST `action=submit_form`
+
+Submit a form response (form mode). Converts form selections to readable text and sends to AI.
+
+**Body (FormData):**
+- `action`: `submit_form`
+- `conversation_id`: Target conversation (required)
+- `form_values`: JSON object with form field values
+
+#### POST `action=continue_conversation`
+
+Continue a conversation (used when resuming after form submission or similar flows).
+
+#### POST `action=confirm_topic`
+
+Record topic confirmation for progress tracking. Used when user explicitly confirms understanding via a form.
+
+**Body (FormData):**
+- `action`: `confirm_topic`
+- `section_id`: Section ID (required)
+- `conversation_id`: Conversation ID
+- Form field values including topic confirmation identifier
+
+#### POST `action=speech_transcribe`
+
+Transcribe audio to text. See [Speech-to-Text](speech-to-text.md) for details.
+
+**Body (FormData):**
+- `action`: `speech_transcribe`
+- `section_id`: Section ID (required)
+- `audio`: Audio file (WebM, WAV, MP3, OGG, or FLAC)
+
+### Progress
+
+#### GET `?action=get_progress&section_id={id}&conversation_id={id}`
+
+Fetch progress tracking data for a conversation.
+
+**Response:**
+```json
+{
+  "progress": {
+    "percentage": 15.0,
+    "topics_total": 20,
+    "topics_covered": 3,
+    "is_complete": false,
+    "topic_coverage": {
+      "topic_abc123": {
+        "id": "topic_abc123",
+        "title": "Arsenal FC",
+        "coverage": 100,
+        "depth": 2,
+        "matches": ["arsenal", "gunners"],
+        "is_covered": true
+      }
+    }
+  }
+}
+```
+
+#### GET `?action=get_auto_started&section_id={id}`
+
+Check if auto-start conversation has already been triggered for this session.
+
+#### POST `action=start_auto_conversation`
+
+Trigger auto-start conversation (creates and populates first message).
+
+**Body (FormData):**
+- `action`: `start_auto_conversation`
+- `section_id`: Section ID (required)
+
+#### GET `?action=debug_progress&section_id={id}&conversation_id={id}`
+
+Debug endpoint for progress tracking (development/admin use).
 
 ### Admin Endpoints
 
-Require admin ACL permissions.
+Admin endpoints are served by `ModuleLlmAdminConsoleController` (admin console page). Require admin ACL permissions.
 
 #### GET `?action=admin_filters`
 
@@ -320,6 +355,30 @@ Fetch messages for a conversation (admin view).
   ]
 }
 ```
+
+#### POST `action=admin_delete_conversation`
+
+Delete a conversation (admin view).
+
+**Body (FormData):**
+- `action`: `admin_delete_conversation`
+- `conversation_id`: Conversation ID to delete
+
+#### POST `action=admin_block_conversation`
+
+Block a conversation (prevents further messages).
+
+**Body (FormData):**
+- `action`: `admin_block_conversation`
+- `conversation_id`: Conversation ID to block
+
+#### POST `action=admin_unblock_conversation`
+
+Unblock a previously blocked conversation.
+
+**Body (FormData):**
+- `action`: `admin_unblock_conversation`
+- `conversation_id`: Conversation ID to unblock
 
 ## Error Handling
 

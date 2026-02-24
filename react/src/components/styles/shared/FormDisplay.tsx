@@ -163,57 +163,5 @@ export const FormDisplay: React.FC<FormDisplayProps> = ({
   );
 };
 
-/**
- * Compact inline form summary (for message lists)
- */
-export const FormSummaryInline: React.FC<{
-  formDefinition: FormDefinition;
-  submittedValues?: Record<string, string | string[]>;
-}> = ({ formDefinition, submittedValues = {} }) => {
-  // Get all answered fields with their values
-  const answeredFields = formDefinition.fields.filter(field => {
-    const value = submittedValues[field.id];
-    return value && (Array.isArray(value) ? value.length > 0 : value.length > 0);
-  });
-
-  const getDisplayValue = (field: FormField): string => {
-    const value = submittedValues[field.id];
-    if (!value) return '';
-    
-    if (field.type === 'text' || field.type === 'textarea' || field.type === 'number') {
-      return value as string;
-    }
-    
-    const values = Array.isArray(value) ? value : [value];
-    return values.map(v => {
-      const option = field.options?.find(opt => opt.value === v);
-      return option?.label || v;
-    }).join(', ');
-  };
-
-  return (
-    <div className="form-summary-inline bg-light rounded p-3 border">
-      <div className="d-flex align-items-center mb-2">
-        <i className="fas fa-check-circle text-success mr-2"></i>
-        <strong className="text-dark">{formDefinition.title || 'Form Response'}</strong>
-        <Badge variant="success" className="ml-2 small">Submitted</Badge>
-      </div>
-      
-      {answeredFields.length > 0 ? (
-        <div className="small">
-          {answeredFields.map((field, index) => (
-            <div key={field.id} className={index < answeredFields.length - 1 ? 'mb-1' : ''}>
-              <span className="text-muted">{field.label}:</span>{' '}
-              <span className="font-weight-bold text-dark">{getDisplayValue(field)}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="small text-muted font-italic">No selections made</div>
-      )}
-    </div>
-  );
-};
-
 export default FormDisplay;
 

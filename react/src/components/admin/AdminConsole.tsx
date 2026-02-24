@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination, Modal } from 'react-bootstrap';
 import Select from 'react-select';
 import { adminApi } from '../../utils/api';
+import { formatDateTime } from '../../utils/formatters';
 import { ContextPopup } from './ContextPopup';
 import { PayloadPopup } from './PayloadPopup';
 import { AdminMessageList } from './AdminMessageList';
@@ -39,18 +40,6 @@ interface FilterOption {
 const getTodayDate = (): string => {
   const today = new Date();
   return today.toISOString().split('T')[0];
-};
-
-// Helper function to format date for display
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
 };
 
 // Helper function to format date badge
@@ -775,7 +764,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                         {selectedConversation.model}
                         <span className="mx-2">•</span>
                         <i className="fas fa-clock mr-1"></i>
-                        {formatDate(selectedConversation.updated_at)}
+                        {formatDateTime(selectedConversation.updated_at)}
                       </div>
                       {selectedConversation.blocked_reason && (
                         <div className="small text-danger mt-1">
@@ -841,7 +830,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       <div className="text-muted">No messages in this conversation</div>
                     </div>
                   ) : (
-                    <AdminMessageList messages={messages} formatDate={formatDate} setContextPopup={setContextPopup} setPayloadPopup={setPayloadPopup} />
+                    <AdminMessageList messages={messages} formatDate={formatDateTime} setContextPopup={setContextPopup} setPayloadPopup={setPayloadPopup} />
                   )}
                 </Card.Body>
               </>

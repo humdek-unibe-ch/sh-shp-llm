@@ -38,15 +38,12 @@ server/plugins/sh-shp-llm/
 │   ├── vite.admin.config.ts      # Admin console build config
 │   └── vite.scripts.config.ts    # LLM Scripts build config
 ├── server/
-│   ├── ajax/                      # AJAX endpoints
-│   │   └── AjaxLlmScripts.php    # LLM Scripts CRUD API
 │   ├── component/                 # MVC components
 │   │   ├── LlmHooks.php          # Plugin hooks
 │   │   ├── moduleLlmAdminConsole/ # Admin console
-│   │   ├── moduleLlmScript/       # LLM Scripts (React wrapper)
-│   │   ├── moduleLlmScriptMode/   # LLM Scripts mode routing
+│   │   ├── moduleLlmScript/       # LLM Scripts (React + Controller)
 │   │   └── style/                 # Style components
-│   │       ├── llmchat/           # Chat component
+│   │       ├── llmChat/           # Chat component
 │   │       └── llmResponse/       # LLM Response display style
 │   ├── service/                   # Business logic
 │   │   ├── globals.php           # Constants
@@ -108,6 +105,16 @@ server/plugins/sh-shp-llm/
 └─────────────────────────────────────────────────────────┘
 ```
 
+### Service Tiers
+
+Services follow a 3-tier pattern (see `BaseLlmService` docblock for authoritative list):
+
+| Tier | Pattern | When to use | Examples |
+|------|---------|-------------|----------|
+| **1. Extend `BaseLlmService`** | Inheritance | Service reads/writes DB or cache directly | `LlmService`, `LlmAdminService`, `LlmDataSavingService`, `LlmDangerDetectionService`, `LlmProgressTrackingService`, `LlmScriptService`, `LlmSpeechToTextService`, `LlmApiFormatterService` |
+| **2. Composition** | Constructor injection | Pure logic operating on passed-in data/collaborators | `LlmContextService`, `LlmResponseService`, `LlmFormModeService`, `LlmFloatingModeService`, `LlmStrictConversationService`, `LlmFileUploadService` |
+| **3. Static utilities** | Static methods only | Stateless helpers with zero dependencies | `LlmFileNamingService`, `LlmFileUtility`, `LlmLanguageUtility`, `LlmModelCapabilities`, `LlmValidator` |
+
 ### LLM Scripts Module
 
 ```
@@ -120,8 +127,8 @@ server/plugins/sh-shp-llm/
                            │ AJAX (FormData POST)
                            ▼
 ┌─────────────────────────────────────────────────────────┐
-│           AjaxLlmScripts.php (Plugin AJAX)               │
-│  - dispatch(): routes list/get/create/update/delete/test │
+│       ModuleLlmScriptController (Plugin component)      │
+│  - list/get/create/update/delete/test/config/models     │
 └──────────────────────────┬──────────────────────────────┘
                            │
                            ▼

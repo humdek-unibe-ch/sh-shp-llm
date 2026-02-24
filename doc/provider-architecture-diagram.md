@@ -11,7 +11,7 @@
                             │ Uses
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   LlmRequestService.php                         │
+│                      LlmService.php                             │
 │  (Handles user requests, conversation management)               │
 └───────────────────────────┬─────────────────────────────────────┘
                             │

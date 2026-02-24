@@ -280,8 +280,8 @@ class LlmChatModel extends StyleModel
         $this->progress_show_topics = $this->get_db_field('progress_show_topics', '0');
         
         // Context language for progress confirmation questions
-        // Auto-detect from context or use explicit setting
-        $this->context_language = $this->get_db_field('context_language', 'auto');
+        // Auto-detected from session locale in getContextLanguage()
+        $this->context_language = 'auto';
 
         // Danger word detection - critical safety feature
         $this->enable_danger_detection = $this->get_db_field('enable_danger_detection', '0');
@@ -380,15 +380,6 @@ class LlmChatModel extends StyleModel
     }
 
     /**
-     * Get LLM configuration
-     */
-    public function getLlmConfig()
-    {
-        return $this->llm_service->getLlmConfig();
-    }
-
-
-    /**
      * Get user ID
      */
     public function getUserId()
@@ -481,94 +472,6 @@ class LlmChatModel extends StyleModel
     public function isVisionModel()
     {
         return llm_is_vision_model($this->getConfiguredModel());
-    }
-
-    /**
-     * Get the capabilities of the current model
-     *
-     * @return array Array of capability constants
-     */
-    public function getModelCapabilities()
-    {
-        return llm_get_model_capabilities($this->getConfiguredModel());
-    }
-
-    /**
-     * Check if the current model has a specific capability
-     *
-     * @param string $capability Capability constant
-     * @return bool True if model has the capability
-     */
-    public function modelHasCapability($capability)
-    {
-        return llm_model_has_capability($this->getConfiguredModel(), $capability);
-    }
-
-    /**
-     * Get file upload help text based on model capabilities
-     *
-     * @return string Appropriate help text for the current model
-     */
-    public function getModelSpecificUploadHelpText()
-    {
-        $model = $this->getConfiguredModel();
-
-        if (llm_is_vision_model($model)) {
-            // Vision models - focus on image capabilities
-            $extensions = array_map('strtoupper', LLM_ALLOWED_IMAGE_EXTENSIONS);
-            $maxSize = $this->formatFileSizeForDisplay(LLM_MAX_FILE_SIZE);
-            $maxFiles = LLM_MAX_FILES_PER_MESSAGE;
-
-            return "Vision model supports image analysis. Supported formats: " .
-                   implode(', ', array_slice($extensions, 0, 6)) .
-                   " (max {$maxSize}, up to {$maxFiles} files)";
-        } else {
-            // Text models - mention both text and image capabilities
-            $textExtensions = array_merge(LLM_ALLOWED_DOCUMENT_EXTENSIONS, LLM_ALLOWED_CODE_EXTENSIONS);
-            $imageExtensions = LLM_ALLOWED_IMAGE_EXTENSIONS;
-            $allExtensions = array_merge($textExtensions, $imageExtensions);
-
-            $maxSize = $this->formatFileSizeForDisplay(LLM_MAX_FILE_SIZE);
-            $maxFiles = LLM_MAX_FILES_PER_MESSAGE;
-
-            return "Text model can process documents and images. Supported: " .
-                   implode(', ', array_slice(array_map('strtoupper', $allExtensions), 0, 8)) .
-                   "... (max {$maxSize}, up to {$maxFiles} files)";
-        }
-    }
-
-    /**
-     * Get warning message for models with limited file processing capabilities
-     *
-     * @return string|null Warning message or null if no warning needed
-     */
-    public function getFileUploadWarningMessage()
-    {
-        if (!$this->isFileUploadsEnabled()) {
-            return null;
-        }
-
-        $model = $this->getConfiguredModel();
-        $capabilities = $this->getModelCapabilities();
-
-        // If it's a vision model, no warning needed
-        if (in_array(LLM_CAPABILITY_VISION, $capabilities)) {
-            return null;
-        }
-
-        // For non-vision models, provide helpful guidance
-        $warning = "This model has limited image processing capabilities. ";
-
-        // Suggest better alternatives
-        $visionModels = array_intersect(LLM_VISION_MODELS, ['qwen3-vl-8b-instruct', 'internvl3-8b-instruct', 'deepseek-r1-0528-qwen3-8b']);
-        if (!empty($visionModels)) {
-            $suggestions = array_slice($visionModels, 0, 2); // Show max 2 suggestions
-            $warning .= "For better image analysis, consider: " . implode(', ', $suggestions) . ".";
-        } else {
-            $warning .= "Text-based files will work best with this model.";
-        }
-
-        return $warning;
     }
 
     public function getSubmitButtonLabel()
@@ -1096,6 +999,8 @@ EOT;
         return !empty(array_intersect($topics, $healthTopics));
     }
 
+    // ===== Feature Flags =====
+
     /**
      * Check if auto-start conversation is enabled
      *
@@ -1185,16 +1090,6 @@ EOT;
     }
 
     /**
-     * Get the data table display name
-     *
-     * @return string The display name for the data table
-     */
-    public function getDataTableName()
-    {
-        return $this->data_table_name;
-    }
-
-    /**
      * Get the data save mode
      * Returns 'log' when is_log is enabled, 'record' otherwise
      *
@@ -1203,16 +1098,6 @@ EOT;
     public function getDataSaveMode()
     {
         return $this->is_log === '1' ? 'log' : 'record';
-    }
-
-    /**
-     * Check if log mode is enabled for data saving
-     *
-     * @return bool True if log mode is enabled
-     */
-    public function isLogModeEnabled()
-    {
-        return $this->is_log === '1';
     }
 
     // ===== Floating Chat Button Methods =====
@@ -1277,19 +1162,6 @@ EOT;
     public function isMediaRenderingEnabled()
     {
         return $this->enable_media_rendering === '1';
-    }
-
-    /**
-     * Get allowed media domains
-     *
-     * @return array Array of allowed domains
-     */
-    public function getAllowedMediaDomains()
-    {
-        if (empty($this->allowed_media_domains)) {
-            return [];
-        }
-        return array_filter(array_map('trim', explode("\n", $this->allowed_media_domains)));
     }
 
     /**
@@ -1437,23 +1309,6 @@ EOT;
         return $this->danger_blocked_message;
     }
 
-    /**
-     * Get danger detection configuration
-     * 
-     * Returns all danger detection settings as an array
-     *
-     * @return array Danger detection configuration
-     */
-    public function getDangerDetectionConfig()
-    {
-        return [
-            'enabled' => $this->isDangerDetectionEnabled(),
-            'keywords' => $this->getDangerKeywords(),
-            'notificationEmails' => $this->getDangerNotificationEmails(),
-            'blockedMessage' => $this->getDangerBlockedMessage()
-        ];
-    }
-
     // ===== Speech-to-Text Configuration =====
 
     /**
@@ -1496,8 +1351,101 @@ EOT;
         return $parsedown->text($content);
     }
 
+    // ===== Aggregate Config =====
+
+    /**
+     * Get the full chat configuration array for the React frontend.
+     * 
+     * @return array Chat configuration key-value pairs
+     */
+    public function getChatConfig()
+    {
+        $section_id = $this->getSectionId();
+
+        return [
+            'userId' => $this->getUserId(),
+            'sectionId' => $section_id,
+            'currentConversationId' => $this->getConversationId(),
+            'configuredModel' => $this->getConfiguredModel(),
+            'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
+            'maxFileSize' => LLM_MAX_FILE_SIZE,
+            'enableConversationsList' => $this->isConversationsListEnabled(),
+            'enableFileUploads' => $this->isFileUploadsEnabled(),
+            'enableFullPageReload' => $this->isFullPageReloadEnabled(),
+            'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->getAcceptedFileTypes())),
+            'isVisionModel' => $this->isVisionModel(),
+            'hasConversationContext' => $this->hasConversationContext(),
+            'strictConversationMode' => $this->isStrictConversationModeEnabled(),
+            'autoStartConversation' => $this->isAutoStartConversationEnabled(),
+            'autoStartMessage' => $this->getAutoStartMessage(),
+            'enableFormMode' => $this->isFormModeEnabled(),
+            'formModeActiveTitle' => $this->getFormModeActiveTitle(),
+            'formModeActiveDescription' => $this->getFormModeActiveDescription(),
+            'continueButtonLabel' => $this->getContinueButtonLabel(),
+            'enableDataSaving' => $this->isDataSavingEnabled(),
+            'enableMediaRendering' => $this->isMediaRenderingEnabled(),
+            'enableSpeechToText' => $this->isSpeechToTextEnabled(),
+            'speechToTextModel' => $this->getSpeechToTextModel(),
+            'enableFloatingButton' => $this->isFloatingButtonEnabled(),
+            'floatingButtonPosition' => $this->getFloatingButtonPosition(),
+            'floatingButtonIcon' => $this->getFloatingButtonIcon(),
+            'floatingButtonLabel' => $this->getFloatingButtonLabel(),
+            'floatingChatTitle' => $this->getFloatingChatTitle(),
+            'messagePlaceholder' => $this->getMessagePlaceholder(),
+            'noConversationsMessage' => $this->getNoConversationsMessage(),
+            'newConversationTitleLabel' => $this->getNewConversationTitleLabel(),
+            'conversationTitleLabel' => $this->getConversationTitleLabel(),
+            'cancelButtonLabel' => $this->getCancelButtonLabel(),
+            'createButtonLabel' => $this->getCreateButtonLabel(),
+            'deleteConfirmationTitle' => $this->getDeleteConfirmationTitle(),
+            'deleteConfirmationMessage' => $this->getDeleteConfirmationMessage(),
+            'confirmDeleteButtonLabel' => $this->getConfirmDeleteButtonLabel(),
+            'cancelDeleteButtonLabel' => $this->getCancelDeleteButtonLabel(),
+            'tokensSuffix' => $this->getTokensUsedSuffix(),
+            'aiThinkingText' => $this->getAiThinkingText(),
+            'conversationsHeading' => $this->getConversationsHeading(),
+            'newChatButtonLabel' => $this->getNewChatButtonLabel(),
+            'selectConversationHeading' => $this->getSelectConversationHeading(),
+            'selectConversationDescription' => $this->getSelectConversationDescription(),
+            'modelLabelPrefix' => $this->getModelLabelPrefix(),
+            'noMessagesMessage' => $this->getNoMessagesMessage(),
+            'loadingText' => $this->getLoadingText(),
+            'uploadImageLabel' => $this->getUploadImageLabel(),
+            'uploadHelpText' => $this->getUploadHelpText(),
+            'clearButtonLabel' => $this->getClearButtonLabel(),
+            'submitButtonLabel' => $this->getSubmitButtonLabel(),
+            'emptyMessageError' => $this->getEmptyMessageError(),
+            'defaultChatTitle' => $this->getDefaultChatTitle(),
+            'deleteButtonTitle' => $this->getDeleteButtonTitle(),
+            'conversationTitlePlaceholder' => $this->getConversationTitlePlaceholder(),
+            'singleFileAttachedText' => $this->getSingleFileAttachedText(),
+            'multipleFilesAttachedText' => $this->getMultipleFilesAttachedText(),
+            'emptyStateTitle' => $this->getEmptyStateTitle(),
+            'emptyStateDescription' => $this->getEmptyStateDescription(),
+            'loadingMessagesText' => $this->getLoadingMessagesText(),
+            'attachFilesTitle' => $this->getAttachFilesTitle(),
+            'noVisionSupportTitle' => $this->getNoVisionSupportTitle(),
+            'noVisionSupportText' => $this->getNoVisionSupportText(),
+            'sendMessageTitle' => $this->getSendMessageTitle(),
+            'removeFileTitle' => $this->getRemoveFileTitle(),
+            'conversationBlockedMessage' => $this->getDangerBlockedMessage(),
+            'fileConfig' => [
+                'maxFileSize' => LLM_MAX_FILE_SIZE,
+                'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
+                'allowedImageExtensions' => LLM_ALLOWED_IMAGE_EXTENSIONS,
+                'allowedDocumentExtensions' => LLM_ALLOWED_DOCUMENT_EXTENSIONS,
+                'allowedCodeExtensions' => LLM_ALLOWED_CODE_EXTENSIONS,
+                'allowedExtensions' => LLM_ALLOWED_EXTENSIONS,
+                'visionModels' => LLM_VISION_MODELS
+            ],
+            'enableProgressTracking' => $this->isProgressTrackingEnabled(),
+            'progressBarLabel' => $this->getProgressBarLabel(),
+            'progressCompleteMessage' => $this->getProgressCompleteMessage(),
+            'progressShowTopics' => $this->shouldShowProgressTopics()
+        ];
+    }
+
     // ===== UI Generation Helpers =====
-    // These methods generate consistent HTML for different UI elements
 
     public function return_data($key)
     {

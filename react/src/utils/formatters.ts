@@ -44,6 +44,24 @@ export function formatTime(timestamp: string | Date): string {
 }
 
 /**
+ * Format date and time for admin/management display
+ * Shows full date with time (e.g. "Jan 15, 2024, 2:30 PM")
+ * 
+ * @param dateString - ISO date string
+ * @returns Human-readable date/time string
+ */
+export function formatDateTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+/**
  * Format date for conversation list display
  * Shows relative time for recent dates, absolute date for older ones
  * Matches formatDate() from vanilla JS

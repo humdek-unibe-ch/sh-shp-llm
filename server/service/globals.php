@@ -6,10 +6,6 @@
 // LLM Admin Page Keyword
 define('LLM_ADMIN_PAGE_KEYWORD', 'moduleLlmAdminConsole');
 
-// LLM Plugin Constants
-define('LLM_PLUGIN_NAME', 'sh-shp-llm');
-define('LLM_PLUGIN_VERSION', 'v1.0.0');
-
 // Upload directories - relative to plugin root
 define('LLM_UPLOAD_FOLDER', 'upload');
 
@@ -20,12 +16,11 @@ define('LLM_RATE_LIMIT_COOLDOWN_SECONDS', 60);
 
 // Default values
 define('LLM_DEFAULT_MODEL', 'qwen3-vl-8b-instruct');
-define('LLM_DEFAULT_TEMPERATURE', 0.7);
+define('LLM_DEFAULT_TEMPERATURE', 1);
 define('LLM_DEFAULT_MAX_TOKENS', 2048);
 define('LLM_DEFAULT_TIMEOUT', 30);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
-define('LLM_ADMIN_DEFAULT_PAGE_SIZE', 25);
 
 // API endpoints
 define('LLM_API_CHAT_COMPLETIONS', '/chat/completions');
@@ -102,39 +97,13 @@ define('LLM_AUDIO_MODELS', [
     'whisper-small'
 ]);
 
-// Default speech-to-text model
-define('LLM_DEFAULT_SPEECH_MODEL', 'faster-whisper-large-v3');
-
-// Audio API endpoint
-define('LLM_API_AUDIO_TRANSCRIPTIONS', '/audio/transcriptions');
-
 // Maximum audio file size (25MB - OpenAI API limit)
 define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
-
-// Supported audio MIME types for speech-to-text
-define('LLM_ALLOWED_AUDIO_TYPES', [
-    'audio/webm',
-    'audio/webm;codecs=opus',
-    'audio/wav',
-    'audio/mp3',
-    'audio/mpeg',
-    'audio/mp4',
-    'audio/ogg',
-    'audio/flac'
-]);
 
 // Cache keys
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
 define('LLM_CACHE_CONVERSATION_MESSAGES', 'llm_conversation_messages');
 define('LLM_CACHE_RATE_LIMIT', 'llm_rate_limit');
-
-// Supported model types
-define('LLM_MODEL_TYPE_TEXT', 'text');
-define('LLM_MODEL_TYPE_VISION', 'vision');
-define('LLM_MODEL_TYPE_EMBEDDING', 'embedding');
-define('LLM_MODEL_TYPE_RERANKER', 'reranker');
-define('LLM_MODEL_TYPE_SPEECH', 'speech');
-define('LLM_MODEL_TYPE_MULTIMODAL', 'multimodal'); // Text + Vision combined
 
 // Model capability flags
 define('LLM_CAPABILITY_VISION', 'vision'); // Can process images
@@ -145,22 +114,9 @@ define('LLM_CAPABILITY_REASONING', 'reasoning'); // Advanced reasoning capabilit
 // UI labels
 define('LLM_DEFAULT_SUBMIT_LABEL', 'Send Message');
 define('LLM_DEFAULT_NEW_CHAT_LABEL', 'New Conversation');
-define('LLM_DEFAULT_DELETE_LABEL', 'Delete Chat');
-define('LLM_DEFAULT_MODEL_LABEL', 'AI Model');
-
-// File upload error codes
-define('LLM_UPLOAD_ERROR_SIZE', 'file_too_large');
-define('LLM_UPLOAD_ERROR_TYPE', 'invalid_file_type');
-define('LLM_UPLOAD_ERROR_MIME', 'invalid_mime_type');
-define('LLM_UPLOAD_ERROR_DUPLICATE', 'duplicate_file');
-define('LLM_UPLOAD_ERROR_MAX_FILES', 'max_files_exceeded');
-define('LLM_UPLOAD_ERROR_MOVE_FAILED', 'move_failed');
-define('LLM_UPLOAD_ERROR_DIRECTORY', 'directory_creation_failed');
 
 // Admin page keywords
 define('PAGE_LLM_CONFIG', 'sh_module_llm');
-define('PAGE_LLM_ADMIN_CONVERSATIONS', 'admin_llm_conversations');
-define('PAGE_LLM_ADMIN_MESSAGES', 'admin_llm_messages');
 
 /**
  * Get the file type category based on extension
@@ -190,23 +146,6 @@ function llm_get_file_type_category($extension) {
  */
 function llm_is_vision_model($model) {
     return in_array($model, LLM_VISION_MODELS);
-}
-
-/**
- * Check if a model is an audio/speech-to-text model
- *
- * @param string $model Model identifier
- * @return bool True if model is an audio model
- */
-function llm_is_audio_model($model) {
-    $modelLower = strtolower($model);
-    // Check explicit list first
-    if (in_array($model, LLM_AUDIO_MODELS)) {
-        return true;
-    }
-    // Fallback: check if model name contains whisper/speech/audio
-    return strpos($modelLower, 'whisper') !== false 
-        || strpos($modelLower, 'speech') !== false;
 }
 
 /**

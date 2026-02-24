@@ -176,6 +176,127 @@ class LlmService extends BaseLlmService
     }
 
     /**
+     * Resolve conversation for a request: get existing or create new
+     *
+     * Handles:
+     * - Creating a new conversation if none exists
+     * - Checking concurrent conversation limits before creation
+     * - Validating existing conversation ownership
+     * - Creating new conversation if model changed
+     *
+     * @param int $user_id User ID
+     * @param int|null $conversation_id Existing conversation ID (optional)
+     * @param array $rate_data Rate limit data from checkRateLimit
+     * @param string $model Model name
+     * @param float|null $temperature Temperature setting
+     * @param int|null $max_tokens Max tokens setting
+     * @param int|null $section_id Section ID
+     * @return array ['conversation_id' => int, 'is_new' => bool]
+     * @throws Exception If conversation not found or limit exceeded
+     */
+    public function resolveConversation($user_id, $conversation_id, $rate_data, $model, $temperature = null, $max_tokens = null, $section_id = null)
+    {
+        $is_new = false;
+
+        if (!$conversation_id) {
+            $this->validateConcurrentConversationLimit($rate_data);
+            $conversation_id = $this->getOrCreateConversationForModel(
+                $user_id,
+                $model,
+                $temperature,
+                $max_tokens,
+                $section_id
+            );
+            $is_new = true;
+        } else {
+            $existing = $this->getConversation($conversation_id, $user_id, $section_id);
+            if (!$existing) {
+                throw new Exception('Conversation not found');
+            }
+
+            if ($existing['model'] !== $model) {
+                $this->validateConcurrentConversationLimit($rate_data);
+                $conversation_id = $this->getOrCreateConversationForModel(
+                    $user_id,
+                    $model,
+                    $temperature,
+                    $max_tokens,
+                    $section_id
+                );
+                $is_new = true;
+            }
+        }
+
+        return [
+            'conversation_id' => $conversation_id,
+            'is_new' => $is_new
+        ];
+    }
+
+    /**
+     * Validate concurrent conversation limit before creating a new one
+     *
+     * @param array $rate_data Rate limit data
+     * @throws Exception If limit exceeded
+     */
+    private function validateConcurrentConversationLimit($rate_data)
+    {
+        $conversations = $rate_data['conversations'] ?? [];
+        if (count($conversations) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
+            throw new Exception(
+                'Concurrent conversation limit exceeded: ' .
+                LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations'
+            );
+        }
+    }
+
+    /**
+     * Update conversation title for new conversations
+     *
+     * @param int $conversation_id Conversation ID
+     * @param int $user_id User ID
+     * @param string $first_message First message content (used to generate title)
+     */
+    public function updateNewConversationTitle($conversation_id, $user_id, $first_message)
+    {
+        $title = $this->generateConversationTitle($first_message);
+        $this->updateConversation($conversation_id, $user_id, ['title' => $title]);
+    }
+
+    /**
+     * Generate a conversation title based on the first message
+     *
+     * @param string $message Message content
+     * @return string Generated title
+     */
+    private function generateConversationTitle($message)
+    {
+        $clean_message = trim($message);
+        $clean_message = preg_replace('/[?!.,;:]+$/', '', $clean_message);
+
+        $words = explode(' ', $clean_message);
+        $title_words = array_slice($words, 0, 8);
+        $title = implode(' ', $title_words);
+        $title = ucfirst($title);
+
+        if (strlen($title) > 50) {
+            $shortened = substr($title, 0, 47);
+            $last_space = strrpos($shortened, ' ');
+            if ($last_space !== false) {
+                $title = substr($shortened, 0, $last_space) . '...';
+            } else {
+                $title = substr($title, 0, 47) . '...';
+            }
+        }
+
+        if (strlen($title) < 3) {
+            $title = 'New Conversation';
+        }
+
+        return $title;
+    }
+
+    /**
      * Get or create a conversation for a specific model
      * 
      * Returns the most recent conversation for the model, or creates a new one if none exists.

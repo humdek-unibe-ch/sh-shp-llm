@@ -45,5 +45,50 @@ class LlmFileUtility
 
         return null;
     }
+
+    /**
+     * Format file size for human-readable display
+     *
+     * @param int $bytes File size in bytes
+     * @return string Formatted file size (e.g. "1.5 MB")
+     */
+    public static function formatFileSize($bytes)
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $unitIndex = 0;
+
+        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
+            $bytes /= 1024;
+            $unitIndex++;
+        }
+
+        return round($bytes, 1) . ' ' . $units[$unitIndex];
+    }
+
+    /**
+     * Get human-readable upload error message
+     *
+     * @param int $errorCode PHP upload error code (UPLOAD_ERR_*)
+     * @return string Human-readable error message
+     */
+    public static function getUploadErrorMessage($errorCode)
+    {
+        switch ($errorCode) {
+            case UPLOAD_ERR_INI_SIZE:
+                return 'The uploaded file exceeds the upload_max_filesize directive in php.ini';
+            case UPLOAD_ERR_FORM_SIZE:
+                return 'The uploaded file exceeds the MAX_FILE_SIZE directive in the HTML form';
+            case UPLOAD_ERR_PARTIAL:
+                return 'The uploaded file was only partially uploaded';
+            case UPLOAD_ERR_NO_TMP_DIR:
+                return 'Missing a temporary folder';
+            case UPLOAD_ERR_CANT_WRITE:
+                return 'Failed to write file to disk';
+            case UPLOAD_ERR_EXTENSION:
+                return 'A PHP extension stopped the file upload';
+            default:
+                return 'Unknown upload error';
+        }
+    }
 }
 ?>

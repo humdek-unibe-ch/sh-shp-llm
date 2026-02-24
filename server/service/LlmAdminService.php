@@ -173,66 +173,6 @@ class LlmAdminService extends LlmService
     }
 
     /**
-     * Count conversations for admin pagination
-     */
-    public function countAdminConversations(array $filters = [])
-    {
-        $where = [];
-        $params = [];
-
-        if (!empty($filters['user_id'])) {
-            $where[] = "id_users = :user_id";
-            $params[':user_id'] = (int)$filters['user_id'];
-        }
-
-        if (!empty($filters['section_id'])) {
-            $where[] = "id_sections = :section_id";
-            $params[':section_id'] = (int)$filters['section_id'];
-        }
-
-        if (!empty($filters['q'])) {
-            $where[] = "(title LIKE :q)";
-            $params[':q'] = '%' . $filters['q'] . '%';
-        }
-
-        $where_sql = implode(' AND ', $where);
-
-        $row = $this->db->query_db_first(
-            "SELECT COUNT(*) AS cnt FROM llmConversations WHERE {$where_sql}",
-            $params
-        );
-
-        return isset($row['cnt']) ? (int)$row['cnt'] : 0;
-    }
-
-    /**
-     * Get a conversation (admin view) including user and section info
-     */
-    public function getAdminConversation($conversation_id)
-    {
-        return $this->db->query_db_first(
-            "SELECT
-                c.id,
-                c.title,
-                c.model,
-                c.temperature,
-                c.max_tokens,
-                c.id_users,
-                c.id_sections,
-                c.created_at,
-                c.updated_at,
-                u.name AS user_name,
-                u.email AS user_email,
-                s.name AS section_name
-             FROM llmConversations c
-             LEFT JOIN users u ON c.id_users = u.id
-             LEFT JOIN sections s ON c.id_sections = s.id
-             WHERE c.id = ?",
-            [$conversation_id]
-        );
-    }
-
-    /**
      * Get messages for admin view (no cache to ensure fresh auditing)
      * 
      * Returns ALL messages including unvalidated ones (failed schema validation attempts).

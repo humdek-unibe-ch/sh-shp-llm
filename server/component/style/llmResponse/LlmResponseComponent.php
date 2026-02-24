@@ -22,7 +22,7 @@ class LlmResponseComponent extends BaseComponent
     public function __construct($services, $id, $params, $id_page, $entry_record)
     {
         $model = new StyleModel($services, $id, $params, $id_page, $entry_record);
-        $view = new LlmResponseView($model, $params);
+        $view = new LlmResponseView($model);
         parent::__construct($model, $view, $id_page, $entry_record);
     }
 }

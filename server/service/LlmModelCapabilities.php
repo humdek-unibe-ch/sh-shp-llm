@@ -78,17 +78,6 @@ class LlmModelCapabilities
     }
 
     /**
-     * Check if a model is a chat model (vs embedding/reranker/speech)
-     * 
-     * @param string $model Model identifier
-     * @return bool True if model uses chat completion format
-     */
-    public static function isChatModel($model)
-    {
-        return !in_array($model, self::NON_CHAT_MODELS);
-    }
-
-    /**
      * Get the appropriate role for a system message based on model
      * 
      * @param string $model Model identifier
@@ -189,82 +178,6 @@ class LlmModelCapabilities
         }
 
         return $converted;
-    }
-
-    /**
-     * Build a context message with the appropriate role for the model
-     * 
-     * Helper function for services that need to create system-like messages.
-     * 
-     * @param string $content Message content
-     * @param string $model Model identifier
-     * @return array Message array with appropriate role
-     */
-    public static function buildContextMessage($content, $model)
-    {
-        $role = self::getSystemRoleForModel($model);
-        
-        if ($role === 'user') {
-            return [
-                'role' => 'user',
-                'content' => "[SYSTEM INSTRUCTION]\n" . $content
-            ];
-        }
-
-        return [
-            'role' => 'system',
-            'content' => $content
-        ];
-    }
-
-    /**
-     * Get list of all supported chat models
-     * 
-     * @return array List of model identifiers
-     */
-    public static function getAllChatModels()
-    {
-        return array_merge(
-            self::MODELS_WITH_SYSTEM_ROLE,
-            self::MODELS_WITHOUT_SYSTEM_ROLE
-        );
-    }
-
-    /**
-     * Get model capability information for debugging
-     * 
-     * @param string $model Model identifier
-     * @return array Capability information
-     */
-    public static function getModelInfo($model)
-    {
-        return [
-            'model' => $model,
-            'is_chat_model' => self::isChatModel($model),
-            'supports_system_role' => self::supportsSystemRole($model),
-            'system_role_maps_to' => self::getSystemRoleForModel($model),
-            'category' => self::getModelCategory($model)
-        ];
-    }
-
-    /**
-     * Get the category of a model
-     * 
-     * @param string $model Model identifier
-     * @return string Category: 'full_support', 'no_system', 'non_chat', or 'unknown'
-     */
-    private static function getModelCategory($model)
-    {
-        if (in_array($model, self::MODELS_WITH_SYSTEM_ROLE)) {
-            return 'full_support';
-        }
-        if (in_array($model, self::MODELS_WITHOUT_SYSTEM_ROLE)) {
-            return 'no_system';
-        }
-        if (in_array($model, self::NON_CHAT_MODELS)) {
-            return 'non_chat';
-        }
-        return 'unknown';
     }
 }
 ?>

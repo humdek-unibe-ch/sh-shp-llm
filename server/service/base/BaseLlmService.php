@@ -9,38 +9,29 @@ require_once __DIR__ . '/../cache/LlmCacheManager.php';
 /**
  * Base Service Class for LLM Plugin
  * 
- * Abstract base class that provides common functionality for all LLM services:
- * - Database and cache access
- * - Transaction logging via LlmLoggingTrait
- * - Centralized cache management via LlmCacheManager
- * - Common utility methods
+ * Provides database access, cache management, transaction logging (LlmLoggingTrait),
+ * and common utilities. All services that need database or cache access extend this.
  * 
- * All services that need database/cache access should extend this class.
+ * Service Architecture (3 tiers):
  * 
- * Usage:
- * ```php
- * class MyLlmService extends BaseLlmService
- * {
- *     public function myMethod()
- *     {
- *         // Access database
- *         $result = $this->db->query_db("SELECT * FROM table");
- *         
- *         // Use cache manager
- *         $this->cacheManager->clearUserCache($userId);
- *         
- *         // Log transactions
- *         $this->logTransaction(transactionTypes_insert, 'table', $id, $userId, 'Description');
- *         
- *         // Debug logging
- *         $this->logDebug('Operation completed', ['result' => $result]);
- *     }
- * }
- * ```
+ * 1. **Extend BaseLlmService** – for services that read/write the database or cache.
+ *    Examples: LlmService, LlmAdminService, LlmDataSavingService,
+ *    LlmDangerDetectionService, LlmProgressTrackingService, LlmScriptService,
+ *    LlmSpeechToTextService, LlmApiFormatterService.
+ * 
+ * 2. **Composition (no extends)** – for pure-logic services that operate on
+ *    data passed in via constructor/method args. They receive collaborators
+ *    (like LlmService) via constructor injection instead of accessing the DB directly.
+ *    Examples: LlmContextService, LlmResponseService, LlmFormModeService,
+ *    LlmFloatingModeService, LlmStrictConversationService, LlmFileUploadService.
+ * 
+ * 3. **Static utilities** – for stateless helpers with no dependencies.
+ *    Examples: LlmFileNamingService, LlmFileUtility, LlmLanguageUtility,
+ *    LlmModelCapabilities, LlmValidator.
  * 
  * @abstract
  * @package LLM Plugin
- * @version 1.0.0
+ * @version 1.1.0
  */
 abstract class BaseLlmService
 {

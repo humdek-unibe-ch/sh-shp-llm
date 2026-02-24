@@ -82,7 +82,7 @@ class LlmFileUploadService
                     }
                 } elseif ($files['error'][$i] !== UPLOAD_ERR_NO_FILE) {
                     // Throw exception for critical upload errors so user sees the message
-                    $errorMessage = $this->getUploadErrorMessage($files['error'][$i]);
+                    $errorMessage = LlmFileUtility::getUploadErrorMessage($files['error'][$i]);
                     $fileName = $files['name'][$i] ?? 'unknown';
 
                     // For size-related errors, provide helpful message
@@ -100,7 +100,7 @@ class LlmFileUploadService
                     $uploadedFiles[] = $processedFile;
                 }
             } elseif ($files['error'] !== UPLOAD_ERR_NO_FILE) {
-                throw new Exception('File upload error: ' . $this->getUploadErrorMessage($files['error']));
+                throw new Exception('File upload error: ' . LlmFileUtility::getUploadErrorMessage($files['error']));
             }
         }
 
@@ -126,12 +126,12 @@ class LlmFileUploadService
 
         // Check for upload errors
         if ($file['error'] !== UPLOAD_ERR_OK) {
-            throw new Exception('File upload error for "' . $originalName . '": ' . $this->getUploadErrorMessage($file['error']));
+            throw new Exception('File upload error for "' . $originalName . '": ' . LlmFileUtility::getUploadErrorMessage($file['error']));
         }
 
         // Validate file size
         if ($file['size'] > LLM_MAX_FILE_SIZE) {
-            throw new Exception('File "' . $originalName . '" exceeds maximum limit of ' . $this->formatFileSize(LLM_MAX_FILE_SIZE));
+            throw new Exception('File "' . $originalName . '" exceeds maximum limit of ' . LlmFileUtility::formatFileSize(LLM_MAX_FILE_SIZE));
         }
 
         // Validate file size is not empty
@@ -294,49 +294,5 @@ class LlmFileUploadService
     }
 
 
-    /**
-     * Format file size for human-readable display
-     *
-     * @param int $bytes File size in bytes
-     * @return string Formatted file size
-     */
-    private function formatFileSize($bytes)
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $unitIndex = 0;
-
-        while ($bytes >= 1024 && $unitIndex < count($units) - 1) {
-            $bytes /= 1024;
-            $unitIndex++;
-        }
-
-        return round($bytes, 1) . ' ' . $units[$unitIndex];
-    }
-
-    /**
-     * Get human-readable upload error message
-     *
-     * @param int $errorCode The upload error code
-     * @return string Human-readable error message
-     */
-    private function getUploadErrorMessage($errorCode)
-    {
-        switch ($errorCode) {
-            case UPLOAD_ERR_INI_SIZE:
-                return 'The uploaded file exceeds the upload_max_filesize directive in php.ini';
-            case UPLOAD_ERR_FORM_SIZE:
-                return 'The uploaded file exceeds the MAX_FILE_SIZE directive in the HTML form';
-            case UPLOAD_ERR_PARTIAL:
-                return 'The uploaded file was only partially uploaded';
-            case UPLOAD_ERR_NO_TMP_DIR:
-                return 'Missing a temporary folder';
-            case UPLOAD_ERR_CANT_WRITE:
-                return 'Failed to write file to disk';
-            case UPLOAD_ERR_EXTENSION:
-                return 'A PHP extension stopped the file upload';
-            default:
-                return 'Unknown upload error';
-        }
-    }
 }
 ?>

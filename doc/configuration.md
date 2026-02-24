@@ -398,21 +398,21 @@ For Form Mode to work properly, `auto_start_conversation` should be enabled:
 
 **Location:** CMS → Edit page → llmChat component settings → `enable_progress_tracking`
 
-Progress tracking shows users how much of the conversation context has been covered. This is useful for educational modules, guided conversations, or any scenario where you want users to explore all defined topics.
+Progress tracking shows users how much of the conversation context has been covered. This is useful for educational modules, guided conversations, or any scenario where you want users to explore all defined topics. See [Progress Tracking System](progress-tracking-system.md) for full documentation.
 
 #### How It Works
 
-**IMPORTANT**: Progress is tracked based on **USER QUESTIONS ONLY**, not AI responses. When the AI mentions a topic, it does NOT count as coverage. Only when the USER explicitly asks about a topic does it count toward progress.
+**IMPORTANT**: Progress uses **confirmation-based tracking** where users explicitly confirm their understanding of topics. Topics are marked as covered when users submit confirmation forms (e.g., "I understand" or similar) or when the LLM presents a topic confirmation form and the user completes it. Keyword detection in user messages may also contribute in some configurations.
 
 1. **Topic Definition**: Define trackable topics in your conversation context using one of these formats:
    - **TRACKABLE_TOPICS section** (recommended for many topics)
    - **Inline [TOPIC: ...] markers** (for embedding in content)
 
-2. **Coverage Calculation**: When a user asks about a topic (keyword match), that topic is marked as covered.
+2. **Coverage Calculation**: When a user confirms understanding (via form submission or explicit confirmation), that topic is marked as covered.
 
 3. **Monotonic Progress**: Progress can only increase, never decrease.
 
-4. **Depth Bonus**: Multiple user questions about the same topic add a small depth bonus (up to 50% extra per topic).
+4. **Depth Bonus**: Multiple confirmations about the same topic add a small depth bonus (up to 50% extra per topic).
 
 #### Defining Topics
 
@@ -492,11 +492,11 @@ You are an expert on the English Premier League.
 | User Action | Progress |
 |-------------|----------|
 | Conversation starts | 0% |
-| User asks: "Tell me about Arsenal" | 5% (1/20 topics) |
-| AI responds with Arsenal info | Still 5% (AI responses don't count) |
-| User asks: "What about Chelsea?" | 10% (2/20 topics) |
-| User asks: "More about Arsenal's history" | 12.5% (depth bonus for Arsenal) |
-| User asks about Man United and Liverpool | 20% (4/20 topics) |
+| User confirms understanding of Arsenal topic (via form) | 5% (1/20 topics) |
+| AI responds with Chelsea info | Still 5% (confirmation required) |
+| User confirms understanding of Chelsea | 10% (2/20 topics) |
+| User confirms deeper understanding of Arsenal | 12.5% (depth bonus) |
+| User confirms Man United and Liverpool topics | 20% (4/20 topics) |
 
 #### Use Cases
 
@@ -549,25 +549,25 @@ When progress tracking is enabled, the `get_conversation` and `get_progress` end
 #### Best Practices
 
 1. **Define Topics Explicitly**: Use TRACKABLE_TOPICS section or [TOPIC: ...] markers for reliable tracking
-2. **Choose Good Keywords**: Include the topic name plus common variations, nicknames, and related terms
-3. **Avoid Keyword Overlap**: Make keywords distinct enough that unrelated questions don't trigger coverage
+2. **Include Confirmation Forms**: LLM should present forms with topic_confirmation_id or understanding_check fields for users to confirm understanding
+3. **Clear Confirmation Values**: Use values like "yes", "understand", "ja", "verstehe" that the system recognizes as confirmations
 4. **Appropriate Granularity**: 10-30 topics works well; too few = jumpy progress, too many = slow progress
-5. **Test Your Keywords**: Try sample user questions to ensure they trigger the right topics
+5. **Test Confirmation Flow**: Verify that form submissions with topic IDs correctly update progress
 
 #### Troubleshooting
 
 **Progress jumps to 100% immediately**
 - Your topics aren't being parsed correctly
 - Use the TRACKABLE_TOPICS section format
-- Check that keywords are specific enough
+- Check that confirmation forms include topic identifiers
 
 **Progress doesn't increase**
-- Keywords might not match user messages
-- Keywords are case-insensitive but must be substrings
-- Check the API response to see which keywords matched
+- Ensure users are submitting confirmation forms (not just typing)
+- Topic confirmation forms need fields like `topic_confirmation_id` or `understanding_check`
+- Check the API response to see which topics are confirmed
 
-**Progress increases when AI responds**
-- This shouldn't happen - only USER messages count
+**Progress increases without user confirmation**
+- This shouldn't happen with confirmation-based tracking
 - If it does, please report the bug
 
 ### Strict Conversation Mode

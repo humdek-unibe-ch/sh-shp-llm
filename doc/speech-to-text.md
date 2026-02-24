@@ -67,8 +67,8 @@ The Speech-to-Text feature enables voice input for the LLM Chat component, allow
 
 ### Privacy
 
-- **No Storage**: Audio data is processed in real-time and not stored permanently
-- **Temporary Files**: Server receives audio as temporary file, deleted after processing
+- **Permanent Storage**: Audio files are saved in the plugin's upload directory (`upload/{user_id}/`) with a naming convention for traceability
+- **File Retention**: Audio files are kept after transcription (configurable via `keepFile` in the service)
 - **User Control**: User can edit or clear transcribed text before sending
 
 ## Configuration
@@ -284,8 +284,8 @@ Speech-to-text and file attachments can be used together in the same message.
 
 ### Data Handling
 
-- Audio files are temporary and deleted after processing
-- No audio data is stored in the database
+- Audio files are permanently saved in the upload directory (user-specific subfolder)
+- No audio data is stored in the database (only file paths if referenced)
 - Transcribed text follows same security as typed messages
 
 ### API Security

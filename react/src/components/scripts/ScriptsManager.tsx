@@ -5,6 +5,7 @@ import {
 } from 'react-bootstrap';
 import type { ScriptsConfig } from '../../scripts';
 import { createScriptsApi, type LlmScript, type LlmModel, type SectionInfo, type LlmDefaults } from './scriptsApi';
+import { formatDateTime } from '../../utils/formatters';
 import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
 import './ScriptsManager.css';
 
@@ -12,14 +13,6 @@ declare const monaco: any;
 declare const require: any;
 declare const BASE_PATH: string;
 declare const $: any;
-
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
-};
 
 type ViewMode = 'list' | 'editor';
 
@@ -600,8 +593,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                             )}
                           </td>
                           <td className="small">{script.model || <em className="text-muted">default</em>}</td>
-                          <td className="small text-muted">{formatDate(script.created_at)}</td>
-                          <td className="small text-muted">{formatDate(script.updated_at)}</td>
+                          <td className="small text-muted">{formatDateTime(script.created_at)}</td>
+                          <td className="small text-muted">{formatDateTime(script.updated_at)}</td>
                         </tr>
                       ))}
                     </tbody>

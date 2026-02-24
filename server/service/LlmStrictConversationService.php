@@ -21,9 +21,6 @@
 class LlmStrictConversationService
 {
     private $llm_service;
-    
-    /** @var float Confidence threshold for relevance (used if pre-check is enabled) */
-    private const RELEVANCE_THRESHOLD = 0.7;
 
     public function __construct($llm_service)
     {

@@ -82,11 +82,13 @@ $context_messages = $this->model->getParsedConversationContext();
 
 // Convert messages with context prepended
 $api_messages = $this->api_formatter_service->convertToApiFormat(
-    $messages, 
-    $model, 
+    $messages,
+    $model,
     $context_messages  // Context prepended here
 );
 
+// Call LLM API with context
+$this->llm_service->callLlmResponse(
     $conversation_id,
     $api_messages,
     $model,

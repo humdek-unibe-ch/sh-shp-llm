@@ -2,13 +2,15 @@
 
 ## Overview
 
-The Structured Response Schema is a comprehensive JSON format that ALL LLM responses must follow. This enables:
+The Structured Response Schema is a comprehensive JSON format that LLM responses may follow for structured output. The canonical schema is defined in `schemas/llm-response.schema.json`.
+
+This enables:
 
 - **Consistent Parsing**: Every response follows the same structure
 - **Flexible Interaction**: Users can always type free text, forms are optional guidance
-- **Progress Tracking**: Automatic topic coverage and milestone detection
-- **Rich Content**: Support for text blocks, forms, media, and navigation
-- **Predictable UX**: Frontend always knows what to render and where
+- **Progress Tracking**: Optional topic coverage and milestone detection
+- **Rich Content**: Support for text blocks, forms, media, and suggestions
+- **Safety Assessment**: Built-in safety fields for danger detection
 
 ## Critical Design Principle
 
@@ -19,260 +21,57 @@ The Structured Response Schema is a comprehensive JSON format that ALL LLM respo
 
 ---
 
-## RESPONSE_SCHEMA Definition
+## Schema Structure (Current)
+
+The current schema uses four top-level properties:
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `type` | string | Yes | Must be `"response"` |
+| `safety` | object | Yes | Safety assessment (is_safe, danger_level, detected_concerns, requires_intervention) |
+| `content` | object | Yes | Displayable content (text_blocks, optional form, media, suggestions) |
+| `metadata` | object | Yes | Model info, tokens_used, confidence, language |
+
+### Content Structure
+
+- **text_blocks**: Array of blocks with `type` (text, heading, info, warning, error, success, code) and `content`
+- **form**: Single optional form object (not array) with `title`, `description`, `fields`, `submit_label`
+- **media**: Optional array of image/video/audio items
+- **suggestions**: Optional quick-reply buttons (each `{"text": "label"}`)
+- **progress**: Optional progress tracking (percentage, topics_covered, milestones_reached)
+
+### Form Object (Single)
+
+The schema uses a single `form` object within `content`, not a `forms` array:
 
 ```json
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "required": ["content", "meta"],
-  "properties": {
-    "content": {
-      "type": "object",
-      "description": "All displayable content",
-      "required": ["text_blocks"],
-      "properties": {
-        "text_blocks": {
-          "type": "array",
-          "description": "Ordered list of text content to display",
-          "items": {
-            "type": "object",
-            "required": ["type", "content"],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": ["paragraph", "heading", "list", "quote", "info", "warning", "success", "tip"],
-                "description": "Block type for styling"
-              },
-              "content": {
-                "type": "string",
-                "description": "Markdown-formatted text content"
-              },
-              "level": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 6,
-                "description": "Heading level (only for type=heading)"
-              }
-            }
-          }
-        },
-        "forms": {
-          "type": "array",
-          "description": "Optional forms for structured input (user can ignore and type freely)",
-          "items": {
-            "$ref": "#/definitions/form"
-          }
-        },
-        "media": {
-          "type": "array",
-          "description": "Images, videos, or other media to display",
-          "items": {
-            "type": "object",
-            "required": ["type", "src"],
-            "properties": {
-              "type": {
-                "type": "string",
-                "enum": ["image", "video", "audio"]
-              },
-              "src": {
-                "type": "string",
-                "description": "URL or asset path"
-              },
-              "alt": {
-                "type": "string"
-              },
-              "caption": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "next_step": {
-          "type": "object",
-          "description": "Guidance on what to do next",
-          "properties": {
-            "prompt": {
-              "type": "string",
-              "description": "Suggested next action or question"
-            },
-            "suggestions": {
-              "type": "array",
-              "description": "Quick reply suggestions (optional shortcuts)",
-              "items": {
-                "type": "string"
-              }
-            },
-            "can_skip": {
-              "type": "boolean",
-              "description": "Whether the user can skip this step",
-              "default": true
-            }
-          }
-        }
-      }
-    },
-    "meta": {
-      "type": "object",
-      "description": "Metadata about the response",
-      "required": ["response_type"],
-      "properties": {
-        "response_type": {
-          "type": "string",
-          "enum": ["educational", "conversational", "assessment", "summary", "error"],
-          "description": "Type of response for context-aware rendering"
-        },
-        "progress": {
-          "type": "object",
-          "description": "Progress tracking information",
-          "properties": {
-            "percentage": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
-            },
-            "covered_topics": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "List of topic IDs/names now covered"
-            },
-            "newly_covered": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Topics covered in THIS message"
-            },
-            "remaining_topics": {
-              "type": "integer",
-              "description": "How many topics remain"
-            },
-            "milestone": {
-              "type": "string",
-              "enum": ["25%", "50%", "75%", "100%"],
-              "description": "Milestone reached (if any)"
-            }
-          }
-        },
-        "module_state": {
-          "type": "object",
-          "description": "Current position in educational module",
-          "properties": {
-            "current_phase": {
-              "type": "string",
-              "description": "Current phase name"
-            },
-            "current_section": {
-              "type": "string",
-              "description": "Current section/topic being covered"
-            },
-            "sections_completed": {
-              "type": "integer"
-            },
-            "total_sections": {
-              "type": "integer"
-            }
-          }
-        },
-        "emotion": {
-          "type": "string",
-          "enum": ["neutral", "encouraging", "celebratory", "supportive", "informative"],
-          "description": "Emotional tone of this response"
-        }
-      }
-    }
-  },
-  "definitions": {
+  "content": {
+    "text_blocks": [...],
     "form": {
-      "type": "object",
-      "required": ["id", "fields"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique form identifier"
-        },
-        "title": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "fields": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/form_field"
-          }
-        },
-        "submit_label": {
-          "type": "string",
-          "default": "Submit"
-        },
-        "optional": {
-          "type": "boolean",
-          "default": true,
-          "description": "Whether the user can skip this form"
+      "title": "Form Title",
+      "description": "Optional description",
+      "fields": [
+        {
+          "id": "field_id",
+          "type": "radio",
+          "label": "Question text",
+          "options": [{"value": "a", "label": "Option A"}]
         }
-      }
-    },
-    "form_field": {
-      "type": "object",
-      "required": ["id", "type", "label"],
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Field identifier (snake_case)"
-        },
-        "type": {
-          "type": "string",
-          "enum": ["radio", "checkbox", "select", "text", "textarea", "number"]
-        },
-        "label": {
-          "type": "string"
-        },
-        "required": {
-          "type": "boolean",
-          "default": false
-        },
-        "options": {
-          "type": "array",
-          "description": "Required for radio, checkbox, select types",
-          "items": {
-            "type": "object",
-            "required": ["value", "label"],
-            "properties": {
-              "value": {
-                "type": "string"
-              },
-              "label": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "placeholder": {
-          "type": "string"
-        },
-        "help_text": {
-          "type": "string"
-        },
-        "min": {
-          "type": "number"
-        },
-        "max": {
-          "type": "number"
-        }
-      }
+      ],
+      "submit_label": "Submit"
     }
   }
 }
 ```
 
+**Canonical source**: See `schemas/llm-response.schema.json` for the full JSON Schema definition.
+
 ---
 
 ## Example Responses
+
+The examples below illustrate the conceptual structure. For the authoritative schema including all field types and constraints, see `schemas/llm-response.schema.json`.
 
 ### Educational Content with Optional Form
 

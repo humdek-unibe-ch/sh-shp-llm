@@ -33,7 +33,7 @@ class ModuleLlmAdminConsoleView extends BaseView
 
     public function output_content_mobile()
     {
-        return;
+        return [];
     }
 
     public function get_css_includes($local = array())

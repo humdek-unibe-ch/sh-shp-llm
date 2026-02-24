@@ -259,12 +259,6 @@ export function createConversationsApi(sectionId?: number) {
   };
 }
 
-/**
- * Conversations API namespace (backward compatible, no section isolation)
- * @deprecated Use createConversationsApi(sectionId) for section-isolated instances
- */
-export const conversationsApi = createConversationsApi();
-
 // ============================================================================
 // MESSAGES API
 // ============================================================================
@@ -346,12 +340,6 @@ export function createMessagesApi(sectionId?: number) {
   };
 }
 
-/**
- * Messages API namespace (backward compatible, no section isolation)
- * @deprecated Use createMessagesApi(sectionId) for section-isolated instances
- */
-export const messagesApi = createMessagesApi();
-
 // ============================================================================
 // FORM MODE API
 // ============================================================================
@@ -397,12 +385,6 @@ export function createFormApi(sectionId?: number) {
     }
   };
 }
-
-/**
- * Form Mode API namespace (backward compatible, no section isolation)
- * @deprecated Use createFormApi(sectionId) for section-isolated instances
- */
-export const formApi = createFormApi();
 
 // ============================================================================
 // ADMIN API
@@ -501,12 +483,6 @@ export function createAutoStartApi(sectionId?: number) {
     }
   };
 }
-
-/**
- * Auto-start API (backward compatible, no section isolation)
- * @deprecated Use createAutoStartApi(sectionId) for section-isolated instances
- */
-export const autoStartApi = createAutoStartApi();
 
 // ============================================================================
 // PROGRESS TRACKING API

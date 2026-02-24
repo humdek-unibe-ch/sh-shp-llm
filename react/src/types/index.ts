@@ -31,7 +31,7 @@ export {
   getFormFromLlmResponse
 } from '../utils/llmResponseUtils';
 
-export { formatBytes } from '../utils/generalUtils';
+import { formatFileSize } from '../utils/formatters';
 
 // ============================================================================
 // FILE CONFIGURATION TYPES
@@ -103,16 +103,8 @@ export function isFormField(section: FormSection): section is FormField {
  * Matches FILE_ERRORS from vanilla JS
  */
 export const FILE_ERRORS = {
-  fileTooLarge: (fileName: string, maxSize: number): string => {
-    const formatBytesLocal = (bytes: number): string => {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-    };
-    return `File "${fileName}" exceeds maximum size of ${formatBytesLocal(maxSize)}`;
-  },
+  fileTooLarge: (fileName: string, maxSize: number): string =>
+    `File "${fileName}" exceeds maximum size of ${formatFileSize(maxSize)}`,
   invalidType: (fileName: string, extension: string): string =>
     `File type ".${extension}" is not allowed`,
   duplicateFile: (fileName: string): string =>
@@ -681,17 +673,6 @@ export interface ChatState {
   /** Error message (if any) */
   error: string | null;
 }
-
-/**
- * Initial chat state
- */
-export const INITIAL_CHAT_STATE: ChatState = {
-  conversations: [],
-  currentConversation: null,
-  messages: [],
-  isLoading: false,
-  error: null
-};
 
 // ============================================================================
 // FORM MODE TYPES

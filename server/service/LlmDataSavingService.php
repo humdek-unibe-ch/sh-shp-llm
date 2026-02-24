@@ -137,7 +137,7 @@ class LlmDataSavingService extends BaseLlmService
             return $result;
 
         } catch (Exception $e) {
-            error_log("LlmDataSavingService: Error saving data: " . $e->getMessage());
+            $this->logError('Error saving data', $e);
             return false;
         }
     }
@@ -296,12 +296,12 @@ class LlmDataSavingService extends BaseLlmService
             ]);
 
             if ($table_id) {
-                error_log("LlmDataSavingService: Created dataTable {$table_name} with ID {$table_id}");
+                $this->logInfo('Created dataTable', ['table_name' => $table_name, 'table_id' => $table_id]);
             }
 
             return $table_id;
         } catch (Exception $e) {
-            error_log("LlmDataSavingService: Error creating dataTable: " . $e->getMessage());
+            $this->logError('Error creating dataTable', $e);
             return false;
         }
     }
@@ -330,134 +330,7 @@ class LlmDataSavingService extends BaseLlmService
 
             return true;
         } catch (Exception $e) {
-            error_log("LlmDataSavingService: Error updating display name: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Get all data for a user from a section's table
-     * 
-     * @param int $section_id The section ID
-     * @param int $user_id The user ID
-     * @param string $filter Optional SQL filter
-     * @return array The user's data records
-     */
-    public function getUserData($section_id, $user_id, $filter = '')
-    {
-        $table_name = $this->getTableName($section_id);
-        $table_id = $this->user_input->get_dataTable_id($table_name);
-
-        if (!$table_id) {
-            return [];
-        }
-
-        return $this->user_input->get_data_for_user($table_id, $user_id, $filter);
-    }
-
-    /**
-     * Get data linked to a specific LLM message
-     * 
-     * @param int $section_id The section ID
-     * @param int $message_id The message ID
-     * @return array|null The data record, or null if not found
-     */
-    public function getDataByMessage($section_id, $message_id)
-    {
-        $table_name = $this->getTableName($section_id);
-        $table_id = $this->user_input->get_dataTable_id($table_name);
-
-        if (!$table_id) {
-            return null;
-        }
-
-        $filter = "AND llm_message_id = '{$message_id}'";
-        $data = $this->user_input->get_data($table_id, $filter, false, null, true);
-
-        return $data ?: null;
-    }
-
-    /**
-     * Get data linked to a specific conversation
-     * 
-     * @param int $section_id The section ID
-     * @param int $conversation_id The conversation ID
-     * @return array The data records for this conversation
-     */
-    public function getDataByConversation($section_id, $conversation_id)
-    {
-        $table_name = $this->getTableName($section_id);
-        $table_id = $this->user_input->get_dataTable_id($table_name);
-
-        if (!$table_id) {
-            return [];
-        }
-
-        $filter = "AND llm_conversation_id = '{$conversation_id}'";
-        return $this->user_input->get_data($table_id, $filter, false);
-    }
-
-    /**
-     * Check if a section has a data table configured
-     * 
-     * @param int $section_id The section ID
-     * @return bool True if data table exists
-     */
-    public function hasDataTable($section_id)
-    {
-        $table_name = $this->getTableName($section_id);
-        return $this->user_input->get_dataTable_id($table_name) !== false;
-    }
-
-    /**
-     * Get table info for a section
-     * 
-     * @param int $section_id The section ID
-     * @return array|null Table info or null
-     */
-    public function getTableInfo($section_id)
-    {
-        $table_name = $this->getTableName($section_id);
-        $table_id = $this->user_input->get_dataTable_id($table_name);
-
-        if (!$table_id) {
-            return null;
-        }
-
-        return $this->db->query_db_first(
-            "SELECT * FROM dataTables WHERE id = ?",
-            [$table_id]
-        );
-    }
-
-    /**
-     * Delete all data for a section
-     * 
-     * This soft-deletes all records in the section's data table.
-     * Used when cleaning up or resetting a section's data.
-     * 
-     * @param int $section_id The section ID
-     * @return bool Success status
-     */
-    public function deleteAllSectionData($section_id)
-    {
-        $table_name = $this->getTableName($section_id);
-        $table_id = $this->user_input->get_dataTable_id($table_name);
-
-        if (!$table_id) {
-            return true; // No data to delete
-        }
-
-        try {
-            // Soft delete all rows
-            $this->db->execute_update_db(
-                "UPDATE dataRows SET deleted = 1 WHERE id_dataTables = :table_id",
-                [':table_id' => $table_id]
-            );
-
-            return true;
-        } catch (Exception $e) {
-            error_log("LlmDataSavingService: Error deleting section data: " . $e->getMessage());
+            $this->logError('Error updating display name', $e);
             return false;
         }
     }

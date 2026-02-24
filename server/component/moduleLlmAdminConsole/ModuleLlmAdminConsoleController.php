@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../component/BaseController.php";
+require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
 
 /**
@@ -13,6 +14,7 @@ require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
  */
 class ModuleLlmAdminConsoleController extends BaseController
 {
+    use LlmJsonResponseTrait;
     /**
      * Constructor.
      *
@@ -227,26 +229,6 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
-    /**
-     * Send JSON response and exit.
-     */
-    private function sendJsonResponse($data, $status_code = 200)
-    {
-        if (!headers_sent()) {
-            http_response_code($status_code);
-            header('Content-Type: application/json');
-        }
-
-        // Log user activity before exiting so it is recorded in user_activity table.
-        $this->model->get_services()->get_router()->log_user_activity();
-
-        echo json_encode($data);
-
-        if (function_exists('uopz_allow_exit')) {
-            uopz_allow_exit(true);
-        }
-        exit;
-    }
 }
 ?>
 

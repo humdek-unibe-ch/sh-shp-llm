@@ -18,7 +18,7 @@
 import React, { useState, useRef, useCallback, useEffect, KeyboardEvent, DragEvent } from 'react';
 import { Form, Button, Alert, Badge, CloseButton } from 'react-bootstrap';
 import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../types';
-import { FILE_ERRORS, formatBytes } from '../../../types';
+import { FILE_ERRORS } from '../../../types';
 import {
   formatFileSize,
   getFileExtension,
