@@ -664,5 +664,13 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+        /**
+     * Get the plugin version
+     */
+    public function get_plugin_db_version($plugin_name = 'llm')
+    {
+        return parent::get_plugin_db_version($plugin_name);
+    }
+
 }
 ?>
