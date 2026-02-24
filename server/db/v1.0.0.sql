@@ -216,6 +216,28 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('form_mode_active_title'), 'Form Mode Active', 'Title shown when form mode is enabled and text input is disabled'),
 (get_style_id('llmChat'), get_field_id('form_mode_active_description'), 'Please use the form above to respond.', 'Description shown when form mode is enabled and text input is disabled');
 
+-- =====================================================
+-- LLM SCRIPTS MODULE
+-- =====================================================
+
+-- Add LLM scripts table
+CREATE TABLE IF NOT EXISTS `llm_scripts` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL PRIMARY KEY AUTO_INCREMENT,
+    `generated_id` VARCHAR(20) NOT NULL,
+    `name` VARCHAR(100) NOT NULL,
+    `script` LONGTEXT,
+    `data_config` TEXT,
+    `test_variables` TEXT,
+    `async` BOOLEAN DEFAULT FALSE,
+    `model` VARCHAR(100) DEFAULT NULL,
+    `temperature` DECIMAL(3,2) DEFAULT NULL,
+    `max_tokens` INT DEFAULT NULL,
+    `refresh_sections` TEXT DEFAULT NULL COMMENT 'JSON array of section IDs to refresh after async execution',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 -- create LLM conversations table
 CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -241,7 +263,8 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     `id_llm_scripts` INT(10) UNSIGNED ZEROFILL DEFAULT NULL COMMENT 'Link to llm_scripts for script-generated conversations',
     KEY `idx_llm_scripts` (`id_llm_scripts`),
     CONSTRAINT `fk_llmConversations_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL
+    CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL,  -- NOTE: ON DELETE SET NULL is used because sections can be deleted
+   CONSTRAINT `fk_llmConversations_llm_scripts` FOREIGN KEY (`id_llm_scripts`) REFERENCES `llm_scripts` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- create LLM messages table - Industry Standard Schema
@@ -567,28 +590,6 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 -- =====================================================
 -- LLM SCRIPTS MODULE
 -- =====================================================
-
--- Add LLM scripts table
-CREATE TABLE IF NOT EXISTS `llm_scripts` (
-    `id` INT(10) UNSIGNED ZEROFILL NOT NULL PRIMARY KEY AUTO_INCREMENT,
-    `generated_id` VARCHAR(20) NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `script` LONGTEXT,
-    `data_config` TEXT,
-    `test_variables` TEXT,
-    `async` BOOLEAN DEFAULT FALSE,
-    `model` VARCHAR(100) DEFAULT NULL,
-    `temperature` DECIMAL(3,2) DEFAULT NULL,
-    `max_tokens` INT DEFAULT NULL,
-    `refresh_sections` TEXT DEFAULT NULL COMMENT 'JSON array of section IDs to refresh after async execution',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Add FK from llmConversations to llm_scripts (llm_scripts table now exists)
-ALTER TABLE `llmConversations`
-    ADD CONSTRAINT `fk_llmConversations_llm_scripts`
-    FOREIGN KEY (`id_llm_scripts`) REFERENCES `llm_scripts` (`id`) ON DELETE SET NULL;
 
 -- Add transaction type for LLM scripts
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
