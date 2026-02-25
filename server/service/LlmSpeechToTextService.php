@@ -55,6 +55,7 @@ class LlmSpeechToTextService extends BaseLlmService
         'audio/ogg;codecs=opus',
         'audio/aac',
         'audio/x-aac',
+        'audio/x-hx-aac-adts',
         'audio/mp3',
         'audio/mpeg',
         'audio/mp4',
@@ -261,7 +262,8 @@ class LlmSpeechToTextService extends BaseLlmService
             $actualPath = $audioFilePath;
 
             // Prepare the multipart form data using cURL file
-            $mimeType = mime_content_type($actualPath) ?: 'audio/webm';
+            $detectedMimeType = mime_content_type($actualPath) ?: 'audio/webm';
+            $mimeType = $this->normalizeAudioMimeType($detectedMimeType, $actualPath);
             $curlFilename = 'audio.' . $this->mimeToExtension($mimeType);
             $audioFile = new CURLFile($actualPath, $mimeType, $curlFilename);
             error_log("Speech-to-text: Sending audio - Size: " . filesize($actualPath) . " bytes, MIME: {$mimeType}");
@@ -591,9 +593,13 @@ class LlmSpeechToTextService extends BaseLlmService
             'audio/mp3' => 'mp3',
             'audio/mpeg' => 'mp3',
             'audio/mp4' => 'm4a',
+            'audio/x-m4a' => 'm4a',
             'audio/m4a' => 'm4a',
             'audio/aac' => 'm4a',
             'audio/x-aac' => 'm4a',
+            'audio/x-hx-aac-adts' => 'm4a',
+            'audio/aac-adts' => 'm4a',
+            'audio/adts' => 'm4a',
             'audio/ogg' => 'ogg',
             'audio/ogg;codecs=opus' => 'ogg',
             'audio/flac' => 'flac',
@@ -602,6 +608,45 @@ class LlmSpeechToTextService extends BaseLlmService
         ];
         $base = explode(';', $mimeType)[0];
         return $map[$base] ?? 'webm';
+    }
+
+    /**
+     * Normalize uncommon/codec-specific MIME values to OpenAI-compatible types.
+     *
+     * @param string $mimeType
+     * @param string $filePath
+     * @return string
+     */
+    private function normalizeAudioMimeType($mimeType, $filePath = '')
+    {
+        $base = strtolower(trim(explode(';', (string)$mimeType)[0]));
+
+        $map = [
+            'audio/x-hx-aac-adts' => 'audio/aac',
+            'audio/aac-adts' => 'audio/aac',
+            'audio/adts' => 'audio/aac',
+            'audio/x-m4a' => 'audio/mp4',
+            'video/mp4' => 'audio/mp4',
+        ];
+
+        if (isset($map[$base])) {
+            return $map[$base];
+        }
+
+        if ($base === 'application/octet-stream' && !empty($filePath)) {
+            $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            if ($ext === 'm4a' || $ext === 'aac') {
+                return 'audio/mp4';
+            }
+            if ($ext === 'webm') {
+                return 'audio/webm';
+            }
+            if ($ext === 'ogg') {
+                return 'audio/ogg';
+            }
+        }
+
+        return $base ?: 'audio/webm';
     }
 }
 ?>
