@@ -63,12 +63,13 @@ class LlmApiFormatterService extends BaseLlmService
 
         foreach ($messages as $index => $message) {
             // Skip empty assistant messages (failed previous attempts)
-            if ($message['role'] === 'assistant' && empty(trim($message['content'] ?? ''))) {
+            $rawContent = $message['content'] ?? '';
+            if ($message['role'] === 'assistant' && !is_array($rawContent) && empty(trim($rawContent))) {
                 continue;
             }
             
             // Skip user messages with no content (shouldn't happen, but just in case)
-            if ($message['role'] === 'user' && empty(trim($message['content'] ?? ''))) {
+            if ($message['role'] === 'user' && !is_array($rawContent) && empty(trim($rawContent))) {
                 continue;
             }
             
@@ -127,10 +128,16 @@ class LlmApiFormatterService extends BaseLlmService
      */
     private function formatAttachmentForApi($attachment, $isVisionModel)
     {
+        if (!is_array($attachment)) {
+            return null;
+        }
         $path = $attachment['path'] ?? '';
+        if (is_array($path)) {
+            $path = '';
+        }
         // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
         $fullPath = __DIR__ . "/../../{$path}";
-        $originalName = $attachment['original_name'] ?? basename($path);
+        $originalName = $attachment['original_name'] ?? ($path ? basename($path) : 'unknown');
 
         if (!file_exists($fullPath)) {
             // Return a note about the missing attachment instead of null
@@ -433,6 +440,9 @@ class LlmApiFormatterService extends BaseLlmService
      */
     private function isImagePath($path)
     {
+        if (!is_string($path) || $path === '') {
+            return false;
+        }
         $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
         return in_array($extension, LLM_ALLOWED_IMAGE_EXTENSIONS);
     }

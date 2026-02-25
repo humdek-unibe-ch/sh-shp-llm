@@ -434,6 +434,9 @@ PROGRESS;
             ];
         }
 
+        // Normalize non-conforming responses from weaker models
+        $parsed = $this->normalizeResponse($parsed);
+
         // Validate against schema
         $validation = LlmResponseSchema::validate($parsed);
         if (!$validation['valid']) {
@@ -471,6 +474,17 @@ PROGRESS;
         }
 
         $safety = $parsed_response['safety'];
+
+        if (!is_array($safety)) {
+            $isSafe = is_string($safety) && strtolower($safety) === 'safe';
+            return [
+                'is_safe' => $isSafe,
+                'danger_level' => $isSafe ? null : 'warning',
+                'detected_concerns' => [],
+                'requires_intervention' => false,
+                'safety_message' => null
+            ];
+        }
         
         return [
             'is_safe' => $safety['is_safe'] ?? true,
@@ -503,6 +517,95 @@ PROGRESS;
     {
         $safety = $this->assessSafety($parsed_response);
         return $safety['danger_level'] === 'emergency';
+    }
+
+    /**
+     * Normalize non-conforming LLM responses from weaker models.
+     * Attempts to reshape common deviations into the expected schema.
+     *
+     * @param array $parsed Parsed JSON response
+     * @return array Normalized response
+     */
+    private function normalizeResponse($parsed)
+    {
+        // Unwrap if response is nested under a "response" key
+        if (isset($parsed['response']) && is_array($parsed['response']) && !isset($parsed['type'])) {
+            $parsed = $parsed['response'];
+        }
+
+        // Add missing "type" field
+        if (!isset($parsed['type'])) {
+            $parsed['type'] = 'response';
+        }
+
+        // Normalize safety field
+        if (!isset($parsed['safety'])) {
+            $parsed['safety'] = [
+                'is_safe' => true,
+                'danger_level' => null,
+                'detected_concerns' => [],
+                'requires_intervention' => false
+            ];
+        } elseif (!is_array($parsed['safety'])) {
+            $safeStr = is_string($parsed['safety']) ? strtolower($parsed['safety']) : '';
+            $isSafe = in_array($safeStr, ['safe', 'low', 'none', '']);
+            $parsed['safety'] = [
+                'is_safe' => $isSafe,
+                'danger_level' => $isSafe ? null : 'warning',
+                'detected_concerns' => [],
+                'requires_intervention' => false
+            ];
+        } else {
+            // Safety is array but might have non-standard keys
+            $s = $parsed['safety'];
+            if (!isset($s['is_safe'])) {
+                $classifier = $s['classifier'] ?? $s['level'] ?? $s['status'] ?? 'safe';
+                $isSafe = is_string($classifier) && in_array(strtolower($classifier), ['safe', 'low', 'none']);
+                $s['is_safe'] = $isSafe;
+            }
+            if (!isset($s['danger_level'])) $s['danger_level'] = null;
+            if (!isset($s['detected_concerns'])) $s['detected_concerns'] = [];
+            if (!isset($s['requires_intervention'])) $s['requires_intervention'] = false;
+            $parsed['safety'] = $s;
+        }
+
+        // Normalize content / text_blocks
+        if (isset($parsed['content']) && is_array($parsed['content'])) {
+            if (isset($parsed['content']['text_blocks']) && is_array($parsed['content']['text_blocks'])) {
+                $parsed['content']['text_blocks'] = array_map(function ($block) {
+                    if (!is_array($block)) {
+                        return ['type' => 'text', 'content' => (string) $block];
+                    }
+                    // Map non-standard "text" key to "content"
+                    if (!isset($block['content']) && isset($block['text'])) {
+                        $block['content'] = $block['text'];
+                        unset($block['text']);
+                    }
+                    // Map non-standard block types to valid ones
+                    $typeMap = [
+                        'header' => 'heading', 'section_header' => 'heading', 'title' => 'heading',
+                        'item' => 'text', 'detail' => 'text', 'price' => 'text',
+                        'line' => 'text', 'paragraph' => 'text', 'note' => 'info',
+                        'alert' => 'warning', 'danger' => 'error', 'ok' => 'success',
+                    ];
+                    if (isset($block['type']) && isset($typeMap[$block['type']])) {
+                        $block['type'] = $typeMap[$block['type']];
+                    }
+                    if (!isset($block['type'])) $block['type'] = 'text';
+                    if (!isset($block['content'])) $block['content'] = '';
+                    return $block;
+                }, $parsed['content']['text_blocks']);
+            }
+        }
+
+        // Normalize metadata
+        if (!isset($parsed['metadata'])) {
+            $parsed['metadata'] = ['model' => $this->model ? ($this->model->getConfiguredModel() ?? 'unknown') : 'unknown'];
+        } elseif (is_array($parsed['metadata']) && !isset($parsed['metadata']['model'])) {
+            $parsed['metadata']['model'] = $this->model ? ($this->model->getConfiguredModel() ?? 'unknown') : 'unknown';
+        }
+
+        return $parsed;
     }
 
     /**

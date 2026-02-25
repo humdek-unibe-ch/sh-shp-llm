@@ -106,9 +106,15 @@ class LlmModelCapabilities
 
         // If it's a system message and model doesn't support system role
         if ($message['role'] === 'system' && !self::supportsSystemRole($model)) {
+            $content = $message['content'];
+            // Multimodal content arrays can't be string-concatenated
+            if (is_array($content)) {
+                array_unshift($content, ['type' => 'text', 'text' => "[SYSTEM INSTRUCTION]\n"]);
+                return ['role' => 'user', 'content' => $content];
+            }
             return [
                 'role' => 'user',
-                'content' => "[SYSTEM INSTRUCTION]\n" . $message['content']
+                'content' => "[SYSTEM INSTRUCTION]\n" . $content
             ];
         }
 
@@ -154,7 +160,7 @@ class LlmModelCapabilities
                 if (!empty($pendingUserContent)) {
                     $converted[] = [
                         'role' => 'user',
-                        'content' => implode("\n\n---\n\n", $pendingUserContent)
+                        'content' => self::mergeUserContent($pendingUserContent)
                     ];
                     $pendingUserContent = [];
                 }
@@ -173,11 +179,50 @@ class LlmModelCapabilities
         if (!empty($pendingUserContent)) {
             $converted[] = [
                 'role' => 'user',
-                'content' => implode("\n\n---\n\n", $pendingUserContent)
+                'content' => self::mergeUserContent($pendingUserContent)
             ];
         }
 
         return $converted;
+    }
+
+    /**
+     * Merge an array of user content items that may be strings or multimodal arrays.
+     * If all items are strings, joins with separator.
+     * If any item is a multimodal array, builds a combined content-parts array.
+     *
+     * @param array $items Array of string or array content items
+     * @return string|array Merged content
+     */
+    private static function mergeUserContent(array $items)
+    {
+        $hasArray = false;
+        foreach ($items as $item) {
+            if (is_array($item)) {
+                $hasArray = true;
+                break;
+            }
+        }
+
+        if (!$hasArray) {
+            return implode("\n\n---\n\n", $items);
+        }
+
+        // Build a single content-parts array
+        $parts = [];
+        foreach ($items as $i => $item) {
+            if ($i > 0) {
+                $parts[] = ['type' => 'text', 'text' => "\n\n---\n\n"];
+            }
+            if (is_array($item)) {
+                foreach ($item as $part) {
+                    $parts[] = $part;
+                }
+            } else {
+                $parts[] = ['type' => 'text', 'text' => $item];
+            }
+        }
+        return $parts;
     }
 }
 ?>

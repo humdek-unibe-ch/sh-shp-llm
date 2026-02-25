@@ -411,24 +411,28 @@ INSTRUCTIONS;
         }
 
         // Validate safety object
-        $safetyRequired = ['is_safe', 'danger_level', 'detected_concerns', 'requires_intervention'];
-        foreach ($safetyRequired as $field) {
-            if (!array_key_exists($field, $response['safety'])) {
-                $errors[] = "Missing required safety field: {$field}";
-            }
-        }
-
-        if (isset($response['safety']['danger_level'])) {
-            $validLevels = [null, 'warning', 'critical', 'emergency'];
-            $dangerLevel = $response['safety']['danger_level'];
-
-            // Handle JSON null which becomes empty string in PHP
-            if ($dangerLevel === '' || $dangerLevel === null) {
-                $dangerLevel = null;
+        if (!is_array($response['safety'])) {
+            $errors[] = "safety must be an object, got " . gettype($response['safety']) . ": " . (is_string($response['safety']) ? $response['safety'] : '');
+        } else {
+            $safetyRequired = ['is_safe', 'danger_level', 'detected_concerns', 'requires_intervention'];
+            foreach ($safetyRequired as $field) {
+                if (!array_key_exists($field, $response['safety'])) {
+                    $errors[] = "Missing required safety field: {$field}";
+                }
             }
 
-            if (!in_array($dangerLevel, $validLevels, true)) {
-                $errors[] = "Invalid danger_level: {$response['safety']['danger_level']}";
+            if (isset($response['safety']['danger_level'])) {
+                $validLevels = [null, 'warning', 'critical', 'emergency'];
+                $dangerLevel = $response['safety']['danger_level'];
+
+                // Handle JSON null which becomes empty string in PHP
+                if ($dangerLevel === '' || $dangerLevel === null) {
+                    $dangerLevel = null;
+                }
+
+                if (!in_array($dangerLevel, $validLevels, true)) {
+                    $errors[] = "Invalid danger_level: {$response['safety']['danger_level']}";
+                }
             }
         }
 

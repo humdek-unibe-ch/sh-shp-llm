@@ -48,6 +48,10 @@ class LlmFileUploadService
             // Fallback for direct file uploads
             $files = $_FILES;
         } else {
+            // Check for base64-encoded files from mobile app
+            if (!empty($_POST['uploaded_files'])) {
+                return $this->handleBase64FileUploads($_POST['uploaded_files'], $userId, $sectionId, $conversationId);
+            }
             return null;
         }
 
@@ -101,6 +105,75 @@ class LlmFileUploadService
                 }
             } elseif ($files['error'] !== UPLOAD_ERR_NO_FILE) {
                 throw new Exception('File upload error: ' . LlmFileUtility::getUploadErrorMessage($files['error']));
+            }
+        }
+
+        return empty($uploadedFiles) ? null : $uploadedFiles;
+    }
+
+    /**
+     * Handle base64-encoded file uploads from mobile app.
+     * The mobile app sends files as base64 JSON in POST data because
+     * CapacitorHttp uses application/x-www-form-urlencoded, not multipart.
+     *
+     * Expected format: JSON array of JSON strings, each containing:
+     * { name, type, size, data (base64) }
+     *
+     * @param string $rawData The JSON-encoded uploaded_files value from POST
+     * @param int $userId
+     * @param int $sectionId
+     * @param int $conversationId
+     * @return array|null
+     * @throws Exception
+     */
+    private function handleBase64FileUploads($rawData, $userId, $sectionId, $conversationId)
+    {
+        $fileDataArray = json_decode($rawData, true);
+        if (!is_array($fileDataArray) || empty($fileDataArray)) {
+            return null;
+        }
+
+        if (count($fileDataArray) > LLM_MAX_FILES_PER_MESSAGE) {
+            throw new Exception('Maximum ' . LLM_MAX_FILES_PER_MESSAGE . ' files allowed per message');
+        }
+
+        $uploadedFiles = [];
+        $processedHashes = [];
+
+        foreach ($fileDataArray as $item) {
+            $fileInfo = is_string($item) ? json_decode($item, true) : $item;
+            if (!$fileInfo || empty($fileInfo['data']) || empty($fileInfo['name'])) {
+                continue;
+            }
+
+            $decoded = base64_decode($fileInfo['data'], true);
+            if ($decoded === false) {
+                continue;
+            }
+
+            $tmpPath = tempnam(sys_get_temp_dir(), 'sh_upload_');
+            if ($tmpPath === false || file_put_contents($tmpPath, $decoded) === false) {
+                continue;
+            }
+
+            $file = [
+                'name' => $fileInfo['name'],
+                'type' => $fileInfo['type'] ?? 'application/octet-stream',
+                'tmp_name' => $tmpPath,
+                'error' => UPLOAD_ERR_OK,
+                'size' => strlen($decoded)
+            ];
+
+            try {
+                $processedFile = $this->processUploadedFile($file, $userId, $sectionId, $conversationId, $processedHashes);
+                if ($processedFile) {
+                    $uploadedFiles[] = $processedFile;
+                    $processedHashes[] = $processedFile['hash'];
+                }
+            } finally {
+                if (file_exists($tmpPath)) {
+                    @unlink($tmpPath);
+                }
             }
         }
 
@@ -186,7 +259,10 @@ class LlmFileUploadService
 
         // Move uploaded file securely
         if (!move_uploaded_file($file['tmp_name'], $fullPath)) {
-            throw new Exception('Failed to save file "' . $originalName . '"');
+            // Fallback for files created from base64 data (not real PHP uploads)
+            if (!copy($file['tmp_name'], $fullPath)) {
+                throw new Exception('Failed to save file "' . $originalName . '"');
+            }
         }
 
         // Set proper file permissions
