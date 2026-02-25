@@ -51,11 +51,14 @@ class LlmSpeechToTextService extends BaseLlmService
     const SUPPORTED_AUDIO_TYPES = [
         'audio/webm',
         'audio/webm;codecs=opus',
-        'audio/wav',
+        'audio/ogg',
+        'audio/ogg;codecs=opus',
+        'audio/aac',
+        'audio/x-aac',
         'audio/mp3',
         'audio/mpeg',
         'audio/mp4',
-        'audio/ogg',
+        'audio/m4a',
         'audio/flac'
     ];
     
@@ -254,16 +257,14 @@ class LlmSpeechToTextService extends BaseLlmService
             // Build the API URL for audio transcriptions
             $apiUrl = rtrim($config['llm_base_url'], '/') . self::AUDIO_TRANSCRIPTIONS_ENDPOINT;
 
-            // Compress WAV files with pure PHP (downsample to 8kHz mono)
-            $compressedPath = $this->compressWavPHP($audioFilePath);
-            $actualPath = $compressedPath ?: $audioFilePath;
+            // Forward uploaded audio directly to Whisper (no server-side re-encoding)
+            $actualPath = $audioFilePath;
 
             // Prepare the multipart form data using cURL file
             $mimeType = mime_content_type($actualPath) ?: 'audio/webm';
             $curlFilename = 'audio.' . $this->mimeToExtension($mimeType);
             $audioFile = new CURLFile($actualPath, $mimeType, $curlFilename);
-            error_log("Speech-to-text: Sending audio - Size: " . filesize($actualPath) . " bytes, MIME: {$mimeType}" .
-                ($compressedPath ? " (compressed from " . filesize($audioFilePath) . "B)" : ""));
+            error_log("Speech-to-text: Sending audio - Size: " . filesize($actualPath) . " bytes, MIME: {$mimeType}");
 
             $postData = [
                 'file' => $audioFile,
@@ -387,150 +388,9 @@ class LlmSpeechToTextService extends BaseLlmService
                 'success' => false,
                 'error' => 'Speech recognition failed: ' . $e->getMessage()
             ];
-        } finally {
-            if (!empty($compressedPath) && file_exists($compressedPath)) {
-                @unlink($compressedPath);
-            }
         }
     }
     
-    /**
-     * Compress WAV audio using pure PHP — no external tools required.
-     * Reads PCM samples and downsamples to 8kHz mono 16-bit.
-     *
-     * @param string $inputPath Path to original audio file
-     * @return string|null Path to compressed WAV, or null if not a WAV or compression failed
-     */
-    private function compressWavPHP($inputPath)
-    {
-        $origSize = filesize($inputPath);
-        if ($origSize < 1000) {
-            return null;
-        }
-
-        $data = file_get_contents($inputPath);
-        if ($data === false || strlen($data) < 44) {
-            return null;
-        }
-
-        // Verify WAV header (RIFF....WAVE)
-        if (substr($data, 0, 4) !== 'RIFF' || substr($data, 8, 4) !== 'WAVE') {
-            return null;
-        }
-
-        // Parse fmt chunk
-        $audioFormat = unpack('v', substr($data, 20, 2))[1];
-        $numChannels = unpack('v', substr($data, 22, 2))[1];
-        $sampleRate  = unpack('V', substr($data, 24, 4))[1];
-        $bitsPerSample = unpack('v', substr($data, 34, 2))[1];
-
-        if ($audioFormat !== 1) {
-            return null; // only PCM
-        }
-
-        // Find data chunk
-        $dataOffset = 12;
-        $dataSize = 0;
-        while ($dataOffset < strlen($data) - 8) {
-            $chunkId = substr($data, $dataOffset, 4);
-            $chunkSize = unpack('V', substr($data, $dataOffset + 4, 4))[1];
-            if ($chunkId === 'data') {
-                $dataOffset += 8;
-                $dataSize = $chunkSize;
-                break;
-            }
-            $dataOffset += 8 + $chunkSize;
-        }
-
-        if ($dataSize === 0) {
-            return null;
-        }
-
-        $bytesPerSample = $bitsPerSample / 8;
-        $frameSize = $bytesPerSample * $numChannels;
-        $totalFrames = intval($dataSize / $frameSize);
-
-        // Read samples as floats (mono-mix if stereo)
-        $samples = [];
-        for ($i = 0; $i < $totalFrames; $i++) {
-            $offset = $dataOffset + ($i * $frameSize);
-            $sum = 0;
-            for ($ch = 0; $ch < $numChannels; $ch++) {
-                $sampleOffset = $offset + ($ch * $bytesPerSample);
-                if ($bitsPerSample === 16) {
-                    $val = unpack('v', substr($data, $sampleOffset, 2))[1];
-                    if ($val >= 0x8000) $val -= 0x10000;
-                    $sum += $val / 32768.0;
-                } elseif ($bitsPerSample === 8) {
-                    $val = ord($data[$sampleOffset]);
-                    $sum += ($val - 128) / 128.0;
-                } else {
-                    return null;
-                }
-            }
-            $samples[] = $sum / $numChannels;
-        }
-
-        // Progressively downsample until file fits under the API payload limit
-        $maxBytes = 45000;
-        $targetRate = min($sampleRate, 8000);
-        $sampleCount = count($samples);
-
-        while ($targetRate > 4000) {
-            $ratio = $sampleRate / $targetRate;
-            $newLen = intval($sampleCount / $ratio);
-            $estimatedSize = 44 + ($newLen * 2);
-            if ($estimatedSize <= $maxBytes) break;
-            $targetRate = intval($targetRate / 2);
-        }
-
-        if ($sampleRate === $targetRate && $origSize < $maxBytes) {
-            return null;
-        }
-
-        $ratio = $sampleRate / $targetRate;
-        $newLen = intval($sampleCount / $ratio);
-        $resampled = [];
-        for ($i = 0; $i < $newLen; $i++) {
-            $srcIdx = intval($i * $ratio);
-            $resampled[] = $samples[min($srcIdx, $sampleCount - 1)];
-        }
-
-        // Encode as 16-bit PCM WAV
-        $numSamples = count($resampled);
-        $pcmDataSize = $numSamples * 2;
-        $wav = 'RIFF';
-        $wav .= pack('V', 36 + $pcmDataSize);
-        $wav .= 'WAVE';
-        $wav .= 'fmt ';
-        $wav .= pack('V', 16);       // chunk size
-        $wav .= pack('v', 1);        // PCM
-        $wav .= pack('v', 1);        // mono
-        $wav .= pack('V', $targetRate);
-        $wav .= pack('V', $targetRate * 2); // byte rate
-        $wav .= pack('v', 2);        // block align
-        $wav .= pack('v', 16);       // bits per sample
-        $wav .= 'data';
-        $wav .= pack('V', $pcmDataSize);
-
-        for ($i = 0; $i < $numSamples; $i++) {
-            $val = max(-1.0, min(1.0, $resampled[$i]));
-            $intVal = intval($val < 0 ? $val * 32768 : $val * 32767);
-            $wav .= pack('v', $intVal & 0xFFFF);
-        }
-
-        $outputPath = $inputPath . '.compressed.wav';
-        if (file_put_contents($outputPath, $wav) === false) {
-            return null;
-        }
-
-        $compSize = filesize($outputPath);
-        $reduction = $origSize > 0 ? round((1 - $compSize / $origSize) * 100, 1) : 0;
-        error_log("Speech-to-text: PHP compressed WAV {$origSize}B -> {$compSize}B (-{$reduction}%, {$sampleRate}Hz->{$targetRate}Hz)");
-
-        return $outputPath;
-    }
-
     /**
      * Get user's language from session
      * 
@@ -727,8 +587,7 @@ class LlmSpeechToTextService extends BaseLlmService
     {
         $map = [
             'audio/webm' => 'webm',
-            'audio/wav' => 'wav',
-            'audio/x-wav' => 'wav',
+            'audio/webm;codecs=opus' => 'webm',
             'audio/mp3' => 'mp3',
             'audio/mpeg' => 'mp3',
             'audio/mp4' => 'm4a',
@@ -736,6 +595,7 @@ class LlmSpeechToTextService extends BaseLlmService
             'audio/aac' => 'm4a',
             'audio/x-aac' => 'm4a',
             'audio/ogg' => 'ogg',
+            'audio/ogg;codecs=opus' => 'ogg',
             'audio/flac' => 'flac',
             'audio/3gpp' => 'm4a',
             'audio/amr' => 'amr',

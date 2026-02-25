@@ -1112,7 +1112,7 @@ class LlmChatController extends BaseController
         if (!$this->speech_service->isValidAudioType($mimeType)) {
             $this->sendJsonResponse([
                 'success' => false,
-                'error' => 'Invalid audio format. Supported: WebM, WAV, MP3, OGG, FLAC'
+                'error' => 'Invalid audio format. Supported: WebM/Opus, OGG/Opus, M4A/MP4, MP3, FLAC'
             ], 400);
             return;
         }

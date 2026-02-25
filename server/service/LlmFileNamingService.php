@@ -237,10 +237,14 @@ class LlmFileNamingService
         $mimeToExt = [
             // Audio
             'audio/webm' => 'webm',
-            'audio/wav' => 'wav',
+            'audio/webm;codecs=opus' => 'webm',
+            'audio/ogg;codecs=opus' => 'ogg',
             'audio/mp3' => 'mp3',
             'audio/mpeg' => 'mp3',
             'audio/mp4' => 'm4a',
+            'audio/m4a' => 'm4a',
+            'audio/aac' => 'm4a',
+            'audio/x-aac' => 'm4a',
             'audio/ogg' => 'ogg',
             'audio/flac' => 'flac',
             // Images

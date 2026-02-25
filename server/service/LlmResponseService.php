@@ -420,12 +420,17 @@ PROGRESS;
             ];
         }
 
-        // Clean content (remove markdown code blocks if present)
+        // Clean content (remove markdown code blocks, extract JSON object)
         $cleaned = $this->cleanJsonContent($content);
 
         // Try to parse JSON
         $parsed = json_decode($cleaned, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
+            // Try fixing common syntax errors from weaker models
+            $fixed = $this->fixJsonSyntax($cleaned);
+            $parsed = json_decode($fixed, true);
+        }
+        if ($parsed === null && json_last_error() !== JSON_ERROR_NONE) {
             return [
                 'valid' => false,
                 'data' => null,
@@ -618,16 +623,74 @@ PROGRESS;
     {
         $content = trim($content);
 
-        // Remove ```json ... ``` or ``` ... ```
+        // Strip markdown code fences (```json ... ``` or ``` ... ```)
         if (preg_match('/^```(?:json)?\s*\n?(.*?)\n?```$/s', $content, $matches)) {
             $content = trim($matches[1]);
         }
-
-        // Also try removing just opening/closing if on separate lines
         $content = preg_replace('/^```(?:json)?\s*\n/m', '', $content);
         $content = preg_replace('/\n```\s*$/m', '', $content);
+        $content = trim($content);
 
-        return trim($content);
+        // If valid JSON already, return it
+        if ($content !== '' && $content[0] === '{') {
+            $test = json_decode($content, true);
+            if ($test !== null) return $content;
+        }
+
+        // Extract the outermost JSON object from anywhere in the response
+        $start = strpos($content, '{');
+        if ($start !== false) {
+            $depth = 0;
+            $inStr = false;
+            $esc = false;
+            $len = strlen($content);
+            for ($i = $start; $i < $len; $i++) {
+                $ch = $content[$i];
+                if ($esc) { $esc = false; continue; }
+                if ($ch === '\\' && $inStr) { $esc = true; continue; }
+                if ($ch === '"') { $inStr = !$inStr; continue; }
+                if ($inStr) continue;
+                if ($ch === '{') $depth++;
+                elseif ($ch === '}') {
+                    $depth--;
+                    if ($depth === 0) {
+                        $candidate = substr($content, $start, $i - $start + 1);
+                        $test = json_decode($candidate, true);
+                        if ($test !== null) return $candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $content;
+    }
+
+    /**
+     * Fix common JSON syntax errors produced by weaker models
+     */
+    private function fixJsonSyntax($json)
+    {
+        // Remove trailing commas before } or ]
+        $json = preg_replace('/,\s*([\]}])/s', '$1', $json);
+
+        // Remove JavaScript-style comments
+        $json = preg_replace('#//[^\n]*#', '', $json);
+        $json = preg_replace('#/\*.*?\*/#s', '', $json);
+
+        // Fix unquoted keys: { key: "value" } → { "key": "value" }
+        $json = preg_replace('/([{,])\s*([a-zA-Z_]\w*)\s*:/m', '$1"$2":', $json);
+
+        // Replace single-quoted strings with double-quoted (simple cases)
+        // Only outside of already double-quoted strings
+        $json = preg_replace("/(?<![\"\\\\])'([^'\\\\]*(?:\\\\.[^'\\\\]*)*)'/", '"$1"', $json);
+
+        // Fix Python-style True/False/None
+        $json = preg_replace('/\bTrue\b/', 'true', $json);
+        $json = preg_replace('/\bFalse\b/', 'false', $json);
+        $json = preg_replace('/\bNone\b/', 'null', $json);
+
+        return trim($json);
     }
 
     /* Response Conversion ****************************************************/

@@ -116,7 +116,7 @@ Transcribes audio to text using the configured Whisper model.
 - Body:
   - `action`: `speech_transcribe`
   - `section_id`: Component section ID
-  - `audio`: Audio file (WebM, WAV, MP3, OGG, or FLAC)
+  - `audio`: Audio file (WebM/Opus, OGG/Opus, M4A/MP4, MP3, or FLAC)
 
 **Response (Success):**
 ```json
@@ -140,16 +140,16 @@ Transcribes audio to text using the configured Whisper model.
 | Format | MIME Type | Notes |
 |--------|-----------|-------|
 | WebM | `audio/webm`, `audio/webm;codecs=opus` | Primary format (best browser support) |
-| WAV | `audio/wav` | Uncompressed |
+| M4A / MP4 | `audio/mp4`, `audio/m4a` | Compressed fallback |
 | MP3 | `audio/mp3`, `audio/mpeg` | Common format |
-| OGG | `audio/ogg` | Open format |
+| OGG | `audio/ogg`, `audio/ogg;codecs=opus` | Open format |
 | FLAC | `audio/flac` | Lossless |
 
 ### Audio Constraints
 
 - Maximum file size: 25MB
 - Recommended: WebM with Opus codec
-- Sample rate: 16kHz (configurable)
+- Sample rate: 16kHz-24kHz (client-side target)
 
 ## Language Detection
 
@@ -320,11 +320,14 @@ define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
 define('LLM_ALLOWED_AUDIO_TYPES', [
     'audio/webm',
     'audio/webm;codecs=opus',
-    'audio/wav',
+    'audio/ogg',
+    'audio/ogg;codecs=opus',
+    'audio/aac',
+    'audio/x-aac',
     'audio/mp3',
     'audio/mpeg',
     'audio/mp4',
-    'audio/ogg',
+    'audio/m4a',
     'audio/flac'
 ]);
 ```

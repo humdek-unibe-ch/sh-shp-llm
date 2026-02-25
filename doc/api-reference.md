@@ -226,7 +226,7 @@ Transcribe audio to text. See [Speech-to-Text](speech-to-text.md) for details.
 **Body (FormData):**
 - `action`: `speech_transcribe`
 - `section_id`: Section ID (required)
-- `audio`: Audio file (WebM, WAV, MP3, OGG, or FLAC)
+- `audio`: Audio file (WebM/Opus, OGG/Opus, M4A/MP4, MP3, or FLAC)
 
 ### Progress
 
