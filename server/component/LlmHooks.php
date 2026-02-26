@@ -470,8 +470,7 @@ class LlmHooks extends BaseHooks
             @unlink($tmp_file);
             return $this->execute_llm_script_from_job($args, $script_info);
         }
-        $php_flags = '-d apc.enable_cli=1';
-        $log_file = realpath(__DIR__ . '/../..') . DIRECTORY_SEPARATOR . 'llm_async_worker.log';
+        $php_flags = '-d apc.enable_cli=1 -d log_errors=1 -d display_errors=0';
 
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             $cmd = 'start /B "" '
@@ -479,16 +478,18 @@ class LlmHooks extends BaseHooks
                 . $php_flags . ' '
                 . '"' . $worker_script . '" '
                 . '"' . $tmp_file . '"'
-                . ' >> "' . $log_file . '" 2>&1';
+                . ' > NUL 2>&1';
         } else {
             $cmd = escapeshellarg($php_bin)
                 . ' ' . $php_flags
                 . ' ' . escapeshellarg($worker_script)
                 . ' ' . escapeshellarg($tmp_file)
-                . ' >> ' . escapeshellarg($log_file) . ' 2>&1 &';
+                . ' > /dev/null 2>&1 &';
         }
 
-        error_log('LLM async: spawning command: ' . $cmd);
+        if (defined('DEBUG') && DEBUG) {
+            trigger_error('LLM async: spawning command: ' . $cmd, E_USER_WARNING);
+        }
 
         $handle = popen($cmd, 'r');
         if ($handle) {
@@ -500,8 +501,11 @@ class LlmHooks extends BaseHooks
         }
 
         if (defined('DEBUG') && DEBUG) {
-            error_log('LLM async: spawned background worker for script '
-                . $script_info['name'] . ' (user=' . $args['user']['id_users'] . ')');
+            trigger_error(
+                'LLM async: spawned background worker for script '
+                . $script_info['name'] . ' (user=' . $args['user']['id_users'] . ')',
+                E_USER_WARNING
+            );
         }
 
         return true;

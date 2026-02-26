@@ -45,14 +45,20 @@ if (function_exists('uopz_allow_exit')) {
     uopz_allow_exit(true);
 }
 
-// Direct error_log to a dedicated file
-$log_file = realpath(__DIR__ . '/../..') . DIRECTORY_SEPARATOR . 'llm_async_worker.log';
-ini_set('error_log', $log_file);
 ini_set('log_errors', '1');
 ini_set('display_errors', '0');
 
-error_log("LLM Async Worker: started, script_id=" . ($args['script_id'] ?? 'null')
-    . ", user=" . ($args['id_users'] ?? 'null'));
+/**
+ * Write async worker debug messages as warnings to the normal PHP error log.
+ *
+ * Only active when DEBUG is enabled by the application bootstrap.
+ */
+function llm_async_worker_debug_warning($message)
+{
+    if (defined('DEBUG') && DEBUG) {
+        trigger_error('LLM Async Worker: ' . $message, E_USER_WARNING);
+    }
+}
 
 // Determine the SelfHelp project root relative to this file:
 // this file:    server/plugins/sh-shp-llm/server/service/llm_async_worker.php
@@ -130,6 +136,11 @@ try {
     exit(1);
 }
 
+llm_async_worker_debug_warning(
+    "started, script_id=" . ($args['script_id'] ?? 'null')
+    . ", user=" . ($args['id_users'] ?? 'null')
+);
+
 // Execute the LLM script
 try {
     require_once __DIR__ . "/LlmScriptService.php";
@@ -193,11 +204,11 @@ try {
         }
     }
 
-    if (defined('DEBUG') && DEBUG) {
-        error_log("LLM Async Worker: Script '" . $script_info['name'] . "' "
-            . ($save_success ? "completed successfully" : "failed to save results")
-            . " for user " . $args['id_users']);
-    }
+    llm_async_worker_debug_warning(
+        "Script '" . $script_info['name'] . "' "
+        . ($save_success ? "completed successfully" : "failed to save results")
+        . " for user " . $args['id_users']
+    );
 
     exit($save_success ? 0 : 1);
 
