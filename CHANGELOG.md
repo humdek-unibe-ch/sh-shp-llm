@@ -1,508 +1,141 @@
-# Changelog - LLM Plugin
-
-## [1.0.0] - 2025-12-23
-
-### Mobile Enhancements
-- **llmResponse section_id** — `LlmResponseView::output_content_mobile()` now includes `section_id` in the response, enabling the mobile app to track per-section loading state during form submission
-
-### Added
-
-#### LLM Scripts Module (February 2026)
-- **LLM Scripts CRUD**: Full create, read, update, delete interface for reusable LLM prompt templates
-- **React-Based UI**: Scripts manager built with React 18, React-Bootstrap, and Monaco Editor for script editing
-- **Script Configuration**: Per-script settings for name, async/sync execution mode, model override, temperature, max tokens, data config, and test variables
-- **Script Testing**: Test scripts directly from the UI with configurable test variables and data config
-- **Refresh Sections**: Scripts can specify which page sections to refresh after async execution
-- **Job Scheduler Integration**: LLM scripts can be assigned as scheduled job actions, supporting both synchronous and asynchronous execution
-- **Execution Logging**: Script results saved to dataTables via `UserInput::save_data()` following the R Serve pattern
-- **Controller Pattern**: All CRUD and test operations use the `ModuleLlmScriptController` via `?action=` parameters (no separate AJAX endpoint)
-- **One Conversation Per Script**: Script executions reuse a single conversation per script in `llmConversations` (linked via `id_llm_scripts` FK), appending messages on each run
-- **Full Execution Context**: Script test/execution results store the original template, data_config, test variables, resolved data, and interpolated prompt in `sent_context` for full audit trail
-- **Admin Script Filtering**: Admin conversations page includes a "Script" filter dropdown to view script-linked conversations
-- **Vite Build**: Separate Vite configuration (`vite.scripts.config.ts`) for building the scripts React app
-
-**New Files:**
-- `server/service/LlmScriptService.php` - Service layer for script management and execution
-- `server/component/moduleLlmScript/` - PHP MVC wrapper (Component, Model, View, Controller) for React UI
-- `react/src/scripts.tsx` - React entry point
-- `react/src/components/scripts/ScriptsManager.tsx` - Main React component
-- `react/src/components/scripts/scriptsApi.ts` - TypeScript API client
-- `react/src/components/scripts/ScriptsManager.css` - Component styles
-- `react/vite.scripts.config.ts` - Vite build configuration
-
-**Database Tables:**
-- `llm_scripts` - Stores script definitions with generated IDs, prompt templates, and configuration
-- `llmConversations.id_llm_scripts` - FK linking conversations to scripts for one-conversation-per-script tracking
-
-#### LLM Response Style (February 2026)
-- **New `llmResponse` Style**: Extension of markdown for visualizing LLM response data
-- **JSON Interpolation**: Supports `{{field.path}}` syntax to interpolate values from LLM response JSON
-- **Editable Mode**: Optional editing capability controlled by `enable_editing` field
-- **Data Config**: Configurable data source for loading LLM response data from dataTables
-- **Loading UX Integration**: The `llmResponse` template includes `data-event-refresh-loading="1"` to opt in to the core event refresh loading UX. When an async LLM script runs, the response section shows a spinner overlay until the result arrives, then highlights the new content with a brief animation. This uses the generic mechanism from SelfHelp v7.8.0 — no plugin-specific loading code is needed.
-
-#### Refresh Events (February 2026)
-- **Note**: The refresh events mechanism (polling for background task completions) was implemented as a **core SelfHelp feature** in v7.8.0, not as a plugin feature
-- The LLM plugin generates refresh events via `LlmScriptService::insert_refresh_event()` when async scripts complete
-- Page-level `enable_event_listener` and `event_listener_interval` fields are configured in core and available on experiment, core, and email page types
-- Core `BasePage::output_event_listener()` handles injection — no plugin hook needed
-
-#### Automatic Image Resizing for Vision Models (January 16, 2026)
-- **Automatic Image Optimization**: Large images are automatically resized before sending to the LLM to prevent context window overflow
-- **Smart Resizing**: Images larger than 1024x1024 are resized while maintaining aspect ratio
-- **Quality Optimization**: Images are converted to JPEG with optimized quality (75%) to reduce token count
-- **Payload Sanitization**: Base64 image data is removed from stored payloads to prevent database bloat and memory issues
-- **Graceful Degradation**: If GD library is unavailable, original images are used with size warnings
-
-**Technical Details:**
-- Maximum image dimension: 1024px (configurable via `MAX_IMAGE_DIMENSION`)
-- Target base64 size: ~500KB (configurable via `TARGET_BASE64_SIZE`)
-- JPEG quality: 75% (configurable via `RESIZE_JPEG_QUALITY`)
-- Payload sanitization replaces base64 data with: `[BASE64_IMAGE_REMOVED: image/png, ~150KB - stored in attachments field]`
-
-**Benefits:**
-- Prevents "decoder prompt longer than maximum model length" errors
-- Reduces memory usage when loading conversations
-- Faster database queries with smaller payload sizes
-- Images still work correctly - only the stored debug payload is sanitized
-
-#### Message Validation Tracking & Debug Payload Feature (January 16, 2026)
-- **Schema Validation Tracking**: All LLM response attempts are now saved to the database with validation status
-- **Failed Attempt Logging**: When schema validation fails and retries are needed, each failed attempt is saved for debugging
-- **API Error Logging**: When API calls fail (e.g., normalization errors), the error is saved as a message for debugging
-- **Full Request Payload Storage**: The **complete API payload** (model, temperature, max_tokens, messages) is stored with each assistant message
-- **Admin Console Enhancements**: New UI elements to view validation status and copy payloads for testing
-
-**New Database Fields:**
-- `is_validated`: Boolean flag indicating whether the message passed JSON schema validation (1=valid, 0=failed)
-- `request_payload`: **Complete** JSON payload sent to the LLM API (includes model, temperature, max_tokens, stream, messages)
-
-**Payload Structure Example:**
-```json
-{
-  "model": "gpt-oss-120b",
-  "temperature": 0,
-  "max_tokens": 2048,
-  "stream": false,
-  "response_format": "json",
-  "messages": [
-    {"role": "system", "content": "..."},
-    {"role": "user", "content": "..."}
-  ]
-}
-```
-
-**Admin Console Features:**
-- **Validation Status Badge**: Each assistant message shows a green "Valid" or yellow "Invalid" badge
-- **Failed Attempt Highlighting**: Messages that failed validation are visually distinct (yellow border, reduced opacity)
-- **Payload Popup**: Click "Payload" button to view the exact API request sent to the LLM
-- **Copy Payload**: One-click copy of the payload JSON for testing in Postman or other API tools
-
-**User Experience:**
-- Users only see validated messages in the chat interface
-- Failed validation attempts are hidden from users but visible to admins
-- Final responses (even if fallback) are always shown to users
-
-**Benefits:**
-- **Easier Debugging**: Identify exactly what was sent to the LLM when validation fails
-- **Reproducible Testing**: Copy payloads to Postman to reproduce issues
-- **Audit Trail**: Complete history of all LLM interactions including failed attempts
-- **Schema Compliance Monitoring**: Track how often the LLM fails to follow the response schema
-
-**Technical Implementation:**
-- `LlmService::callLlmApi()` now returns the full payload in `request_payload`
-- `LlmService::addMessage()` accepts `is_validated` and `request_payload` parameters
-- `LlmResponseService::callLlmWithSchemaValidation()` tracks all attempts with their full payloads
-- `LlmChatController::sendLlmRequestAndRespond()` saves all attempts including API errors
-- `LlmAdminService::getAdminMessages()` returns all messages including unvalidated ones
-- Frontend `AdminConsole.tsx` displays validation status and payload popup
-
-**Documentation:** See [doc/message-validation-tracking.md](doc/message-validation-tracking.md) for complete documentation.
-
-#### File Naming Convention Redesign with Prefixes (January 16, 2026)
-- **Contextual File Naming with Prefixes**: All uploaded files now include descriptive prefixes (`section_`, `conv_`, `msg_`) for better readability and searchability
-- **User-Based Directory Structure**: Files organized in user-specific directories (`upload/{user_id}/`) for better isolation and management
-- **Audio File Storage**: Speech-to-text recordings are now permanently saved with proper naming conventions
-- **Modular Naming Service**: Centralized `LlmFileNamingService.php` handles all file naming logic consistently across the application
-
-**New File Naming Patterns with Prefixes:**
-- **Finalized uploads**: `{user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}`
-- **Temporary uploads**: `{user_id}_section_{section_id}_conv_{conversation_id}_temp_{timestamp}_{random}.{ext}`
-- **Audio recordings**: `{user_id}_section_{section_id}_conv_{conversation_id}_audio_{timestamp}_{random}.{ext}`
-
-**Example Files with Clear Prefixes:**
-- `42_section_15_conv_123_msg_456_a1b2c3d4e5f6g7h8.png` (finalized image upload)
-- `42_section_15_conv_123_temp_1765876608_a1b2c3d4.png` (temporary upload before message ID)
-- `42_section_15_conv_123_audio_1765876608_a1b2c3d4.webm` (audio recording)
-
-**Benefits of Prefixes:**
-- **Easy File Searching**: Instantly identify file types and components by prefix
-- **Human-Readable**: Clear separation between different ID types
-- **Better Organization**: Visual distinction between user, section, conversation, and message IDs
-- **Search-Friendly**: Can easily search for files by conversation (`conv_123`) or section (`section_15`)
-
-**Security & Organization Benefits:**
-- **User Isolation**: Files stored in user-specific directories for better access control
-- **Ownership Verification**: Filename parsing allows validation of file ownership
-- **Audit Trail**: Complete context (user, section, conversation, message) embedded in filename
-- **Collision Prevention**: 16-character random suffix (8 bytes entropy) prevents filename conflicts
-
-**Technical Implementation:**
-- `LlmFileNamingService.php`: Centralized naming logic with parsing and validation methods
-- Updated `LlmFileUploadService.php`: Uses naming service for consistent file handling
-- Updated `LlmSpeechToTextService.php`: Saves audio files with proper naming convention
-- Modified `LlmChatController.php`: Passes additional context parameters to file services
-
-**Documentation:** See [doc/file-naming-conventions.md](doc/file-naming-conventions.md) for complete naming system documentation.
-
-#### Speech-to-Text Input (Whisper Integration) (January 15, 2026)
-- **Voice Input**: Users can speak into their microphone and have speech converted to text
-- **Whisper Integration**: Uses GPUStack faster-whisper-large-v3 model for transcription
-- **Accessibility**: Supports users with motor impairments or typing difficulties
-- **Modern UX**: Microphone button in message input area with visual recording feedback
-- **Privacy-First**: No permanent storage of audio data - processed in real-time
-
-**Configuration:**
-- `enable_speech_to_text`: Checkbox to enable/disable voice input
-- `speech_to_text_model`: Dropdown to select Whisper model (requires select-audio-model field type)
-
-**Technical Implementation:**
-- `LlmSpeechToTextService.php`: New service for audio transcription via GPUStack API
-- `speech_transcribe` action in `LlmChatController.php`
-- MediaRecorder API integration in React frontend
-- WebM/Opus audio format with fallback support
-- Automatic language detection from user session
-
-**User Experience:**
-- Click microphone button to start recording (button turns red with pulsing animation)
-- Click stop to end recording and process audio
-- Transcribed text appears in message input for review/editing
-- Clear error messages for permission issues or processing failures
-
-**Requirements:**
-- Both enable checkbox AND audio model must be configured for microphone to appear
-- Modern browser with MediaRecorder API support
-- HTTPS connection (required for microphone access)
-- User must grant microphone permission in browser
-
-**Documentation:** See [doc/speech-to-text.md](doc/speech-to-text.md) for complete documentation.
-
-#### Unified JSON Response Schema (December 23, 2025)
-- **Mandatory Structured Responses**: All LLM responses now follow a unified JSON schema
-- **Predictable Parsing**: Frontend knows exactly what to expect from every response
-- **Built-in Safety Detection**: Safety assessment is now part of every LLM response
-- **Integrated Form Support**: Forms, media, and suggestions all in one schema
-- **Progress Tracking**: Optional topic coverage tracking in response schema
-- **Schema Validation**: Backend validates all responses against schema
-
-**New Schema Fields:**
-- `type`: Always "response" for identification
-- `safety`: Safety assessment with `is_safe`, `danger_level`, `detected_concerns`
-- `content`: Text blocks, optional form, media, suggestions
-- `progress`: Optional progress tracking data
-- `metadata`: Model name, tokens used, language
-
-**New Files:**
-- `server/service/LlmResponseService.php`: Unified response handling
-- `server/constants/LlmResponseSchema.php`: Schema constants with detailed field documentation
-- `doc/response-schema.md`: Complete schema documentation
-
-#### Suggestions (Quick Reply Buttons) Feature
-- **Quick Reply Buttons**: Users can click suggestion buttons for common responses
-- **Flexible Actions**: Supports `send_message`, `navigate`, and `external_link` actions
-- **Custom Values**: Optional `value` property allows different message than button label
-- **Backwards Compatible**: Frontend handles both object and string array formats
-
-**Suggestion Object Format:**
-```json
-{
-  "suggestions": [
-    { "text": "Option 1" },
-    { "text": "Custom action", "value": "Send this message instead" }
-  ]
-}
-```
-
-### Fixed
-
-#### Suggestions Rendering Fix (December 23, 2025)
-- **Fixed**: Suggestions not rendering when LLM returns wrong property names
-- **Root Cause**: LLM sometimes used `label`, `name`, or `title` instead of required `text` property
-- **Solution**: Strict validation - only `{"text": "..."}` format is accepted
-- **Schema Update**: System instructions now explicitly show WRONG formats to avoid (label, name, title, etc.)
-- **No Backwards Compatibility**: Removed support for non-standard formats - LLM must use exact schema
-
-### Changed
-
-#### Schema Documentation Improvements (December 23, 2025)
-- **Enhanced System Instructions**: Much clearer formatting with visual separators
-- **Explicit Suggestions Format**: System prompt now clearly shows correct vs incorrect format
-- **Field Descriptions**: Added detailed descriptions to all schema fields
-- **Complete Examples**: Added comprehensive examples for all content types
-
-#### Schema Validation & Retry Logic (January 5, 2026)
-- **Mandatory Schema Compliance**: LLM responses must now match the JSON schema exactly - no randomness allowed
-- **Automatic Retry Logic**: Failed schema validation triggers up to 3 automatic retry attempts
-- **Professional Schema Management**: Moved schema from PHP constants to dedicated JSON file (`schemas/llm-response.schema.json`)
-- **Enhanced System Instructions**: LLM now receives the actual JSON schema in prompts instead of hardcoded examples
-- **Self-Correcting AI**: LLM automatically fixes invalid responses based on validation error feedback
-
-**New Features:**
-- Schema validation with retry loop in `LlmResponseService::callLlmWithSchemaValidation()`
-- Dedicated JSON schema file for better maintainability
-- Enhanced error feedback sent to LLM on retry attempts
-- Improved null value handling in schema validation
-
-**Technical Implementation:**
-- Updated `LlmResponseService::buildSchemaInstruction()` to load schema from JSON file
-- Added retry logic with configurable max attempts (default: 3)
-- Fixed validation edge cases (null vs empty string handling)
-- Enhanced logging for retry attempts and validation failures
-
-#### Schema Architecture Improvements (January 5, 2026)
-- **Moved Schema to JSON File**: Schema now stored in `schemas/llm-response.schema.json` instead of PHP constants
-- **Dynamic Schema Loading**: `LlmResponseSchema::getSchema()` loads and caches JSON schema
-- **Enhanced Validation**: Fixed null handling and improved error messages
-- **Better Error Recovery**: Graceful fallback to inline schema if JSON file unavailable
-
-#### Form Schema & Validation (January 5, 2026)
-- **Complete Form Schema**: Added comprehensive form structure definition with all field types
-- **Form Validation**: Added strict validation for form objects, fields, options, and field types
-- **Field Type Support**: Full support for radio, checkbox, select, text, textarea, number, scale fields
-- **Option Validation**: Validates option arrays with required value/label properties
-- **Scale Field Validation**: Enforces min/max requirements for rating scales
-- **Documentation Enhancement**: Updated form documentation with complete field specifications
-
-#### Removed Hints Functionality
-- **Removed**: Form field hints (`HintsDisplay` component) - replaced by suggestions
-- **Migration**: Use `content.suggestions` instead of `field.hints` for quick input options
-- **Cleaner Forms**: Forms now focus on structured input, suggestions handle quick replies
-
-#### LLM-Based Danger Detection (December 23, 2025)
-- **AI-Powered Safety**: Danger detection moved from keyword scanning to LLM evaluation
-- **Contextual Understanding**: LLM understands nuance and context of messages
-- **Immediate Email Notifications**: Uses SelfHelp's JobScheduler for instant delivery
-- **Audit Logging**: All detections logged to transactions table
-- **Emergency Blocking**: Conversations automatically blocked on emergency level
-- **Multi-language Support**: Configure keywords in any language
-
-**Safety Detection Flow:**
-1. Keywords injected into LLM context as critical safety instructions
-2. LLM evaluates each message and returns safety assessment in response
-3. Backend processes safety field: logs, notifies, blocks as needed
-4. Frontend displays safety message and handles blocked state
-
-**Configuration Fields:**
-- `enable_danger_detection`: Enable/disable the feature per section
-- `danger_keywords`: Comma-separated list of keywords for LLM to detect
-- `danger_notification_emails`: Email addresses for safety notifications
-- `danger_blocked_message`: Customizable safety message (markdown)
-
-**New Files:**
-- `server/service/LlmDangerDetectionService.php`: Notification handling
-- `server/constants/LlmResponseSchema.php`: Schema constants
-- `doc/danger-word-detection.md`: Feature documentation
-
-**Technical Implementation:**
-- LLM context injection via `LlmResponseService.buildResponseContext()`
-- Safety processing in `LlmChatController.handleSafetyDetection()`
-- Email delivery via `JobScheduler.add_and_execute_job()`
-- React frontend types for unified schema in `types/index.ts`
-
-#### Core Features
-- Complete LLM chat plugin implementation for SelfHelp CMS
-- Support for multiple LLM models including vision-capable models
-- File upload functionality for images and documents
-- Conversation management (create, view, delete conversations)
-- Rate limiting system (10 requests/minute, 3 concurrent conversations)
-- Comprehensive Admin Console for browsing all user conversations and messages
-- OpenAI-compatible API integration
-- React-based frontend with TypeScript support
-- MVC architecture following SelfHelp component patterns
-- Multi-language UI support with translatable labels
-- Secure file upload system with validation
-
-#### Conversation Context Module (New)
-- **Configurable AI Behavior**: Define system instructions per chat component via CMS field
-- **Multi-format Support**: Supports both markdown/free text and JSON array formats
-- **Context Tracking**: Each message records the context sent for debugging/audit
-- **Parsing Methods**: `getConversationContext()`, `getParsedConversationContext()`, `hasConversationContext()`
-- **API Integration**: Context prepended to API messages via `LlmApiFormatterService`
-- **Database Tracking**: New `sent_context` column in `llmMessages` table
-- **Strict Conversation Mode**: Optional topic enforcement that keeps AI focused on defined subjects
-- **Auto-Start Conversations**: Automatic conversation initiation with context-aware opening messages
-
-#### API Improvements
-- **Config API Endpoint**: New `?action=get_config` for React component initialization
-- **API-First Architecture**: React components can now fetch config via API instead of data attributes
-- **Backwards Compatible**: Supports both API-based and data attribute configuration
-
-#### Component Configuration
-- `conversation_context`: System instructions sent to AI (markdown field)
-- `enable_conversations_list`: Show/hide conversations sidebar
-- `enable_file_uploads`: Enable/disable file upload capability
-- `enable_full_page_reload`: Use AJAX page reload instead of React refresh
-- `strict_conversation_mode`: Enable topic enforcement for focused conversations (checkbox)
-- `auto_start_conversation`: Automatically start conversations (checkbox)
-- `auto_start_message`: Fallback message for auto-start conversations (markdown)
-
-#### Admin Features
-- Comprehensive Admin Console for monitoring all user conversations
-- LLM panel with quick admin links in configuration page
-- Date filtering support in admin console
-- User and section filtering
-
-#### Documentation
-- Restructured documentation into `doc/` folder
-- [Architecture Guide](doc/architecture.md) - System design and component interactions
-- [Conversation Context Guide](doc/conversation-context.md) - Context module configuration
-- [API Reference](doc/api-reference.md) - Controller actions and endpoints
-- [Configuration Guide](doc/configuration.md) - Complete configuration reference
-- Streamlined README with quick start and links to detailed docs
-
-### Technical Implementation
-
-#### Conversation Context Processing
-- `LlmChatModel`: New `conversation_context` property with JSON/text parsing
-- `LlmApiFormatterService`: Updated `convertToApiFormat()` accepts context parameter
-- `LlmService`: Updated `addMessage()` accepts `$sent_context` parameter
-- `LlmChatController`: Context processing in message handling
-
-#### Strict Conversation Mode Implementation
-- `LlmStrictConversationService`: New service for topic enforcement and context enhancement
-- Context prepended with enforcement instructions for topic boundaries
-- Intelligent topic extraction from configured context
-- Polite redirection for off-topic questions
-
-#### Auto-Start Conversation Implementation
-- Context-aware message generation based on configured conversation topics
-- Session-based tracking to prevent duplicate auto-start messages
-- New `get_auto_started` API endpoint for frontend detection
-- Smart fallback to configured default messages
-
-#### Database Changes
-- New `conversation_context` field in `styles_fields` for llmChat style
-- New `sent_context` column in `llmMessages` table for context tracking
-- New `strict_conversation_mode` checkbox field for topic enforcement
-- New `auto_start_conversation` checkbox field for automatic conversation initiation
-- New `auto_start_message` markdown field for custom auto-start messages
-
-#### Architecture
-- **Database Design**: Optimized schema with proper foreign keys and indexing
-- **Security**: Input validation, rate limiting, and secure file handling
-- **API Integration**: Flexible OpenAI-compatible API client
-- **File Management**: Secure upload directory with MIME type validation
-- **Caching**: APCu integration for performance optimization
-- **Error Handling**: Comprehensive error recovery and logging
-- **Build System**: Gulp-based asset compilation with DEBUG/production modes
-- **React Architecture**: API-first config loading with data attribute fallback
-
-### Files Created
-- Database schema (`server/db/v1.0.0.sql`)
-- Core services (`LlmService.php`, `LlmApiFormatterService.php`, `LlmFileUploadService.php`, `LlmStrictConversationService.php`)
-- MVC components (`LlmChatModel.php`, `LlmChatView.php`, `LlmChatController.php`)
-- Plugin hooks (`LlmHooks.php`)
-- Admin components (`moduleLlmAdminConsole/` - comprehensive admin console component with configurable pageType_fields)
-- React frontend with TypeScript (`react/` directory)
-- Build system (`gulp/` directory)
-- Configuration and constants (`globals.php`)
-- CSS and JavaScript assets
-
-### Changed
-- **Temperature Settings**: Default temperature changed from 0.7 to 1.0 with improved parameter descriptions
-- **Field Types**: Changed `llm_temperature` fields from number to text type for better validation
-- **Parameter Descriptions**: Enhanced descriptions for max_tokens and temperature parameters to provide clearer guidance
-
-### Fixed
-- **Code Copy Functionality**: Fixed code block text extraction for proper copy-to-clipboard behavior
-- **JSON Syntax Highlighting**: Improved color highlighting for JSON keys in code blocks
-- **File Upload Handling**: Fixed upload path issues and API formatting, ensured files require accompanying messages
-- **Vision Model Detection**: Fixed vision model detection and upload path handling
-- **Conversation URL Behavior**: Corrected URL handling when conversations list is disabled
-- **Textarea Focus Styling**: Removed blue border on textarea focus for cleaner appearance
-- **Conversation Selection**: Fixed conversation selection behavior during creation
-
-### Technical Improvements
-- **Database Schema**: Updated field types and default values for better configuration flexibility
-- **API Integration**: Enhanced model selection and parameter validation
-- **Build System**: Improved asset compilation and React component integration
-- **Error Handling**: Better error recovery and user feedback
-
-#### Admin Console UI Improvements (December 10, 2025)
-- **Complete UI Redesign**: Professional Bootstrap 4.6-based admin console with modern card layout
-- **Date Filtering**: Added date range filter (From/To dates) with default to current date
-- **Enhanced Filters Panel**: Reorganized with visual hierarchy, clear separators, and "Clear all" functionality
-- **Improved Conversations List**: Better cards with hover effects, date badges, message counts, and user information
-- **Chat-Style Messages Panel**: Modern chat bubble design with directional tails and role indicators
-- **Advanced Markdown Rendering**: Integrated MarkdownRenderer with syntax highlighting and copy-to-clipboard
-- **Performance Enhancements**: Smooth 60fps animations, custom scrollbars, and efficient React re-rendering
-- **Enhanced Pagination**: First/Last buttons, current page indicators, and disabled state handling
-- **Header & Stats**: Prominent heading with total/filtered counts and refresh functionality
-- **Dark Mode Support**: CSS media query support for `prefers-color-scheme: dark`
-- **Responsive Design**: Mobile, tablet, and desktop compatibility
-- **Backend Date Filtering**: Efficient SQL queries using DATE() function for conversation creation date filtering
-
-### Technical Implementation Details
-- **New Components**: `react/src/components/shared/MarkdownRenderer.tsx`, comprehensive admin CSS (600+ lines)
-- **Modified Components**: Complete AdminConsole.tsx redesign, MessageRow integration with MarkdownRenderer
-- **Backend Changes**: Date filter parameters in controller, SQL WHERE clauses in service, new labels in model
-- **Performance**: < 1s initial load, 8.55 KB CSS (2.03 KB gzipped), 512.77 KB JS (150.64 KB gzipped)
-- **Browser Compatibility**: Chrome/Edge, Firefox, Safari, mobile browsers
-- **Migration**: No breaking changes, scoped CSS to avoid conflicts
-
-### Changed (December 22, 2025)
-- **BFH Provider URL Update**: Updated BFH Inference API base URL from `https://inference.mlmp.ti.bfh.ch/api` to `https://inference.mlmp.ti.bfh.ch/api/v1`
-- **Documentation Updates**: Updated all documentation files to reflect the new BFH API endpoint
-- **Provider Detection**: BfhProvider now correctly detects and handles the new `/api/v1` endpoint
-- **Response Structure**: Confirmed support for BFH's enhanced response format including `reasoning_content` and `provider_specific_fields`
-
-#### Form Submission Failure Recovery (January 6, 2026)
-- **Persistent Retry Mechanism**: Form submissions that fail now show a retry option that persists across page reloads
-- **Automatic Failure Detection**: System detects failed form submissions from conversation history and automatically offers retry
-- **Seamless User Experience**: Users are never stuck in dead-end situations when form submissions fail
-- **Smart State Management**: Failed submission state tracked in memory and automatically detected from conversation metadata
-- **Fallback Retry Logic**: Supports both in-session retries and post-reload recovery from conversation history
-
-**Retry Detection Logic:**
-1. **In-Session**: Failed submissions tracked in React state with retry button
-2. **Post-Reload**: System scans conversation history for user messages with form metadata but no assistant response
-3. **Automatic UI**: Retry form appears automatically when failed submission detected
-4. **Data Preservation**: Original form values extracted from stored submission metadata
-
-**New Features:**
-- `RetryForm` component with warning message and retry button
-- Persistent retry detection across page reloads
-- Form value preservation for seamless retry experience
-- Enhanced error handling in `handleFormSubmit` function
-- Conversation history analysis for automatic failure detection
-
-#### Enhanced Safety Detection & Blocking (January 5, 2026)
-- **Always-Active Critical Safety**: Critical and emergency danger detections now ALWAYS trigger logging and blocking regardless of CMS danger detection settings
-- **Immediate UI Blocking**: Conversations blocked by AI detection immediately update UI without page refresh
-- **Visual Blocked Indicators**: Blocked conversations show in conversation list with ban icon, "Blocked" badge, and grayed appearance
-- **CMS-Configurable Blocked Message**: `danger_blocked_message` CMS field now controls the blocked conversation message with HTML support
-- **Transaction Logging**: All critical/emergency AI detections logged to transactions table for audit purposes
-
-**Safety Enhancement Details:**
-- Emergency/critical detections trigger automatic conversation blocking
-- Transaction logging with event types: `llm_safety_detection`
-- Frontend immediately updates conversation state when blocked
-- Blocked conversations remain visible in sidebar with visual indicators
-- HTML rendering support for rich blocked messages from CMS
-
-**New Features:**
-- `conversationBlockedMessage` config field populated from `danger_blocked_message` CMS field
-- Visual indicators for blocked conversations in sidebar
-- Immediate UI state updates for safety detections
-- Enhanced error logging with cleaned up debug messages
-
-### Known Limitations
-- Advanced analytics and reporting features planned
-- Danger word severity levels (emergency/critical/warning) planned for future version
-
-### Migration Notes
-- No breaking changes from previous development builds
-- Run database migration to add new `conversation_context` and `sent_context` fields
-- Rebuild React assets after updating (`gulp build`)
-- **BFH Provider Users**: Update your `llm_base_url` configuration to `https://inference.mlmp.ti.bfh.ch/api/v1` in the admin panel
-- **Safety Enhancement**: Critical/emergency AI detections now always log and block conversations
+# Changelog
+
+All notable changes to the **sh-shp-llm** plugin are documented in this file.
+
+## [1.0.0] - 2026-02-26
+
+Initial release of the SelfHelp LLM plugin. Provides a complete AI chat integration layer for SelfHelp CMS with structured responses, multi-provider support, and an admin console.
+
+### Core Chat System
+
+- **Real-Time Chat Interface** — React 18 + TypeScript frontend with conversation sidebar, message input with markdown support, and streaming-style message rendering
+- **Conversation Management** — Create, list, soft-delete conversations; per-user isolation with configurable limits (default: 20 conversations, 100 messages each)
+- **Structured JSON Responses** — All LLM responses follow a mandatory JSON schema (`schemas/llm-response.schema.json`) with `safety`, `content`, `progress`, and `metadata` fields
+- **Schema Validation with Auto-Retry** — Responses are validated against the JSON schema; invalid responses trigger up to 3 automatic retry attempts with error feedback to the LLM
+- **Rate Limiting** — Built-in protection: 10 requests/minute, 3 concurrent conversations, 60-second cooldown
+
+### Provider System
+
+- **Multi-Provider Architecture** — Pluggable provider system (`LlmProviderInterface`) with automatic detection based on `llm_base_url`
+- **GPUStack Provider** — Standard OpenAI-compatible API support (tested with UniBE GPUStack)
+- **BFH Provider** — Bern University of Applied Sciences inference API with reasoning content support
+- **Model Capabilities** — Automatic detection of vision, code, and reasoning capabilities per model
+
+### Conversation Context
+
+- **Configurable System Instructions** — Define AI behavior per chat section via the `conversation_context` CMS field (supports markdown and JSON array formats)
+- **Strict Conversation Mode** — Optional topic enforcement that keeps the AI focused on defined subjects and politely redirects off-topic questions
+- **Auto-Start Conversations** — Automatically initiate conversations with a context-aware opening message when users first visit
+- **Context Tracking** — Every message records the full context sent to the LLM in the `sent_context` database column for audit
+
+### Safety and Danger Detection
+
+- **LLM-Based Safety Assessment** — Every response includes a `safety` field with `is_safe`, `danger_level` (null/warning/critical/emergency), `detected_concerns`, `requires_intervention`, and `safety_message`
+- **Configurable Keywords** — CMS field `danger_keywords` injects safety-relevant topics into the LLM context
+- **Automatic Blocking** — Critical/emergency danger levels trigger immediate conversation blocking
+- **Email Notifications** — Configurable notification emails via SelfHelp's `JobScheduler` for safety events
+- **Audit Logging** — All safety detections logged to the `transactions` table
+
+### File Uploads
+
+- **Image and Document Uploads** — Support for images (jpg, png, gif, webp), documents (pdf, txt, md, csv, json, xml), and code files (py, js, php, etc.)
+- **Vision Model Support** — Images sent to vision-capable models (InternVL3, Qwen3-VL) for analysis
+- **Automatic Image Resizing** — Large images resized to max 1024px and converted to optimized JPEG before sending to prevent context window overflow
+- **Secure File Handling** — User-specific upload directories, MIME type validation, 10 MB size limit, max 5 files per message
+- **Contextual File Naming** — Files named with prefixes: `{user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}`
+
+### Speech-to-Text
+
+- **Whisper Integration** — Voice input via MediaRecorder API with transcription through GPUStack faster-whisper models
+- **Configurable Models** — CMS dropdown for selecting Whisper model (faster-whisper-large-v3, whisper-large-v3, etc.)
+- **Audio File Storage** — Recordings saved with proper naming convention for audit trail
+
+### Forms and Data Collection
+
+- **Form Mode** — LLM can generate structured forms (radio, checkbox, select, text, textarea, number, scale fields) within the JSON response schema
+- **Suggestions** — Quick-reply suggestion buttons returned by the LLM for common responses
+- **Data Saving** — Form submissions saved to SelfHelp `dataTables` via `UserInput::save_data()` following the R Serve pattern
+- **Progress Tracking** — Optional topic coverage tracking with percentage and per-topic status
+
+### LLM Scripts Module
+
+- **Script CRUD** — Full create, read, update, delete interface for reusable LLM prompt templates
+- **React-Based Editor** — Scripts manager built with React 18 and Monaco Editor for script editing
+- **Script Configuration** — Per-script settings for name, async/sync execution mode, model override, temperature, max tokens, data config, and test variables
+- **Script Testing** — Test scripts directly from the UI with configurable test variables
+- **Job Scheduler Integration** — Scripts can be assigned as scheduled job actions for automated execution
+- **One Conversation Per Script** — Script executions reuse a single conversation in `llmConversations` (linked via `id_llm_scripts` FK)
+- **Execution Logging** — Script results saved to `dataTables` with full context (template, data_config, test variables, resolved data, interpolated prompt) stored in `sent_context`
+
+### LLM Response Component
+
+- **`llmResponse` Style** — Display component for visualizing LLM response data with `{{field.path}}` interpolation syntax
+- **Editable Mode** — Optional inline editing controlled by `enable_editing` field
+- **Loading UX** — Automatic spinner overlay during async script execution with highlight animation on content arrival (uses core SelfHelp v7.8.0 event refresh mechanism via `data-event-refresh-loading="1"`)
+
+### Floating Chat Button
+
+- **Floating Mode** — Chat can appear as a floating button with configurable position and icon
+- **Page Integration** — Configurable per section; works alongside the standard embedded mode
+
+### Admin Console
+
+- **Conversation Browser** — View all user conversations with date, user, and section filters
+- **Message Inspector** — Chat-style message view with markdown rendering, validation status badges, and role indicators
+- **Payload Inspector** — View the exact API request payload sent to the LLM for any message (model, temperature, messages array)
+- **Validation Tracking** — Each assistant message shows green "Valid" or yellow "Invalid" badge; failed attempts are visually distinct
+- **Script Filter** — Filter conversations by linked LLM script
+- **Block/Unblock** — Admin controls for conversation blocking
+
+### Message Validation Tracking
+
+- **Schema Validation Logging** — Every LLM response attempt is saved with `is_validated` status (1=valid, 0=failed)
+- **Full Request Payload** — Complete API payload (model, temperature, max_tokens, messages) stored in `request_payload` column
+- **Failed Attempt History** — When retries occur, each failed attempt is preserved as a separate message for debugging
+
+### Architecture
+
+- **MVC Components** — `llmChat` (style), `llmResponse` (style), `moduleLlmAdminConsole` (module), `moduleLlmScript` (module)
+- **Service Layer** — 20+ dedicated PHP services organized by responsibility (core, context, response, files, safety, scripts, speech, etc.)
+- **Provider Abstraction** — `LlmProviderInterface` → `BaseProvider` → `GpuStackProvider` / `BfhProvider` with `LlmProviderRegistry`
+- **Exception Hierarchy** — `LlmException` → `LlmApiException`, `LlmRateLimitException`, `LlmValidationException`
+- **Callback Endpoint** — `CallbackLlm.php` for async script result processing
+- **APCu Caching** — `LlmCacheManager` for conversations, messages, and rate limit data
+- **React Build** — Three separate Vite entry points: chat (`llm-chat.umd.js`), admin (`llm-admin.umd.js`), scripts (`llm-scripts.umd.js`)
+- **Gulp Integration** — Build tasks for installing dependencies, building React, and watching for changes
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `llmConversations` | Conversations with user, section, model config, soft-delete, and blocking fields |
+| `llmMessages` | Messages with role, content, attachments, tokens, context, validation status, and payload |
+| `llmConversationProgress` | Topic coverage tracking per conversation and section |
+| `llm_scripts` | Reusable prompt templates with execution configuration |
+
+### Configuration
+
+| Setting | Location | Description |
+|---------|----------|-------------|
+| `llm_base_url` | Module config | LLM API endpoint URL |
+| `llm_api_key` | Module config | API authentication token |
+| `llm_default_model` | Module config | Default model for all chats |
+| `llm_timeout` | Module config | API request timeout (seconds) |
+| `llm_max_tokens` | Module config | Max tokens per response |
+| `llm_temperature` | Module config | Response randomness (0-2) |
+| `llm_model` | Style field | Per-section model override |
+| `conversation_context` | Style field | System instructions for the AI |
+| `strict_conversation_mode` | Style field | Enable topic enforcement |
+| `auto_start_conversation` | Style field | Auto-start conversations |
+| `enable_conversations_list` | Style field | Show/hide conversation sidebar |
+| `enable_file_uploads` | Style field | Enable file attachments |
+| `enable_speech_to_text` | Style field | Enable voice input |
+| `speech_to_text_model` | Style field | Whisper model for transcription |
+| `enable_danger_detection` | Style field | Enable safety assessment |
+| `danger_keywords` | Style field | Keywords for LLM safety context |
+| `danger_notification_emails` | Style field | Safety notification recipients |
+| `danger_blocked_message` | Style field | Message shown when conversation is blocked |
+
+### Documentation
+
+Detailed guides available in the `doc/` folder and 17 example conversation contexts in `examples/`.
