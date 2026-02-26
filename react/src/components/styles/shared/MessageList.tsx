@@ -16,8 +16,8 @@
  * @module components/MessageList
  */
 
-import React, { useCallback } from 'react';
-import type { Message, LlmChatConfig, FormDefinition, StructuredResponse } from '../../../types';
+import React, { useCallback, useMemo } from 'react';
+import type { Message, LlmChatConfig, FormDefinition, StructuredResponse, ChatBubbleColor } from '../../../types';
 import { 
   parseFormDefinition, 
   parseFormSubmissionMetadata, 
@@ -85,6 +85,29 @@ interface MessageItemProps {
   previousAssistantFormDefinition?: FormDefinition;
   /** Callback when a suggestion button is clicked */
   onSuggestionClick?: (suggestion: string) => void;
+}
+
+/**
+ * Build inline styles for a message bubble from chatColors config
+ */
+function getBubbleStyle(isUser: boolean, colors?: LlmChatConfig['chatColors']): React.CSSProperties | undefined {
+  const c: ChatBubbleColor | undefined = isUser ? colors?.user : colors?.ai;
+  if (!c) return undefined;
+  const style: React.CSSProperties = {};
+  if (c.bg) style.backgroundColor = c.bg;
+  if (c.text) style.color = c.text;
+  if (!isUser && c.border) style.borderLeft = `3px solid ${c.border}`;
+  if (isUser && c.border) style.borderRight = `3px solid ${c.border}`;
+  return style;
+}
+
+/**
+ * Build inline styles for message content/meta that inherit text color
+ */
+function getTextStyle(isUser: boolean, colors?: LlmChatConfig['chatColors']): React.CSSProperties | undefined {
+  const c: ChatBubbleColor | undefined = isUser ? colors?.user : colors?.ai;
+  if (!c?.text) return undefined;
+  return { color: c.text };
 }
 
 /**
@@ -193,6 +216,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
   // Determine if we should hide metadata (for structured responses and active forms)
   const hideMetadata = structuredResponse || (formDefinition && !isHistoricalForm);
+
+  const bubbleStyle = useMemo(() => getBubbleStyle(isUser, config.chatColors), [isUser, config.chatColors]);
+  const textStyle = useMemo(() => getTextStyle(isUser, config.chatColors), [isUser, config.chatColors]);
   
   return (
     <div className={`message-wrapper ${isUser ? 'user' : 'assistant'}`}>
@@ -202,9 +228,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
       </div>
       
       {/* Message Bubble */}
-      <div className="message-bubble">
+      <div className="message-bubble" style={bubbleStyle}>
         {/* Message content */}
-        <div className="message-content">
+        <div className="message-content" style={textStyle}>
           {isUser ? (
             // User messages
             isUserFormSubmission && userFormDefinition && userFormValues ? (
@@ -263,7 +289,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         
         {/* Message metadata - hide for active forms and structured responses */}
         {!hideMetadata && (
-          <div className="message-meta">
+          <div className="message-meta" style={textStyle ? { ...textStyle, opacity: 0.75 } : undefined}>
             <span>{formatTime(message.timestamp)}</span>
             {message.tokens_used && (
               <span className="tokens">

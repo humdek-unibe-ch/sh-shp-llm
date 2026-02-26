@@ -234,7 +234,9 @@ class LlmChatView extends StyleView
             'progressShowTopics' => $this->model->shouldShowProgressTopics(),
             // Speech-to-text config
             'enableSpeechToText' => $this->model->isSpeechToTextEnabled(),
-            'speechToTextModel' => $this->model->getSpeechToTextModel()
+            'speechToTextModel' => $this->model->getSpeechToTextModel(),
+            // Chat colors
+            'chatColors' => $this->model->getChatColors()
         ]);
     }
 

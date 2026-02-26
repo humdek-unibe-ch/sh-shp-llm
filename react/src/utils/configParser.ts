@@ -13,7 +13,7 @@
  * @module utils/configParser
  */
 
-import type { LlmChatConfig, FileConfig, FloatingButtonPosition } from '../types';
+import type { LlmChatConfig, FileConfig, FloatingButtonPosition, ChatColors } from '../types';
 import { DEFAULT_FILE_CONFIG, DEFAULT_CONFIG } from '../types';
 
 /**
@@ -161,5 +161,10 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     sendMessageTitle: str(ds, 'sendMessageTitle', jsonConfig, 'sendMessageTitle', D.sendMessageTitle!),
     removeFileTitle: str(ds, 'removeFileTitle', jsonConfig, 'removeFileTitle', D.removeFileTitle!),
     conversationBlockedMessage: str(ds, 'conversationBlockedMessage', jsonConfig, 'conversationBlockedMessage', D.conversationBlockedMessage!),
+
+    // Chat colors
+    chatColors: (jsonConfig.chatColors && typeof jsonConfig.chatColors === 'object'
+      ? jsonConfig.chatColors
+      : undefined) as ChatColors | undefined,
   } as LlmChatConfig;
 }

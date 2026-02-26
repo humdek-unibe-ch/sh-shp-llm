@@ -644,5 +644,16 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmResponse'), get_field_id('name'), '', 'Field name for form submission when editing is enabled. This name is used as the form field identifier.'),
 (get_style_id('llmResponse'), get_field_id('enable_editing'), '0', 'When enabled, renders as an editable textarea instead of read-only markdown. The interpolated content becomes the default value that users can modify. The field participates in form submission using the configured name.');
 
+-- -------------------------------------------------------------------
+-- Chat color configuration (JSON, display=0)
+-- -------------------------------------------------------------------
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'llm_chat_colors', get_field_type_id('json'), '0');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmChat'), get_field_id('llm_chat_colors'),
+ '{"user":{"bg":"#DCF8C6","text":"#1b5e20","border":"#a5d6a7"},"ai":{"bg":"#F3E5F5","text":"#4a148c","border":"#ce93d8"}}',
+ 'JSON color palette for LLM chat. Keys: user (own messages), ai (AI responses). Each has bg (background), text (text color), border (accent border). Used in both web and mobile.');
+
 -- LLM Scripts CRUD is handled by ModuleLlmScriptController via ?action=
 -- No separate AJAX endpoint needed - ACL is enforced by the llm_scripts page itself.

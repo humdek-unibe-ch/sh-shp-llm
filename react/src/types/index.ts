@@ -219,6 +219,23 @@ export interface FileValidationResult {
 // ============================================================================
 
 /**
+ * Color definition for a single chat participant (user or AI)
+ */
+export interface ChatBubbleColor {
+  bg: string;
+  text: string;
+  border: string;
+}
+
+/**
+ * Chat color palette from the database
+ */
+export interface ChatColors {
+  user?: ChatBubbleColor;
+  ai?: ChatBubbleColor;
+}
+
+/**
  * Floating button position options
  */
 export type FloatingButtonPosition =
@@ -383,6 +400,10 @@ export interface LlmChatConfig {
   conversationBlockedMessage: string;
   /** Error message for form submission failures */
   formSubmissionError?: string;
+
+  // ===== Chat Colors =====
+  /** Custom color palette for chat bubbles */
+  chatColors?: ChatColors;
 }
 
 /**
