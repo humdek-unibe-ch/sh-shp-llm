@@ -1772,9 +1772,14 @@ class LlmChatController extends BaseController
                 }
             }
 
+            $url = $_SERVER['REQUEST_URI'] ?? '';
+            if (strlen($url) > 200) {
+                $url = substr($url, 0, 197) . '...';
+            }
+
             $db->insert("user_activity", [
                 "id_users" => $user_id,
-                "url" => $_SERVER['REQUEST_URI'],
+                "url" => $url,
                 "id_type" => 2,
                 "exec_time" => $exec_time,
                 "keyword" => 'llm_api_' . $this->current_action,

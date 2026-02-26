@@ -465,12 +465,14 @@ class LlmHooks extends BaseHooks
             $php_bin = $this->find_php_cli_binary();
         }
 
-        if (!file_exists($php_bin)) {
+        $is_absolute = ($php_bin[0] === '/' || (strlen($php_bin) > 1 && $php_bin[1] === ':'));
+        if ($is_absolute && !file_exists($php_bin)) {
             error_log('LLM async: PHP CLI binary not found at: ' . $php_bin . ', falling back to sync');
             @unlink($tmp_file);
             return $this->execute_llm_script_from_job($args, $script_info);
         }
-        $php_flags = '-d apc.enable_cli=1 -d log_errors=1 -d display_errors=0';
+        $php_flags = '-d apc.enable_cli=1';
+        $log_file = realpath(__DIR__ . '/../..') . DIRECTORY_SEPARATOR . 'llm_async_worker.log';
 
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
             $cmd = 'start /B "" '
@@ -478,18 +480,16 @@ class LlmHooks extends BaseHooks
                 . $php_flags . ' '
                 . '"' . $worker_script . '" '
                 . '"' . $tmp_file . '"'
-                . ' > NUL 2>&1';
+                . ' >> "' . $log_file . '" 2>&1';
         } else {
             $cmd = escapeshellarg($php_bin)
                 . ' ' . $php_flags
                 . ' ' . escapeshellarg($worker_script)
                 . ' ' . escapeshellarg($tmp_file)
-                . ' > /dev/null 2>&1 &';
+                . ' >> ' . escapeshellarg($log_file) . ' 2>&1 &';
         }
 
-        if (defined('DEBUG') && DEBUG) {
-            trigger_error('LLM async: spawning command: ' . $cmd, E_USER_WARNING);
-        }
+        error_log('LLM async: spawning command: ' . $cmd);
 
         $handle = popen($cmd, 'r');
         if ($handle) {
@@ -501,11 +501,8 @@ class LlmHooks extends BaseHooks
         }
 
         if (defined('DEBUG') && DEBUG) {
-            trigger_error(
-                'LLM async: spawned background worker for script '
-                . $script_info['name'] . ' (user=' . $args['user']['id_users'] . ')',
-                E_USER_WARNING
-            );
+            error_log('LLM async: spawned background worker for script '
+                . $script_info['name'] . ' (user=' . $args['user']['id_users'] . ')');
         }
 
         return true;
@@ -524,11 +521,13 @@ class LlmHooks extends BaseHooks
 
         // Strategy 1: `which php` / `where php` (most reliable on Linux)
         if (!$is_win) {
-            $which = @shell_exec('which php 2>/dev/null');
-            if ($which) {
-                $which = trim($which);
-                if ($which !== '' && file_exists($which)) {
-                    return $which;
+            foreach (['command -v php', 'which php'] as $lookup_cmd) {
+                $which = @shell_exec($lookup_cmd . ' 2>/dev/null');
+                if ($which) {
+                    $which = trim($which);
+                    if ($which !== '' && file_exists($which)) {
+                        return $which;
+                    }
                 }
             }
         } else {
@@ -557,13 +556,15 @@ class LlmHooks extends BaseHooks
             }
         }
 
-        // Strategy 3: well-known Linux/macOS paths
+        // Strategy 3: well-known Linux/macOS paths (incl. ondrej/php PPA layout)
         if (!$is_win) {
+            $ver = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
             $common_paths = [
                 '/usr/bin/php',
-                '/usr/local/bin/php',
-                '/usr/bin/php' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION,
+                '/usr/bin/php' . $ver,
                 '/usr/bin/php' . PHP_MAJOR_VERSION,
+                '/usr/local/bin/php',
+                '/usr/local/bin/php' . $ver,
             ];
             foreach ($common_paths as $path) {
                 if (file_exists($path)) {
