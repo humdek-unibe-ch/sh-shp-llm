@@ -125,7 +125,8 @@
 }
 
 .message-bubble.user-message .message-timestamp {
-  color: rgba(255, 255, 255, 0.75);
+  color: inherit;
+  opacity: 0.75;
 }
 
 /* ===== Message Avatar ===== */
