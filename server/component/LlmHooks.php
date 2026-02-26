@@ -457,17 +457,12 @@ class LlmHooks extends BaseHooks
             return $this->execute_llm_script_from_job($args, $script_info);
         }
 
-        // PHP_BINARY returns httpd.exe when running as Apache module;
-        // derive the PHP CLI path from the extension_dir ini setting instead
+        // PHP_BINARY returns httpd when running as Apache module;
+        // detect the CLI binary via multiple strategies
         if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
             $php_bin = PHP_BINARY;
         } else {
-            $ext_dir = ini_get('extension_dir');
-            $php_dir = $ext_dir ? dirname(rtrim($ext_dir, '/\\')) : null;
-            $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-            $php_bin = $php_dir
-                ? $php_dir . DIRECTORY_SEPARATOR . ($is_win ? 'php.exe' : 'php')
-                : 'php';
+            $php_bin = $this->find_php_cli_binary();
         }
 
         if (!file_exists($php_bin)) {
@@ -510,6 +505,70 @@ class LlmHooks extends BaseHooks
         }
 
         return true;
+    }
+
+    /**
+     * Locate the PHP CLI binary when running under a web SAPI (Apache/FPM).
+     * Tries multiple strategies: `which`, common paths, phpinfo-based hints.
+     *
+     * @return string Path to php CLI binary, or 'php' as last-resort fallback
+     */
+    private function find_php_cli_binary()
+    {
+        $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        $bin_name = $is_win ? 'php.exe' : 'php';
+
+        // Strategy 1: `which php` / `where php` (most reliable on Linux)
+        if (!$is_win) {
+            $which = @shell_exec('which php 2>/dev/null');
+            if ($which) {
+                $which = trim($which);
+                if ($which !== '' && file_exists($which)) {
+                    return $which;
+                }
+            }
+        } else {
+            $where = @shell_exec('where php 2>NUL');
+            if ($where) {
+                $first_line = trim(strtok($where, "\n"));
+                if ($first_line !== '' && file_exists($first_line)) {
+                    return $first_line;
+                }
+            }
+        }
+
+        // Strategy 2: derive from extension_dir (works on Windows / some Linux)
+        $ext_dir = ini_get('extension_dir');
+        if ($ext_dir) {
+            $php_dir = dirname(rtrim($ext_dir, '/\\'));
+            $candidate = $php_dir . DIRECTORY_SEPARATOR . $bin_name;
+            if (file_exists($candidate)) {
+                return $candidate;
+            }
+            // On some Linux, extension_dir is /usr/lib/php/YYYYMMDD;
+            // go one level higher: /usr/lib/php/ -> try /usr/bin/php
+            $candidate2 = dirname($php_dir) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $bin_name;
+            if (file_exists($candidate2)) {
+                return $candidate2;
+            }
+        }
+
+        // Strategy 3: well-known Linux/macOS paths
+        if (!$is_win) {
+            $common_paths = [
+                '/usr/bin/php',
+                '/usr/local/bin/php',
+                '/usr/bin/php' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION,
+                '/usr/bin/php' . PHP_MAJOR_VERSION,
+            ];
+            foreach ($common_paths as $path) {
+                if (file_exists($path)) {
+                    return $path;
+                }
+            }
+        }
+
+        return $bin_name;
     }
 
     /**
@@ -628,9 +687,22 @@ class LlmHooks extends BaseHooks
     {
         $job = $args['job'];
         if ($job['job_type'] == ACTION_JOB_TYPE_LLM_SCRIPT) {
+            $script_name = '';
+            $script_id = isset($job[ACTION_JOB_TYPE_LLM_SCRIPT]) ? $job[ACTION_JOB_TYPE_LLM_SCRIPT] : null;
+            if ($script_id) {
+                $scriptService = new LlmScriptService($this->services);
+                $script_info = $scriptService->fetch_script($script_id);
+                if ($script_info) {
+                    $script_name = $script_info['name'];
+                }
+            }
+            $description = isset($job['job_name']) && $job['job_name']
+                ? $job['job_name']
+                : 'LLM Script' . ($script_name ? ': ' . $script_name : '')
+                    . ' (form: ' . $args['form_data']['form_name'] . ')';
             return array(
                 "type" => $job[ACTION_JOB_TYPE],
-                "description" => isset($job['job_name']) ? $job['job_name'] : "Schedule task (LLM script) by form: " . $args['form_data']['form_name'],
+                "description" => $description,
                 ACTION_JOB_TYPE_LLM_SCRIPT => $job[ACTION_JOB_TYPE_LLM_SCRIPT],
                 "form_data" => $args['form_data'],
                 "id_users" => $_SESSION['id_user']
