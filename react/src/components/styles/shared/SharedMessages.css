@@ -20,6 +20,18 @@
   
   /* Border */
   --llm-border: 1px solid #e6ecf5;
+
+  /* Chat palette defaults (overridden from CMS via React inline CSS variables) */
+  --llm-ai-bg: #F3E5F5;
+  --llm-ai-text: #4a148c;
+  --llm-ai-border: #ce93d8;
+  --llm-user-bg: #DCF8C6;
+  --llm-user-text: #1b5e20;
+  --llm-user-border: transparent;
+  --llm-ai-avatar-bg: #e1bee7;
+  --llm-ai-avatar-text: #4a148c;
+  --llm-user-avatar-bg: #a5d6a7;
+  --llm-user-avatar-text: #1b5e20;
 }
 
 /* ===== Message Wrapper ===== */
@@ -59,17 +71,19 @@
 
 .message-wrapper.assistant .message-bubble,
 .message-bubble.assistant-message {
-  background-color: #F3E5F5;
-  color: #4a148c;
+  background-color: var(--llm-ai-bg);
+  color: var(--llm-ai-text);
+  border-left: 3px solid var(--llm-ai-border);
   margin-left: 0;
   margin-right: auto;
 }
 
 .message-wrapper.user .message-bubble,
 .message-bubble.user-message {
-  background-color: #DCF8C6;
-  color: #1b5e20;
+  background-color: var(--llm-user-bg);
+  color: var(--llm-user-text);
   border: none;
+  border-right: 3px solid var(--llm-user-border);
   margin-left: auto;
   margin-right: 0;
 }
@@ -139,21 +153,21 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: #e1bee7;
+  background: var(--llm-ai-avatar-bg);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .message-avatar i {
-  color: #4a148c;
+  color: var(--llm-ai-avatar-text);
   font-size: 13px;
 }
 
 .message-wrapper.user .message-avatar {
-  background: #a5d6a7;
+  background: var(--llm-user-avatar-bg);
 }
 
 .message-wrapper.user .message-avatar i {
-  color: #1b5e20;
+  color: var(--llm-user-avatar-text);
 }
 
 @keyframes messageSlideIn {

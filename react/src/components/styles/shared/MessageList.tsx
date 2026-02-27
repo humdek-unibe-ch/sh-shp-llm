@@ -111,6 +111,30 @@ function getTextStyle(isUser: boolean, colors?: LlmChatConfig['chatColors']): Re
 }
 
 /**
+ * Build CSS custom properties so shared CSS can use CMS chatColors
+ */
+function getPaletteVariables(colors?: LlmChatConfig['chatColors']): React.CSSProperties | undefined {
+  if (!colors) return undefined;
+  const style: React.CSSProperties & Record<string, string> = {};
+
+  if (colors.ai?.bg) style['--llm-ai-bg'] = colors.ai.bg;
+  if (colors.ai?.text) style['--llm-ai-text'] = colors.ai.text;
+  if (colors.ai?.border) style['--llm-ai-border'] = colors.ai.border;
+
+  if (colors.user?.bg) style['--llm-user-bg'] = colors.user.bg;
+  if (colors.user?.text) style['--llm-user-text'] = colors.user.text;
+  if (colors.user?.border) style['--llm-user-border'] = colors.user.border;
+
+  // Avatar palette follows bubble colors
+  if (colors.ai?.bg) style['--llm-ai-avatar-bg'] = colors.ai.bg;
+  if (colors.ai?.text) style['--llm-ai-avatar-text'] = colors.ai.text;
+  if (colors.user?.bg) style['--llm-user-avatar-bg'] = colors.user.bg;
+  if (colors.user?.text) style['--llm-user-avatar-text'] = colors.user.text;
+
+  return Object.keys(style).length ? style : undefined;
+}
+
+/**
  * Parse and count attachments from message
  */
 function getAttachmentCount(attachments?: string): number {
@@ -449,6 +473,8 @@ export const MessageList: React.FC<MessageListProps> = ({
   lastFailedFormSubmission,
   onRetryFormSubmission
 }) => {
+  const paletteVars = useMemo(() => getPaletteVariables(config.chatColors), [config.chatColors]);
+
   // Show loading state
   if (isLoading) {
     return <LoadingState config={config} />;
@@ -573,7 +599,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   };
 
   return (
-    <div className="message-stack">
+    <div className="message-stack" style={paletteVars}>
       {/* Render all messages */}
       {messages.map((message, index) => {
         // Check if this is the last message (for form rendering)
