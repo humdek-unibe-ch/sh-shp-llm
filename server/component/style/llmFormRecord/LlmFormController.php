@@ -210,6 +210,49 @@ class LlmFormController extends FormUserInputController
     }
 
     /**
+     * Extract placeholder field names from context template.
+     * Supports {{field_name}} syntax.
+     *
+     * @param string $context
+     * @return array
+     */
+    private function extractInterpolationKeys($context)
+    {
+        if (empty($context)) return [];
+
+        if (!preg_match_all('/\{\{(\w+)\}\}/', $context, $matches)) {
+            return [];
+        }
+
+        $keys = array_map('strval', $matches[1] ?? []);
+        $keys = array_unique($keys);
+        return array_values($keys);
+    }
+
+    /**
+     * Keep only form fields that are referenced by context interpolation keys.
+     *
+     * @param array $form_data
+     * @param array $allowed_keys
+     * @return array
+     */
+    private function filterFormDataByKeys($form_data, $allowed_keys)
+    {
+        if (empty($allowed_keys)) {
+            return [];
+        }
+
+        $allowed = array_fill_keys($allowed_keys, true);
+        $filtered = [];
+        foreach ($form_data as $key => $value) {
+            if (isset($allowed[$key])) {
+                $filtered[$key] = $value;
+            }
+        }
+        return $filtered;
+    }
+
+    /**
      * Build a user prompt from form data.
      * Creates a readable text from the submitted field values.
      *
@@ -253,9 +296,11 @@ class LlmFormController extends FormUserInputController
         // Strip HTML tags - the context field is markdown type which gets
         // converted to HTML by Parsedown. We need raw text for the LLM.
         $context_clean = strip_tags($context_template);
-        $interpolated_context = $this->interpolateContext($context_clean, $form_data);
+        $interpolation_keys = $this->extractInterpolationKeys($context_clean);
+        $filtered_form_data = $this->filterFormDataByKeys($form_data, $interpolation_keys);
+        $interpolated_context = $this->interpolateContext($context_clean, $filtered_form_data);
         $user_language = $model->getUserLanguage();
-        $user_prompt = $this->buildUserPrompt($form_data);
+        $user_prompt = $this->buildUserPrompt($filtered_form_data);
 
         $system_prompt = $interpolated_context;
         if (!empty($user_language)) {
