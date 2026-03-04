@@ -272,17 +272,62 @@ class LlmFormController extends FormUserInputController
         $llm_model = $model->getLlmModel();
         $temperature = $model->getLlmTemperature();
         $max_tokens = $model->getLlmMaxTokens();
+        $user_id = $_SESSION['id_user'] ?? null;
+        $section_id = $model->get_section_id();
 
         try {
-            $api_response = $llm_service->callLlmApi($messages, $llm_model, $temperature, $max_tokens);
+            $conversation_id = $llm_service->getOrCreateConversationForModel(
+                $user_id,
+                $llm_model,
+                $temperature,
+                $max_tokens,
+                $section_id
+            );
+
+            if (!$conversation_id) {
+                throw new Exception('Failed to resolve conversation for LLM form logging');
+            }
+
+            $sent_context = [
+                ['role' => 'system', 'content' => $system_prompt],
+                ['role' => 'user', 'content' => !empty($user_prompt) ? $user_prompt : 'Form submission'],
+            ];
+
+            // Log user prompt before the LLM call so message order is user -> assistant.
+            $this->logLlmInteraction(
+                $model,
+                $llm_service,
+                $system_prompt,
+                $user_prompt,
+                '',
+                [
+                    'model' => $llm_model,
+                    'temperature' => $temperature,
+                    'max_tokens' => $max_tokens,
+                    'tokens_used' => 0
+                ],
+                null,
+                null,
+                null,
+                $conversation_id
+            );
+
+            $api_response = $llm_service->callLlmApi(
+                $messages,
+                $llm_model,
+                $temperature,
+                $max_tokens,
+                [
+                    'conversation_id' => $conversation_id,
+                    'sent_context' => $sent_context,
+                    'is_validated' => true
+                ]
+            );
 
             // callLlmApi returns a normalized response from the provider:
             //   'content' => string, 'usage' => [...], 'raw_response' => [...], 'request_payload' => [...]
             $content = $api_response['content'] ?? '';
             $tokens_used = $api_response['usage']['total_tokens'] ?? 0;
-            $raw_response = $api_response['raw_response'] ?? null;
-            $request_payload = $api_response['request_payload'] ?? null;
-            $reasoning = $api_response['reasoning'] ?? null;
 
             $meta = [
                 'model' => $llm_model,
@@ -293,11 +338,6 @@ class LlmFormController extends FormUserInputController
                 'status' => !empty($content) ? 'success' : 'empty_response',
                 'language' => $user_language,
             ];
-
-            $this->logLlmInteraction(
-                $model, $llm_service, $system_prompt, $user_prompt,
-                $content, $meta, $raw_response, $request_payload, $reasoning
-            );
 
             return [
                 'success' => !empty($content),
@@ -330,23 +370,21 @@ class LlmFormController extends FormUserInputController
      * Stores the system prompt as sent_context, user prompt as user message,
      * and raw_response/request_payload for full debugging visibility.
      */
-    private function logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta, $raw_response = null, $request_payload = null, $reasoning = null)
+    private function logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta, $raw_response = null, $request_payload = null, $reasoning = null, $conversation_id = null)
     {
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
-        $sent_context = [
-            ['role' => 'system', 'content' => $system_prompt],
-            ['role' => 'user', 'content' => !empty($user_prompt) ? $user_prompt : 'Form submission'],
-        ];
 
         try {
-            $conversation_id = $llm_service->getOrCreateConversationForModel(
-                $user_id,
-                $meta['model'],
-                $meta['temperature'] ?? null,
-                $meta['max_tokens'] ?? null,
-                $section_id
-            );
+            if (!$conversation_id) {
+                $conversation_id = $llm_service->getOrCreateConversationForModel(
+                    $user_id,
+                    $meta['model'],
+                    $meta['temperature'] ?? null,
+                    $meta['max_tokens'] ?? null,
+                    $section_id
+                );
+            }
 
             if (!$conversation_id) {
                 error_log("LLM Form: getOrCreateConversationForModel returned falsy: " . var_export($conversation_id, true)
@@ -371,19 +409,8 @@ class LlmFormController extends FormUserInputController
                 null                    // request_payload
             );
 
-            $assistant_msg_id = $llm_service->addMessage(
-                $conversation_id,
-                'assistant',
-                !empty($content) ? $content : '(empty response)',
-                null,                   // attachments
-                $meta['model'],         // model
-                $meta['tokens_used'] ?? 0,  // tokens_used
-                $raw_response,          // raw_response
-                $sent_context,          // sent_context
-                $reasoning,             // reasoning
-                true,                   // is_validated
-                $request_payload        // request_payload
-            );
+            // Assistant message logging is centralized in LlmService::callLlmApi()
+            // when log options are provided by the caller.
 
         } catch (\Exception $e) {
             error_log("LLM Form: Failed to log interaction: " . $e->getMessage());

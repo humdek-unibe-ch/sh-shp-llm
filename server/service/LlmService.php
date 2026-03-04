@@ -559,6 +559,53 @@ class LlmService extends BaseLlmService
     }
 
     /**
+     * Log an assistant message from a normalized API response.
+     *
+     * This helper centralizes storage of:
+     * - sent_context
+     * - request_payload
+     * - raw_response
+     * - reasoning
+     * - token usage
+     *
+     * @param int $conversation_id
+     * @param string $content Assistant message content
+     * @param string $model Model name
+     * @param array|null $sent_context Context messages sent to the LLM
+     * @param array|null $api_response Normalized response (content/usage/raw_response/reasoning/request_payload)
+     * @param bool $is_validated Whether the message passed schema/format validation
+     * @return int Message ID
+     */
+    public function addAssistantMessageFromApiResponse($conversation_id, $content, $model, $sent_context = null, $api_response = null, $is_validated = true)
+    {
+        $tokens_used = null;
+        $raw_response = null;
+        $reasoning = null;
+        $request_payload = null;
+
+        if (is_array($api_response)) {
+            $tokens_used = $api_response['usage']['total_tokens'] ?? null;
+            $raw_response = $api_response['raw_response'] ?? $api_response;
+            $reasoning = $api_response['reasoning'] ?? null;
+            $request_payload = $api_response['request_payload'] ?? null;
+        }
+
+        return $this->addMessage(
+            $conversation_id,
+            'assistant',
+            $content,
+            null,
+            $model,
+            $tokens_used,
+            $raw_response,
+            $sent_context,
+            $reasoning,
+            $is_validated,
+            $request_payload
+        );
+    }
+
+    /**
      * Process attachments for storage
      * 
      * @param array|string|null $attachments Raw attachments data
@@ -814,10 +861,15 @@ class LlmService extends BaseLlmService
      * @param string $model Model name
      * @param float|null $temperature Temperature setting
      * @param int|null $max_tokens Max tokens setting
+     * @param array|null $log_options Optional auto-log options:
+     *   - conversation_id (int, required for auto-log)
+     *   - sent_context (array|null, context to persist with assistant message)
+     *   - is_validated (bool, default true)
+     *   - assistant_content (string|null, optional override for logged content)
      * @return array Normalized response with 'request_payload' containing the full API request
      * @throws LlmApiException If API call fails
      */
-    public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null)
+    public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null, $log_options = null)
     {
         $config = $this->getLlmConfig();
 
@@ -888,6 +940,36 @@ class LlmService extends BaseLlmService
             $normalized = $this->provider->normalizeResponse($response);
             // Include the full request payload in the response for debugging
             $normalized['request_payload'] = $payload;
+
+            // Optional centralized assistant-message logging for consistency.
+            if (is_array($log_options) && !empty($log_options['conversation_id'])) {
+                $assistant_content = $log_options['assistant_content'] ?? ($normalized['content'] ?? null);
+                if (!is_string($assistant_content) || trim($assistant_content) === '') {
+                    $assistant_content = '(empty response)';
+                }
+                $sent_context = $log_options['sent_context'] ?? null;
+                $is_validated = array_key_exists('is_validated', $log_options)
+                    ? (bool)$log_options['is_validated']
+                    : true;
+
+                try {
+                    $logged_message_id = $this->addAssistantMessageFromApiResponse(
+                        (int)$log_options['conversation_id'],
+                        trim((string)$assistant_content),
+                        $model,
+                        $sent_context,
+                        $normalized,
+                        $is_validated
+                    );
+                    $normalized['logged_message_id'] = $logged_message_id;
+                } catch (Exception $logException) {
+                    $this->logWarning('LLM API auto-log failed', [
+                        'error' => $logException->getMessage(),
+                        'conversation_id' => $log_options['conversation_id']
+                    ]);
+                }
+            }
+
             return $normalized;
         } catch (Exception $e) {
             $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
