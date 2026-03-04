@@ -774,12 +774,23 @@ class LlmHooks extends BaseHooks
     private function returnSelectLlmResultPlacementField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
-        if ($field['type'] !== 'select-llm-result-placement') {
-            return $this->execute_private_method($args);
+        $res = $this->execute_private_method($args);
+
+        if (!isset($field['type']) || $field['type'] !== 'select-llm-result-placement') {
+            return $res;
         }
-        $value = $this->get_param_by_name($args, 'value');
-        $name = $field['name'];
-        return $this->outputSelectLlmResultPlacementField($value, $name, $disabled);
+
+        $value = isset($field['content']) && $field['content'] !== '' ? $field['content'] : 'bottom';
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $selectField = $this->outputSelectLlmResultPlacementField($value, $field_name_prefix . "[content]", $disabled);
+
+        if ($selectField && $res) {
+            $children = $res->get_view()->get_children();
+            $children[] = $selectField;
+            $res->get_view()->set_children($children);
+        }
+
+        return $res;
     }
 
     public function outputFieldLlmResultPlacementEdit($args)
@@ -815,12 +826,23 @@ class LlmHooks extends BaseHooks
     private function returnSelectLlmResultPanelField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
-        if ($field['type'] !== 'select-llm-result-panel') {
-            return $this->execute_private_method($args);
+        $res = $this->execute_private_method($args);
+
+        if (!isset($field['type']) || $field['type'] !== 'select-llm-result-panel') {
+            return $res;
         }
-        $value = $this->get_param_by_name($args, 'value');
-        $name = $field['name'];
-        return $this->outputSelectLlmResultPanelField($value, $name, $disabled);
+
+        $value = isset($field['content']) && $field['content'] !== '' ? $field['content'] : 'card';
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $selectField = $this->outputSelectLlmResultPanelField($value, $field_name_prefix . "[content]", $disabled);
+
+        if ($selectField && $res) {
+            $children = $res->get_view()->get_children();
+            $children[] = $selectField;
+            $res->get_view()->set_children($children);
+        }
+
+        return $res;
     }
 
     public function outputFieldLlmResultPanelEdit($args)
