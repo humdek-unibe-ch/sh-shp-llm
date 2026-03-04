@@ -334,6 +334,10 @@ class LlmFormController extends FormUserInputController
     {
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
+        $sent_context = [
+            ['role' => 'system', 'content' => $system_prompt],
+            ['role' => 'user', 'content' => !empty($user_prompt) ? $user_prompt : 'Form submission'],
+        ];
 
         try {
             $conversation_id = $llm_service->getOrCreateConversationForModel(
@@ -361,10 +365,10 @@ class LlmFormController extends FormUserInputController
                 $meta['model'],         // model
                 0,                      // tokens_used
                 null,                   // raw_response
-                $system_prompt,         // sent_context
+                null,                   // sent_context
                 null,                   // reasoning
                 true,                   // is_validated
-                $request_payload        // request_payload
+                null                    // request_payload
             );
 
             $assistant_msg_id = $llm_service->addMessage(
@@ -375,10 +379,10 @@ class LlmFormController extends FormUserInputController
                 $meta['model'],         // model
                 $meta['tokens_used'] ?? 0,  // tokens_used
                 $raw_response,          // raw_response
-                null,                   // sent_context
+                $sent_context,          // sent_context
                 $reasoning,             // reasoning
                 true,                   // is_validated
-                null                    // request_payload
+                $request_payload        // request_payload
             );
 
         } catch (\Exception $e) {
