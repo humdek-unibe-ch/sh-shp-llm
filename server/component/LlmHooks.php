@@ -612,7 +612,9 @@ class LlmHooks extends BaseHooks
             $args['user']['id_users'],
             $script_info['model'],
             $script_info['temperature'] !== null ? floatval($script_info['temperature']) : null,
-            $script_info['max_tokens'] !== null ? intval($script_info['max_tokens']) : null
+            $script_info['max_tokens'] !== null ? intval($script_info['max_tokens']) : null,
+            $script_info['id'],
+            $script_info['name']
         );
 
         $save_success = $scriptService->save_llm_results(
@@ -620,15 +622,6 @@ class LlmHooks extends BaseHooks
             $args['user']['id_users'],
             $args['user']['id_scheduledJobs'],
             $script_info['generated_id']
-        );
-
-        $scriptService->log_script_execution(
-            $script_info['id'],
-            $script_info['name'],
-            $result,
-            $script_info['model'],
-            $script_info['temperature'] !== null ? floatval($script_info['temperature']) : null,
-            $script_info['max_tokens'] !== null ? intval($script_info['max_tokens']) : null
         );
 
         if ($save_success && $script_info['refresh_sections']) {

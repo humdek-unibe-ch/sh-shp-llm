@@ -243,12 +243,8 @@ class ModuleLlmScriptController extends BaseController
             $max_tokens = ($_POST['max_tokens'] ?? '') !== '' ? intval($_POST['max_tokens']) : null;
 
             $result = $this->scriptService->execute_llm_script(
-                $script_content, $data_config, $test_variables, null,
-                $model, $temperature, $max_tokens
-            );
-
-            $this->scriptService->log_script_execution(
-                $sid, $script_name, $result, $model, $temperature, $max_tokens
+                $script_content, $data_config, $test_variables, ($_SESSION['id_user'] ?? null),
+                $model, $temperature, $max_tokens, $sid, $script_name
             );
 
             $this->sendJsonResponse($result);

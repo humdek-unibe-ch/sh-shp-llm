@@ -538,22 +538,24 @@ class LlmChatController extends BaseController
         $context_messages = $this->context_service->getContextForTracking();
 
         // Call API with schema validation and retry logic
-        $llm_callable = function ($messages) {
+        $llm_callable = function ($messages) use ($conversation_id, $context_messages) {
             return $this->llm_service->callLlmApi(
                 $messages,
                 $this->model->getConfiguredModel(),
                 $this->model->getLlmTemperature(),
-                $this->model->getLlmMaxTokens()
+                $this->model->getLlmMaxTokens(),
+                [
+                    'conversation_id' => $conversation_id,
+                    'sent_context' => $context_messages,
+                    // mark false initially; final validated attempt is updated below
+                    'is_validated' => false
+                ]
             );
         };
 
         $result = $this->response_service->callLlmWithSchemaValidation($llm_callable, $api_messages);
         $parsed = $result['response'];
         $response = $result['raw_response'];
-        $all_attempts = $result['all_attempts'] ?? [];
-
-        $this->saveFailedValidationAttempts($all_attempts, $conversation_id, $context_messages, $result);
-
         $response_data = $this->buildLlmResponseData(
             $parsed,
             $response,
@@ -566,63 +568,6 @@ class LlmChatController extends BaseController
         );
 
         $this->sendJsonResponse($response_data);
-    }
-
-    /**
-     * Save failed validation attempts to the database for admin debugging
-     *
-     * @param array $all_attempts All LLM response attempts from schema validation
-     * @param int $conversation_id Conversation ID
-     * @param array $context_messages Context messages for tracking
-     * @param array $result Full result from callLlmWithSchemaValidation
-     */
-    private function saveFailedValidationAttempts($all_attempts, $conversation_id, $context_messages, $result)
-    {
-        $saved_failed_count = 0;
-        if (count($all_attempts) <= 1) {
-            return;
-        }
-
-        for ($i = 0; $i < count($all_attempts) - 1; $i++) {
-            $attempt = $all_attempts[$i];
-            if (!$attempt['valid']) {
-                $attempt_content = null;
-                $attempt_tokens = null;
-                $attempt_reasoning = null;
-                $attempt_raw = null;
-
-                if (isset($attempt['response']['content'])) {
-                    $attempt_content = $attempt['response']['content'];
-                    $attempt_tokens = $attempt['response']['usage']['total_tokens'] ?? null;
-                    $attempt_reasoning = $attempt['response']['reasoning'] ?? null;
-                    $attempt_raw = $attempt['response']['raw_response'] ?? $attempt['response'];
-                } elseif (isset($attempt['error'])) {
-                    $attempt_content = '[API ERROR] ' . $attempt['error'];
-                    $attempt_raw = ['error' => $attempt['error']];
-                }
-
-                if ($attempt_content) {
-                    $this->llm_service->addMessage(
-                        $conversation_id,
-                        'assistant',
-                        trim($attempt_content),
-                        null,
-                        $this->model->getConfiguredModel(),
-                        $attempt_tokens,
-                        $attempt_raw,
-                        $context_messages,
-                        $attempt_reasoning,
-                        false,
-                        $attempt['request_payload'] ?? null
-                    );
-                    $saved_failed_count++;
-                }
-            }
-        }
-
-        if (defined('DEBUG') && DEBUG) {
-            error_log('LLM response required ' . $result['attempts'] . ' attempts to match schema - saved ' . $saved_failed_count . ' failed attempts');
-        }
     }
 
     /**
@@ -659,19 +604,13 @@ class LlmChatController extends BaseController
             $this->handleSafetyDetection($parsed['data'], $conversation_id, $user_id);
         }
 
-        $this->llm_service->addMessage(
-            $conversation_id,
-            'assistant',
-            trim($assistant_message),
-            null,
-            $this->model->getConfiguredModel(),
-            $tokens_used,
-            $raw_response,
-            $context_messages,
-            $reasoning,
-            $result['valid'],
-            $request_payload
-        );
+        $logged_message_id = $response['logged_message_id']
+            ?? ($result['raw_response']['logged_message_id'] ?? null);
+        if ($logged_message_id) {
+            $this->llm_service->updateMessage($logged_message_id, [
+                'is_validated' => $result['valid'] ? 1 : 0
+            ]);
+        }
 
         $response_data = [
             'conversation_id' => $conversation_id,
@@ -1418,27 +1357,20 @@ class LlmChatController extends BaseController
             $temperature = $this->model->getLlmTemperature();
             $max_tokens = $this->model->getLlmMaxTokens();
 
-            $response = $this->llm_service->callLlmApi($api_messages, $model, $temperature, $max_tokens);
+            $response = $this->llm_service->callLlmApi(
+                $api_messages,
+                $model,
+                $temperature,
+                $max_tokens,
+                [
+                    'conversation_id' => $conversation_id,
+                    'sent_context' => $context_messages,
+                    'is_validated' => true
+                ]
+            );
 
             // Response is normalized by provider
             if (isset($response['content'])) {
-                $assistant_message = $response['content'];
-                $tokens_used = $response['usage']['total_tokens'] ?? null;
-                $reasoning = $response['reasoning'] ?? null;
-                $raw_response = $response['raw_response'] ?? $response;
-
-                $this->llm_service->addMessage(
-                    $conversation_id,
-                    'assistant',
-                    $assistant_message,
-                    null,
-                    $model,
-                    $tokens_used,
-                    $raw_response,
-                    $context_messages,
-                    $reasoning
-                );
-
                 $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
                 $session_key = 'llm_auto_started_' . $this->model->getSectionId();

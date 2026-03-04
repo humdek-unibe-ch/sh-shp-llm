@@ -297,18 +297,13 @@ class LlmFormController extends FormUserInputController
             $this->logLlmInteraction(
                 $model,
                 $llm_service,
-                $system_prompt,
                 $user_prompt,
-                '',
                 [
                     'model' => $llm_model,
                     'temperature' => $temperature,
                     'max_tokens' => $max_tokens,
                     'tokens_used' => 0
                 ],
-                null,
-                null,
-                null,
                 $conversation_id
             );
 
@@ -366,11 +361,10 @@ class LlmFormController extends FormUserInputController
     }
 
     /**
-     * Log the LLM interaction to llmMessages for audit.
-     * Stores the system prompt as sent_context, user prompt as user message,
-     * and raw_response/request_payload for full debugging visibility.
+     * Log the user prompt to llmMessages.
+     * Assistant API responses are logged centrally in LlmService::callLlmApi().
      */
-    private function logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta, $raw_response = null, $request_payload = null, $reasoning = null, $conversation_id = null)
+    private function logLlmInteraction($model, $llm_service, $user_prompt, $meta, $conversation_id = null)
     {
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();

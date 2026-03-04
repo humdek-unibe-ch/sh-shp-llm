@@ -861,16 +861,23 @@ class LlmService extends BaseLlmService
      * @param string $model Model name
      * @param float|null $temperature Temperature setting
      * @param int|null $max_tokens Max tokens setting
-     * @param array|null $log_options Optional auto-log options:
-     *   - conversation_id (int, required for auto-log)
+     * @param array $log_options Required logging options (strict mode):
+     *   - conversation_id (int, required)
      *   - sent_context (array|null, context to persist with assistant message)
      *   - is_validated (bool, default true)
      *   - assistant_content (string|null, optional override for logged content)
      * @return array Normalized response with 'request_payload' containing the full API request
      * @throws LlmApiException If API call fails
+     * @throws InvalidArgumentException If strict logging options are missing
      */
     public function callLlmApi($messages, $model, $temperature = null, $max_tokens = null, $log_options = null)
     {
+        if (!is_array($log_options) || empty($log_options['conversation_id'])) {
+            throw new InvalidArgumentException(
+                'callLlmApi strict mode requires log_options with conversation_id'
+            );
+        }
+
         $config = $this->getLlmConfig();
 
         // Get API URL using provider
@@ -915,6 +922,24 @@ class LlmService extends BaseLlmService
                 'url' => $url,
                 'raw_response_preview' => $raw_response ? substr($raw_response, 0, 500) : null
             ]);
+
+            try {
+                $this->addMessage(
+                    (int)$log_options['conversation_id'],
+                    'assistant',
+                    '[API ERROR] ' . $error_msg,
+                    null,
+                    $model,
+                    null,
+                    ['error' => $error_msg, 'http_code' => $http_code, 'raw_response' => $raw_response],
+                    $log_options['sent_context'] ?? null,
+                    null,
+                    false,
+                    $payload
+                );
+            } catch (Exception $logException) {
+                $this->logWarning('LLM API error auto-log failed', ['error' => $logException->getMessage()]);
+            }
             
             if ($http_code >= 400) {
                 throw LlmApiException::httpError($http_code, $raw_response, $payload);
@@ -942,36 +967,51 @@ class LlmService extends BaseLlmService
             $normalized['request_payload'] = $payload;
 
             // Optional centralized assistant-message logging for consistency.
-            if (is_array($log_options) && !empty($log_options['conversation_id'])) {
-                $assistant_content = $log_options['assistant_content'] ?? ($normalized['content'] ?? null);
-                if (!is_string($assistant_content) || trim($assistant_content) === '') {
-                    $assistant_content = '(empty response)';
-                }
-                $sent_context = $log_options['sent_context'] ?? null;
-                $is_validated = array_key_exists('is_validated', $log_options)
-                    ? (bool)$log_options['is_validated']
-                    : true;
+            $assistant_content = $log_options['assistant_content'] ?? ($normalized['content'] ?? null);
+            if (!is_string($assistant_content) || trim($assistant_content) === '') {
+                $assistant_content = '(empty response)';
+            }
+            $sent_context = $log_options['sent_context'] ?? null;
+            $is_validated = array_key_exists('is_validated', $log_options)
+                ? (bool)$log_options['is_validated']
+                : true;
 
-                try {
-                    $logged_message_id = $this->addAssistantMessageFromApiResponse(
-                        (int)$log_options['conversation_id'],
-                        trim((string)$assistant_content),
-                        $model,
-                        $sent_context,
-                        $normalized,
-                        $is_validated
-                    );
-                    $normalized['logged_message_id'] = $logged_message_id;
-                } catch (Exception $logException) {
-                    $this->logWarning('LLM API auto-log failed', [
-                        'error' => $logException->getMessage(),
-                        'conversation_id' => $log_options['conversation_id']
-                    ]);
-                }
+            try {
+                $logged_message_id = $this->addAssistantMessageFromApiResponse(
+                    (int)$log_options['conversation_id'],
+                    trim((string)$assistant_content),
+                    $model,
+                    $sent_context,
+                    $normalized,
+                    $is_validated
+                );
+                $normalized['logged_message_id'] = $logged_message_id;
+            } catch (Exception $logException) {
+                $this->logWarning('LLM API auto-log failed', [
+                    'error' => $logException->getMessage(),
+                    'conversation_id' => $log_options['conversation_id']
+                ]);
             }
 
             return $normalized;
         } catch (Exception $e) {
+            try {
+                $this->addMessage(
+                    (int)$log_options['conversation_id'],
+                    'assistant',
+                    '[API ERROR] Provider normalization failed: ' . $e->getMessage(),
+                    null,
+                    $model,
+                    null,
+                    ['error' => $e->getMessage(), 'raw_response' => $response],
+                    $log_options['sent_context'] ?? null,
+                    null,
+                    false,
+                    $payload
+                );
+            } catch (Exception $logException) {
+                $this->logWarning('LLM API normalization auto-log failed', ['error' => $logException->getMessage()]);
+            }
             $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
             throw LlmApiException::normalizationFailed($this->provider->getProviderName(), $e->getMessage(), $response, $payload);
         }

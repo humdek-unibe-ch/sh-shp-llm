@@ -7,7 +7,11 @@ The provider system automatically detects and uses the correct LLM API provider 
 ```php
 // In your code - provider is automatically selected
 $llm_service = new LlmService($services);
-$response = $llm_service->callLlmApi($messages, $model);
+$response = $llm_service->callLlmApi($messages, $model, $temperature, $maxTokens, [
+    'conversation_id' => $conversationId,
+    'sent_context' => $contextMessages,
+    'is_validated' => true
+]);
 // Response is automatically normalized to standard format
 ```
 
@@ -54,7 +58,7 @@ Quick steps:
 
 ## Architecture Benefits
 
-- ✅ **Backward Compatible** - Existing code works without changes
+- ✅ **Consistent Logging** - API responses are logged centrally in one place
 - ✅ **Extensible** - Easy to add new providers
 - ✅ **Clean Separation** - Provider logic isolated
 - ✅ **Type Safety** - Interface ensures consistency
@@ -79,6 +83,17 @@ All providers return responses in this standard format:
     'raw_response' => array           // Full original response
 ]
 ```
+
+## Strict Logging Contract
+
+`LlmService::callLlmApi()` runs in strict logging mode.
+Every call must provide `log_options` with a valid `conversation_id`.
+Assistant messages (content + payload + sent_context + raw_response + usage) are persisted centrally by `callLlmApi()`.
+
+This means:
+- Do not manually insert assistant API responses with `addMessage()` in callers.
+- Always persist the user message before calling `callLlmApi()`.
+- Use `sent_context` to store the exact context sent to the model.
 
 ## Database Changes
 

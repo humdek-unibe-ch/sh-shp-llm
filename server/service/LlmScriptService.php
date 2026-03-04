@@ -185,9 +185,11 @@ class LlmScriptService extends BaseLlmService
      * @param string|null $model Model override
      * @param float|null $temperature Temperature override
      * @param int|null $max_tokens Max tokens override
+     * @param int|null $script_id Optional script ID for conversation grouping
+     * @param string|null $script_name Optional script name for conversation title
      * @return array Result with 'result' (bool), 'data', and 'context' keys
      */
-    public function execute_llm_script($script, $data_config = null, $variables = array(), $id_users = null, $model = null, $temperature = null, $max_tokens = null)
+    public function execute_llm_script($script, $data_config = null, $variables = array(), $id_users = null, $model = null, $temperature = null, $max_tokens = null, $script_id = null, $script_name = null)
     {
         try {
             if (!is_array($variables) && $variables != null) {
@@ -229,9 +231,68 @@ class LlmScriptService extends BaseLlmService
                 array('role' => 'user', 'content' => $prompt)
             );
 
+            $effective_user_id = $id_users ?: ($_SESSION['id_user'] ?? null);
+            if (!$effective_user_id) {
+                return array(
+                    "result" => false,
+                    "data" => "Missing user context for strict LLM logging"
+                );
+            }
+
+            $conversation_id = null;
+            $sent_context = [
+                [
+                    'role' => 'system',
+                    'content' => json_encode([
+                        'script_template' => $script,
+                        'data_config' => $data_config,
+                        'test_variables' => $variables,
+                        'data_config_values' => $data_config_values,
+                        'merged_variables' => $merged_vars,
+                        'interpolated_prompt' => $prompt,
+                    ])
+                ],
+                ['role' => 'user', 'content' => $prompt]
+            ];
+
+            $conversation_id = $this->getOrCreateScriptConversation(
+                $effective_user_id,
+                $script_id,
+                $script_name,
+                $use_model,
+                $use_temperature,
+                $use_max_tokens
+            );
+            if (!$conversation_id) {
+                return array(
+                    "result" => false,
+                    "data" => "Failed to create conversation for strict LLM logging"
+                );
+            }
+
+            $this->llmService->addMessage(
+                $conversation_id,
+                'user',
+                $prompt,
+                null,
+                $use_model
+            );
+
             $start_time = microtime(true);
-            $response = $this->llmService->callLlmApi($messages, $use_model, $use_temperature, $use_max_tokens);
+            $response = $this->llmService->callLlmApi(
+                $messages,
+                $use_model,
+                $use_temperature,
+                $use_max_tokens,
+                [
+                    'conversation_id' => $conversation_id,
+                    'sent_context' => $sent_context,
+                    'is_validated' => true
+                ]
+            );
             $execution_time = round((microtime(true) - $start_time) * 1000);
+
+            $execution_context['conversation_id'] = $conversation_id;
 
             if ($response && isset($response['content'])) {
                 $result_data = array(
@@ -239,7 +300,8 @@ class LlmScriptService extends BaseLlmService
                     'model' => $response['model'] ?? $use_model,
                     'tokens_used' => $response['usage']['total_tokens'] ?? null,
                     'execution_time_ms' => $execution_time,
-                    'raw_response' => json_encode($response)
+                    'raw_response' => json_encode($response),
+                    'logged_message_id' => $response['logged_message_id'] ?? null
                 );
 
                 return array(
@@ -341,6 +403,59 @@ class LlmScriptService extends BaseLlmService
     }
 
     /**
+     * Resolve or create a conversation dedicated to LLM script execution.
+     *
+     * @param int $user_id
+     * @param int|null $script_id
+     * @param string|null $script_name
+     * @param string $model
+     * @param float|null $temperature
+     * @param int|null $max_tokens
+     * @return int|null
+     */
+    private function getOrCreateScriptConversation($user_id, $script_id, $script_name, $model, $temperature, $max_tokens)
+    {
+        try {
+            if ($script_id) {
+                $existing = $this->db->query_db_first(
+                    "SELECT id
+                     FROM llmConversations
+                     WHERE id_llm_scripts = :sid
+                       AND id_users = :uid
+                       AND IFNULL(model, '') = :model
+                     ORDER BY id DESC
+                     LIMIT 1",
+                    [
+                        ':sid' => $script_id,
+                        ':uid' => $user_id,
+                        ':model' => (string) $model,
+                    ]
+                );
+                if ($existing) {
+                    $this->db->update_by_ids('llmConversations', [
+                        'temperature' => $temperature,
+                        'max_tokens' => $max_tokens,
+                        'title' => '[Script] ' . ($script_name ?: ('Script #' . $script_id)),
+                    ], ['id' => $existing['id']]);
+                    return $existing['id'];
+                }
+            }
+
+            return $this->db->insert('llmConversations', [
+                'id_users' => $user_id,
+                'id_sections' => null,
+                'id_llm_scripts' => $script_id,
+                'title' => '[Script] ' . ($script_name ?: 'Script execution'),
+                'model' => $model,
+                'temperature' => $temperature,
+                'max_tokens' => $max_tokens,
+            ]);
+        } catch (Exception $e) {
+            return null;
+        }
+    }
+
+    /**
      * Save LLM script results to a dataTable.
      * Follows the same pattern as R Serve's save_r_results.
      *
@@ -435,138 +550,6 @@ class LlmScriptService extends BaseLlmService
             'default_temperature' => $config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE,
             'default_max_tokens' => $config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS,
         ];
-    }
-
-    /**
-     * Log an LLM script execution (including tests) as llmConversation messages.
-     * Uses one conversation per script+model+user: finds existing or creates new.
-     * Stores full execution context (template, data_config, variables, interpolated prompt).
-     *
-     * @param int|null $id_llm_scripts Script ID (null for ad-hoc tests)
-     * @param string $script_name Script name or title
-     * @param array $result Result array from execute_llm_script (includes 'context')
-     * @param string|null $model Model used
-     * @param float|null $temperature Temperature used
-     * @param int|null $max_tokens Max tokens used
-     */
-    public function log_script_execution($id_llm_scripts, $script_name, $result, $model = null, $temperature = null, $max_tokens = null)
-    {
-        try {
-            $config = $this->getLlmConfig();
-            $use_model = $model ?: ($config['llm_default_model'] ?? LLM_DEFAULT_MODEL);
-            $use_temperature = $temperature !== null ? $temperature : ($config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE);
-            $use_max_tokens = $max_tokens !== null ? $max_tokens : ($config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS);
-
-            $user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            if (!$user_id) {
-                return;
-            }
-
-            $conversation_id = null;
-            $title = '[Script] ' . $script_name;
-
-            if ($id_llm_scripts) {
-                $existing = $this->db->query_db_first(
-                    "SELECT id
-                     FROM llmConversations
-                     WHERE id_llm_scripts = :sid
-                       AND id_users = :uid
-                       AND IFNULL(model, '') = :model
-                     ORDER BY id DESC
-                     LIMIT 1",
-                    array(
-                        ':sid' => $id_llm_scripts,
-                        ':uid' => $user_id,
-                        ':model' => (string)$use_model,
-                    )
-                );
-                if ($existing) {
-                    $conversation_id = $existing['id'];
-                    $this->db->update_by_ids('llmConversations', [
-                        'temperature' => $use_temperature,
-                        'max_tokens' => $use_max_tokens,
-                        'title' => $title,
-                    ], ['id' => $conversation_id]);
-                }
-            }
-
-            if (!$conversation_id) {
-                $conversation_id = $this->db->insert('llmConversations', [
-                    'id_users' => $user_id,
-                    'id_sections' => null,
-                    'id_llm_scripts' => $id_llm_scripts,
-                    'title' => $title,
-                    'model' => $use_model,
-                    'temperature' => $use_temperature,
-                    'max_tokens' => $use_max_tokens,
-                ]);
-            }
-
-            if (!$conversation_id) {
-                return;
-            }
-
-            $context = isset($result['context']) ? $result['context'] : [];
-            $interpolated_prompt = isset($context['interpolated_prompt']) ? $context['interpolated_prompt'] : '';
-
-            $sent_context = json_encode([
-                'script_template' => $context['script_template'] ?? '',
-                'data_config' => $context['data_config'] ?? [],
-                'test_variables' => $context['test_variables'] ?? [],
-                'data_config_values' => $context['data_config_values'] ?? [],
-                'merged_variables' => $context['merged_variables'] ?? [],
-                'interpolated_prompt' => $interpolated_prompt,
-            ]);
-
-            $this->db->insert('llmMessages', [
-                'id_llmConversations' => $conversation_id,
-                'role' => 'user',
-                'content' => $interpolated_prompt ?: ($context['script_template'] ?? ''),
-                'model' => $use_model,
-                'sent_context' => $sent_context,
-            ]);
-
-            if ($result['result'] && isset($result['data'])) {
-                $content = is_array($result['data'])
-                    ? ($result['data']['content'] ?? json_encode($result['data']))
-                    : (string)$result['data'];
-
-                $raw_response = isset($result['data']['raw_response']) ? $result['data']['raw_response'] : null;
-                $tokens_used = isset($result['data']['tokens_used']) ? $result['data']['tokens_used'] : null;
-
-                $request_payload = json_encode([
-                    'model' => $use_model,
-                    'messages' => [['role' => 'user', 'content' => $interpolated_prompt]],
-                    'temperature' => $use_temperature,
-                    'max_tokens' => $use_max_tokens,
-                    'stream' => false,
-                ]);
-
-                $this->db->insert('llmMessages', [
-                    'id_llmConversations' => $conversation_id,
-                    'role' => 'assistant',
-                    'content' => $content,
-                    'model' => $use_model,
-                    'tokens_used' => $tokens_used,
-                    'raw_response' => $raw_response,
-                    'request_payload' => $request_payload,
-                ]);
-            } else {
-                $error_content = is_array($result['data'])
-                    ? json_encode($result['data'])
-                    : (string)$result['data'];
-
-                $this->db->insert('llmMessages', [
-                    'id_llmConversations' => $conversation_id,
-                    'role' => 'assistant',
-                    'content' => '[Error] ' . $error_content,
-                    'model' => $use_model,
-                    'is_validated' => 0,
-                ]);
-            }
-        } catch (Exception $e) {
-            // Logging should not break the main flow
-        }
     }
 
     /**
