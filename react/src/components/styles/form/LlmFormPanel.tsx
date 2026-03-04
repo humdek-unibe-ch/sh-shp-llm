@@ -26,6 +26,32 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [closed, setClosed] = useState(false);
   const [freshResponse, setFreshResponse] = useState(false);
   const recordIdRef = useRef<string | null>(null);
+  const requestInFlightRef = useRef(false);
+  const disabledElementsRef = useRef<HTMLElement[]>([]);
+
+  const setSubmissionLock = useCallback((locked: boolean) => {
+    if (locked) {
+      const elements = formContainer.querySelectorAll(
+        'button, input[type="submit"], input[type="button"]'
+      );
+      const toDisable: HTMLElement[] = [];
+      elements.forEach((el) => {
+        const element = el as HTMLElement;
+        const htmlEl = element as HTMLButtonElement | HTMLInputElement;
+        if (htmlEl.disabled) return;
+        htmlEl.disabled = true;
+        toDisable.push(element);
+      });
+      disabledElementsRef.current = toDisable;
+      return;
+    }
+
+    disabledElementsRef.current.forEach((element) => {
+      const htmlEl = element as HTMLButtonElement | HTMLInputElement;
+      htmlEl.disabled = false;
+    });
+    disabledElementsRef.current = [];
+  }, [formContainer]);
 
   const applyButtonSizing = useCallback(() => {
     const root = formContainer.closest('.llm-form-root') || formContainer;
@@ -44,12 +70,16 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [config.useSmallButtons, formContainer]);
 
   const submitFormWithLlm = useCallback(async (form: HTMLFormElement) => {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
+
     const formData = new FormData(form);
     formData.append('__llm_form', '1');
 
     setLoading(true);
     setError(null);
     setClosed(false);
+    setSubmissionLock(true);
 
     try {
       const response = await fetch(form.action || window.location.href, {
@@ -77,13 +107,20 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         setError(msg);
       }
     } finally {
+      requestInFlightRef.current = false;
+      setSubmissionLock(false);
       setLoading(false);
     }
-  }, [config]);
+  }, [config, setSubmissionLock]);
 
   const handleFormSubmit = useCallback((e: Event) => {
     const form = e.target as HTMLFormElement;
     if (!form || !config.llmEnabled) return;
+    if (requestInFlightRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     const formData = new FormData(form);
     const submittedName = formData.get('__form_name');
@@ -121,9 +158,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [config, formName, submitFormWithLlm]);
 
   const handleRegenerate = useCallback(async () => {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
     setLoading(true);
     setError(null);
     setClosed(false);
+    setSubmissionLock(true);
 
     const formData = new FormData();
     formData.append('__llm_action', 'regenerate');
@@ -155,14 +195,19 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         setError(msg);
       }
     } finally {
+      requestInFlightRef.current = false;
+      setSubmissionLock(false);
       setLoading(false);
     }
-  }, [config]);
+  }, [config, setSubmissionLock]);
 
   const handleRetry = useCallback(async () => {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
     setLoading(true);
     setError(null);
     setClosed(false);
+    setSubmissionLock(true);
 
     const formData = new FormData();
     formData.append('__llm_action', 'retry');
@@ -194,9 +239,11 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         setError(msg);
       }
     } finally {
+      requestInFlightRef.current = false;
+      setSubmissionLock(false);
       setLoading(false);
     }
-  }, [config]);
+  }, [config, setSubmissionLock]);
 
   useEffect(() => {
     const forms = formContainer.querySelectorAll('form.selfHelp-form');
@@ -216,8 +263,10 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       forms.forEach((form) => {
         form.removeEventListener('submit', handler, true);
       });
+      requestInFlightRef.current = false;
+      setSubmissionLock(false);
     };
-  }, [formContainer, handleFormSubmit]);
+  }, [formContainer, handleFormSubmit, setSubmissionLock]);
 
   useEffect(() => {
     applyButtonSizing();
