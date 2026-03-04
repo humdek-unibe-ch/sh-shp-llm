@@ -46,6 +46,7 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
   const extraCss = config.llmResultCss || '';
   const mobileCss = config.llmResultCssMobile || '';
   const containerClasses = `llm-result-panel llm-result-panel--${config.llmResultPanel} ${extraCss} ${mobileCss}`.trim();
+  const buttonSizeClass = config.useSmallButtons ? 'btn-sm' : '';
 
   const renderContent = () => (
     <>
@@ -79,7 +80,7 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
           {onRetry && error && (
             <button
               type="button"
-              className="btn btn-outline-secondary btn-sm mr-2"
+              className={`btn btn-outline-secondary ${buttonSizeClass} mr-2`.trim()}
               onClick={onRetry}
               disabled={loading}
             >
@@ -90,7 +91,7 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
           {onRegenerate && result && (
             <button
               type="button"
-              className="btn btn-outline-primary btn-sm mr-2"
+              className={`btn btn-outline-primary ${buttonSizeClass} mr-2`.trim()}
               onClick={onRegenerate}
               disabled={loading}
             >
@@ -103,14 +104,18 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
 
       {!loading && meta && meta.status === 'success' && (
         <div className="llm-result-meta mt-2 small text-muted">
-          {/* <span className="mr-3">
-            <i className="fas fa-robot mr-1"></i>{meta.model}
-          </span>
-          {meta.tokens_used > 0 && (
-            <span className="mr-3">
-              <i className="fas fa-coins mr-1"></i>{meta.tokens_used} tokens
-            </span>
-          )} */}
+          {config.debug && (
+            <>
+              <span className="mr-3">
+                <i className="fas fa-robot mr-1"></i>{meta.model}
+              </span>
+              {meta.tokens_used > 0 && (
+                <span className="mr-3">
+                  <i className="fas fa-coins mr-1"></i>{meta.tokens_used} tokens
+                </span>
+              )}
+            </>
+          )}
           <span>
             <i className="fas fa-clock mr-1"></i>{meta.timestamp}
           </span>
