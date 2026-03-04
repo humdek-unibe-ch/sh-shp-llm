@@ -71,7 +71,9 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
   const submitFormWithLlm = useCallback(async (form: HTMLFormElement) => {
     if (requestInFlightRef.current) return;
+    if (form.dataset.llmSubmitting === '1') return;
     requestInFlightRef.current = true;
+    form.dataset.llmSubmitting = '1';
 
     const formData = new FormData(form);
     formData.append('__llm_form', '1');
@@ -107,6 +109,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         setError(msg);
       }
     } finally {
+      delete form.dataset.llmSubmitting;
       requestInFlightRef.current = false;
       setSubmissionLock(false);
       setLoading(false);
@@ -114,9 +117,10 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [config, setSubmissionLock]);
 
   const handleFormSubmit = useCallback((e: Event) => {
+    if (e.defaultPrevented) return;
     const form = e.target as HTMLFormElement;
     if (!form || !config.llmEnabled) return;
-    if (requestInFlightRef.current) {
+    if (requestInFlightRef.current || form.dataset.llmSubmitting === '1') {
       e.preventDefault();
       e.stopPropagation();
       return;

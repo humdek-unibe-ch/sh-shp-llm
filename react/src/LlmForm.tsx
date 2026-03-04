@@ -26,6 +26,8 @@ function parseLlmFormConfig(container: HTMLElement): LlmFormConfig | null {
 }
 
 function initializeLlmForm(container: HTMLElement, index: number): void {
+  if (container.dataset.llmInitialized === '1') return;
+
   const config = parseLlmFormConfig(container);
   if (!config || !config.llmEnabled) return;
 
@@ -35,15 +37,15 @@ function initializeLlmForm(container: HTMLElement, index: number): void {
 
   const formName = container.getAttribute('data-form-name') || '';
 
+  container.dataset.llmInitialized = '1';
+
   const root = ReactDOM.createRoot(resultContainerEl as HTMLElement);
   root.render(
-    <React.StrictMode>
-      <LlmFormPanel
-        config={config}
-        formContainer={formContentEl as HTMLElement}
-        formName={formName}
-      />
-    </React.StrictMode>
+    <LlmFormPanel
+      config={config}
+      formContainer={formContentEl as HTMLElement}
+      formName={formName}
+    />
   );
 }
 
