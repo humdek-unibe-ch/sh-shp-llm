@@ -22,6 +22,16 @@ interface ContextPopupProps {
   onHide: () => void;
 }
 
+interface ContextMessageItem {
+  role: string;
+  content: string;
+}
+
+interface NormalizedContext {
+  messages: ContextMessageItem[];
+  metadata: Record<string, unknown> | null;
+}
+
 export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHide }) => {
   const [copied, setCopied] = useState(false);
   const [copyType, setCopyType] = useState<'raw' | 'formatted'>('formatted');
@@ -34,6 +44,72 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
 
   if (!show) return null;
 
+  const normalizeMessages = (value: unknown): ContextMessageItem[] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .filter((item) => typeof item.content === 'string' && item.content.trim() !== '')
+      .map((item) => ({
+        role: typeof item.role === 'string' ? item.role : 'system',
+        content: String(item.content),
+      }));
+  };
+
+  const normalizeContext = (parsed: unknown): NormalizedContext => {
+    if (Array.isArray(parsed)) {
+      return { messages: normalizeMessages(parsed), metadata: null };
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+
+      // Centralized logging wrapper: metadata + llm_context (array of role/content messages)
+      if (Array.isArray(obj.llm_context)) {
+        const { llm_context, ...metaRest } = obj;
+        return {
+          messages: normalizeMessages(llm_context),
+          metadata: Object.keys(metaRest).length > 0 ? metaRest : null,
+        };
+      }
+
+      // Fallbacks for other wrapper names
+      if (Array.isArray(obj.messages)) {
+        const { messages, ...metaRest } = obj;
+        return {
+          messages: normalizeMessages(messages),
+          metadata: Object.keys(metaRest).length > 0 ? metaRest : null,
+        };
+      }
+      if (Array.isArray(obj.context_messages)) {
+        const { context_messages, ...metaRest } = obj;
+        return {
+          messages: normalizeMessages(context_messages),
+          metadata: Object.keys(metaRest).length > 0 ? metaRest : null,
+        };
+      }
+
+      // Single message object
+      if (typeof obj.content === 'string' && obj.content.trim() !== '') {
+        return {
+          messages: [
+            {
+              role: typeof obj.role === 'string' ? obj.role : 'system',
+              content: obj.content,
+            },
+          ],
+          metadata: null,
+        };
+      }
+    }
+
+    return { messages: [], metadata: null };
+  };
+
+  const renderRoleIcon = (role: string) =>
+    role === 'system' ? 'fa-cogs' : role === 'user' ? 'fa-user' : 'fa-robot';
+
+  const formatRole = (role: string) => role.charAt(0).toUpperCase() + role.slice(1);
+
   const handleCopy = async (type: 'raw' | 'formatted') => {
     if (message.sent_context) {
       try {
@@ -42,17 +118,18 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
         if (type === 'formatted') {
           try {
             const parsed = JSON.parse(message.sent_context);
-            if (Array.isArray(parsed)) {
-              textToCopy = parsed
-                .filter((item) => item && typeof item === 'object' && item.content)
+            const normalized = normalizeContext(parsed);
+            if (normalized.messages.length > 0) {
+              const metaText = normalized.metadata
+                ? `[METADATA]\n${JSON.stringify(normalized.metadata, null, 2)}\n\n---\n\n`
+                : '';
+              const messagesText = normalized.messages
                 .map((item) => {
                   const plainText = item.content.replace(/<[^>]*>/g, '');
-                  return `[${item.role?.toUpperCase() || 'SYSTEM'}]\n${plainText}`;
+                  return `[${item.role.toUpperCase()}]\n${plainText}`;
                 })
                 .join('\n\n---\n\n');
-            } else if (parsed && typeof parsed === 'object' && parsed.content) {
-              const plainText = parsed.content.replace(/<[^>]*>/g, '');
-              textToCopy = `[${parsed.role?.toUpperCase() || 'SYSTEM'}]\n${plainText}`;
+              textToCopy = `${metaText}${messagesText}`;
             }
           } catch {
             // Keep original if not JSON
@@ -119,21 +196,38 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
   const parseContext = (context: string) => {
     try {
       const parsed = JSON.parse(context);
+      const normalized = normalizeContext(parsed);
 
       // Script execution context (has script_template or interpolated_prompt)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed.script_template || parsed.interpolated_prompt)) {
         return renderScriptContext(parsed);
       }
 
-      if (Array.isArray(parsed)) {
-        const validMessages = parsed
-          .filter((item) => item && typeof item === 'object' && item.content)
-          .map((item, index) => (
+      if (normalized.messages.length > 0) {
+        const cards: JSX.Element[] = [];
+
+        if (normalized.metadata) {
+          cards.push(
+            <div key="ctx-meta" className="card mb-3">
+              <div className="card-header bg-light py-2 d-flex align-items-center">
+                <i className="fas fa-info-circle mr-2 text-info"></i>
+                <span className="font-weight-bold text-uppercase small">Context Metadata</span>
+              </div>
+              <div className="card-body py-3">
+                <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.85rem' }}>
+                  {JSON.stringify(normalized.metadata, null, 2)}
+                </pre>
+              </div>
+            </div>
+          );
+        }
+
+        const messageCards = normalized.messages.map((item, index) => (
             <div key={index} className="card mb-3">
               <div className="card-header bg-light py-2 d-flex align-items-center">
-                <i className={`fas ${item.role === 'system' ? 'fa-cogs' : item.role === 'user' ? 'fa-user' : 'fa-robot'} mr-2 text-info`}></i>
+                <i className={`fas ${renderRoleIcon(item.role)} mr-2 text-info`}></i>
                 <span className="font-weight-bold text-uppercase small">
-                  {item.role?.charAt(0).toUpperCase() + item.role?.slice(1) || 'System'}
+                  {formatRole(item.role)}
                 </span>
               </div>
               <div className="card-body py-3">
@@ -142,21 +236,7 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
             </div>
           ));
 
-        if (validMessages.length > 0) return validMessages;
-      } else if (parsed && typeof parsed === 'object' && parsed.content) {
-        return (
-          <div className="card">
-            <div className="card-header bg-light py-2 d-flex align-items-center">
-              <i className={`fas ${parsed.role === 'system' ? 'fa-cogs' : parsed.role === 'user' ? 'fa-user' : 'fa-robot'} mr-2 text-info`}></i>
-              <span className="font-weight-bold text-uppercase small">
-                {parsed.role?.charAt(0).toUpperCase() + parsed.role?.slice(1) || 'System'}
-              </span>
-            </div>
-            <div className="card-body py-3">
-              {renderContent(parsed.content)}
-            </div>
-          </div>
-        );
+        return [...cards, ...messageCards];
       }
     } catch {
       // Not JSON
