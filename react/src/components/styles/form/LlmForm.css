@@ -10,6 +10,17 @@
   position: relative;
 }
 
+/* Small buttons mode applies to the full form UI (submit/cancel/actions). */
+.llm-form-root.llm-form-use-small-buttons .btn,
+.llm-form-root.llm-form-use-small-buttons button,
+.llm-form-root.llm-form-use-small-buttons input[type="button"],
+.llm-form-root.llm-form-use-small-buttons input[type="submit"] {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  border-radius: 0.2rem;
+}
+
 /* Placement: top */
 .llm-form-root[data-placement="top"] {
   display: flex;

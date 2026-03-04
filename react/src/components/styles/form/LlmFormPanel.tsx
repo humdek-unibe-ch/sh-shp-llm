@@ -27,6 +27,22 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [freshResponse, setFreshResponse] = useState(false);
   const recordIdRef = useRef<string | null>(null);
 
+  const applyButtonSizing = useCallback(() => {
+    const root = formContainer.closest('.llm-form-root') || formContainer;
+    const btnElements = root.querySelectorAll(
+      '.btn, button[type="submit"], button[type="button"], input[type="submit"], input[type="button"]'
+    );
+
+    btnElements.forEach((el) => {
+      const element = el as HTMLElement;
+      if (config.useSmallButtons) {
+        element.classList.add('btn-sm');
+      } else {
+        element.classList.remove('btn-sm');
+      }
+    });
+  }, [config.useSmallButtons, formContainer]);
+
   const submitFormWithLlm = useCallback(async (form: HTMLFormElement) => {
     const formData = new FormData(form);
     formData.append('__llm_form', '1');
@@ -202,6 +218,10 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       });
     };
   }, [formContainer, handleFormSubmit]);
+
+  useEffect(() => {
+    applyButtonSizing();
+  }, [applyButtonSizing, loading, result, error]);
 
   if (closed && config.llmResultClosable) {
     return null;

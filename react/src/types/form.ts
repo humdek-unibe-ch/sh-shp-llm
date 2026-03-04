@@ -19,6 +19,8 @@ export interface LlmFormConfig {
   llmRegenerateEnabled: boolean;
   llmRegenerateLabel: string;
   llmGeneratingText: string;
+  useSmallButtons: boolean;
+  debug: boolean;
   llmShowPreviousResult: boolean;
   llmResultFieldName: string;
   previousResult: string | null;

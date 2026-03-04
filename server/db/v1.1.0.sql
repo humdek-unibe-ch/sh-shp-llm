@@ -61,7 +61,8 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_retry_label', get_field_type_id('text'), '1'),
 (NULL, 'llm_regenerate_enabled', get_field_type_id('checkbox'), '0'),
 (NULL, 'llm_regenerate_label', get_field_type_id('text'), '1'),
-(NULL, 'llm_generating_text', get_field_type_id('text'), '1');
+(NULL, 'llm_generating_text', get_field_type_id('text'), '1'),
+(NULL, 'use_small_buttons', get_field_type_id('checkbox'), '0');
 
 -- =====================================================
 -- REGISTER llmFormRecord STYLE
@@ -86,7 +87,8 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmFormRecord'), get_field_id('label_cancel'), 'Cancel', 'Label for cancel button in confirmation dialog.'),
 (get_style_id('llmFormRecord'), get_field_id('label_continue'), 'OK', 'Label for continue/confirm button in confirmation dialog.'),
 (get_style_id('llmFormRecord'), get_field_id('label_message'), '', 'Confirmation message body.'),
-(get_style_id('llmFormRecord'), get_field_id('url_cancel'), '', 'URL to redirect to when cancel is clicked in the confirmation dialog.');
+(get_style_id('llmFormRecord'), get_field_id('url_cancel'), '', 'URL to redirect to when cancel is clicked in the confirmation dialog.'),
+(get_style_id('llmFormRecord'), get_field_id('use_small_buttons'), '1', 'Use Bootstrap small buttons (`btn-sm`) for all buttons in the form UI.');
 
 -- Link LLM-specific fields to llmFormRecord
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
@@ -134,7 +136,8 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmFormLog'), get_field_id('label_cancel'), 'Cancel', 'Label for cancel button in confirmation dialog.'),
 (get_style_id('llmFormLog'), get_field_id('label_continue'), 'OK', 'Label for continue/confirm button in confirmation dialog.'),
 (get_style_id('llmFormLog'), get_field_id('label_message'), '', 'Confirmation message body.'),
-(get_style_id('llmFormLog'), get_field_id('url_cancel'), '', 'URL to redirect to when cancel is clicked in the confirmation dialog.');
+(get_style_id('llmFormLog'), get_field_id('url_cancel'), '', 'URL to redirect to when cancel is clicked in the confirmation dialog.'),
+(get_style_id('llmFormLog'), get_field_id('use_small_buttons'), '1', 'Use Bootstrap small buttons (`btn-sm`) for all buttons in the form UI.');
 
 -- Link LLM-specific fields to llmFormLog (same defaults as llmFormRecord)
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES

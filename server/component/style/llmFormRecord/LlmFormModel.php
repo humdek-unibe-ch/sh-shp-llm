@@ -32,6 +32,7 @@ class LlmFormModel extends FormUserInputModel
     private $llm_regenerate_enabled;
     private $llm_regenerate_label;
     private $llm_generating_text;
+    private $use_small_buttons;
 
     /* Constructors ***********************************************************/
 
@@ -66,6 +67,7 @@ class LlmFormModel extends FormUserInputModel
         $this->llm_regenerate_enabled = $this->get_db_field('llm_regenerate_enabled', '1');
         $this->llm_regenerate_label = $this->get_db_field('llm_regenerate_label', 'Regenerate');
         $this->llm_generating_text = $this->get_db_field('llm_generating_text', 'Generating response...');
+        $this->use_small_buttons = $this->get_db_field('use_small_buttons', '1');
     }
 
     /* Public Getters *********************************************************/
@@ -173,6 +175,11 @@ class LlmFormModel extends FormUserInputModel
         return $this->llm_generating_text;
     }
 
+    public function isUseSmallButtons()
+    {
+        return $this->use_small_buttons === '1';
+    }
+
     /**
      * Get the previous LLM result from the stored record data.
      *
@@ -245,6 +252,8 @@ class LlmFormModel extends FormUserInputModel
             'llmRegenerateEnabled' => $this->isRegenerateEnabled(),
             'llmRegenerateLabel' => $this->getRegenerateLabel(),
             'llmGeneratingText' => $this->getGeneratingText(),
+            'useSmallButtons' => $this->isUseSmallButtons(),
+            'debug' => defined('DEBUG') && DEBUG,
             'llmShowPreviousResult' => $this->isShowPreviousResult(),
             'llmResultFieldName' => $this->getLlmResultFieldName(),
             'previousResult' => $this->getPreviousLlmResult(),

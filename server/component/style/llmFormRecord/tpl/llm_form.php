@@ -7,9 +7,11 @@ $llm_config = $this->getLlmReactConfig();
 $section_id = $this->model->get_section_id();
 $form_name = $this->model->get_db_field('name', '');
 $placement = $this->model->getLlmResultPlacement();
+$use_small_buttons = method_exists($this->model, 'isUseSmallButtons') && $this->model->isUseSmallButtons();
+$root_classes = 'llm-form-root style-section-' . $section_id . ($use_small_buttons ? ' llm-form-use-small-buttons' : '');
 ?>
 <!-- LLM Form Container -->
-<div class="llm-form-root style-section-<?php echo $section_id; ?>"
+<div class="<?php echo htmlspecialchars($root_classes, ENT_QUOTES, 'UTF-8'); ?>"
      data-section-id="<?php echo $section_id; ?>"
      data-form-name="<?php echo htmlspecialchars($form_name, ENT_QUOTES, 'UTF-8'); ?>"
      data-placement="<?php echo htmlspecialchars($placement, ENT_QUOTES, 'UTF-8'); ?>"
