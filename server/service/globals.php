@@ -118,6 +118,11 @@ define('LLM_DEFAULT_NEW_CHAT_LABEL', 'New Conversation');
 // Admin page keywords
 define('PAGE_LLM_CONFIG', 'sh_module_llm');
 
+// LLM Form constants
+define('TRANSACTION_BY_LLM_FORM', 'by_llm_form');
+define('LLM_FORM_DEFAULT_RESULT_FIELD', 'llm_result');
+define('LLM_FORM_DEFAULT_META_FIELD', 'llm_result_meta');
+
 /**
  * Get the file type category based on extension
  *

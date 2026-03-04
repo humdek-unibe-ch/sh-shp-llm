@@ -1,0 +1,183 @@
+/**
+ * LLM Form Styles
+ * ===============
+ * Clean, professional styling for the LLM result panel.
+ * Uses Bootstrap 4.6 as the baseline with minimal custom additions.
+ */
+
+/* Container layout for placement */
+.llm-form-root {
+  position: relative;
+}
+
+/* Placement: top */
+.llm-form-root[data-placement="top"] {
+  display: flex;
+  flex-direction: column;
+}
+.llm-form-root[data-placement="top"] .llm-result-container {
+  order: -1;
+  margin-bottom: 1rem;
+}
+
+/* Placement: bottom (default) */
+.llm-form-root[data-placement="bottom"] .llm-result-container {
+  margin-top: 1rem;
+}
+
+/* Placement: left */
+.llm-form-root[data-placement="left"] {
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+}
+.llm-form-root[data-placement="left"] .llm-form-content {
+  flex: 1;
+  order: 1;
+}
+.llm-form-root[data-placement="left"] .llm-result-container {
+  flex: 1;
+  order: 0;
+}
+
+/* Placement: right */
+.llm-form-root[data-placement="right"] {
+  display: flex;
+  flex-direction: row;
+  gap: 1rem;
+}
+.llm-form-root[data-placement="right"] .llm-form-content {
+  flex: 1;
+}
+.llm-form-root[data-placement="right"] .llm-result-container {
+  flex: 1;
+}
+
+/* Result panel base */
+.llm-result-panel {
+  margin: 0.5rem 0;
+  transition: all 0.3s ease;
+}
+
+.llm-result-panel--default {
+  padding: 1rem;
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+  background-color: #fff;
+}
+
+.llm-result-panel--card {
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+}
+.llm-result-panel--card .card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  padding: 0.75rem 1rem;
+}
+.llm-result-panel--card .card-body {
+  padding: 1rem;
+}
+
+.llm-result-panel--collapse {
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  background-color: #fff;
+}
+.llm-result-collapse-header {
+  user-select: none;
+}
+.llm-result-collapse-header:hover {
+  color: #0056b3;
+}
+.llm-result-collapse-body {
+  padding-top: 0.75rem;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 0.5rem;
+}
+
+/* Loading state */
+.llm-result-loading {
+  min-height: 60px;
+}
+
+/* Result content - markdown rendered */
+.llm-result-content {
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.llm-result-content p:last-child {
+  margin-bottom: 0;
+}
+.llm-result-content pre {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.llm-result-content code {
+  font-size: 0.875em;
+}
+.llm-result-content table {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+.llm-result-content table th,
+.llm-result-content table td {
+  padding: 0.5rem;
+  border: 1px solid #dee2e6;
+}
+.llm-result-content table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+}
+
+/* Meta info */
+.llm-result-meta {
+  border-top: 1px solid #f0f0f0;
+  padding-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+/* Title styling */
+.llm-result-title {
+  font-size: 1rem;
+  color: #333;
+}
+
+/* Action buttons */
+.llm-result-actions .btn {
+  font-size: 0.8rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .llm-form-root[data-placement="left"],
+  .llm-form-root[data-placement="right"] {
+    flex-direction: column;
+  }
+  .llm-form-root[data-placement="left"] .llm-result-container,
+  .llm-form-root[data-placement="right"] .llm-result-container {
+    order: 1;
+  }
+}
+
+/* Animation for result appearance */
+@keyframes llm-result-fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.llm-result-content {
+  animation: llm-result-fadeIn 0.3s ease-out;
+}

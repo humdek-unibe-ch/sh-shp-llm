@@ -2,6 +2,67 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.1.0] - 2026-03-04
+
+### New Styles
+
+- **`llmFormRecord`** — LLM-enhanced form in record mode. Extends the core `formUserInputRecord` pattern. On form submit, stores data normally and sends an LLM request with configurable context interpolation. The LLM result is displayed in a configurable panel alongside the form.
+- **`llmFormLog`** — LLM-enhanced form in log mode. Extends the core `formUserInputLog` pattern. Each submission creates a new log entry with both the form data and the LLM response.
+
+### New Fields (LLM Form Configuration)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `llm_enabled` | checkbox | `1` | Enable/disable LLM generation per form |
+| `llm_model` | select-llm-model | (global default) | Model to use for generation |
+| `llm_temperature` | text | `1` | Randomness control (0-2) |
+| `llm_max_tokens` | number | `2048` | Max tokens for LLM response |
+| `llm_context` | markdown | (empty) | Prompt template with `{{field_name}}` interpolation |
+| `llm_show_previous_result` | checkbox | `1` (record) / `0` (log) | Show previously generated result on refresh |
+| `llm_result_field_name` | text | `llm_result` | Storage field name for LLM result text |
+| `llm_result_meta_field_name` | text | `llm_result_meta` | Storage field name for result metadata JSON |
+| `llm_result_placement` | select | `bottom` | Panel position: top, bottom, left, right |
+| `llm_result_panel` | select | `card` | Panel type: default, card, modal, collapse |
+| `llm_result_title` | text | `Result` | Panel title/label (translatable) |
+| `llm_result_closable` | checkbox | `1` | Allow dismissing the result panel |
+| `llm_result_css` | text | (empty) | Additional Bootstrap/CSS classes for result container |
+| `llm_result_css_mobile` | text | (empty) | Mobile-specific CSS classes |
+| `llm_show_errors` | checkbox | `1` | Show error alerts on LLM failure |
+| `llm_retry_enabled` | checkbox | `1` | Allow retrying without resubmitting |
+| `llm_retry_label` | text | `Retry` | Retry button label (translatable) |
+| `llm_regenerate_enabled` | checkbox | `1` | Allow regenerating from saved data |
+| `llm_regenerate_label` | text | `Regenerate` | Regenerate button label (translatable) |
+| `llm_generating_text` | text | `Generating response...` | Loading indicator text (translatable) |
+
+### Features
+
+- **Context Interpolation** — `llm_context` supports `{{field_name}}` placeholders replaced with submitted form values at runtime (e.g., `"Our user {{name}} needs help with {{topic}}"`)
+- **Language-Aware Responses** — Automatically adds the user's selected session language to the LLM context for localized output
+- **Configurable Result Panel** — Four panel types (inline, card, modal, collapse) with four placement options, custom CSS classes, closable behavior
+- **Retry & Regenerate** — Retry on error (same saved data, new LLM call) or regenerate successful results; both update the stored record
+- **Error Handling UX** — Clean Bootstrap alerts on LLM failure with configurable visibility
+- **Previous Result Display** — Optionally show the last generated LLM result when the form reloads
+- **Result Metadata** — Stores model, temperature, token usage, timestamp, and status as JSON alongside the result text
+- **Audit Logging** — All LLM interactions logged to `llmMessages` table via existing conversation infrastructure
+- **Confirmation Dialog** — Preserves the core `$.confirm` modal behavior from `formUserInput`
+- **Always AJAX** — LLM forms always submit via AJAX to receive the LLM response inline
+
+### Database
+
+- New lookup enums: `llmResultPlacement` (top/bottom/left/right), `llmResultPanel` (default/card/modal/collapse)
+- New field types: `select-llm-result-placement`, `select-llm-result-panel`
+- CMS hooks for placement and panel field selection dropdowns
+- Transaction type: `by_llm_form`
+
+### Architecture
+
+- **LlmFormModel** extends `FormUserInputModel` — adds LLM config getters, previous result retrieval
+- **LlmFormView** extends `FormUserInputView` — wraps form output with React container div
+- **LlmFormController** extends `FormUserInputController` — intercepts save, calls LLM, handles regenerate
+- **React bundle** `llm-form.umd.js` — separate Vite build for the form result panel UI
+- **LlmResultDisplay** React component — renders result in the configured panel type with markdown formatting
+- Reuses existing `MarkdownRenderer` from the chat module for consistent markdown rendering
+
 ## [1.0.0] - 2026-02-26
 
 Initial release of the SelfHelp LLM plugin. Provides a complete AI chat integration layer for SelfHelp CMS with structured responses, multi-provider support, and an admin console.

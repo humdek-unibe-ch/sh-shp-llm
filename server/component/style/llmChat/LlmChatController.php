@@ -1526,6 +1526,7 @@ class LlmChatController extends BaseController
         try {
             $section_id = $this->model->getSectionId();
             $save_mode = $this->model->getDataSaveMode();
+            $own_entries_only = $this->model->getOwnEntriesOnly();
 
             $record_id = $this->data_saving_service->saveFormData(
                 $section_id,
@@ -1534,7 +1535,8 @@ class LlmChatController extends BaseController
                 [],
                 $message_id,
                 $conversation_id,
-                $save_mode
+                $save_mode,
+                $own_entries_only
             );
 
             if ($record_id) {

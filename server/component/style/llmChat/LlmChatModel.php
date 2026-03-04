@@ -135,6 +135,9 @@ class LlmChatModel extends StyleModel
     private $enable_speech_to_text;
     private $speech_to_text_model;
 
+    // Own entries only - only update user's own data
+    private $own_entries_only;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -293,6 +296,9 @@ class LlmChatModel extends StyleModel
         // Speech-to-text configuration
         $this->enable_speech_to_text = $this->get_db_field('enable_speech_to_text', '0');
         $this->speech_to_text_model = $this->get_db_field('speech_to_text_model', '');
+
+        // Own entries only - only update user's own data
+        $this->own_entries_only = $this->get_db_field('own_entries_only', '1');
 
         // Initialize dataTable for this section if data saving is enabled
         $this->initializeDataTableIfNeeded();
@@ -1475,6 +1481,16 @@ EOT;
             uopz_allow_exit(true);
         }
         exit(0);
+    }
+
+    /**
+     * Check if own entries only is enabled
+     *
+     * @return bool True if own entries only is enabled
+     */
+    public function getOwnEntriesOnly()
+    {
+        return $this->own_entries_only === '1';
     }
 
 }

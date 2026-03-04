@@ -741,12 +741,96 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
-        /**
+    /**
      * Get the plugin version
      */
     public function get_plugin_db_version($plugin_name = 'llm')
     {
         return parent::get_plugin_db_version($plugin_name);
+    }
+
+    /* LLM Form Field Hooks ***************************************************/
+
+    /**
+     * Output select LLM result placement field (edit mode).
+     */
+    private function outputSelectLlmResultPlacementField($value, $name, $disabled)
+    {
+        $placements = [
+            ['value' => 'top', 'text' => 'Top'],
+            ['value' => 'bottom', 'text' => 'Bottom'],
+            ['value' => 'left', 'text' => 'Left'],
+            ['value' => 'right', 'text' => 'Right'],
+        ];
+        return new BaseStyleComponent("select", array(
+            "value" => $value,
+            "name" => $name,
+            "is_required" => false,
+            "disabled" => $disabled,
+            "items" => $placements
+        ));
+    }
+
+    private function returnSelectLlmResultPlacementField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        if ($field['type'] !== 'select-llm-result-placement') {
+            return $this->execute_private_method($args);
+        }
+        $value = $this->get_param_by_name($args, 'value');
+        $name = $field['name'];
+        return $this->outputSelectLlmResultPlacementField($value, $name, $disabled);
+    }
+
+    public function outputFieldLlmResultPlacementEdit($args)
+    {
+        return $this->returnSelectLlmResultPlacementField($args, 0);
+    }
+
+    public function outputFieldLlmResultPlacementView($args)
+    {
+        return $this->returnSelectLlmResultPlacementField($args, 1);
+    }
+
+    /**
+     * Output select LLM result panel type field (edit mode).
+     */
+    private function outputSelectLlmResultPanelField($value, $name, $disabled)
+    {
+        $panels = [
+            ['value' => 'default', 'text' => 'Default (Inline)'],
+            ['value' => 'card', 'text' => 'Card'],
+            ['value' => 'modal', 'text' => 'Modal'],
+            ['value' => 'collapse', 'text' => 'Collapse'],
+        ];
+        return new BaseStyleComponent("select", array(
+            "value" => $value,
+            "name" => $name,
+            "is_required" => false,
+            "disabled" => $disabled,
+            "items" => $panels
+        ));
+    }
+
+    private function returnSelectLlmResultPanelField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        if ($field['type'] !== 'select-llm-result-panel') {
+            return $this->execute_private_method($args);
+        }
+        $value = $this->get_param_by_name($args, 'value');
+        $name = $field['name'];
+        return $this->outputSelectLlmResultPanelField($value, $name, $disabled);
+    }
+
+    public function outputFieldLlmResultPanelEdit($args)
+    {
+        return $this->returnSelectLlmResultPanelField($args, 0);
+    }
+
+    public function outputFieldLlmResultPanelView($args)
+    {
+        return $this->returnSelectLlmResultPanelField($args, 1);
     }
 
 }

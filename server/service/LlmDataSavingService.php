@@ -94,7 +94,8 @@ class LlmDataSavingService extends BaseLlmService
         $form_definition = [],
         $message_id = null,
         $conversation_id = null,
-        $mode = 'log'
+        $mode = 'log',
+        $own_entries_only = true
     ) {
         if (empty($form_values) || !is_array($form_values)) {
             return false;
@@ -131,7 +132,7 @@ class LlmDataSavingService extends BaseLlmService
                 $table_name,
                 $data,
                 $updateBasedOn,
-                true // own_entries_only - only update user's own data
+                $own_entries_only // only update user's own data
             );
 
             return $result;
