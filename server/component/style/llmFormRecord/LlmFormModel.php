@@ -266,5 +266,15 @@ class LlmFormModel extends FormUserInputModel
         }
         return null;
     }
+
+    /**
+     * Get the section ID
+     *
+     * @return int Section ID
+     */
+    public function get_section_id()
+    {
+        return $this->section_id;
+    }
 }
 ?>

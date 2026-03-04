@@ -9,7 +9,7 @@ $form_name = $this->model->get_db_field('name', '');
 $placement = $this->model->getLlmResultPlacement();
 ?>
 <!-- LLM Form Container -->
-<div class="llm-form-root"
+<div class="llm-form-root section-<?php echo $section_id; ?>"
      data-section-id="<?php echo $section_id; ?>"
      data-form-name="<?php echo htmlspecialchars($form_name, ENT_QUOTES, 'UTF-8'); ?>"
      data-placement="<?php echo htmlspecialchars($placement, ENT_QUOTES, 'UTF-8'); ?>"
