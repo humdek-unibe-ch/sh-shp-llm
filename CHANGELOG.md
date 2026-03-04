@@ -17,13 +17,13 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 | `llm_model` | select-llm-model | (global default) | Model to use for generation |
 | `llm_temperature` | text | `1` | Randomness control (0-2) |
 | `llm_max_tokens` | number | `2048` | Max tokens for LLM response |
-| `llm_context` | markdown | (empty) | Prompt template with `{{field_name}}` interpolation |
+| `llm_context` | markdown | (empty) | System prompt / instructions for the LLM. Supports `{{field_name}}` interpolation with submitted form values. This is the **system message** sent to the LLM. |
 | `llm_show_previous_result` | checkbox | `1` (record) / `0` (log) | Show previously generated result on refresh |
 | `llm_result_field_name` | text | `llm_result` | Storage field name for LLM result text |
 | `llm_result_meta_field_name` | text | `llm_result_meta` | Storage field name for result metadata JSON |
 | `llm_result_placement` | select | `bottom` | Panel position: top, bottom, left, right |
 | `llm_result_panel` | select | `card` | Panel type: default, card, modal, collapse |
-| `llm_result_title` | text | `Result` | Panel title/label (translatable) |
+| `llm_result_title` | text | `Result` | Panel title/label (translatable, display=1) |
 | `llm_result_closable` | checkbox | `1` | Allow dismissing the result panel |
 | `llm_result_css` | text | (empty) | Additional Bootstrap/CSS classes for result container |
 | `llm_result_css_mobile` | text | (empty) | Mobile-specific CSS classes |
@@ -36,14 +36,18 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Features
 
-- **Context Interpolation** — `llm_context` supports `{{field_name}}` placeholders replaced with submitted form values at runtime (e.g., `"Our user {{name}} needs help with {{topic}}"`)
-- **Language-Aware Responses** — Automatically adds the user's selected session language to the LLM context for localized output
+- **Two-Part Prompt System** — The `llm_context` field serves as the **system prompt** (instructions/persona). The submitted form data is automatically formatted as a structured **user message** sent alongside the system prompt. This separation gives clear control over the LLM's behavior and the data it processes.
+- **Context Interpolation** — `llm_context` supports `{{field_name}}` placeholders replaced with submitted form values at runtime (e.g., `"You are a coach. The student answered: {{reflection}}"`)
+- **Language-Aware Responses** — Automatically appends the user's selected session language to the system prompt for localized output
+- **DataTable Auto-Creation** — When an llmFormRecord/llmFormLog section is created, the corresponding dataTable is automatically created with the form name as `displayName`. Changing the form name updates the displayName.
 - **Configurable Result Panel** — Four panel types (inline, card, modal, collapse) with four placement options, custom CSS classes, closable behavior
-- **Retry & Regenerate** — Retry on error (same saved data, new LLM call) or regenerate successful results; both update the stored record
+- **Smart Modal Behavior** — Modal panel only opens for fresh LLM responses; on page refresh, previous results render as an inline card instead of blocking the view
+- **Empty State** — When there is no result (no previous result or no response yet), nothing is rendered—no empty containers or panels
+- **Retry & Regenerate** — Retry on error (same saved data, new LLM call) or regenerate successful results; both update the stored record via `UserInput::save_data()` with `updateBasedOn` for correct record targeting
 - **Error Handling UX** — Clean Bootstrap alerts on LLM failure with configurable visibility
-- **Previous Result Display** — Optionally show the last generated LLM result when the form reloads
+- **Previous Result Display** — Optionally show the last generated LLM result when the form reloads (disabled by default for modal panels on refresh)
 - **Result Metadata** — Stores model, temperature, token usage, timestamp, and status as JSON alongside the result text
-- **Audit Logging** — All LLM interactions logged to `llmMessages` table via existing conversation infrastructure
+- **Audit Logging** — All LLM interactions logged to `llmMessages` table with the system prompt as `sent_context` and the form data as a readable user message
 - **Confirmation Dialog** — Preserves the core `$.confirm` modal behavior from `formUserInput`
 - **Always AJAX** — LLM forms always submit via AJAX to receive the LLM response inline
 
@@ -56,11 +60,11 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Architecture
 
-- **LlmFormModel** extends `FormUserInputModel` — adds LLM config getters, previous result retrieval
+- **LlmFormModel** extends `FormUserInputModel` — adds LLM config getters, previous result retrieval, auto-creates dataTable with displayName
 - **LlmFormView** extends `FormUserInputView` — wraps form output with React container div
-- **LlmFormController** extends `FormUserInputController` — intercepts save, calls LLM, handles regenerate
+- **LlmFormController** extends `FormUserInputController` — intercepts save, calls LLM with two-part prompt (system + user message), handles regenerate/retry via correct `save_data()` signature
 - **React bundle** `llm-form.umd.js` — separate Vite build for the form result panel UI
-- **LlmResultDisplay** React component — renders result in the configured panel type with markdown formatting
+- **LlmResultDisplay** React component — renders result in the configured panel type with markdown formatting; modal auto-opens only for fresh responses
 - Reuses existing `MarkdownRenderer` from the chat module for consistent markdown rendering
 
 ## [1.0.0] - 2026-02-26

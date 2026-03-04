@@ -7,7 +7,7 @@
  * Uses the shared MarkdownRenderer for formatting LLM output.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import type { LlmFormConfig, LlmResultMeta } from '../../../types/form';
 
@@ -17,6 +17,7 @@ interface LlmResultDisplayProps {
   meta: LlmResultMeta | null;
   loading: boolean;
   error: string | null;
+  freshResponse?: boolean;
   onClose?: () => void;
   onRetry?: () => void;
   onRegenerate?: () => void;
@@ -28,12 +29,19 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
   meta,
   loading,
   error,
+  freshResponse = false,
   onClose,
   onRetry,
   onRegenerate,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const [modalVisible, setModalVisible] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  useEffect(() => {
+    if (freshResponse && config.llmResultPanel === 'modal' && result) {
+      setModalVisible(true);
+    }
+  }, [freshResponse, result, config.llmResultPanel]);
 
   const extraCss = config.llmResultCss || '';
   const mobileCss = config.llmResultCssMobile || '';
@@ -177,25 +185,38 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
     );
   }
 
-  // Panel: modal
+  // Panel: modal - only show as modal for fresh responses, otherwise render as card
   if (config.llmResultPanel === 'modal') {
-    if (!modalVisible) return null;
-    return (
-      <div className={`modal fade show d-block ${containerClasses}`} tabIndex={-1} role="dialog" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-        <div className="modal-dialog modal-lg" role="document">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h5 className="modal-title">{config.llmResultTitle}</h5>
-              {config.llmResultClosable && (
-                <button type="button" className="close" onClick={() => { setModalVisible(false); onClose?.(); }} aria-label="Close">
-                  <span aria-hidden="true">&times;</span>
-                </button>
-              )}
-            </div>
-            <div className="modal-body">
-              {renderContent()}
+    if (modalVisible) {
+      return (
+        <div className={`modal fade show d-block ${containerClasses}`} tabIndex={-1} role="dialog" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-lg" role="document">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">{config.llmResultTitle}</h5>
+                {config.llmResultClosable && (
+                  <button type="button" className="close" onClick={() => { setModalVisible(false); onClose?.(); }} aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                )}
+              </div>
+              <div className="modal-body">
+                {renderContent()}
+              </div>
             </div>
           </div>
+        </div>
+      );
+    }
+    // Previous result with modal panel: render as inline card instead
+    return (
+      <div className={`card ${containerClasses}`}>
+        <div className="card-header d-flex align-items-center">
+          {renderTitle()}
+          {renderCloseButton()}
+        </div>
+        <div className="card-body">
+          {renderContent()}
         </div>
       </div>
     );

@@ -255,6 +255,64 @@ class LlmFormModel extends FormUserInputModel
     }
 
     /**
+     * Ensure the dataTable exists for this form section.
+     * Creates it with a displayName derived from the form name field.
+     * Also syncs the displayName if the form name has changed.
+     */
+    private function ensureDataTable()
+    {
+        $table_name = sprintf('%010d', $this->section_id);
+        $form_name = $this->get_db_field('name', '');
+        $user_input = $this->get_services()->get_user_input();
+        $db = $this->get_services()->get_db();
+
+        $table_id = $user_input->get_dataTable_id($table_name);
+
+        if (!$table_id) {
+            $display = !empty($form_name) ? $form_name : ('llmForm_' . $this->section_id);
+            $table_id = $db->insert('dataTables', [
+                'name' => $table_name,
+                'displayName' => $display,
+            ]);
+        } else if (!empty($form_name)) {
+            $current_display = $user_input->get_dataTable_displayName($table_id);
+            if ($current_display !== $form_name) {
+                $db->execute_update_db(
+                    "UPDATE dataTables SET displayName = :displayName WHERE id = :id",
+                    [':displayName' => $form_name, ':id' => $table_id]
+                );
+            }
+        }
+    }
+
+    /**
+     * Extract a field content value from CMS post-update field payload.
+     *
+     * Expected shape:
+     *  $field[language_id][gender_id]['content']
+     *
+     * @param mixed $field_payload
+     * @return string|null
+     */
+    private function getCmsFieldContent($field_payload)
+    {
+        if (!is_array($field_payload)) {
+            return null;
+        }
+        foreach ($field_payload as $lang_entries) {
+            if (!is_array($lang_entries)) {
+                continue;
+            }
+            foreach ($lang_entries as $gender_entry) {
+                if (is_array($gender_entry) && array_key_exists('content', $gender_entry)) {
+                    return $gender_entry['content'];
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get the entry record data for the current user (record mode).
      *
      * @return array|null
@@ -275,6 +333,31 @@ class LlmFormModel extends FormUserInputModel
     public function get_section_id()
     {
         return $this->section_id;
+    }
+
+    /**
+     * Called after a section using this style is created in CMS.
+     * Ensure the backing data table exists immediately.
+     */
+    public function cms_post_create_callback($model, $section_name, $section_style_id, $relation, $id)
+    {
+        $this->ensureDataTable();
+    }
+
+    /**
+     * Called after style fields are updated in CMS.
+     * Keep dataTables.displayName in sync with the "name" field.
+     */
+    public function cms_post_update_callback($model, $data)
+    {
+        if (!isset($data['name'])) {
+            return;
+        }
+        $display_name = $this->getCmsFieldContent($data['name']);
+        if ($display_name === null) {
+            return;
+        }
+        $this->set_dataTables_displayName($this->section_id, $display_name);
     }
 }
 ?>

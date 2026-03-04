@@ -22,7 +22,6 @@ class LlmFormController extends FormUserInputController
 
     public function __construct($model)
     {
-        // Check for LLM-specific AJAX actions before parent processes
         if (isset($_POST['__llm_action']) && in_array($_POST['__llm_action'], ['regenerate', 'retry'])) {
             $this->model = $model;
             $this->success = false;
@@ -31,10 +30,8 @@ class LlmFormController extends FormUserInputController
             return;
         }
 
-        // Let parent handle the normal form submission (validate + save)
         parent::__construct($model);
 
-        // After parent saves, if this was an LLM form submit, call LLM
         if (isset($_POST['__llm_form']) && $_POST['__llm_form'] === '1' && $model->isLlmEnabled()) {
             if ($this->success && !$this->fail) {
                 $this->processLlmGeneration($model);
@@ -52,6 +49,7 @@ class LlmFormController extends FormUserInputController
 
     /**
      * Handle regenerate/retry AJAX requests.
+     * Loads existing record data and re-runs the LLM call.
      */
     private function handleLlmAction($model)
     {
@@ -68,8 +66,6 @@ class LlmFormController extends FormUserInputController
 
         $section_id = $model->get_section_id();
         $record_id = $_POST['__record_id'] ?? null;
-
-        // Load the existing record data from UserInput
         $table_name = sprintf('%010d', $section_id);
         $form_data = $this->loadRecordData($model, $table_name, $user_id, $record_id);
 
@@ -81,24 +77,7 @@ class LlmFormController extends FormUserInputController
         $result = $this->callLlmWithData($model, $form_data);
 
         if ($result['success']) {
-            // Update only the LLM result fields in the existing record
-            $update_data = [
-                $model->getLlmResultFieldName() => $result['llm_result'],
-                $model->getLlmResultMetaFieldName() => json_encode($result['llm_meta']),
-            ];
-
-            $user_input_service = $model->get_services()->get_user_input();
-            $rid = $record_id ?: ($form_data['record_id'] ?? $form_data['id'] ?? null);
-
-            if ($rid) {
-                $user_input_service->save_data(
-                    $table_name,
-                    $update_data,
-                    $user_id,
-                    $section_id,
-                    $rid
-                );
-            }
+            $this->saveLlmResultToRecord($model, $table_name, $form_data, $result);
         }
 
         $this->sendJsonResponse($result);
@@ -109,74 +88,97 @@ class LlmFormController extends FormUserInputController
      */
     private function processLlmGeneration($model)
     {
-        $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
         $table_name = sprintf('%010d', $section_id);
+        $user_id = $_SESSION['id_user'] ?? null;
 
-        // Collect the submitted form data from POST
-        $form_data = [];
-        foreach ($_POST as $key => $value) {
-            if (strpos($key, '__') === 0) continue;
-            if (is_array($value) && isset($value['value'])) {
-                $form_data[$key] = $value['value'];
-            } else if (!is_array($value)) {
-                $form_data[$key] = $value;
-            }
-        }
+        $form_data = $this->collectFormData();
 
         $result = $this->callLlmWithData($model, $form_data);
 
         if ($result['success']) {
-            // Save the LLM result to the data record
-            $user_input_service = $model->get_services()->get_user_input();
-            $update_data = [
-                $model->getLlmResultFieldName() => $result['llm_result'],
-                $model->getLlmResultMetaFieldName() => json_encode($result['llm_meta']),
-            ];
-
-            // Get the record_id from the form or load last record
-            $record_id = $_POST[SELECTED_RECORD_ID] ?? null;
-            if (!$record_id) {
-                $rows = $this->loadRecordData($model, $table_name, $user_id, null);
-                $record_id = $rows['record_id'] ?? $rows['id'] ?? null;
-            }
-
-            if ($record_id) {
-                $user_input_service->save_data(
-                    $table_name,
-                    $update_data,
-                    $user_id,
-                    $section_id,
-                    $record_id
-                );
-            }
+            // Load latest record to get its record_id for the update
+            $record = $this->loadRecordData($model, $table_name, $user_id, $_POST[SELECTED_RECORD_ID] ?? null);
+            $this->saveLlmResultToRecord($model, $table_name, $record, $result);
         }
 
         $this->sendJsonResponse($result);
     }
 
     /**
+     * Save LLM result fields into the existing data record.
+     * Uses the correct UserInput::save_data() signature:
+     *   save_data($transaction_by, $table_name, $data, $updateBasedOn)
+     */
+    private function saveLlmResultToRecord($model, $table_name, $record_data, $llm_result)
+    {
+        $user_input = $model->get_services()->get_user_input();
+        $rid = $record_data[ENTRY_RECORD_ID] ?? $record_data['record_id'] ?? null;
+
+        if (!$rid) {
+            return;
+        }
+
+        $update_data = [
+            'id_users' => $_SESSION['id_user'] ?? 1,
+            $model->getLlmResultFieldName() => $llm_result['llm_result'],
+            $model->getLlmResultMetaFieldName() => json_encode($llm_result['llm_meta']),
+        ];
+
+        $user_input->save_data(
+            TRANSACTION_BY_LLM_FORM,
+            $table_name,
+            $update_data,
+            ['record_id' => $rid]
+        );
+    }
+
+    /**
+     * Collect submitted form data from POST, filtering internal fields.
+     *
+     * @return array Key-value pairs of form field data
+     */
+    private function collectFormData()
+    {
+        $form_data = [];
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, '__') === 0) continue;
+            if ($key === SELECTED_RECORD_ID || $key === DELETE_RECORD_ID || $key === ENTRY_RECORD_ID) continue;
+            if (is_array($value) && isset($value['value'])) {
+                $form_data[$key] = $value['value'];
+            } else if (!is_array($value)) {
+                $form_data[$key] = $value;
+            }
+        }
+        return $form_data;
+    }
+
+    /**
      * Load record data for a user from the dataTables system.
      *
      * @param LlmFormModel $model
-     * @param string $table_name
+     * @param string $table_name Zero-padded section ID
      * @param int $user_id
      * @param string|null $record_id
      * @return array
      */
     private function loadRecordData($model, $table_name, $user_id, $record_id)
     {
-        $user_input_service = $model->get_services()->get_user_input();
+        $user_input = $model->get_services()->get_user_input();
+        $form_id = $user_input->get_dataTable_id($table_name);
+
+        if (!$form_id) {
+            return [];
+        }
 
         if ($record_id) {
-            $data = $user_input_service->get_data($table_name, $record_id);
+            $filter = " AND record_id = " . intval($record_id);
+            $data = $user_input->get_data($form_id, $filter, true, $user_id, true);
             if (!empty($data)) return $data;
         }
 
-        $rows = $user_input_service->get_data_for_user($table_name, $user_id, false);
-        if (!empty($rows)) {
-            return end($rows);
-        }
+        $data = $user_input->get_data_for_user($form_id, $user_id, '', true);
+        if (!empty($data)) return $data;
 
         return [];
     }
@@ -204,7 +206,38 @@ class LlmFormController extends FormUserInputController
     }
 
     /**
+     * Build a user prompt from form data.
+     * Creates a readable text from the submitted field values.
+     *
+     * @param array $form_data Key-value pairs from form
+     * @return string The user prompt text
+     */
+    private function buildUserPrompt($form_data)
+    {
+        $skip_keys = [
+            'trigger_type', 'mobile', 'ajax', '__form_name',
+            'record_id', 'id_users', 'timestamp', 'id', 'edit_time',
+            'llm_result', 'llm_result_meta',
+            ENTRY_RECORD_ID, SELECTED_RECORD_ID, DELETE_RECORD_ID,
+        ];
+        $parts = [];
+        foreach ($form_data as $key => $value) {
+            if (in_array($key, $skip_keys)) continue;
+            if (strpos($key, '__') === 0) continue;
+            if (empty($value) && $value !== '0') continue;
+            $label = str_replace('_', ' ', $key);
+            $label = ucfirst($label);
+            $parts[] = "{$label}: {$value}";
+        }
+        return implode("\n", $parts);
+    }
+
+    /**
      * Call the LLM with given form data using the plugin's LlmService.
+     *
+     * The llm_context field serves as the system prompt (instructions).
+     * The form data is interpolated into the context and also sent
+     * as a structured user message.
      *
      * @param LlmFormModel $model
      * @param array $form_data
@@ -215,15 +248,18 @@ class LlmFormController extends FormUserInputController
         $context_template = $model->getLlmContext();
         $interpolated_context = $this->interpolateContext($context_template, $form_data);
         $user_language = $model->getUserLanguage();
+        $user_prompt = $this->buildUserPrompt($form_data);
 
-        $language_instruction = "Please respond in the following language: {$user_language}.";
-        $full_context = $interpolated_context . "\n\n" . $language_instruction;
+        $system_prompt = $interpolated_context;
+        if (!empty($user_language)) {
+            $system_prompt .= "\n\nPlease respond in the following language: {$user_language}.";
+        }
 
         $llm_service = new LlmService($model->get_services());
 
         $messages = [
-            ['role' => 'system', 'content' => $full_context],
-            ['role' => 'user', 'content' => 'Process the submitted form data and provide a response.'],
+            ['role' => 'system', 'content' => $system_prompt],
+            ['role' => 'user', 'content' => $user_prompt],
         ];
 
         $llm_model = $model->getLlmModel();
@@ -252,7 +288,7 @@ class LlmFormController extends FormUserInputController
                 'language' => $user_language,
             ];
 
-            $this->logLlmInteraction($model, $llm_service, $messages, $content, $meta);
+            $this->logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta);
 
             return [
                 'success' => true,
@@ -280,8 +316,9 @@ class LlmFormController extends FormUserInputController
 
     /**
      * Log the LLM interaction to llmMessages for audit.
+     * Stores the system prompt as sent_context and user prompt as user message content.
      */
-    private function logLlmInteraction($model, $llm_service, $messages, $content, $meta)
+    private function logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta)
     {
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
@@ -299,18 +336,18 @@ class LlmFormController extends FormUserInputController
                 $llm_service->addMessage(
                     $conversation_id,
                     'user',
-                    json_encode(['form_submission' => true, 'context' => $messages[0]['content'] ?? '']),
+                    !empty($user_prompt) ? $user_prompt : 'Form submission',
                     null,
                     $meta['model'],
                     0,
                     null,
-                    json_encode($messages)
+                    $system_prompt
                 );
 
                 $llm_service->addMessage(
                     $conversation_id,
                     'assistant',
-                    $content,
+                    !empty($content) ? $content : 'No response generated',
                     null,
                     $meta['model'],
                     $meta['tokens_used'] ?? 0

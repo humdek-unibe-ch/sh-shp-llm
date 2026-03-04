@@ -18,11 +18,13 @@ interface LlmFormPanelProps {
 }
 
 export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContainer, formName }) => {
-  const [result, setResult] = useState<string | null>(config.previousResult);
-  const [meta, setMeta] = useState<LlmResultMeta | null>(config.previousMeta);
+  const hasPreviousResult = config.llmShowPreviousResult && !!config.previousResult;
+  const [result, setResult] = useState<string | null>(hasPreviousResult ? config.previousResult : null);
+  const [meta, setMeta] = useState<LlmResultMeta | null>(hasPreviousResult ? config.previousMeta : null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
+  const [freshResponse, setFreshResponse] = useState(false);
   const recordIdRef = useRef<string | null>(null);
 
   const submitFormWithLlm = useCallback(async (form: HTMLFormElement) => {
@@ -44,6 +46,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       if (data.success) {
         setResult(data.llm_result);
         setMeta(data.llm_meta);
+        setFreshResponse(true);
         recordIdRef.current = formData.get('SELECTED_RECORD_ID') as string || null;
       } else {
         if (config.llmShowErrors) {
@@ -124,6 +127,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       if (data.success) {
         setResult(data.llm_result);
         setMeta(data.llm_meta);
+        setFreshResponse(true);
       } else {
         if (config.llmShowErrors) {
           setError(data.error || 'Regeneration failed');
@@ -162,6 +166,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       if (data.success) {
         setResult(data.llm_result);
         setMeta(data.llm_meta);
+        setFreshResponse(true);
       } else {
         if (config.llmShowErrors) {
           setError(data.error || 'Retry failed');
@@ -202,8 +207,8 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     return null;
   }
 
-  const hasContent = result !== null || loading || error !== null;
-  if (!hasContent && !config.llmShowPreviousResult) {
+  const hasContent = (result !== null && result !== '') || loading || error !== null;
+  if (!hasContent) {
     return null;
   }
 
@@ -214,6 +219,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       meta={meta}
       loading={loading}
       error={error}
+      freshResponse={freshResponse}
       onClose={() => setClosed(true)}
       onRetry={config.llmRetryEnabled ? handleRetry : undefined}
       onRegenerate={config.llmRegenerateEnabled ? handleRegenerate : undefined}
