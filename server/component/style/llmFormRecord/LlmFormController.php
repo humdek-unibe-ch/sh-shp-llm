@@ -97,9 +97,12 @@ class LlmFormController extends FormUserInputController
         $result = $this->callLlmWithData($model, $form_data);
 
         if ($result['success']) {
-            // Load latest record to get its record_id for the update
             $record = $this->loadRecordData($model, $table_name, $user_id, $_POST[SELECTED_RECORD_ID] ?? null);
-            $this->saveLlmResultToRecord($model, $table_name, $record, $result);
+            if (!empty($record)) {
+                $this->saveLlmResultToRecord($model, $table_name, $record, $result);
+            } else {
+                error_log("LLM Form: No record found to save LLM result into. table=$table_name, user=$user_id");
+            }
         }
 
         $this->sendJsonResponse($result);
@@ -177,7 +180,8 @@ class LlmFormController extends FormUserInputController
             if (!empty($data)) return $data;
         }
 
-        $data = $user_input->get_data_for_user($form_id, $user_id, '', true);
+        // Get the latest record (ORDER BY record_id DESC) for the user
+        $data = $user_input->get_data($form_id, 'ORDER BY record_id DESC', true, $user_id, true);
         if (!empty($data)) return $data;
 
         return [];
@@ -246,7 +250,10 @@ class LlmFormController extends FormUserInputController
     private function callLlmWithData($model, $form_data)
     {
         $context_template = $model->getLlmContext();
-        $interpolated_context = $this->interpolateContext($context_template, $form_data);
+        // Strip HTML tags - the context field is markdown type which gets
+        // converted to HTML by Parsedown. We need raw text for the LLM.
+        $context_clean = strip_tags($context_template);
+        $interpolated_context = $this->interpolateContext($context_clean, $form_data);
         $user_language = $model->getUserLanguage();
         $user_prompt = $this->buildUserPrompt($form_data);
 
@@ -269,14 +276,13 @@ class LlmFormController extends FormUserInputController
         try {
             $api_response = $llm_service->callLlmApi($messages, $llm_model, $temperature, $max_tokens);
 
-            $content = '';
-            $tokens_used = 0;
-            if (isset($api_response['choices'][0]['message']['content'])) {
-                $content = $api_response['choices'][0]['message']['content'];
-            }
-            if (isset($api_response['usage']['total_tokens'])) {
-                $tokens_used = $api_response['usage']['total_tokens'];
-            }
+            // callLlmApi returns a normalized response from the provider:
+            //   'content' => string, 'usage' => [...], 'raw_response' => [...], 'request_payload' => [...]
+            $content = $api_response['content'] ?? '';
+            $tokens_used = $api_response['usage']['total_tokens'] ?? 0;
+            $raw_response = $api_response['raw_response'] ?? null;
+            $request_payload = $api_response['request_payload'] ?? null;
+            $reasoning = $api_response['reasoning'] ?? null;
 
             $meta = [
                 'model' => $llm_model,
@@ -284,18 +290,23 @@ class LlmFormController extends FormUserInputController
                 'max_tokens' => $max_tokens,
                 'tokens_used' => $tokens_used,
                 'timestamp' => date('Y-m-d H:i:s'),
-                'status' => 'success',
+                'status' => !empty($content) ? 'success' : 'empty_response',
                 'language' => $user_language,
             ];
 
-            $this->logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta);
+            $this->logLlmInteraction(
+                $model, $llm_service, $system_prompt, $user_prompt,
+                $content, $meta, $raw_response, $request_payload, $reasoning
+            );
 
             return [
-                'success' => true,
+                'success' => !empty($content),
                 'llm_result' => $content,
                 'llm_meta' => $meta,
+                'error' => empty($content) ? 'LLM returned an empty response' : null,
             ];
         } catch (\Exception $e) {
+            error_log("LLM Form API error: " . $e->getMessage());
             return [
                 'success' => false,
                 'llm_result' => '',
@@ -316,9 +327,10 @@ class LlmFormController extends FormUserInputController
 
     /**
      * Log the LLM interaction to llmMessages for audit.
-     * Stores the system prompt as sent_context and user prompt as user message content.
+     * Stores the system prompt as sent_context, user prompt as user message,
+     * and raw_response/request_payload for full debugging visibility.
      */
-    private function logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta)
+    private function logLlmInteraction($model, $llm_service, $system_prompt, $user_prompt, $content, $meta, $raw_response = null, $request_payload = null, $reasoning = null)
     {
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
@@ -332,27 +344,43 @@ class LlmFormController extends FormUserInputController
                 $section_id
             );
 
-            if ($conversation_id) {
-                $llm_service->addMessage(
-                    $conversation_id,
-                    'user',
-                    !empty($user_prompt) ? $user_prompt : 'Form submission',
-                    null,
-                    $meta['model'],
-                    0,
-                    null,
-                    $system_prompt
-                );
-
-                $llm_service->addMessage(
-                    $conversation_id,
-                    'assistant',
-                    !empty($content) ? $content : 'No response generated',
-                    null,
-                    $meta['model'],
-                    $meta['tokens_used'] ?? 0
-                );
+            if (!$conversation_id) {
+                error_log("LLM Form: getOrCreateConversationForModel returned falsy: " . var_export($conversation_id, true)
+                    . " user_id=$user_id, model={$meta['model']}, section_id=$section_id");
+                return;
             }
+
+            // addMessage signature:
+            // ($conversation_id, $role, $content, $attachments, $model, $tokens_used,
+            //  $raw_response, $sent_context, $reasoning, $is_validated, $request_payload)
+            $user_msg_id = $llm_service->addMessage(
+                $conversation_id,
+                'user',
+                !empty($user_prompt) ? $user_prompt : 'Form submission',
+                null,                   // attachments
+                $meta['model'],         // model
+                0,                      // tokens_used
+                null,                   // raw_response
+                $system_prompt,         // sent_context
+                null,                   // reasoning
+                true,                   // is_validated
+                $request_payload        // request_payload
+            );
+
+            $assistant_msg_id = $llm_service->addMessage(
+                $conversation_id,
+                'assistant',
+                !empty($content) ? $content : '(empty response)',
+                null,                   // attachments
+                $meta['model'],         // model
+                $meta['tokens_used'] ?? 0,  // tokens_used
+                $raw_response,          // raw_response
+                null,                   // sent_context
+                $reasoning,             // reasoning
+                true,                   // is_validated
+                null                    // request_payload
+            );
+
         } catch (\Exception $e) {
             error_log("LLM Form: Failed to log interaction: " . $e->getMessage());
         }
