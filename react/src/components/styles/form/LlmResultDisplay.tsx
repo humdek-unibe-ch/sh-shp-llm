@@ -103,14 +103,14 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
 
       {!loading && meta && meta.status === 'success' && (
         <div className="llm-result-meta mt-2 small text-muted">
-          <span className="mr-3">
+          {/* <span className="mr-3">
             <i className="fas fa-robot mr-1"></i>{meta.model}
           </span>
           {meta.tokens_used > 0 && (
             <span className="mr-3">
               <i className="fas fa-coins mr-1"></i>{meta.tokens_used} tokens
             </span>
-          )}
+          )} */}
           <span>
             <i className="fas fa-clock mr-1"></i>{meta.timestamp}
           </span>
