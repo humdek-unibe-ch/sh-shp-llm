@@ -59,8 +59,8 @@ gulp.task('react-build', function(cb) {
     } else {
       console.log('React bundles built successfully.');
       console.log('Output:');
-      console.log('  JS:  js/ext/llm-chat.umd.js, llm-admin.umd.js, llm-scripts.umd.js');
-      console.log('  CSS: css/ext/llm-chat.css, llm-admin.css, llm-scripts.css');
+      console.log('  JS:  js/ext/llm-chat.umd.js, llm-admin.umd.js, llm-scripts.umd.js, llm-form.umd.js');
+      console.log('  CSS: css/ext/llm-chat.css, llm-admin.css, llm-scripts.css, llm-form.css');
     }
     cb(err);
   });
