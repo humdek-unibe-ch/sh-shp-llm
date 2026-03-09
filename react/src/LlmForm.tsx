@@ -21,7 +21,6 @@ function parseLlmFormConfig(container: HTMLElement): LlmFormConfig | null {
   try {
     return JSON.parse(raw) as LlmFormConfig;
   } catch {
-    console.error('LLM Form: Failed to parse config');
     return null;
   }
 }
@@ -32,16 +31,14 @@ function initializeLlmForm(container: HTMLElement): void {
   const config = parseLlmFormConfig(container);
   if (!config || !config.llmEnabled) return;
 
-  const formContentEl = container.querySelector('.llm-form-content');
-  const resultContainerEl = container.querySelector('.llm-result-container');
+  const formContentEl = container.querySelector(':scope > .llm-form-content');
+  const resultContainerEl = container.querySelector(':scope > .llm-result-container');
   if (!formContentEl || !resultContainerEl) return;
 
   const formName = container.getAttribute('data-form-name') || '';
 
   container.dataset.llmInitialized = '1';
 
-  // Neutralize SelfHelp's jQuery AJAX form handler to prevent it from
-  // racing with React's submission and replacing the DOM via updateValues().
   const jq = (window as any).jQuery || (window as any).$;
   if (jq) {
     const forms = formContentEl.querySelectorAll('form.selfHelp-form');
@@ -49,26 +46,8 @@ function initializeLlmForm(container: HTMLElement): void {
       try { jq(form).off('submit'); } catch { /* ignore */ }
     });
   }
-  // Set the ajax hidden input to a non-matching value so the core handler's
-  // check `$(this).find('input[name="ajax"]').val() == 1` returns false.
   const ajaxInput = formContentEl.querySelector('input[name="ajax"]') as HTMLInputElement | null;
   if (ajaxInput) ajaxInput.value = 'llm';
-
-  // Watch for DOM replacement that would orphan our React root
-  const llmRoot = container;
-  if (llmRoot.parentElement) {
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (let i = 0; i < m.removedNodes.length; i++) {
-          const removed = m.removedNodes[i];
-          if (removed === llmRoot || (removed instanceof Element && removed.contains(llmRoot))) {
-            console.error('[LLM Form] DOM REPLACED! Our .llm-form-root was removed from the document.', removed);
-          }
-        }
-      }
-    });
-    observer.observe(llmRoot.parentElement, { childList: true });
-  }
 
   const root = ReactDOM.createRoot(resultContainerEl as HTMLElement);
   root.render(
@@ -81,17 +60,15 @@ function initializeLlmForm(container: HTMLElement): void {
 }
 
 function initializeAllLlmForms(): void {
-  const containers = document.querySelectorAll('.llm-form-root');
-  console.log('[LLM Form] initializeAllLlmForms: found', containers.length, 'containers');
+  const containers = document.querySelectorAll('.llm-form-root[data-llm-config]');
   if (containers.length === 0) return;
-  containers.forEach((el, idx) => {
-    console.log('[LLM Form] container', idx, ':', {
-      classes: el.className,
-      visible: (el as HTMLElement).offsetParent !== null,
-      isConnected: el.isConnected,
-      resultContainers: el.querySelectorAll('.llm-result-container').length,
-    });
-    initializeLlmForm(el as HTMLElement);
+
+  containers.forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    // Skip containers that are nested inside another .llm-form-root
+    // (SelfHelp may wrap components in an extra style-section div).
+    if (htmlEl.parentElement?.closest('.llm-form-root[data-llm-config]')) return;
+    initializeLlmForm(htmlEl);
   });
 }
 

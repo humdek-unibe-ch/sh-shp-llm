@@ -41,7 +41,6 @@ function areContextFieldsFilled(form: HTMLFormElement, contextFieldKeys: string[
   const formData = new FormData(form);
 
   for (const key of contextFieldKeys) {
-    // Ignore interpolation keys that do not exist in this form instance.
     if (form.elements.namedItem(key) === null) continue;
     if (!formData.getAll(key).some((value) => hasMeaningfulValue(value))) {
       return false;
@@ -82,7 +81,6 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [feedbackButtonEnabled, setFeedbackButtonEnabled] = useState(false);
   const [feedbackButtonHost, setFeedbackButtonHost] = useState<HTMLElement | null>(null);
 
-  const [resultVersion, setResultVersion] = useState(0);
   const recordIdRef = useRef<string | null>(null);
   const requestInFlightRef = useRef(false);
   const disabledElementsRef = useRef<HTMLElement[]>([]);
@@ -114,16 +112,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [formContainer]);
 
   const runLockedRequest = useCallback(async (showSpinner: boolean, task: () => Promise<void>) => {
-    if (requestInFlightRef.current) {
-      console.warn('[LLM Form] runLockedRequest skipped: already in flight');
-      return;
-    }
+    if (requestInFlightRef.current) return;
     requestInFlightRef.current = true;
     setError(null);
     setClosed(false);
     if (showSpinner) setLoading(true);
     setSubmissionLock(true);
-    console.log('[LLM Form] runLockedRequest started, showSpinner=', showSpinner);
 
     try {
       await task();
@@ -131,33 +125,23 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       requestInFlightRef.current = false;
       setSubmissionLock(false);
       if (showSpinner) setLoading(false);
-      console.log('[LLM Form] runLockedRequest finished');
     }
   }, [setSubmissionLock]);
 
   const postForm = useCallback(async (url: string, data: FormData): Promise<LlmFormResult> => {
-    console.log('[LLM Form] postForm sending to:', url);
     const response = await fetch(url, { method: 'POST', body: data });
     const contentType = response.headers.get('content-type') || '';
-    console.log('[LLM Form] postForm response status:', response.status, 'content-type:', contentType);
     if (!contentType.includes('application/json')) {
-      console.warn('[LLM Form] postForm: non-JSON response');
       return { success: false, error: 'Server returned an unexpected response', llm_result: '', llm_meta: {} as LlmResultMeta };
     }
-    const json = await response.json();
-    console.log('[LLM Form] postForm parsed JSON:', { success: json.success, hasResult: !!json.llm_result });
-    return json;
+    return response.json();
   }, []);
 
   const updateResultFromResponse = useCallback((data: LlmFormResult, fallbackError: string) => {
-    console.log('[LLM Form] updateResultFromResponse:', { success: data.success, hasResult: !!data.llm_result, error: data.error });
     if (data.success) {
-      const newResult = data.llm_result;
-      console.log('[LLM Form] Setting new result, length=', newResult?.length, 'first 80 chars:', newResult?.substring(0, 80));
-      setResult(newResult);
+      setResult(data.llm_result);
       setMeta(data.llm_meta);
       setFreshResponse(true);
-      setResultVersion((v) => v + 1);
       return;
     }
     if (config.llmShowErrors) {
@@ -175,20 +159,8 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         const formData = new FormData(form);
         formData.append('__llm_form', '1');
 
-        console.log('[LLM Form] DOM connected before fetch:', formContainer.isConnected);
-
         try {
           const data = await postForm(form.action || window.location.href, formData);
-
-          console.log('[LLM Form] DOM connected after fetch:', formContainer.isConnected);
-
-          const resultContainer = formContainer.closest('.llm-form-root')?.querySelector('.llm-result-container');
-          console.log('[LLM Form] Result container check:', {
-            exists: !!resultContainer,
-            connected: resultContainer?.isConnected,
-            childCount: resultContainer?.childNodes.length,
-            htmlSnippet: resultContainer?.innerHTML?.substring(0, 120),
-          });
 
           if (data.manual_feedback_mode) {
             if (data.success) {
@@ -279,17 +251,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     if (requestInFlightRef.current || form.dataset.llmSubmitting === '1') {
       e.preventDefault();
       e.stopImmediatePropagation();
-      console.warn('[LLM Form] handleFormSubmit blocked: in-flight or submitting');
       return;
     }
 
     const submittedName = new FormData(form).get('__form_name');
-    if (formName && submittedName && submittedName !== formName) {
-      console.log('[LLM Form] handleFormSubmit skipped: form name mismatch', { formName, submittedName });
-      return;
-    }
+    if (formName && submittedName && submittedName !== formName) return;
 
-    console.log('[LLM Form] handleFormSubmit intercepted, preventing default');
     e.preventDefault();
     e.stopImmediatePropagation();
 
@@ -339,8 +306,6 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
     const jq = (window as any).jQuery || (window as any).$;
 
-    // Register on the container in capture phase so it fires BEFORE any
-    // jQuery handlers bound directly on <form> elements (initForm, formSubmitEvent).
     formContainer.addEventListener('submit', submitHandler, true);
 
     const forms = formContainer.querySelectorAll('form.selfHelp-form');
@@ -350,11 +315,6 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       });
     }
 
-    // Disable SelfHelp's jQuery AJAX form submission by setting the ajax flag
-    // to a value the core handler won't match. The core checks:
-    //   if ($(this).find('input[name="ajax"]').val() == 1)
-    // Setting it to "llm" makes the check fail so it won't fire $.ajax()
-    // and won't run updateValues() which would replace our React root's DOM.
     const ajaxInput = formContainer.querySelector('input[name="ajax"]') as HTMLInputElement | null;
     const origAjaxValue = ajaxInput?.value ?? null;
     if (ajaxInput) ajaxInput.value = 'llm';
@@ -393,7 +353,6 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       return;
     }
 
-    // Remove any stale host elements first to prevent duplicates
     form.querySelectorAll('.llm-feedback-inline-host').forEach((el) => el.remove());
 
     const host = document.createElement('span');
@@ -422,35 +381,17 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       )
     : null;
 
-  useEffect(() => {
-    if (!result || loading) return;
-    requestAnimationFrame(() => {
-      const root = formContainer.closest('.llm-form-root');
-      const rc = root?.querySelector('.llm-result-container');
-      const content = rc?.querySelector('.llm-result-content');
-      console.log('[LLM Form] DOM verify after result update:', {
-        rootConnected: root?.isConnected,
-        resultContainerConnected: rc?.isConnected,
-        contentElement: !!content,
-        contentText: content?.textContent?.substring(0, 80),
-        resultContainerHTML: rc?.innerHTML?.substring(0, 200),
-      });
-    });
-  }, [result, loading, formContainer]);
-
   if (closed && config.llmResultClosable) {
     return <>{feedbackButton}</>;
   }
 
   const hasContent = (result !== null && result !== '') || loading || error !== null;
-  console.log('[LLM Form] render:', { hasContent, loading, hasResult: result !== null && result !== '', error, closed, resultVersion });
 
   return (
     <>
       {feedbackButton}
       {hasContent && (
         <LlmResultDisplay
-          key={`result-${resultVersion}-${loading ? 'loading' : 'done'}`}
           config={config}
           result={result}
           meta={meta}
