@@ -52,6 +52,11 @@ class LlmFormController extends FormUserInputController
                     'form_errors' => $this->error_msgs,
                     'error' => 'Form validation failed',
                 ]);
+            } else {
+                $this->sendJsonResponse([
+                    'success' => false,
+                    'error' => 'Form was not processed. Please try again.',
+                ]);
             }
         }
     }

@@ -177,6 +177,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
           if (data.success) {
             recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+            showFormAlert(formContainer, 'success', 'Saved.');
           }
           updateResultFromResponse(data, 'LLM generation failed');
         } catch (err: unknown) {
@@ -242,11 +243,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     });
   }, [config.llmShowErrors, config.sectionId, feedbackButtonEnabled, formContainer, postForm, runLockedRequest, updateResultFromResponse]);
 
-  const handleFormSubmit = useCallback((e: Event) => {
-    if (e.defaultPrevented) return;
+  const submitFormRef = useRef(submitFormWithLlm);
+  submitFormRef.current = submitFormWithLlm;
 
+  const handleFormSubmit = useCallback((e: Event) => {
     const form = e.target as HTMLFormElement;
-    if (!form || !config.llmEnabled) return;
+    if (!form || form.tagName !== 'FORM' || !config.llmEnabled) return;
     if (requestInFlightRef.current || form.dataset.llmSubmitting === '1') {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -269,7 +271,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
             title: conf.confirmation_title,
             content: conf.confirmation_message || '',
             buttons: {
-              confirm: { text: conf.confirmation_continue || 'OK', action: () => submitFormWithLlm(form) },
+              confirm: { text: conf.confirmation_continue || 'OK', action: () => submitFormRef.current(form) },
               cancel: { text: conf.confirmation_cancel || 'Cancel', action: () => {} },
             },
           });
@@ -280,8 +282,8 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       }
     }
 
-    submitFormWithLlm(form);
-  }, [config.llmEnabled, formName, submitFormWithLlm]);
+    submitFormRef.current(form);
+  }, [config.llmEnabled, formName]);
 
   useEffect(() => {
     if (!isManualMode) return;
@@ -301,24 +303,26 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [config.contextFieldKeys, formContainer, isManualMode]);
 
   useEffect(() => {
-    const forms = formContainer.querySelectorAll('form.selfHelp-form');
     const submitHandler = (e: Event) => handleFormSubmit(e);
 
-    forms.forEach((form) => {
-      form.addEventListener('submit', submitHandler, true);
-      // Remove jQuery's submit handler to prevent the SelfHelp core AJAX
-      // handler from racing with our React-managed submission.
-      const jq = (window as any).jQuery || (window as any).$;
-      if (jq) {
+    const jq = (window as any).jQuery || (window as any).$;
+
+    // Register on the container in capture phase so it fires BEFORE any
+    // jQuery handlers bound directly on <form> elements (initForm, formSubmitEvent).
+    formContainer.addEventListener('submit', submitHandler, true);
+
+    const forms = formContainer.querySelectorAll('form.selfHelp-form');
+    if (jq) {
+      forms.forEach((form) => {
         try { jq(form).off('submit'); } catch { /* ignore */ }
-      }
-    });
+      });
+    }
 
     const ajaxInput = formContainer.querySelector('input[name="ajax"]') as HTMLInputElement | null;
     if (ajaxInput) ajaxInput.value = '1';
 
     return () => {
-      forms.forEach((form) => form.removeEventListener('submit', submitHandler, true));
+      formContainer.removeEventListener('submit', submitHandler, true);
       requestInFlightRef.current = false;
       setSubmissionLock(false);
     };
