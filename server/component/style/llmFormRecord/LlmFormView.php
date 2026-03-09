@@ -46,12 +46,8 @@ class LlmFormView extends FormUserInputView
         if (empty($local)) {
             $css_file = __DIR__ . "/../../../../css/ext/llm-form.css";
             if (file_exists($css_file)) {
-                if (defined('DEBUG') && DEBUG) {
-                    $version = filemtime($css_file) ?: time();
-                    $local = array($css_file . "?v=" . $version);
-                } else {
-                    $local = array($css_file . "?v=" . rtrim(shell_exec("git describe --tags") ?: ""));
-                }
+                $version = filemtime($css_file) ?: time();
+                $local = array($css_file . "?v=" . $version);
             }
         }
         return parent::get_css_includes($local);
@@ -65,12 +61,8 @@ class LlmFormView extends FormUserInputView
         if (empty($local)) {
             $js_file = __DIR__ . "/../../../../js/ext/llm-form.umd.js";
             if (file_exists($js_file)) {
-                if (defined('DEBUG') && DEBUG) {
-                    $version = filemtime($js_file) ?: time();
-                    $local = array($js_file . "?v=" . $version);
-                } else {
-                    $local = array($js_file . "?v=" . rtrim(shell_exec("git describe --tags") ?: ""));
-                }
+                $version = filemtime($js_file) ?: time();
+                $local = array($js_file . "?v=" . $version);
             }
         }
         return parent::get_js_includes($local);
