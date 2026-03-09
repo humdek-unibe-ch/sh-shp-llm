@@ -205,3 +205,12 @@
 .llm-result-content {
   animation: llm-result-fadeIn 0.3s ease-out;
 }
+
+/* Flash highlight when result panel updates */
+@keyframes llm-result-flash {
+  0% { background-color: #fff3cd; }
+  100% { background-color: transparent; }
+}
+.llm-result-panel--fresh {
+  animation: llm-result-flash 1.5s ease-out;
+}

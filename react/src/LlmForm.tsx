@@ -9,7 +9,6 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import 'bootstrap/dist/css/bootstrap.min.css';
 import './components/styles/form/LlmForm.css';
 import { LlmFormPanel } from './components/styles/form/LlmFormPanel';
 import type { LlmFormConfig } from './types/form';
@@ -83,8 +82,15 @@ function initializeLlmForm(container: HTMLElement): void {
 
 function initializeAllLlmForms(): void {
   const containers = document.querySelectorAll('.llm-form-root');
+  console.log('[LLM Form] initializeAllLlmForms: found', containers.length, 'containers');
   if (containers.length === 0) return;
-  containers.forEach((el) => {
+  containers.forEach((el, idx) => {
+    console.log('[LLM Form] container', idx, ':', {
+      classes: el.className,
+      visible: (el as HTMLElement).offsetParent !== null,
+      isConnected: el.isConnected,
+      resultContainers: el.querySelectorAll('.llm-result-container').length,
+    });
     initializeLlmForm(el as HTMLElement);
   });
 }

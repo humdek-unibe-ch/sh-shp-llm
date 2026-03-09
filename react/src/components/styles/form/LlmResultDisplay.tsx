@@ -45,7 +45,8 @@ export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
 
   const extraCss = config.llmResultCss || '';
   const mobileCss = config.llmResultCssMobile || '';
-  const containerClasses = `llm-result-panel llm-result-panel--${config.llmResultPanel} ${extraCss} ${mobileCss}`.trim();
+  const freshClass = freshResponse ? ' llm-result-panel--fresh' : '';
+  const containerClasses = `llm-result-panel llm-result-panel--${config.llmResultPanel}${freshClass} ${extraCss} ${mobileCss}`.trim();
   const buttonSizeClass = config.useSmallButtons ? 'btn-sm' : '';
 
   const renderContent = () => (

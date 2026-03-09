@@ -82,6 +82,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [feedbackButtonEnabled, setFeedbackButtonEnabled] = useState(false);
   const [feedbackButtonHost, setFeedbackButtonHost] = useState<HTMLElement | null>(null);
 
+  const [resultVersion, setResultVersion] = useState(0);
   const recordIdRef = useRef<string | null>(null);
   const requestInFlightRef = useRef(false);
   const disabledElementsRef = useRef<HTMLElement[]>([]);
@@ -151,9 +152,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const updateResultFromResponse = useCallback((data: LlmFormResult, fallbackError: string) => {
     console.log('[LLM Form] updateResultFromResponse:', { success: data.success, hasResult: !!data.llm_result, error: data.error });
     if (data.success) {
-      setResult(data.llm_result);
+      const newResult = data.llm_result;
+      console.log('[LLM Form] Setting new result, length=', newResult?.length, 'first 80 chars:', newResult?.substring(0, 80));
+      setResult(newResult);
       setMeta(data.llm_meta);
       setFreshResponse(true);
+      setResultVersion((v) => v + 1);
       return;
     }
     if (config.llmShowErrors) {
@@ -177,6 +181,14 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
           const data = await postForm(form.action || window.location.href, formData);
 
           console.log('[LLM Form] DOM connected after fetch:', formContainer.isConnected);
+
+          const resultContainer = formContainer.closest('.llm-form-root')?.querySelector('.llm-result-container');
+          console.log('[LLM Form] Result container check:', {
+            exists: !!resultContainer,
+            connected: resultContainer?.isConnected,
+            childCount: resultContainer?.childNodes.length,
+            htmlSnippet: resultContainer?.innerHTML?.substring(0, 120),
+          });
 
           if (data.manual_feedback_mode) {
             if (data.success) {
@@ -410,18 +422,35 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       )
     : null;
 
+  useEffect(() => {
+    if (!result || loading) return;
+    requestAnimationFrame(() => {
+      const root = formContainer.closest('.llm-form-root');
+      const rc = root?.querySelector('.llm-result-container');
+      const content = rc?.querySelector('.llm-result-content');
+      console.log('[LLM Form] DOM verify after result update:', {
+        rootConnected: root?.isConnected,
+        resultContainerConnected: rc?.isConnected,
+        contentElement: !!content,
+        contentText: content?.textContent?.substring(0, 80),
+        resultContainerHTML: rc?.innerHTML?.substring(0, 200),
+      });
+    });
+  }, [result, loading, formContainer]);
+
   if (closed && config.llmResultClosable) {
     return <>{feedbackButton}</>;
   }
 
   const hasContent = (result !== null && result !== '') || loading || error !== null;
-  console.log('[LLM Form] render:', { hasContent, loading, hasResult: result !== null && result !== '', error, closed });
+  console.log('[LLM Form] render:', { hasContent, loading, hasResult: result !== null && result !== '', error, closed, resultVersion });
 
   return (
     <>
       {feedbackButton}
       {hasContent && (
         <LlmResultDisplay
+          key={`result-${resultVersion}-${loading ? 'loading' : 'done'}`}
           config={config}
           result={result}
           meta={meta}
