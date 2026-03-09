@@ -41,8 +41,8 @@ function initializeLlmForm(container: HTMLElement): void {
 
   container.dataset.llmInitialized = '1';
 
-  // Remove SelfHelp's core AJAX form handler immediately to prevent it from
-  // racing with React's managed submission and replacing the DOM via updateValues().
+  // Neutralize SelfHelp's jQuery AJAX form handler to prevent it from
+  // racing with React's submission and replacing the DOM via updateValues().
   const jq = (window as any).jQuery || (window as any).$;
   if (jq) {
     const forms = formContentEl.querySelectorAll('form.selfHelp-form');
@@ -50,6 +50,10 @@ function initializeLlmForm(container: HTMLElement): void {
       try { jq(form).off('submit'); } catch { /* ignore */ }
     });
   }
+  // Set the ajax hidden input to a non-matching value so the core handler's
+  // check `$(this).find('input[name="ajax"]').val() == 1` returns false.
+  const ajaxInput = formContentEl.querySelector('input[name="ajax"]') as HTMLInputElement | null;
+  if (ajaxInput) ajaxInput.value = 'llm';
 
   const root = ReactDOM.createRoot(resultContainerEl as HTMLElement);
   root.render(

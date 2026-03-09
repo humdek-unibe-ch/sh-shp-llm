@@ -334,11 +334,18 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       });
     }
 
+    // Disable SelfHelp's jQuery AJAX form submission by setting the ajax flag
+    // to a value the core handler won't match. The core checks:
+    //   if ($(this).find('input[name="ajax"]').val() == 1)
+    // Setting it to "llm" makes the check fail so it won't fire $.ajax()
+    // and won't run updateValues() which would replace our React root's DOM.
     const ajaxInput = formContainer.querySelector('input[name="ajax"]') as HTMLInputElement | null;
-    if (ajaxInput) ajaxInput.value = '1';
+    const origAjaxValue = ajaxInput?.value ?? null;
+    if (ajaxInput) ajaxInput.value = 'llm';
 
     return () => {
       formContainer.removeEventListener('submit', submitHandler, true);
+      if (ajaxInput && origAjaxValue !== null) ajaxInput.value = origAjaxValue;
       requestInFlightRef.current = false;
       setSubmissionLock(false);
     };
