@@ -187,13 +187,52 @@ class LlmFormController extends FormUserInputController
         foreach ($_POST as $key => $value) {
             if (strpos($key, '__') === 0) continue;
             if ($key === SELECTED_RECORD_ID || $key === DELETE_RECORD_ID || $key === ENTRY_RECORD_ID) continue;
-            if (is_array($value) && isset($value['value'])) {
-                $form_data[$key] = $value['value'];
-            } else if (!is_array($value)) {
-                $form_data[$key] = $value;
-            }
+            $form_data[$key] = $this->normalizePostedValue($value);
         }
         return $form_data;
+    }
+
+    /**
+     * Normalize posted field values to scalar strings.
+     * Handles nested CMS field payloads like:
+     * - ['value' => '...']
+     * - [lang][gender]['content'] => '...'
+     * - arrays of values (multi-select/checkbox)
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private function normalizePostedValue($value)
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (!is_array($value)) {
+            return is_scalar($value) ? (string)$value : '';
+        }
+
+        if (array_key_exists('value', $value)) {
+            return $this->normalizePostedValue($value['value']);
+        }
+
+        if (array_key_exists('content', $value)) {
+            return $this->normalizePostedValue($value['content']);
+        }
+
+        $parts = [];
+        foreach ($value as $item) {
+            $normalized = $this->normalizePostedValue($item);
+            if (trim($normalized) !== '') {
+                $parts[] = $normalized;
+            }
+        }
+
+        if (empty($parts)) {
+            return '';
+        }
+
+        return implode(', ', $parts);
     }
 
     /**
