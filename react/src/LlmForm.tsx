@@ -14,6 +14,8 @@ import './components/styles/form/LlmForm.css';
 import { LlmFormPanel } from './components/styles/form/LlmFormPanel';
 import type { LlmFormConfig } from './types/form';
 
+const LLM_FORM_INIT_KEY = '__llmFormInitialized';
+
 function parseLlmFormConfig(container: HTMLElement): LlmFormConfig | null {
   const raw = container.getAttribute('data-llm-config');
   if (!raw) return null;
@@ -25,7 +27,7 @@ function parseLlmFormConfig(container: HTMLElement): LlmFormConfig | null {
   }
 }
 
-function initializeLlmForm(container: HTMLElement, index: number): void {
+function initializeLlmForm(container: HTMLElement): void {
   if (container.dataset.llmInitialized === '1') return;
 
   const config = parseLlmFormConfig(container);
@@ -38,6 +40,16 @@ function initializeLlmForm(container: HTMLElement, index: number): void {
   const formName = container.getAttribute('data-form-name') || '';
 
   container.dataset.llmInitialized = '1';
+
+  // Remove SelfHelp's core AJAX form handler immediately to prevent it from
+  // racing with React's managed submission and replacing the DOM via updateValues().
+  const jq = (window as any).jQuery || (window as any).$;
+  if (jq) {
+    const forms = formContentEl.querySelectorAll('form.selfHelp-form');
+    forms.forEach((form) => {
+      try { jq(form).off('submit'); } catch { /* ignore */ }
+    });
+  }
 
   const root = ReactDOM.createRoot(resultContainerEl as HTMLElement);
   root.render(
@@ -52,15 +64,18 @@ function initializeLlmForm(container: HTMLElement, index: number): void {
 function initializeAllLlmForms(): void {
   const containers = document.querySelectorAll('.llm-form-root');
   if (containers.length === 0) return;
-  containers.forEach((el, index) => {
-    initializeLlmForm(el as HTMLElement, index);
+  containers.forEach((el) => {
+    initializeLlmForm(el as HTMLElement);
   });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeAllLlmForms);
-} else {
-  initializeAllLlmForms();
+if (!(window as any)[LLM_FORM_INIT_KEY]) {
+  (window as any)[LLM_FORM_INIT_KEY] = true;
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAllLlmForms);
+  } else {
+    initializeAllLlmForms();
+  }
 }
 
 export { LlmFormPanel };

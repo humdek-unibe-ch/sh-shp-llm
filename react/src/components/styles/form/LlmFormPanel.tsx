@@ -131,6 +131,10 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
   const postForm = useCallback(async (url: string, data: FormData): Promise<LlmFormResult> => {
     const response = await fetch(url, { method: 'POST', body: data });
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return { success: false, error: 'Server returned an unexpected response', llm_result: '', llm_meta: {} as LlmResultMeta };
+    }
     return response.json();
   }, []);
 
@@ -150,37 +154,40 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     if (form.dataset.llmSubmitting === '1') return;
     form.dataset.llmSubmitting = '1';
 
-    await runLockedRequest(!isManualMode, async () => {
-      const formData = new FormData(form);
-      formData.append('__llm_form', '1');
+    try {
+      await runLockedRequest(!isManualMode, async () => {
+        syncEditorValuesToForm(form);
+        const formData = new FormData(form);
+        formData.append('__llm_form', '1');
 
-      try {
-        const data = await postForm(form.action || window.location.href, formData);
+        try {
+          const data = await postForm(form.action || window.location.href, formData);
 
-        if (data.manual_feedback_mode) {
-          if (data.success) {
-            showFormAlert(formContainer, 'success', config.llmShowErrors ? 'Form saved successfully.' : 'Saved.');
-            recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+          if (data.manual_feedback_mode) {
+            if (data.success) {
+              showFormAlert(formContainer, 'success', config.llmShowErrors ? 'Form saved successfully.' : 'Saved.');
+              recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+              return;
+            }
+            if (data.form_errors && config.llmShowErrors) {
+              setError(data.error || 'Form validation failed');
+            }
             return;
           }
-          if (data.form_errors && config.llmShowErrors) {
-            setError(data.error || 'Form validation failed');
+
+          if (data.success) {
+            recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
           }
-          return;
+          updateResultFromResponse(data, 'LLM generation failed');
+        } catch (err: unknown) {
+          if (config.llmShowErrors) {
+            setError(err instanceof Error ? err.message : 'Network error');
+          }
         }
-
-        if (data.success) {
-          recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
-        }
-        updateResultFromResponse(data, 'LLM generation failed');
-      } catch (err: unknown) {
-        if (config.llmShowErrors) {
-          setError(err instanceof Error ? err.message : 'Network error');
-        }
-      }
-    });
-
-    delete form.dataset.llmSubmitting;
+      });
+    } finally {
+      delete form.dataset.llmSubmitting;
+    }
   }, [config.llmShowErrors, formContainer, isManualMode, postForm, runLockedRequest, updateResultFromResponse]);
 
   const triggerLlmAction = useCallback(async (action: 'retry' | 'regenerate') => {
@@ -242,7 +249,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     if (!form || !config.llmEnabled) return;
     if (requestInFlightRef.current || form.dataset.llmSubmitting === '1') {
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       return;
     }
 
@@ -250,7 +257,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     if (formName && submittedName && submittedName !== formName) return;
 
     e.preventDefault();
-    e.stopPropagation();
+    e.stopImmediatePropagation();
 
     const confirmationAttr = form.getAttribute('data-confirmation');
     if (confirmationAttr) {
@@ -297,7 +304,15 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     const forms = formContainer.querySelectorAll('form.selfHelp-form');
     const submitHandler = (e: Event) => handleFormSubmit(e);
 
-    forms.forEach((form) => form.addEventListener('submit', submitHandler, true));
+    forms.forEach((form) => {
+      form.addEventListener('submit', submitHandler, true);
+      // Remove jQuery's submit handler to prevent the SelfHelp core AJAX
+      // handler from racing with our React-managed submission.
+      const jq = (window as any).jQuery || (window as any).$;
+      if (jq) {
+        try { jq(form).off('submit'); } catch { /* ignore */ }
+      }
+    });
 
     const ajaxInput = formContainer.querySelector('input[name="ajax"]') as HTMLInputElement | null;
     if (ajaxInput) ajaxInput.value = '1';
@@ -335,11 +350,8 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       return;
     }
 
-    const existing = form.querySelector('.llm-feedback-inline-host') as HTMLElement | null;
-    if (existing) {
-      setFeedbackButtonHost(existing);
-      return;
-    }
+    // Remove any stale host elements first to prevent duplicates
+    form.querySelectorAll('.llm-feedback-inline-host').forEach((el) => el.remove());
 
     const host = document.createElement('span');
     host.className = 'llm-feedback-inline-host ml-2 d-inline-block align-middle';
@@ -348,6 +360,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
     return () => {
       if (host.parentNode) host.parentNode.removeChild(host);
+      setFeedbackButtonHost(null);
     };
   }, [formContainer, isManualMode]);
 
