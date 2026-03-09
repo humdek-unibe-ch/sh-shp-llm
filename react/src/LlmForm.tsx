@@ -55,6 +55,22 @@ function initializeLlmForm(container: HTMLElement): void {
   const ajaxInput = formContentEl.querySelector('input[name="ajax"]') as HTMLInputElement | null;
   if (ajaxInput) ajaxInput.value = 'llm';
 
+  // Watch for DOM replacement that would orphan our React root
+  const llmRoot = container;
+  if (llmRoot.parentElement) {
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (let i = 0; i < m.removedNodes.length; i++) {
+          const removed = m.removedNodes[i];
+          if (removed === llmRoot || (removed instanceof Element && removed.contains(llmRoot))) {
+            console.error('[LLM Form] DOM REPLACED! Our .llm-form-root was removed from the document.', removed);
+          }
+        }
+      }
+    });
+    observer.observe(llmRoot.parentElement, { childList: true });
+  }
+
   const root = ReactDOM.createRoot(resultContainerEl as HTMLElement);
   root.render(
     <LlmFormPanel

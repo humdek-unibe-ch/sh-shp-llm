@@ -171,8 +171,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         const formData = new FormData(form);
         formData.append('__llm_form', '1');
 
+        console.log('[LLM Form] DOM connected before fetch:', formContainer.isConnected);
+
         try {
           const data = await postForm(form.action || window.location.href, formData);
+
+          console.log('[LLM Form] DOM connected after fetch:', formContainer.isConnected);
 
           if (data.manual_feedback_mode) {
             if (data.success) {
