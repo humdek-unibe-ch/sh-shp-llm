@@ -5,6 +5,11 @@
  * Manages the LLM result display for llmFormRecord and llmFormLog styles.
  * Intercepts the form submit, sends the AJAX request, triggers LLM generation,
  * and displays the result in a configurable panel.
+ * 
+ * Manual Feedback Mode:
+ * When manualFeedbackEnabled is true, Save only saves data (no LLM call).
+ * A separate "Generate Feedback" button triggers LLM on demand using current
+ * form values without saving. The regenerate button is hidden in this mode.
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -17,6 +22,25 @@ interface LlmFormPanelProps {
   formName: string;
 }
 
+/**
+ * Check whether all required context fields have non-empty values in the form.
+ */
+function checkContextFieldsFilled(formContainer: HTMLElement, contextFieldKeys: string[]): boolean {
+  if (!contextFieldKeys || contextFieldKeys.length === 0) return true;
+
+  const form = formContainer.querySelector('form.selfHelp-form') as HTMLFormElement | null;
+  if (!form) return false;
+
+  const formData = new FormData(form);
+  for (const key of contextFieldKeys) {
+    const value = formData.get(key);
+    if (value === null || value === undefined || String(value).trim() === '') {
+      return false;
+    }
+  }
+  return true;
+}
+
 export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContainer, formName }) => {
   const hasPreviousResult = config.llmShowPreviousResult && !!config.previousResult;
   const [result, setResult] = useState<string | null>(hasPreviousResult ? config.previousResult : null);
@@ -25,9 +49,12 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [error, setError] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
   const [freshResponse, setFreshResponse] = useState(false);
+  const [feedbackButtonVisible, setFeedbackButtonVisible] = useState(false);
   const recordIdRef = useRef<string | null>(null);
   const requestInFlightRef = useRef(false);
   const disabledElementsRef = useRef<HTMLElement[]>([]);
+
+  const isManualMode = config.manualFeedbackEnabled;
 
   const setSubmissionLock = useCallback((locked: boolean) => {
     if (locked) {
@@ -39,6 +66,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         const element = el as HTMLElement;
         const htmlEl = element as HTMLButtonElement | HTMLInputElement;
         if (htmlEl.disabled) return;
+        if (element.classList.contains('llm-feedback-btn')) return;
         htmlEl.disabled = true;
         toDisable.push(element);
       });
@@ -78,7 +106,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     const formData = new FormData(form);
     formData.append('__llm_form', '1');
 
-    setLoading(true);
+    setLoading(!isManualMode);
     setError(null);
     setClosed(false);
     setSubmissionLock(true);
@@ -91,7 +119,17 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
       const data: LlmFormResult = await response.json();
 
-      if (data.success) {
+      if (data.manual_feedback_mode) {
+        if (data.success) {
+          showFormAlert(formContainer, 'success', config.llmShowErrors ? 'Form saved successfully.' : 'Saved.');
+          recordIdRef.current = formData.get('SELECTED_RECORD_ID') as string || null;
+        } else if (data.form_errors) {
+          const errMsg = data.error || 'Form validation failed';
+          if (config.llmShowErrors) {
+            setError(errMsg);
+          }
+        }
+      } else if (data.success) {
         setResult(data.llm_result);
         setMeta(data.llm_meta);
         setFreshResponse(true);
@@ -114,7 +152,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       setSubmissionLock(false);
       setLoading(false);
     }
-  }, [config, setSubmissionLock]);
+  }, [config, isManualMode, formContainer, setSubmissionLock]);
 
   const handleFormSubmit = useCallback((e: Event) => {
     if (e.defaultPrevented) return;
@@ -133,7 +171,6 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     e.preventDefault();
     e.stopPropagation();
 
-    // Check for confirmation dialog ($.confirm from jquery-confirm)
     const confirmationAttr = form.getAttribute('data-confirmation');
     if (confirmationAttr) {
       try {
@@ -160,6 +197,56 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
 
     submitFormWithLlm(form);
   }, [config, formName, submitFormWithLlm]);
+
+  const handleGenerateFeedback = useCallback(async () => {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
+    setLoading(true);
+    setError(null);
+    setClosed(false);
+    setSubmissionLock(true);
+
+    const form = formContainer.querySelector('form.selfHelp-form') as HTMLFormElement | null;
+    if (!form) {
+      setError('Form not found');
+      requestInFlightRef.current = false;
+      setSubmissionLock(false);
+      setLoading(false);
+      return;
+    }
+
+    const formData = new FormData(form);
+    formData.append('__llm_action', 'generate_feedback');
+    formData.append('section_id', String(config.sectionId));
+
+    try {
+      const response = await fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data: LlmFormResult = await response.json();
+
+      if (data.success) {
+        setResult(data.llm_result);
+        setMeta(data.llm_meta);
+        setFreshResponse(true);
+      } else {
+        if (config.llmShowErrors) {
+          setError(data.error || 'Feedback generation failed');
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network error';
+      if (config.llmShowErrors) {
+        setError(msg);
+      }
+    } finally {
+      requestInFlightRef.current = false;
+      setSubmissionLock(false);
+      setLoading(false);
+    }
+  }, [config, formContainer, setSubmissionLock]);
 
   const handleRegenerate = useCallback(async () => {
     if (requestInFlightRef.current) return;
@@ -249,6 +336,30 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     }
   }, [config, setSubmissionLock]);
 
+  // Monitor form field changes to show/hide the feedback button
+  useEffect(() => {
+    if (!isManualMode) return;
+
+    const updateVisibility = () => {
+      const filled = checkContextFieldsFilled(formContainer, config.contextFieldKeys);
+      setFeedbackButtonVisible(filled);
+    };
+
+    updateVisibility();
+
+    const form = formContainer.querySelector('form.selfHelp-form');
+    if (!form) return;
+
+    const handler = () => updateVisibility();
+    form.addEventListener('input', handler);
+    form.addEventListener('change', handler);
+
+    return () => {
+      form.removeEventListener('input', handler);
+      form.removeEventListener('change', handler);
+    };
+  }, [isManualMode, formContainer, config.contextFieldKeys]);
+
   useEffect(() => {
     const forms = formContainer.querySelectorAll('form.selfHelp-form');
     const handler = (e: Event) => handleFormSubmit(e);
@@ -257,7 +368,6 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       form.addEventListener('submit', handler, true);
     });
 
-    // Also intercept the AJAX submission if it exists
     const ajaxInput = formContainer.querySelector('input[name="ajax"]') as HTMLInputElement | null;
     if (ajaxInput) {
       ajaxInput.value = '1';
@@ -276,27 +386,45 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     applyButtonSizing();
   }, [applyButtonSizing, loading, result, error]);
 
+  const showRegenerate = config.llmRegenerateEnabled && !isManualMode;
+
+  const feedbackButton = isManualMode && feedbackButtonVisible && !loading ? (
+    <div className="llm-feedback-button-container mt-2 mb-2">
+      <button
+        type="button"
+        className={`btn btn-${config.feedbackButtonColor || 'primary'} ${config.useSmallButtons ? 'btn-sm' : ''} llm-feedback-btn`.trim()}
+        onClick={handleGenerateFeedback}
+        disabled={loading}
+      >
+        <i className="fas fa-magic mr-1"></i>
+        {config.feedbackButtonLabel || 'Generate Feedback'}
+      </button>
+    </div>
+  ) : null;
+
   if (closed && config.llmResultClosable) {
-    return null;
+    return <>{feedbackButton}</>;
   }
 
   const hasContent = (result !== null && result !== '') || loading || error !== null;
-  if (!hasContent) {
-    return null;
-  }
 
   return (
-    <LlmResultDisplay
-      config={config}
-      result={result}
-      meta={meta}
-      loading={loading}
-      error={error}
-      freshResponse={freshResponse}
-      onClose={() => setClosed(true)}
-      onRetry={config.llmRetryEnabled ? handleRetry : undefined}
-      onRegenerate={config.llmRegenerateEnabled ? handleRegenerate : undefined}
-    />
+    <>
+      {feedbackButton}
+      {hasContent && (
+        <LlmResultDisplay
+          config={config}
+          result={result}
+          meta={meta}
+          loading={loading}
+          error={error}
+          freshResponse={freshResponse}
+          onClose={() => setClosed(true)}
+          onRetry={config.llmRetryEnabled ? handleRetry : undefined}
+          onRegenerate={showRegenerate ? handleRegenerate : undefined}
+        />
+      )}
+    </>
   );
 };
 

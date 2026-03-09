@@ -62,7 +62,10 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_regenerate_enabled', get_field_type_id('checkbox'), '0'),
 (NULL, 'llm_regenerate_label', get_field_type_id('text'), '1'),
 (NULL, 'llm_generating_text', get_field_type_id('text'), '1'),
-(NULL, 'use_small_buttons', get_field_type_id('checkbox'), '0');
+(NULL, 'use_small_buttons', get_field_type_id('checkbox'), '0'),
+(NULL, 'llm_manual_feedback_enabled', get_field_type_id('checkbox'), '0'),
+(NULL, 'llm_feedback_button_label', get_field_type_id('text'), '1'),
+(NULL, 'llm_feedback_button_color', get_field_type_id('style-bootstrap'), '0');
 
 -- =====================================================
 -- REGISTER llmFormRecord STYLE
@@ -96,7 +99,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmFormRecord'), get_field_id('llm_model'), '', 'LLM model to use for generation. Leave empty to use the global default from LLM module config.'),
 (get_style_id('llmFormRecord'), get_field_id('llm_temperature'), '1', 'Controls randomness (0-2). Lower values produce more deterministic output.'),
 (get_style_id('llmFormRecord'), get_field_id('llm_max_tokens'), '2048', 'Maximum tokens for the LLM response.'),
-(get_style_id('llmFormRecord'), get_field_id('llm_context'), '', 'System prompt / instructions sent to the LLM. Supports {{field_name}} interpolation with submitted form values. The form data is sent separately as a structured user message. Example: "You are a supportive teacher-coach. Give short constructive feedback on the student''s reflection: {{reflection}}"'),
+(get_style_id('llmFormRecord'), get_field_id('llm_context'), '', 'System prompt / instructions sent to the LLM. Supports {{field_name}} interpolation with submitted form values. The form data is sent separately as a structured user message. Example: "You are a supportive teacher-coach. Give short constructive feedback on the students reflection: {{reflection}}"'),
 (get_style_id('llmFormRecord'), get_field_id('llm_show_previous_result'), '1', 'When enabled and the form reloads, the previously generated LLM result is displayed.'),
 (get_style_id('llmFormRecord'), get_field_id('llm_result_field_name'), 'llm_result', 'Field name where the LLM result text is stored in the data record.'),
 (get_style_id('llmFormRecord'), get_field_id('llm_result_meta_field_name'), 'llm_result_meta', 'Field name where LLM result metadata (model, timestamp, status, token usage) is stored as JSON.'),
@@ -111,7 +114,10 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmFormRecord'), get_field_id('llm_retry_label'), 'Retry', 'Label for the retry button.'),
 (get_style_id('llmFormRecord'), get_field_id('llm_regenerate_enabled'), '1', 'Allow regenerating the LLM result. Uses the same saved data and context to produce a new result, updating both record and log.'),
 (get_style_id('llmFormRecord'), get_field_id('llm_regenerate_label'), 'Regenerate', 'Label for the regenerate button.'),
-(get_style_id('llmFormRecord'), get_field_id('llm_generating_text'), 'Generating response...', 'Text shown while waiting for LLM response.');
+(get_style_id('llmFormRecord'), get_field_id('llm_generating_text'), 'Generating response...', 'Text shown while waiting for LLM response.'),
+(get_style_id('llmFormRecord'), get_field_id('llm_manual_feedback_enabled'), '0', 'Enable manual feedback mode. When enabled, the form Save button only saves data (no LLM call). A separate Generate Feedback button allows the user to trigger LLM feedback on demand without saving. This overrides and hides the regenerate button. Only available for llmFormRecord.'),
+(get_style_id('llmFormRecord'), get_field_id('llm_feedback_button_label'), 'Generate Feedback', 'Label for the manual Generate Feedback button.'),
+(get_style_id('llmFormRecord'), get_field_id('llm_feedback_button_color'), 'primary', 'Bootstrap color class for the Generate Feedback button (primary, secondary, success, danger, warning, info, light, dark).');
 
 -- =====================================================
 -- REGISTER llmFormLog STYLE

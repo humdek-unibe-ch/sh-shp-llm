@@ -33,6 +33,9 @@ class LlmFormModel extends FormUserInputModel
     private $llm_regenerate_label;
     private $llm_generating_text;
     private $use_small_buttons;
+    private $llm_manual_feedback_enabled;
+    private $llm_feedback_button_label;
+    private $llm_feedback_button_color;
 
     /* Constructors ***********************************************************/
 
@@ -68,6 +71,9 @@ class LlmFormModel extends FormUserInputModel
         $this->llm_regenerate_label = $this->get_db_field('llm_regenerate_label', 'Regenerate');
         $this->llm_generating_text = $this->get_db_field('llm_generating_text', 'Generating response...');
         $this->use_small_buttons = $this->get_db_field('use_small_buttons', '1');
+        $this->llm_manual_feedback_enabled = $this->get_db_field('llm_manual_feedback_enabled', '0');
+        $this->llm_feedback_button_label = $this->get_db_field('llm_feedback_button_label', 'Generate Feedback');
+        $this->llm_feedback_button_color = $this->get_db_field('llm_feedback_button_color', 'primary');
     }
 
     /* Public Getters *********************************************************/
@@ -180,6 +186,37 @@ class LlmFormModel extends FormUserInputModel
         return $this->use_small_buttons === '1';
     }
 
+    public function isManualFeedbackEnabled()
+    {
+        return $this->llm_manual_feedback_enabled === '1';
+    }
+
+    public function getFeedbackButtonLabel()
+    {
+        return $this->llm_feedback_button_label;
+    }
+
+    public function getFeedbackButtonColor()
+    {
+        return $this->llm_feedback_button_color;
+    }
+
+    /**
+     * Extract field names referenced in the llm_context template.
+     * Looks for {{field_name}} patterns in the raw context text.
+     *
+     * @return array List of field name strings
+     */
+    public function extractContextFieldKeys()
+    {
+        $context = strip_tags($this->llm_context);
+        if (empty($context)) return [];
+        if (!preg_match_all('/\{\{(\w+)\}\}/', $context, $matches)) {
+            return [];
+        }
+        return array_values(array_unique($matches[1]));
+    }
+
     /**
      * Get the previous LLM result from the stored record data.
      *
@@ -253,6 +290,10 @@ class LlmFormModel extends FormUserInputModel
             'llmRegenerateLabel' => $this->getRegenerateLabel(),
             'llmGeneratingText' => $this->getGeneratingText(),
             'useSmallButtons' => $this->isUseSmallButtons(),
+            'manualFeedbackEnabled' => $this->isManualFeedbackEnabled(),
+            'feedbackButtonLabel' => $this->getFeedbackButtonLabel(),
+            'feedbackButtonColor' => $this->getFeedbackButtonColor(),
+            'contextFieldKeys' => $this->extractContextFieldKeys(),
             'debug' => defined('DEBUG') && DEBUG,
             'llmShowPreviousResult' => $this->isShowPreviousResult(),
             'llmResultFieldName' => $this->getLlmResultFieldName(),

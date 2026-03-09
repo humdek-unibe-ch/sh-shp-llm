@@ -177,6 +177,22 @@
   }
 }
 
+/* Manual feedback button */
+.llm-feedback-button-container {
+  display: flex;
+  align-items: center;
+}
+.llm-feedback-btn {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.llm-feedback-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.llm-feedback-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 /* Animation for result appearance */
 @keyframes llm-result-fadeIn {
   from {

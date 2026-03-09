@@ -20,6 +20,10 @@ export interface LlmFormConfig {
   llmRegenerateLabel: string;
   llmGeneratingText: string;
   useSmallButtons: boolean;
+  manualFeedbackEnabled: boolean;
+  feedbackButtonLabel: string;
+  feedbackButtonColor: string;
+  contextFieldKeys: string[];
   debug: boolean;
   llmShowPreviousResult: boolean;
   llmResultFieldName: string;
@@ -45,4 +49,6 @@ export interface LlmFormResult {
   llm_result: string;
   llm_meta: LlmResultMeta;
   error?: string;
+  manual_feedback_mode?: boolean;
+  form_errors?: Record<string, string> | null;
 }

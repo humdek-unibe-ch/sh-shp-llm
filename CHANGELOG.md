@@ -34,6 +34,23 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 | `llm_regenerate_label` | text | `Regenerate` | Regenerate button label (translatable) |
 | `llm_generating_text` | text | `Generating response...` | Loading indicator text (translatable) |
 
+### Manual LLM Feedback Generation (llmFormRecord only)
+
+- **Manual Feedback Mode** — New `llm_manual_feedback_enabled` field that separates form saving from LLM feedback generation. When enabled, the **Save** button only saves form data without calling the LLM. A separate **Generate Feedback** button allows users to trigger LLM feedback on demand using the current form field values, without saving.
+- **Regenerate Override** — When manual feedback mode is active, the regenerate button is automatically hidden, even if `llm_regenerate_enabled` is checked. Manual mode takes precedence.
+- **Context-Aware Visibility** — The Generate Feedback button dynamically tracks required form fields (those referenced via `{{field_name}}` in `llm_context`) and only becomes visible when all required fields have non-empty values.
+- **Button Customization**:
+  - `llm_feedback_button_label` — Configurable label (translatable). Default: "Generate Feedback". Examples: "Get AI Feedback", "Evaluate Answer".
+  - `llm_feedback_button_color` — Bootstrap color class via `style-bootstrap` dropdown (primary, secondary, success, danger, warning, info, light, dark). Default: "primary".
+  - Follows the same small/default button size as all other form buttons (`use_small_buttons` field).
+- **No-Save Feedback** — The Generate Feedback action sends current form field values to the LLM without persisting them. This is useful for evaluation scenarios where users want to preview AI feedback before deciding to save.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `llm_manual_feedback_enabled` | checkbox | `0` | Enable manual feedback mode (Save does not call LLM; separate button for feedback) |
+| `llm_feedback_button_label` | text | `Generate Feedback` | Label for the Generate Feedback button (translatable) |
+| `llm_feedback_button_color` | style-bootstrap | `primary` | Bootstrap color class for the button |
+
 ### Features
 
 - **Two-Part Prompt System** — The `llm_context` field serves as the **system prompt** (instructions/persona). The submitted form data is automatically formatted as a structured **user message** sent alongside the system prompt. This separation gives clear control over the LLM's behavior and the data it processes.

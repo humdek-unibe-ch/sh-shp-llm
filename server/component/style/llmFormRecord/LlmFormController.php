@@ -22,18 +22,29 @@ class LlmFormController extends FormUserInputController
 
     public function __construct($model)
     {
-        if (isset($_POST['__llm_action']) && in_array($_POST['__llm_action'], ['regenerate', 'retry'])) {
+        if (isset($_POST['__llm_action']) && in_array($_POST['__llm_action'], ['regenerate', 'retry', 'generate_feedback'])) {
             $this->model = $model;
             $this->success = false;
             $this->fail = false;
-            $this->handleLlmAction($model);
+            if ($_POST['__llm_action'] === 'generate_feedback') {
+                $this->handleGenerateFeedback($model);
+            } else {
+                $this->handleLlmAction($model);
+            }
             return;
         }
 
         parent::__construct($model);
 
         if (isset($_POST['__llm_form']) && $_POST['__llm_form'] === '1' && $model->isLlmEnabled()) {
-            if ($this->success && !$this->fail) {
+            if ($model->isManualFeedbackEnabled()) {
+                $this->sendJsonResponse([
+                    'success' => $this->success && !$this->fail,
+                    'manual_feedback_mode' => true,
+                    'form_errors' => $this->fail ? ($this->error_msgs ?? []) : null,
+                    'error' => $this->fail ? 'Form validation failed' : null,
+                ]);
+            } else if ($this->success && !$this->fail) {
                 $this->processLlmGeneration($model);
             } else if ($this->fail) {
                 $this->sendJsonResponse([
@@ -46,6 +57,35 @@ class LlmFormController extends FormUserInputController
     }
 
     /* Private Methods *********************************************************/
+
+    /**
+     * Handle manual feedback generation.
+     * Reads form field values from POST without saving, calls LLM, returns result.
+     */
+    private function handleGenerateFeedback($model)
+    {
+        $user_id = $_SESSION['id_user'] ?? null;
+        if (!$user_id) {
+            $this->sendJsonResponse(['success' => false, 'error' => 'Not authenticated'], 401);
+            return;
+        }
+
+        if (!$model->isLlmEnabled() || !$model->isManualFeedbackEnabled()) {
+            $this->sendJsonResponse(['success' => false, 'error' => 'Manual feedback mode is not enabled'], 400);
+            return;
+        }
+
+        $form_data = $this->collectFormData();
+
+        if (empty($form_data)) {
+            $this->sendJsonResponse(['success' => false, 'error' => 'No form data provided'], 400);
+            return;
+        }
+
+        $result = $this->callLlmWithData($model, $form_data);
+
+        $this->sendJsonResponse($result);
+    }
 
     /**
      * Handle regenerate/retry AJAX requests.
