@@ -113,12 +113,16 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [formContainer]);
 
   const runLockedRequest = useCallback(async (showSpinner: boolean, task: () => Promise<void>) => {
-    if (requestInFlightRef.current) return;
+    if (requestInFlightRef.current) {
+      console.warn('[LLM Form] runLockedRequest skipped: already in flight');
+      return;
+    }
     requestInFlightRef.current = true;
     setError(null);
     setClosed(false);
     if (showSpinner) setLoading(true);
     setSubmissionLock(true);
+    console.log('[LLM Form] runLockedRequest started, showSpinner=', showSpinner);
 
     try {
       await task();
@@ -126,19 +130,26 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
       requestInFlightRef.current = false;
       setSubmissionLock(false);
       if (showSpinner) setLoading(false);
+      console.log('[LLM Form] runLockedRequest finished');
     }
   }, [setSubmissionLock]);
 
   const postForm = useCallback(async (url: string, data: FormData): Promise<LlmFormResult> => {
+    console.log('[LLM Form] postForm sending to:', url);
     const response = await fetch(url, { method: 'POST', body: data });
     const contentType = response.headers.get('content-type') || '';
+    console.log('[LLM Form] postForm response status:', response.status, 'content-type:', contentType);
     if (!contentType.includes('application/json')) {
+      console.warn('[LLM Form] postForm: non-JSON response');
       return { success: false, error: 'Server returned an unexpected response', llm_result: '', llm_meta: {} as LlmResultMeta };
     }
-    return response.json();
+    const json = await response.json();
+    console.log('[LLM Form] postForm parsed JSON:', { success: json.success, hasResult: !!json.llm_result });
+    return json;
   }, []);
 
   const updateResultFromResponse = useCallback((data: LlmFormResult, fallbackError: string) => {
+    console.log('[LLM Form] updateResultFromResponse:', { success: data.success, hasResult: !!data.llm_result, error: data.error });
     if (data.success) {
       setResult(data.llm_result);
       setMeta(data.llm_meta);
@@ -252,12 +263,17 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
     if (requestInFlightRef.current || form.dataset.llmSubmitting === '1') {
       e.preventDefault();
       e.stopImmediatePropagation();
+      console.warn('[LLM Form] handleFormSubmit blocked: in-flight or submitting');
       return;
     }
 
     const submittedName = new FormData(form).get('__form_name');
-    if (formName && submittedName && submittedName !== formName) return;
+    if (formName && submittedName && submittedName !== formName) {
+      console.log('[LLM Form] handleFormSubmit skipped: form name mismatch', { formName, submittedName });
+      return;
+    }
 
+    console.log('[LLM Form] handleFormSubmit intercepted, preventing default');
     e.preventDefault();
     e.stopImmediatePropagation();
 
@@ -388,6 +404,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }
 
   const hasContent = (result !== null && result !== '') || loading || error !== null;
+  console.log('[LLM Form] render:', { hasContent, loading, hasResult: result !== null && result !== '', error, closed });
 
   return (
     <>
