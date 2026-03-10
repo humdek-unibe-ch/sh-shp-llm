@@ -47,7 +47,6 @@ class LlmHooks extends BaseHooks
             $llmService = new LlmService($this->services);
             $models = $llmService->getAvailableModels();
 
-            // Transform models array to select format
             $items = array();
             foreach ($models as $model) {
                 $items[] = array(
@@ -846,6 +845,116 @@ class LlmHooks extends BaseHooks
     public function outputFieldLlmResultPanelView($args)
     {
         return $this->returnSelectLlmResultPanelField($args, 1);
+    }
+
+    /* LLM API Keys Manager Hooks *********************************************/
+
+    /**
+     * Hook handler for the llm_api_keys field in CMS.
+     * Uses the `template` BaseStyleComponent to render a PHP template.
+     * Replaces the default field children so the raw JSON is never shown.
+     *
+     * @param array $args Hook arguments
+     * @param bool $disabled Whether the field is read-only
+     * @return object BaseStyleComponent
+     */
+    private function returnLlmApiKeysField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        if ($field['name'] !== 'llm_api_keys') {
+            return $res;
+        }
+
+        $entries = json_decode($field['content'] ?? '[]', true);
+        if (!is_array($entries)) {
+            $entries = [];
+        }
+
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $inputName = $field_name_prefix . "[content]";
+        $uid = 'llm_api_keys_' . md5($inputName);
+
+        $templateComponent = new BaseStyleComponent("template", array(
+            "path" => __DIR__ . "/tpl_api_keys_manager.php",
+            "items" => array(
+                "uid" => $uid,
+                "inputName" => $inputName,
+                "jsonValue" => json_encode($entries, JSON_UNESCAPED_SLASHES),
+                "disabled" => $disabled
+            )
+        ));
+
+        if ($templateComponent && $res) {
+            $res->get_view()->set_children(array($templateComponent));
+        }
+
+        return $res;
+    }
+
+    /**
+     * Output custom LLM API keys manager in edit mode
+     * @param array $args Hook arguments
+     * @return object BaseStyleComponent
+     */
+    public function outputFieldLlmApiKeysEdit($args)
+    {
+        return $this->returnLlmApiKeysField($args, false);
+    }
+
+    /**
+     * Output custom LLM API keys manager in view mode
+     * @param array $args Hook arguments
+     * @return object BaseStyleComponent
+     */
+    public function outputFieldLlmApiKeysView($args)
+    {
+        return $this->returnLlmApiKeysField($args, true);
+    }
+
+    /**
+     * Ensure API keys manager CSS is loaded on CMS pages.
+     * Needed in DEBUG mode where plugin ext assets are not auto-collected.
+     *
+     * @param array $args Hook arguments
+     * @return array
+     */
+    public function addCmsApiKeysCssIncludes($args)
+    {
+        $res = $this->execute_private_method($args);
+        if (!is_array($res)) {
+            $res = array();
+        }
+
+        $css_file = __DIR__ . "/../../css/ext/llm-apikeys.css";
+        if (file_exists($css_file) && !in_array($css_file, $res, true)) {
+            $res[] = $css_file;
+        }
+
+        return $res;
+    }
+
+    /**
+     * Ensure API keys manager JS is loaded on CMS pages.
+     * Needed in DEBUG mode where plugin ext assets are not auto-collected.
+     *
+     * @param array $args Hook arguments
+     * @return array
+     */
+    public function addCmsApiKeysJsIncludes($args)
+    {
+        $res = $this->execute_private_method($args);
+        if (!is_array($res)) {
+            $res = array();
+        }
+
+        $js_file = __DIR__ . "/../../js/ext/llm-apikeys.umd.js";
+        if (file_exists($js_file) && !in_array($js_file, $res, true)) {
+            $res[] = $js_file;
+        }
+
+        return $res;
     }
 
 }

@@ -5,15 +5,15 @@
  * Build tasks for compiling and bundling React assets via Vite.
  * 
  * Tasks:
- * - `gulp react-build`: Build all React bundles (chat, admin, scripts)
+ * - `gulp react-build`: Build all React bundles (chat, admin, scripts, form, apikeys)
  * - `gulp react-install`: Install React dependencies
  * - `gulp watch-react`: Watch React files for changes
  * - `gulp clean`: Remove built files
  * - `gulp default`: Build everything
  * 
  * Output:
- * - JS:  js/ext/llm-chat.umd.js, js/ext/llm-admin.umd.js, js/ext/llm-scripts.umd.js
- * - CSS: css/ext/llm-chat.css, css/ext/llm-admin.css, css/ext/llm-scripts.css
+ * - JS:  js/ext/llm-chat.umd.js, js/ext/llm-admin.umd.js, js/ext/llm-scripts.umd.js, js/ext/llm-form.umd.js, js/ext/llm-apikeys.umd.js
+ * - CSS: css/ext/llm-chat.css, css/ext/llm-admin.css, css/ext/llm-scripts.css, css/ext/llm-form.css, css/ext/llm-apikeys.css
  */
 
 const gulp = require('gulp');
@@ -59,8 +59,8 @@ gulp.task('react-build', function(cb) {
     } else {
       console.log('React bundles built successfully.');
       console.log('Output:');
-      console.log('  JS:  js/ext/llm-chat.umd.js, llm-admin.umd.js, llm-scripts.umd.js, llm-form.umd.js');
-      console.log('  CSS: css/ext/llm-chat.css, llm-admin.css, llm-scripts.css, llm-form.css');
+      console.log('  JS:  js/ext/llm-chat.umd.js, llm-admin.umd.js, llm-scripts.umd.js, llm-form.umd.js, llm-apikeys.umd.js');
+      console.log('  CSS: css/ext/llm-chat.css, llm-admin.css, llm-scripts.css, llm-form.css, llm-apikeys.css');
     }
     cb(err);
   });
@@ -97,9 +97,13 @@ gulp.task('clean', function(cb) {
     path.join(paths.react.jsOutput, 'llm-chat.umd.js'),
     path.join(paths.react.jsOutput, 'llm-admin.umd.js'),
     path.join(paths.react.jsOutput, 'llm-scripts.umd.js'),
+    path.join(paths.react.jsOutput, 'llm-form.umd.js'),
+    path.join(paths.react.jsOutput, 'llm-apikeys.umd.js'),
     path.join(paths.react.cssOutput, 'llm-chat.css'),
     path.join(paths.react.cssOutput, 'llm-admin.css'),
-    path.join(paths.react.cssOutput, 'llm-scripts.css')
+    path.join(paths.react.cssOutput, 'llm-scripts.css'),
+    path.join(paths.react.cssOutput, 'llm-form.css'),
+    path.join(paths.react.cssOutput, 'llm-apikeys.css')
   ]).then(() => {
     console.log('Cleaned build files.');
     cb();
@@ -131,8 +135,8 @@ First-time setup:
   4. gulp build
 
 Output:
-  JS:  js/ext/llm-chat.umd.js, llm-admin.umd.js, llm-scripts.umd.js
-  CSS: css/ext/llm-chat.css, llm-admin.css, llm-scripts.css
+  JS:  js/ext/llm-chat.umd.js, llm-admin.umd.js, llm-scripts.umd.js, llm-form.umd.js, llm-apikeys.umd.js
+  CSS: css/ext/llm-chat.css, llm-admin.css, llm-scripts.css, llm-form.css, llm-apikeys.css
 `);
   cb();
 });

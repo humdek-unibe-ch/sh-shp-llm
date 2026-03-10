@@ -1,0 +1,64 @@
+.llm-api-keys-manager .llm-apk-card {
+  border: 1px solid #ced4da;
+  border-radius: .25rem;
+  padding: .65rem .8rem;
+  margin-bottom: .45rem;
+  background: #fff;
+}
+.llm-api-keys-manager .llm-apk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .35rem;
+}
+.llm-api-keys-manager .llm-apk-name {
+  font-weight: 600;
+  font-size: .92rem;
+}
+.llm-api-keys-manager .llm-apk-url {
+  color: #6c757d;
+  font-size: .85rem;
+  word-break: break-all;
+  margin-bottom: .15rem;
+}
+.llm-api-keys-manager .llm-apk-key {
+  font-family: monospace;
+  font-size: .82rem;
+  color: #6c757d;
+}
+.llm-api-keys-manager .llm-apk-form {
+  border-color: #9fc5fe;
+  background: #f8fbff;
+  margin-top: .35rem;
+}
+.llm-api-keys-manager .llm-apk-form-title {
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #4f6072;
+  margin-bottom: .5rem;
+  letter-spacing: .02em;
+}
+.llm-api-keys-manager .llm-apk-form .form-group {
+  margin-bottom: .5rem;
+}
+.llm-api-keys-manager .llm-apk-form label {
+  font-size: .76rem;
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: .2rem;
+}
+.llm-api-keys-manager .llm-apk-actions .btn {
+  min-width: 2rem;
+  padding: .2rem .45rem;
+  line-height: 1.2;
+}
+.llm-api-keys-manager .llm-api-keys-add {
+  padding: .22rem .6rem;
+  line-height: 1.2;
+}
+.llm-api-keys-manager .llm-apk-empty {
+  color: #6c757d;
+  font-style: italic;
+  padding: .5rem 0;
+}

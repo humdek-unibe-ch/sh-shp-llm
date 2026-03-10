@@ -183,3 +183,37 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'f
 
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-llm-result-panel-view', 'Output select LLM result panel type field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldLlmResultPanelView', 5);
+
+-- =====================================================
+-- MULTI-SERVER API KEYS CONFIGURATION
+-- =====================================================
+-- Adds a JSON field that stores multiple server configurations:
+-- [{"name":"GPUStack","base_url":"https://...","api_key":"sk-..."},...]
+
+INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`) VALUES (NULL, 'json-llm-api-keys', '10');
+
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
+(NULL, 'llm_api_keys', get_field_type_id('json-llm-api-keys'), '0');
+
+INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_api_keys'), '[]', 'JSON array of LLM server configurations. Each entry has name, base_url, and api_key. Models from all configured servers are aggregated and prefixed with the server name.');
+
+INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
+((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_api_keys'), '[]', 'JSON array of LLM server configurations.');
+
+-- Register hooks for the custom API keys field UI
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-llm-api-keys-edit', 'Output custom LLM API keys manager - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldLlmApiKeysEdit', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-llm-api-keys-view', 'Output custom LLM API keys manager - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldLlmApiKeysView', 5);
+
+-- Ensure API keys manager assets are included on CMS pages (CSP-safe external files)
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'llm-cms-apikeys-css-includes', 'Append LLM API keys CSS include on CMS pages', 'CmsView', 'get_css_includes', 'LlmHooks', 'addCmsApiKeysCssIncludes', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'llm-cms-apikeys-js-includes', 'Append LLM API keys JS include on CMS pages', 'CmsView', 'get_js_includes', 'LlmHooks', 'addCmsApiKeysJsIncludes', 5);
+
+DELETE FROM fields WHERE `name` = 'llm_base_url';
+DELETE FROM fields WHERE `name` = 'llm_api_key';
