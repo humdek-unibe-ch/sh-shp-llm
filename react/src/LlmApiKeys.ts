@@ -39,6 +39,12 @@ function initApiKeysManager(container: HTMLElement): void {
 
   function setData(data: ServerEntry[]): void {
     textarea!.value = JSON.stringify(data);
+    // CMS UI dirty-state tracking listens to change/input on form fields.
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea!.dispatchEvent(new Event('change', { bubbles: true }));
+    if (typeof (window as any).$ === 'function') {
+      (window as any).$(textarea).trigger('change');
+    }
     render();
   }
 
