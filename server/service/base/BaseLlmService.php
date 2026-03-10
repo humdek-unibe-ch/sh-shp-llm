@@ -36,6 +36,11 @@ require_once __DIR__ . '/../cache/LlmCacheManager.php';
 abstract class BaseLlmService
 {
     use LlmLoggingTrait;
+    /**
+     * Canonical separator for server-scoped model IDs persisted in DB/UI.
+     * Example: "GPUStack Production :: qwen3-vl-8b-instruct"
+     */
+    const MODEL_SERVER_SEPARATOR = ' :: ';
 
     /** @var object SelfHelp services container */
     protected $services;
@@ -116,6 +121,9 @@ abstract class BaseLlmService
      * Retrieves configuration from database with caching.
      * Falls back to defaults if not configured.
      *
+     * Populates `llm_base_url` and `llm_api_key` convenience keys
+     * from the first entry in `llm_servers` for internal use.
+     *
      * @return array Configuration array
      */
     protected function getLlmConfig()
@@ -140,7 +148,6 @@ abstract class BaseLlmService
                     );
 
                     if ($page_data) {
-                        // Extract LLM configuration fields from the page data
                         foreach ($page_data as $key => $value) {
                             if (strpos($key, 'llm_') === 0) {
                                 $config[$key] = $value;
@@ -148,9 +155,18 @@ abstract class BaseLlmService
                         }
                     }
                 } catch (Exception $e) {
-                    // Log but don't fail - use defaults
                     $this->logError('LLM config retrieval failed', ['error' => $e->getMessage()]);
                 }
+            }
+
+            // Parse multi-server API keys from JSON field
+            $servers = $this->parseApiKeysConfig($config);
+            $config['llm_servers'] = $servers;
+
+            // Populate convenience keys from first server entry
+            if (!empty($servers)) {
+                $config['llm_base_url'] = $servers[0]['base_url'];
+                $config['llm_api_key'] = $servers[0]['api_key'];
             }
 
             // Apply defaults for any missing config
@@ -167,6 +183,201 @@ abstract class BaseLlmService
         }
 
         return $config;
+    }
+
+    /**
+     * Parse the llm_api_keys JSON field into an array of server configs.
+     *
+     * Each entry: {name: string, base_url: string, api_key: string}
+     *
+     * Falls back to legacy llm_base_url / llm_api_key when no entries exist.
+     *
+     * @param array $config Raw config from database
+     * @return array Server configuration entries
+     */
+    private function parseApiKeysConfig($config)
+    {
+        $servers = [];
+
+        if (!empty($config['llm_api_keys'])) {
+            $decoded = json_decode($config['llm_api_keys'], true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $entry) {
+                    if (!empty($entry['base_url'])) {
+                        $servers[] = [
+                            'name' => $entry['name'] ?? 'Default',
+                            'base_url' => rtrim($entry['base_url'], '/'),
+                            'api_key' => $entry['api_key'] ?? ''
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Fallback: if no servers from JSON, use legacy fields
+        if (empty($servers) && !empty($config['llm_base_url'])) {
+            $servers[] = [
+                'name' => 'Default',
+                'base_url' => rtrim($config['llm_base_url'], '/'),
+                'api_key' => $config['llm_api_key'] ?? ''
+            ];
+        }
+
+        return $servers;
+    }
+
+    /**
+     * Get all configured server entries.
+     *
+     * @return array Array of server configs [{name, base_url, api_key}, ...]
+     */
+    protected function getServerConfigs()
+    {
+        $config = $this->getLlmConfig();
+        return $config['llm_servers'] ?? [];
+    }
+
+    /**
+     * Resolve a model identifier that may be prefixed with a server name.
+     *
+     * Model format: "ServerName :: actual-model-id" or just "model-id" (legacy).
+     * Returns the matching server config and the raw model ID.
+     *
+     * @param string $model Model identifier (possibly prefixed)
+     * @return array ['server' => [...], 'model' => string]
+     */
+    protected function resolveModelServer($model)
+    {
+        $config = $this->getLlmConfig();
+        $servers = $config['llm_servers'] ?? [];
+        $parsed = $this->parseScopedModelId($model);
+        $serverName = $parsed['server_name'];
+        $rawModel = $parsed['model'];
+
+        if (!empty($serverName)) {
+            foreach ($servers as $server) {
+                if (($server['name'] ?? '') === $serverName) {
+                    return ['server' => $server, 'model' => $rawModel];
+                }
+            }
+        }
+
+        // Fallback: use first server or default config
+        if (!empty($servers)) {
+            return ['server' => $servers[0], 'model' => $rawModel];
+        }
+        return [
+            'server' => [
+                'name' => 'Default',
+                'base_url' => $config['llm_base_url'] ?? '',
+                'api_key' => $config['llm_api_key'] ?? ''
+            ],
+            'model' => $rawModel
+        ];
+    }
+
+    /**
+     * Build a model identifier for select/storage.
+     * With multiple servers configured this returns:
+     *   "Server Name :: model-id"
+     * With single server this returns the raw model-id (backward compatible).
+     *
+     * @param string $serverName
+     * @param string $modelId
+     * @param bool $useServerScope
+     * @return string
+     */
+    protected function buildScopedModelId($serverName, $modelId, $useServerScope)
+    {
+        $modelId = trim((string)$modelId);
+        if ($modelId === '') {
+            return '';
+        }
+        if (!$useServerScope) {
+            return $modelId;
+        }
+        $serverName = trim((string)$serverName);
+        if ($serverName === '') {
+            return $modelId;
+        }
+        return $serverName . self::MODEL_SERVER_SEPARATOR . $modelId;
+    }
+
+    /**
+     * Parse a scoped model identifier.
+     *
+     * Supports:
+     * - New canonical format: "Server Name :: model-id"
+     * - Legacy format: "Server Name - model-id"
+     * - Raw format: "model-id"
+     *
+     * @param string $value
+     * @return array ['server_name' => string|null, 'model' => string, 'has_prefix' => bool]
+     */
+    protected function parseScopedModelId($value)
+    {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return ['server_name' => null, 'model' => '', 'has_prefix' => false];
+        }
+
+        $separatorPos = strpos($value, self::MODEL_SERVER_SEPARATOR);
+        if ($separatorPos !== false) {
+            return [
+                'server_name' => trim(substr($value, 0, $separatorPos)),
+                'model' => trim(substr($value, $separatorPos + strlen(self::MODEL_SERVER_SEPARATOR))),
+                'has_prefix' => true
+            ];
+        }
+
+        // Backward compatibility with old "Server - model" format
+        $legacyPos = strpos($value, ' - ');
+        if ($legacyPos !== false) {
+            return [
+                'server_name' => trim(substr($value, 0, $legacyPos)),
+                'model' => trim(substr($value, $legacyPos + 3)),
+                'has_prefix' => true
+            ];
+        }
+
+        return ['server_name' => null, 'model' => $value, 'has_prefix' => false];
+    }
+
+    /**
+     * Normalize model identifier for DB storage / select values.
+     *
+     * When at least one server is configured, model IDs are persisted in
+     * canonical scoped format:
+     *   "Server Name :: model-id"
+     *
+     * With no configured servers, keeps raw model ID.
+     *
+     * @param string $model
+     * @param array|null $config Optional preloaded config
+     * @return string
+     */
+    protected function normalizeModelIdentifierForStorage($model, $config = null)
+    {
+        $model = trim((string)$model);
+        if ($model === '') {
+            return $model;
+        }
+
+        if ($config === null) {
+            $config = $this->getLlmConfig();
+        }
+
+        $servers = $config['llm_servers'] ?? array();
+        if (empty($servers)) {
+            $parsed = $this->parseScopedModelId($model);
+            return $parsed['model'] ?? $model;
+        }
+
+        $resolved = $this->resolveModelServer($model);
+        $serverName = $resolved['server']['name'] ?? '';
+        $rawModel = $resolved['model'] ?? $model;
+
+        return $this->buildScopedModelId($serverName, $rawModel, true);
     }
 
     /* =========================================================================

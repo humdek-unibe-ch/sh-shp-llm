@@ -44,10 +44,20 @@ class LlmService extends BaseLlmService
     public function __construct($services)
     {
         parent::__construct($services);
-        
-        // Initialize provider based on configuration
+
         $config = $this->getLlmConfig();
         $this->provider = LlmProviderRegistry::getProviderForUrl($config['llm_base_url']);
+    }
+
+    /**
+     * Get provider for a specific server config
+     *
+     * @param array $server Server config with base_url
+     * @return LlmProviderInterface
+     */
+    private function getProviderForServer($server)
+    {
+        return LlmProviderRegistry::getProviderForUrl($server['base_url']);
     }
     
     /**
@@ -154,12 +164,14 @@ class LlmService extends BaseLlmService
     public function createConversation($user_id, $title = null, $model = null, $temperature = null, $max_tokens = null, $section_id = null)
     {
         $config = $this->getLlmConfig();
+        $modelValue = $model ?: $config['llm_default_model'];
+        $modelValue = $this->normalizeModelIdentifierForStorage($modelValue, $config);
 
         $data = [
             'id_users' => $user_id,
             'id_sections' => $section_id,
             'title' => $title ?: 'New Conversation',
-            'model' => $model ?: $config['llm_default_model'],
+            'model' => $modelValue,
             'temperature' => LlmValidator::temperature($temperature, $config['llm_temperature']),
             'max_tokens' => LlmValidator::maxTokens($max_tokens, $config['llm_max_tokens'])
         ];
@@ -197,12 +209,14 @@ class LlmService extends BaseLlmService
     public function resolveConversation($user_id, $conversation_id, $rate_data, $model, $temperature = null, $max_tokens = null, $section_id = null)
     {
         $is_new = false;
+        $config = $this->getLlmConfig();
+        $normalizedModel = $this->normalizeModelIdentifierForStorage($model, $config);
 
         if (!$conversation_id) {
             $this->validateConcurrentConversationLimit($rate_data);
             $conversation_id = $this->getOrCreateConversationForModel(
                 $user_id,
-                $model,
+                $normalizedModel,
                 $temperature,
                 $max_tokens,
                 $section_id
@@ -214,11 +228,11 @@ class LlmService extends BaseLlmService
                 throw new Exception('Conversation not found');
             }
 
-            if ($existing['model'] !== $model) {
+            if ($existing['model'] !== $normalizedModel) {
                 $this->validateConcurrentConversationLimit($rate_data);
                 $conversation_id = $this->getOrCreateConversationForModel(
                     $user_id,
-                    $model,
+                    $normalizedModel,
                     $temperature,
                     $max_tokens,
                     $section_id
@@ -310,6 +324,9 @@ class LlmService extends BaseLlmService
      */
     public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null)
     {
+        $config = $this->getLlmConfig();
+        $model = $this->normalizeModelIdentifierForStorage($model, $config);
+
         // Try to find an existing conversation for this model within the same section
         $existing_conversations = $this->getUserConversations($user_id, 1, $model, $section_id);
 
@@ -688,34 +705,131 @@ class LlmService extends BaseLlmService
      * ========================================================================= */
 
     /**
-     * Get available models from LLM API
-     * 
+     * Get available models from all configured LLM servers.
+     *
+     * Model IDs are returned in canonical scoped format:
+     *   "ServerName :: model-id"
+     * so server routing remains explicit at selection and execution time.
+     *
      * @param array|null $config Optional configuration override
      * @return array Array of model data
      */
-    public function getAvailableModels($config = null)
+    public function getAvailableModels($config = null, $modelType = 'llm')
     {
         if (!$config) {
             $config = $this->getLlmConfig();
         }
 
+        $servers = $config['llm_servers'] ?? [];
+
+        // Fallback: single-server legacy mode
+        if (empty($servers)) {
+            return $this->fetchModelsFromServer([
+                'name' => 'Default',
+                'base_url' => $config['llm_base_url'],
+                'api_key' => $config['llm_api_key']
+            ], $config['llm_timeout'], false, $modelType);
+        }
+
+        $useServerScope = true;
+        $allModels = [];
+
+        foreach ($servers as $server) {
+            $models = $this->fetchModelsFromServer($server, $config['llm_timeout'], $useServerScope, $modelType);
+            $allModels = array_merge($allModels, $models);
+        }
+
+        if (empty($allModels)) {
+            return $this->getDefaultModelListByType($modelType);
+        }
+
+        return $allModels;
+    }
+
+    /**
+     * Public wrapper so hooks/components can normalize legacy raw model values
+     * to canonical scoped IDs before rendering selects.
+     *
+     * @param string $model
+     * @return string
+     */
+    public function normalizeModelIdentifier($model)
+    {
+        return $this->normalizeModelIdentifierForStorage($model);
+    }
+
+    /**
+     * Fetch models from a single server endpoint.
+     *
+     * @param array $server Server config {name, base_url, api_key}
+     * @param int $timeout Request timeout
+     * @param bool $prefix Whether to prefix model ids with server name
+     * @return array Normalized model list
+     */
+    private function fetchModelsFromServer($server, $timeout, $prefix = false, $modelType = 'llm')
+    {
         $data = [
-            'URL' => rtrim($config['llm_base_url'], '/') . LLM_API_MODELS,
+            'URL' => rtrim($server['base_url'], '/') . LLM_API_MODELS,
             'request_type' => 'GET',
             'header' => [
-                'Authorization: Bearer ' . $config['llm_api_key']
+                'Authorization: Bearer ' . ($server['api_key'] ?? '')
             ],
-            'timeout' => $config['llm_timeout']
+            'timeout' => $timeout
         ];
 
         $response = BaseModel::execute_curl_call($data);
 
-        // If API call fails, return default model list
         if (!$response || !is_array($response) || empty($response['data'])) {
-            return $this->getDefaultModelList()['data'];
+            return [];
         }
 
-        return $this->normalizeModels($response['data']);
+        $models = $this->normalizeModels($response['data']);
+        $models = $this->filterModelsByType($models, $modelType);
+
+        if ($prefix && !empty($server['name'])) {
+            foreach ($models as &$model) {
+                $model['id'] = $this->buildScopedModelId(
+                    $server['name'] ?? 'Default',
+                    $model['id'] ?? '',
+                    true
+                );
+            }
+            unset($model);
+        }
+
+        return $models;
+    }
+
+    /**
+     * Filter model list by usage type.
+     *
+     * @param array $models
+     * @param string $modelType Supported: llm, audio
+     * @return array
+     */
+    private function filterModelsByType($models, $modelType)
+    {
+        if ($modelType !== 'audio') {
+            return $models;
+        }
+
+        return array_values(array_filter($models, function ($model) {
+            $id = strtolower($model['id'] ?? '');
+            return $this->isAudioModelId($id);
+        }));
+    }
+
+    /**
+     * Determine whether a model id is audio/speech-to-text capable.
+     *
+     * @param string $id
+     * @return bool
+     */
+    private function isAudioModelId($id)
+    {
+        return strpos($id, 'whisper') !== false
+            || strpos($id, 'speech') !== false
+            || strpos($id, 'audio') !== false;
     }
 
     /**
@@ -759,6 +873,26 @@ class LlmService extends BaseLlmService
             ],
             "object" => "list"
         ];
+    }
+
+    /**
+     * Default fallback list by model type.
+     *
+     * @param string $modelType
+     * @return array
+     */
+    private function getDefaultModelListByType($modelType)
+    {
+        if ($modelType === 'audio') {
+            return [
+                ['id' => 'faster-whisper-large-v3', 'name' => 'Faster Whisper Large V3'],
+                ['id' => 'whisper-large-v3', 'name' => 'Whisper Large V3'],
+                ['id' => 'whisper-medium', 'name' => 'Whisper Medium'],
+                ['id' => 'whisper-small', 'name' => 'Whisper Small']
+            ];
+        }
+
+        return $this->getDefaultModelList()['data'];
     }
 
     /**
@@ -880,8 +1014,16 @@ class LlmService extends BaseLlmService
 
         $config = $this->getLlmConfig();
 
+        // Resolve server from model identifier (handles "ServerName :: model" prefix)
+        $resolved = $this->resolveModelServer($model);
+        $server = $resolved['server'];
+        $rawModel = $resolved['model'];
+
+        // Use the provider for the resolved server
+        $provider = $this->getProviderForServer($server);
+
         // Get API URL using provider
-        $url = $this->provider->getApiUrl($config['llm_base_url'], LLM_API_CHAT_COMPLETIONS);
+        $url = $provider->getApiUrl($server['base_url'], LLM_API_CHAT_COMPLETIONS);
 
         // Validate parameters using validator
         $temp_value = LlmValidator::temperature($temperature, $config['llm_temperature']);
@@ -889,11 +1031,11 @@ class LlmService extends BaseLlmService
 
         // Convert messages for model compatibility (handles system role support)
         require_once __DIR__ . '/LlmModelCapabilities.php';
-        $converted_messages = LlmModelCapabilities::convertMessagesForModel($messages, $model);
+        $converted_messages = LlmModelCapabilities::convertMessagesForModel($messages, $rawModel);
 
         // Build standard payload
         $payload = [
-            'model' => $model,
+            'model' => $rawModel,
             'messages' => $converted_messages,
             'temperature' => $temp_value,
             'max_tokens' => $max_tokens_value,
@@ -901,11 +1043,11 @@ class LlmService extends BaseLlmService
         ];
 
         // Merge provider-specific parameters
-        $providerParams = $this->provider->getAdditionalRequestParams($payload);
+        $providerParams = $provider->getAdditionalRequestParams($payload);
         $payload = array_merge($payload, $providerParams);
 
         // Get authentication headers from provider
-        $headers = $this->provider->getAuthHeaders($config['llm_api_key']);
+        $headers = $provider->getAuthHeaders($server['api_key']);
 
         // Make API request with detailed error handling
         $curl_result = $this->executeLlmCurlCall($url, $headers, $payload, $config['llm_timeout']);
@@ -960,9 +1102,9 @@ class LlmService extends BaseLlmService
             }
         }
 
-        // Normalize response using provider
+        // Normalize response using resolved provider
         try {
-            $normalized = $this->provider->normalizeResponse($response);
+            $normalized = $provider->normalizeResponse($response);
             // Include the full request payload in the response for debugging
             $normalized['request_payload'] = $payload;
 
@@ -1013,7 +1155,7 @@ class LlmService extends BaseLlmService
                 $this->logWarning('LLM API normalization auto-log failed', ['error' => $logException->getMessage()]);
             }
             $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
-            throw LlmApiException::normalizationFailed($this->provider->getProviderName(), $e->getMessage(), $response, $payload);
+            throw LlmApiException::normalizationFailed($provider->getProviderName(), $e->getMessage(), $response, $payload);
         }
     }
 }

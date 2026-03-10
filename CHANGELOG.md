@@ -2,7 +2,25 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.1.0] - 2026-03-04
+## [1.1.0] - 2026-03-10
+
+### Multi-Server API Keys
+
+- **Multiple LLM Endpoints** — New `llm_api_keys` JSON field replaces the single `llm_base_url` / `llm_api_key` pair. Admins can now configure multiple LLM server endpoints, each with its own name, base URL, and API key.
+- **Custom CMS Interface** — The `llm_api_keys` field renders as an interactive card-based manager in the CMS. Each server entry is displayed as a card showing the server name, URL, and a masked API key. Admins can:
+  - **Add** new servers via the "Add Server" button
+  - **Edit** existing entries inline (name, base URL, API key)
+  - **Delete** entries with confirmation
+  - All data is stored as a JSON array in a single field
+- **Aggregated Model Lists** — Model dropdowns aggregate models from all configured servers and expose canonical scoped IDs: `ServerName :: model-id` (e.g., `GPUStack Production :: qwen3-vl-8b-instruct`).
+- **Automatic Server Resolution** — When an API call is made (chat, form, script), the system resolves which server to use based on the model identifier prefix. The correct base URL and API key are applied automatically.
+- **Automatic Migration** — The v1.1.0 migration automatically converts existing `llm_base_url` / `llm_api_key` values into a single "Default" server entry in the new `llm_api_keys` JSON field. After migration, the legacy fields are removed from the database.
+- **Unified Model Catalog** — One backend catalog function now powers all model dropdowns and runtime lookups (chat + speech-to-text), so hooks and services stay in sync.
+- **Audio Models** — Speech-to-text model fetching also aggregates across all configured servers and uses the same scoped ID format.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `llm_api_keys` | json-llm-api-keys | `[]` | JSON array of server configs: `[{name, base_url, api_key}]` |
 
 ### New Styles
 
@@ -183,7 +201,7 @@ Initial release of the SelfHelp LLM plugin. Provides a complete AI chat integrat
 - **Exception Hierarchy** — `LlmException` → `LlmApiException`, `LlmRateLimitException`, `LlmValidationException`
 - **Callback Endpoint** — `CallbackLlm.php` for async script result processing
 - **APCu Caching** — `LlmCacheManager` for conversations, messages, and rate limit data
-- **React Build** — Three separate Vite entry points: chat (`llm-chat.umd.js`), admin (`llm-admin.umd.js`), scripts (`llm-scripts.umd.js`)
+- **React Build** — Five separate Vite entry points: chat (`llm-chat.umd.js`), admin (`llm-admin.umd.js`), scripts (`llm-scripts.umd.js`), form (`llm-form.umd.js`), api-keys (`llm-apikeys.umd.js`)
 - **Gulp Integration** — Build tasks for installing dependencies, building React, and watching for changes
 
 ### Database Tables
@@ -199,8 +217,7 @@ Initial release of the SelfHelp LLM plugin. Provides a complete AI chat integrat
 
 | Setting | Location | Description |
 |---------|----------|-------------|
-| `llm_base_url` | Module config | LLM API endpoint URL |
-| `llm_api_key` | Module config | API authentication token |
+| `llm_api_keys` | Module config | JSON array of server configs (name, base_url, api_key). Replaces legacy `llm_base_url` / `llm_api_key` fields (removed in v1.1.0). |
 | `llm_default_model` | Module config | Default model for all chats |
 | `llm_timeout` | Module config | API request timeout (seconds) |
 | `llm_max_tokens` | Module config | Max tokens per response |

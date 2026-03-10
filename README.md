@@ -69,17 +69,17 @@ npm install
 npm run build
 ```
 
-This installs React dependencies and builds three UMD bundles:
+This installs React dependencies and builds UMD bundles, including:
 - `js/ext/llm-chat.umd.js` — Chat interface
 - `js/ext/llm-admin.umd.js` — Admin console
 - `js/ext/llm-scripts.umd.js` — Scripts manager
+- `js/ext/llm-apikeys.umd.js` — CMS API key manager
 
 ### 4. Configure the Module
 
 1. Go to **Admin > Pages** and find the auto-created module page (`sh_module_llm`)
 2. Set the required fields:
-   - `llm_base_url` — Your LLM API endpoint (e.g., `https://gpustack.unibe.ch/v1`)
-   - `llm_api_key` — Your API authentication token
+   - `llm_api_keys` — JSON API key manager with one or more servers (`name`, `base_url`, `api_key`)
    - `llm_default_model` — Default model name (e.g., `qwen3-vl-8b-instruct`)
 3. Optionally adjust `llm_timeout`, `llm_max_tokens`, and `llm_temperature`
 
@@ -91,12 +91,19 @@ These apply globally to all chat sections and are configured on the module page.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `llm_base_url` | text | — | LLM API base URL (required) |
-| `llm_api_key` | text | — | API key or token (required) |
+| `llm_api_keys` | json-llm-api-keys | `[]` | Array of server configs: `[{name, base_url, api_key}]` |
 | `llm_default_model` | select | `qwen3-vl-8b-instruct` | Default model for all chats |
 | `llm_timeout` | number | `30` | API request timeout in seconds |
 | `llm_max_tokens` | number | `2048` | Maximum tokens per response |
 | `llm_temperature` | number | `1` | Response randomness (0-2) |
+
+Model identifiers are stored and submitted in canonical scoped format:
+`Server Name :: model-id`
+
+The same backend catalog (`LlmService::getAvailableModels(..., 'llm'|'audio')`) feeds:
+- `select-llm-model` dropdowns
+- `select-audio-model` dropdowns
+- runtime server/model resolution for API requests
 
 ### Section-Level Settings (llmChat style)
 
@@ -324,7 +331,7 @@ The React app has three entry points configured via separate Vite configs:
 | BFH Inference | `*/api/v1` | Enhanced with `reasoning_content` |
 | Any OpenAI-compatible | `*/v1` | Uses GPUStack provider |
 
-The provider is auto-detected from `llm_base_url`. To add a new provider, implement `LlmProviderInterface` and register it in `LlmProviderRegistry`.
+The provider is auto-detected from the selected server's `base_url`. To add a new provider, implement `LlmProviderInterface` and register it in `LlmProviderRegistry`.
 
 ### Tested Models
 
@@ -340,7 +347,7 @@ The provider is auto-detected from `llm_base_url`. To add a new provider, implem
 | Symptom | Possible Cause | Solution |
 |---------|---------------|----------|
 | Chat not loading | Missing JS bundle | Run `npm run build` in `gulp/` |
-| "No models available" | Wrong API URL or key | Verify `llm_base_url` and `llm_api_key` in module config |
+| "No models available" | Wrong API URL or key | Verify entries in `llm_api_keys` (base URL + API key) in module config |
 | API timeout | Slow model or network | Increase `llm_timeout` |
 | File uploads failing | Directory permissions | Ensure `upload/` directory is writable by PHP |
 | Speech-to-text not available | Missing config | Enable `enable_speech_to_text` AND select a `speech_to_text_model` |

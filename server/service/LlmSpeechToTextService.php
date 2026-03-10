@@ -6,6 +6,7 @@
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/LlmFileNamingService.php';
+require_once __DIR__ . '/LlmService.php';
 
 /**
  * LLM Speech-to-Text Service
@@ -246,6 +247,14 @@ class LlmSpeechToTextService extends BaseLlmService
         if (empty($model)) {
             $model = self::DEFAULT_SPEECH_MODEL;
         }
+
+        // Resolve target server + raw model identifier
+        $resolvedModel = $this->resolveModelServer($model);
+        $speechServer = $resolvedModel['server'];
+        $rawModel = $resolvedModel['model'];
+        if (empty($rawModel)) {
+            $rawModel = self::DEFAULT_SPEECH_MODEL;
+        }
         
         // Get language from session if not specified
         if ($language === null) {
@@ -256,7 +265,7 @@ class LlmSpeechToTextService extends BaseLlmService
             $config = $this->getLlmConfig();
 
             // Build the API URL for audio transcriptions
-            $apiUrl = rtrim($config['llm_base_url'], '/') . self::AUDIO_TRANSCRIPTIONS_ENDPOINT;
+            $apiUrl = rtrim($speechServer['base_url'], '/') . self::AUDIO_TRANSCRIPTIONS_ENDPOINT;
 
             // Forward uploaded audio directly to Whisper (no server-side re-encoding)
             $actualPath = $audioFilePath;
@@ -270,7 +279,7 @@ class LlmSpeechToTextService extends BaseLlmService
 
             $postData = [
                 'file' => $audioFile,
-                'model' => $model,
+                'model' => $rawModel,
                 'response_format' => 'json'
             ];
 
@@ -284,7 +293,7 @@ class LlmSpeechToTextService extends BaseLlmService
             $response = $this->executeMultipartCurlCall(
                 $apiUrl,
                 $postData,
-                $config['llm_api_key'],
+                $speechServer['api_key'] ?? '',
                 $config['llm_timeout']
             );
 
@@ -507,38 +516,14 @@ class LlmSpeechToTextService extends BaseLlmService
     public function getAvailableAudioModels()
     {
         try {
-            $config = $this->getLlmConfig();
-            
-            $data = [
-                'URL' => rtrim($config['llm_base_url'], '/') . LLM_API_MODELS,
-                'request_type' => 'GET',
-                'header' => [
-                    'Authorization: Bearer ' . $config['llm_api_key']
-                ],
-                'timeout' => $config['llm_timeout']
-            ];
-            
-            $response = BaseModel::execute_curl_call($data);
-            
-            if (!$response || !is_array($response) || empty($response['data'])) {
+            // Use the unified model catalog path from LlmService so all dropdowns
+            // and runtime model routing use the same source of truth.
+            $llmService = new LlmService($this->services);
+            $models = $llmService->getAvailableModels(null, 'audio');
+            if (empty($models)) {
                 return $this->getDefaultAudioModelList();
             }
-            
-            // Filter for audio/whisper models
-            $audioModels = array_filter($response['data'], function($model) {
-                $id = strtolower($model['id'] ?? '');
-                return strpos($id, 'whisper') !== false 
-                    || strpos($id, 'speech') !== false
-                    || strpos($id, 'audio') !== false;
-            });
-            
-            // If no audio models found, return default list
-            if (empty($audioModels)) {
-                return $this->getDefaultAudioModelList();
-            }
-            
-            return array_values($audioModels);
-            
+            return $models;
         } catch (Exception $e) {
             error_log("Error fetching audio models: " . $e->getMessage());
             return $this->getDefaultAudioModelList();

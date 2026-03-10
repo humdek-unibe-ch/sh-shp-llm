@@ -4,9 +4,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 $uid = $fields['uid'];
+$fieldNamePrefix = $fields['fieldNamePrefix'];
 $inputName = $fields['inputName'];
 $jsonValue = $fields['jsonValue'];
 $disabled = $fields['disabled'];
+$fieldId = $fields['fieldId'];
+$fieldType = $fields['fieldType'];
+$fieldRelation = $fields['fieldRelation'];
+$fieldMeta = $fields['fieldMeta'];
 $escapedJson = htmlspecialchars($jsonValue, ENT_QUOTES, 'UTF-8');
 $readonlyAttr = $disabled ? 'readonly' : '';
 $decoded = json_decode($jsonValue, true);
@@ -27,6 +32,13 @@ if (!function_exists('llm_mask_api_key')) {
 <div id="<?php echo $uid; ?>"
      class="llm-api-keys-manager mt-2"
      data-disabled="<?php echo $disabled ? '1' : '0'; ?>">
+    <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[id]" value="<?php echo htmlspecialchars((string)$fieldId, ENT_QUOTES, 'UTF-8'); ?>">
+    <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[type]" value="<?php echo htmlspecialchars((string)$fieldType, ENT_QUOTES, 'UTF-8'); ?>">
+    <?php if ($fieldMeta !== null): ?>
+        <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[meta]" value="<?php echo htmlspecialchars((string)$fieldMeta, ENT_QUOTES, 'UTF-8'); ?>">
+    <?php endif; ?>
+    <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[relation]" value="<?php echo htmlspecialchars((string)$fieldRelation, ENT_QUOTES, 'UTF-8'); ?>">
+
     <textarea name="<?php echo $inputName; ?>"
               class="llm-api-keys-value d-none"
               <?php echo $readonlyAttr; ?>><?php echo $escapedJson; ?></textarea>

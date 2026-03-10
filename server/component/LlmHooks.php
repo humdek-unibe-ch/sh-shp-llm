@@ -46,6 +46,7 @@ class LlmHooks extends BaseHooks
         try {
             $llmService = new LlmService($this->services);
             $models = $llmService->getAvailableModels();
+            $normalizedValue = $llmService->normalizeModelIdentifier($value);
 
             $items = array();
             foreach ($models as $model) {
@@ -56,7 +57,7 @@ class LlmHooks extends BaseHooks
             }
 
             return new BaseStyleComponent("select", array(
-                "value" => $value,
+                "value" => $normalizedValue,
                 "name" => $name,
                 "max" => 10,
                 "live_search" => 1,
@@ -238,9 +239,9 @@ class LlmHooks extends BaseHooks
     private function outputSelectAudioModelField($value, $name, $disabled)
     {
         try {
-            require_once __DIR__ . "/../service/LlmSpeechToTextService.php";
-            $speechService = new LlmSpeechToTextService($this->services);
-            $models = $speechService->getAvailableAudioModels();
+            $llmService = new LlmService($this->services);
+            $models = $llmService->getAvailableModels(null, 'audio');
+            $normalizedValue = $llmService->normalizeModelIdentifier($value);
 
             // Transform models array to select format
             $items = array(
@@ -254,7 +255,7 @@ class LlmHooks extends BaseHooks
             }
 
             return new BaseStyleComponent("select", array(
-                "value" => $value,
+                "value" => $normalizedValue,
                 "name" => $name,
                 "max" => 10,
                 "live_search" => 1,
@@ -880,9 +881,14 @@ class LlmHooks extends BaseHooks
             "path" => __DIR__ . "/tpl_api_keys_manager.php",
             "items" => array(
                 "uid" => $uid,
+                "fieldNamePrefix" => $field_name_prefix,
                 "inputName" => $inputName,
                 "jsonValue" => json_encode($entries, JSON_UNESCAPED_SLASHES),
-                "disabled" => $disabled
+                "disabled" => $disabled,
+                "fieldId" => $field['id'] ?? '',
+                "fieldType" => $field['type'] ?? '',
+                "fieldRelation" => $field['relation'] ?? '',
+                "fieldMeta" => array_key_exists('meta', $field) ? $field['meta'] : null
             )
         ));
 

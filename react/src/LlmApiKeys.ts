@@ -177,10 +177,28 @@ function initApiKeysManager(container: HTMLElement): void {
   }
 
   function deleteEntry(idx: number): void {
-    if (!confirm('Remove this server configuration?')) return;
-    const data = getData();
-    data.splice(idx, 1);
-    setData(data);
+    const doDelete = () => {
+      const data = getData();
+      data.splice(idx, 1);
+      setData(data);
+    };
+
+    if (typeof (window as any).$.confirm === 'function') {
+      (window as any).$.confirm({
+        title: 'Delete Server',
+        content: 'Remove this server configuration?',
+        type: 'red',
+        buttons: {
+          confirm: () => doDelete(),
+          cancel: () => {}
+        }
+      });
+      return;
+    }
+
+    if (window.confirm('Remove this server configuration?')) {
+      doDelete();
+    }
   }
 
   if (addBtn) {
