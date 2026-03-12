@@ -150,14 +150,12 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
       editorRef.current = monaco.editor.createDiffEditor(diffRef.current, {
         readOnly: true,
         automaticLayout: true,
-        renderSideBySide: false,
+        renderSideBySide: true,
         ignoreTrimWhitespace: false,
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         wordWrap: 'on',
-        hideUnchangedRegions: {
-          enabled: false,
-        },
+        hideUnchangedRegions: { enabled: false },
         overviewRulerLanes: 0,
       });
 
@@ -168,11 +166,38 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
 
       const originalEditor = editorRef.current.getOriginalEditor?.();
       const modifiedEditor = editorRef.current.getModifiedEditor?.();
+      originalEditor?.updateOptions?.({
+        scrollbar: {
+          vertical: 'hidden',
+          horizontal: 'auto',
+        },
+      });
+      modifiedEditor?.updateOptions?.({
+        scrollbar: {
+          vertical: 'hidden',
+          horizontal: 'auto',
+        },
+      });
+
+      let syncing = false;
+      const syncScroll = (source: any, target: any) => source?.onDidScrollChange?.((event: any) => {
+        if (!event?.scrollTopChanged || syncing || !target) {
+          return;
+        }
+        syncing = true;
+        target.setScrollTop?.(source.getScrollTop?.() || 0);
+        syncing = false;
+      });
+
+      const disposeOriginalSync = syncScroll(originalEditor, modifiedEditor);
+      const disposeModifiedSync = syncScroll(modifiedEditor, originalEditor);
       originalEditor?.setScrollTop?.(0);
       modifiedEditor?.setScrollTop?.(0);
       originalEditor?.revealLine?.(1);
       modifiedEditor?.revealLine?.(1);
       editorRef.current.layout?.();
+
+      (editorRef.current as any).__promptSyncDisposables = [disposeOriginalSync, disposeModifiedSync];
     };
 
     try {
@@ -191,6 +216,8 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
     return () => {
       disposed = true;
       if (editorRef.current) {
+        const syncDisposables = (editorRef.current as any).__promptSyncDisposables || [];
+        syncDisposables.forEach((disposable: any) => disposable?.dispose?.());
         const model = editorRef.current.getModel?.();
         model?.original?.dispose?.();
         model?.modified?.dispose?.();

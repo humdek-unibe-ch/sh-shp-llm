@@ -98,7 +98,7 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
         editorRef.current = null;
       }
     };
-  }, [disabled, editorMode, fallbackToTextarea, language, onChange, value]);
+  }, [disabled, editorMode, fallbackToTextarea, language, onChange]);
 
   useEffect(() => {
     if (!editorRef.current) {
@@ -143,4 +143,3 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
     />
   );
 };
-
