@@ -150,11 +150,15 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
       editorRef.current = monaco.editor.createDiffEditor(diffRef.current, {
         readOnly: true,
         automaticLayout: true,
-        renderSideBySide: true,
+        renderSideBySide: false,
         ignoreTrimWhitespace: false,
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         wordWrap: 'on',
+        hideUnchangedRegions: {
+          enabled: false,
+        },
+        overviewRulerLanes: 0,
       });
 
       editorRef.current.setModel({
@@ -250,7 +254,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
             </Col>
           </Row>
         ) : (
-          <div ref={diffRef} className="prompt-diff-monaco" />
+          <div ref={diffRef} className="prompt-diff-monaco flex-grow-1" />
         )}
       </Modal.Body>
       <Modal.Footer className="py-2">

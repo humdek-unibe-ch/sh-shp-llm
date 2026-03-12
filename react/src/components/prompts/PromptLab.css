@@ -20,8 +20,8 @@
 }
 
 .prompt-diff-monaco {
-  height: 60vh;
-  min-height: 420px;
+  height: 100%;
+  min-height: 0;
   border: 1px solid #dee2e6;
   border-radius: 0.25rem;
 }
@@ -140,4 +140,10 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+}
+
+.modal-dialog.prompt-modal-90.prompt-diff-modal .modal-body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }

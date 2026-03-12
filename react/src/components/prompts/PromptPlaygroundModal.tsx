@@ -174,17 +174,6 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }
   }, [effectiveSchema, rawJson, show, useRawJson, variables]);
 
-  useEffect(() => {
-    if (!show || !useRawJson) {
-      return;
-    }
-
-    const parsed = tryParseJsonObject(rawJson);
-    if (parsed) {
-      setVariables(normalizeInitialValues(effectiveSchema, parsed));
-    }
-  }, [effectiveSchema, rawJson, show, useRawJson]);
-
   const isChatRuntime = executionProfile === 'chat_runtime' || executionProfile === 'therapy_chat_runtime';
   const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
 
@@ -209,6 +198,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
 
     setRunning(true);
     setError(null);
+    setResult(null);
     try {
       const payloadVariables = useRawJson ? parseJsonObject(rawJson) : variables;
       const nextResult = await api.playgroundRun({
@@ -385,7 +375,14 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
               ))
             ) : (
               <div className="prompt-playground-empty border rounded bg-light p-4 text-center text-muted small">
-                Run the playground to inspect the effective context, structured result, and raw payload.
+                {running ? (
+                  <>
+                    <Spinner animation="border" size="sm" className="mr-2" />
+                    Generating new result...
+                  </>
+                ) : (
+                  'Run the playground to inspect the effective context, structured result, and raw payload.'
+                )}
               </div>
             )}
 
