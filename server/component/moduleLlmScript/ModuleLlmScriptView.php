@@ -65,8 +65,14 @@ class ModuleLlmScriptView extends BaseView
      */
     public function getReactConfig()
     {
+        $prompt_endpoint = $this->model->get_link_url(LLM_PROMPT_LAB_PAGE_KEYWORD);
+        if (!$prompt_endpoint || strpos($prompt_endpoint, '[AjaxLlmPromptLab:class]') !== false || strpos($prompt_endpoint, '[dispatch:method]') !== false) {
+            $prompt_endpoint = '/request/AjaxLlmPromptLab/dispatch';
+        }
+
         return json_encode([
             'csrfToken' => $_SESSION['csrf_token'] ?? '',
+            'promptLabEndpoint' => $prompt_endpoint,
         ]);
     }
 }

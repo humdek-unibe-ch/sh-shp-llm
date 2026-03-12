@@ -217,3 +217,175 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'l
 
 DELETE FROM fields WHERE `name` = 'llm_base_url';
 DELETE FROM fields WHERE `name` = 'llm_api_key';
+
+-- =====================================================
+-- PROMPT REGISTRY, VERSIONING, AND PLAYGROUND
+-- =====================================================
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_prompt_owner_types', 'style_field', 'style_field', 'Prompt owner is a style-backed CMS field'),
+('llm_prompt_owner_types', 'llm_script', 'llm_script', 'Prompt owner is an llm_scripts row');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_prompt_run_modes', 'playground', 'playground', 'Single-model playground run'),
+('llm_prompt_run_modes', 'builder', 'builder', 'Prompt builder assistant run'),
+('llm_prompt_run_modes', 'compare', 'compare', 'Multi-model playground comparison run');
+
+INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`) VALUES (NULL, 'llm_prompt', '12');
+
+UPDATE `fields`
+SET `id_type` = get_field_type_id('llm_prompt')
+WHERE `name` IN ('conversation_context', 'llm_context');
+
+CREATE TABLE IF NOT EXISTS `llm_prompt_entries` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_prompt_owner_types` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `owner_id` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `prompt_slot` VARCHAR(64) NOT NULL,
+    `title` VARCHAR(255) DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_prompt_owner_slot` (`id_llm_prompt_owner_types`, `owner_id`, `prompt_slot`),
+    KEY `idx_prompt_owner_type` (`id_llm_prompt_owner_types`),
+    CONSTRAINT `fk_llm_prompt_entries_owner_type` FOREIGN KEY (`id_llm_prompt_owner_types`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_llm_prompt_entries_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_llm_prompt_entries_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_prompt_locales` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_prompt_entries` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_languages` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `active_version_id` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `active_version_no` INT NOT NULL DEFAULT 0,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_prompt_entry_language` (`id_llm_prompt_entries`, `id_languages`),
+    KEY `idx_prompt_locale_language` (`id_languages`),
+    KEY `idx_prompt_locale_active_version` (`active_version_id`),
+    CONSTRAINT `fk_llm_prompt_locales_entry` FOREIGN KEY (`id_llm_prompt_entries`) REFERENCES `llm_prompt_entries` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_llm_prompt_locales_language` FOREIGN KEY (`id_languages`) REFERENCES `languages` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_llm_prompt_locales_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_llm_prompt_locales_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_prompt_versions` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_prompt_locales` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `version_no` INT NOT NULL,
+    `template_raw` LONGTEXT,
+    `template_hash` VARCHAR(64) NOT NULL,
+    `config_json` LONGTEXT DEFAULT NULL,
+    `metadata_json` LONGTEXT DEFAULT NULL,
+    `variables_schema_json` LONGTEXT DEFAULT NULL,
+    `tags_json` LONGTEXT DEFAULT NULL,
+    `change_note` VARCHAR(255) DEFAULT NULL,
+    `based_on_version_id` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_prompt_locale_version` (`id_llm_prompt_locales`, `version_no`),
+    KEY `idx_prompt_version_hash` (`template_hash`),
+    KEY `idx_prompt_version_based_on` (`based_on_version_id`),
+    CONSTRAINT `fk_llm_prompt_versions_locale` FOREIGN KEY (`id_llm_prompt_locales`) REFERENCES `llm_prompt_locales` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_llm_prompt_versions_based_on` FOREIGN KEY (`based_on_version_id`) REFERENCES `llm_prompt_versions` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_llm_prompt_versions_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Keep this FK outside CREATE TABLE because `llm_prompt_locales` and
+-- `llm_prompt_versions` reference each other, so one side must be added after
+-- both tables exist.
+CALL add_foreign_key('llm_prompt_locales', 'fk_llm_prompt_locales_active_version', 'active_version_id', '`llm_prompt_versions` (`id`)');
+
+CREATE TABLE IF NOT EXISTS `llm_prompt_playground_runs` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_prompt_entries` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llm_prompt_locales` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llm_prompt_versions` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llmConversations` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llmMessages_request` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llmMessages_response` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_lookups_run_mode` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `comparison_group_id` VARCHAR(64) DEFAULT NULL,
+    `variables_json` LONGTEXT DEFAULT NULL,
+    `config_snapshot_json` LONGTEXT DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_prompt_runs_entry` (`id_llm_prompt_entries`),
+    KEY `idx_prompt_runs_locale` (`id_llm_prompt_locales`),
+    KEY `idx_prompt_runs_version` (`id_llm_prompt_versions`),
+    KEY `idx_prompt_runs_conversation` (`id_llmConversations`),
+    KEY `idx_prompt_runs_group` (`comparison_group_id`),
+    CONSTRAINT `fk_prompt_runs_entry` FOREIGN KEY (`id_llm_prompt_entries`) REFERENCES `llm_prompt_entries` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_locale` FOREIGN KEY (`id_llm_prompt_locales`) REFERENCES `llm_prompt_locales` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_version` FOREIGN KEY (`id_llm_prompt_versions`) REFERENCES `llm_prompt_versions` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_conversation` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_request_message` FOREIGN KEY (`id_llmMessages_request`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_response_message` FOREIGN KEY (`id_llmMessages_response`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_run_mode` FOREIGN KEY (`id_lookups_run_mode`) REFERENCES `lookups` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_prompt_runs_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SET @has_llm_scripts_prompt_entry_column := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'llm_scripts'
+      AND COLUMN_NAME = 'id_llm_prompt_entries'
+);
+SET @sql_llm_scripts_prompt_entry_column := IF(
+    @has_llm_scripts_prompt_entry_column = 0,
+    'ALTER TABLE `llm_scripts` ADD COLUMN `id_llm_prompt_entries` INT(10) UNSIGNED ZEROFILL DEFAULT NULL AFTER `id`',
+    'SELECT 1'
+);
+PREPARE stmt_llm_scripts_prompt_entry_column FROM @sql_llm_scripts_prompt_entry_column;
+EXECUTE stmt_llm_scripts_prompt_entry_column;
+DEALLOCATE PREPARE stmt_llm_scripts_prompt_entry_column;
+
+SET @has_llm_scripts_prompt_entry_index := (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'llm_scripts'
+      AND INDEX_NAME = 'idx_llm_scripts_prompt_entry'
+);
+SET @sql_llm_scripts_prompt_entry_index := IF(
+    @has_llm_scripts_prompt_entry_index = 0,
+    'ALTER TABLE `llm_scripts` ADD KEY `idx_llm_scripts_prompt_entry` (`id_llm_prompt_entries`)',
+    'SELECT 1'
+);
+PREPARE stmt_llm_scripts_prompt_entry_index FROM @sql_llm_scripts_prompt_entry_index;
+EXECUTE stmt_llm_scripts_prompt_entry_index;
+DEALLOCATE PREPARE stmt_llm_scripts_prompt_entry_index;
+
+CALL add_foreign_key('llm_scripts', 'fk_llm_scripts_prompt_entry', 'id_llm_prompt_entries', '`llm_prompt_entries` (`id`)');
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-llm-prompt-edit', 'Output custom LLM prompt field - edit mode', 'CmsView', 'create_field_form_item', 'LlmHooks', 'outputFieldLlmPromptEdit', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'field-llm-prompt-view', 'Output custom LLM prompt field - view mode', 'CmsView', 'create_field_item', 'LlmHooks', 'outputFieldLlmPromptView', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'llm-cms-prompt-css-includes', 'Append LLM prompt field CSS include on CMS pages', 'CmsView', 'get_css_includes', 'LlmHooks', 'addCmsPromptCssIncludes', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'llm-cms-prompt-js-includes', 'Append LLM prompt field JS include on CMS pages', 'CmsView', 'get_js_includes', 'LlmHooks', 'addCmsPromptJsIncludes', 5);
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'llm-sync-prompt-version-on-save', 'Sync prompt registry after CMS save', 'CmsModel', 'update_db', 'LlmHooks', 'syncPromptVersionOnCmsSave', 5);
+
+INSERT IGNORE INTO `pages` (`id`, `keyword`, `url`, `protocol`, `id_actions`, `id_navigation_section`, `parent`, `is_headless`, `nav_position`, `footer_position`, `id_type`, `id_pageAccessTypes`)
+VALUES (NULL, 'ajax_llm_prompt_lab', '/request/[AjaxLlmPromptLab:class]/[dispatch:method]', 'GET|POST', (SELECT id FROM actions WHERE `name` = 'ajax' LIMIT 1), NULL, NULL, '0', NULL, NULL, '0000000001', (SELECT id FROM lookups WHERE type_code = 'pageAccessTypes' AND lookup_code = 'mobile_and_web'));
+
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
+VALUES ('0000000001', (SELECT id FROM pages WHERE keyword = 'ajax_llm_prompt_lab'), '1', '1', '1', '1');

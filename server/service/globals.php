@@ -34,6 +34,13 @@ define('TRANSACTION_BY_LLM_SCRIPT', 'by_llm_script');
 define('ACTION_JOB_TYPE_LLM_SCRIPT', 'llm_script');
 define('LLM_TABLE_SCRIPTS', 'llm_scripts');
 define('LLM_SCRIPTS_PAGE_KEYWORD', 'moduleLlmScript');
+define('LLM_PROMPT_LAB_PAGE_KEYWORD', 'ajax_llm_prompt_lab');
+define('LLM_PROMPT_OWNER_STYLE_FIELD', 'style_field');
+define('LLM_PROMPT_OWNER_SCRIPT', 'llm_script');
+define('LLM_PROMPT_RUN_MODE_PLAYGROUND', 'playground');
+define('LLM_PROMPT_RUN_MODE_BUILDER', 'builder');
+define('LLM_PROMPT_RUN_MODE_COMPARE', 'compare');
+define('LLM_PROMPT_META_KEY', 'prompt');
 
 // File upload limits
 define('LLM_MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB

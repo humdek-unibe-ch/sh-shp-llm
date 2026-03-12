@@ -1,0 +1,88 @@
+import React from 'react';
+import { Badge, Button, Modal, Table } from 'react-bootstrap';
+import { formatDateTime } from '../../utils/formatters';
+import type { PromptVersion } from './promptTypes';
+
+interface PromptVersionsModalProps {
+  show: boolean;
+  onHide: () => void;
+  versions: PromptVersion[];
+  activeVersionId?: number | null;
+  onUseVersion: (version: PromptVersion) => void;
+  onCompareVersion: (version: PromptVersion) => void;
+}
+
+export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
+  show,
+  onHide,
+  versions,
+  activeVersionId,
+  onUseVersion,
+  onCompareVersion,
+}) => {
+  return (
+    <Modal show={show} onHide={onHide} centered dialogClassName="prompt-modal-90 prompt-versions-modal">
+      <Modal.Header closeButton className="py-2">
+        <Modal.Title className="h6">
+          <i className="fas fa-history mr-2"></i>
+          Prompt Versions
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="p-0">
+        {versions.length === 0 ? (
+          <div className="p-4 text-center text-muted small">No saved versions yet.</div>
+        ) : (
+          <Table hover responsive size="sm" className="mb-0">
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>When</th>
+                <th>Who</th>
+                <th>Comment</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {versions.map((version) => {
+                const isActive = version.id === activeVersionId;
+                return (
+                  <tr key={version.id}>
+                    <td>
+                      <span className="font-weight-bold">v{version.version_no}</span>
+                      {isActive && (
+                        <Badge variant="success" className="ml-2">
+                          Active
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="small text-muted">{formatDateTime(version.created_at)}</td>
+                    <td className="small">{version.created_user_name || '-'}</td>
+                    <td className="small">{version.change_note || <span className="text-muted">-</span>}</td>
+                    <td className="text-right">
+                      <Button
+                        size="sm"
+                        variant="outline-secondary"
+                        className="mr-2"
+                        onClick={() => onCompareVersion(version)}
+                      >
+                        Compare
+                      </Button>
+                      <Button size="sm" variant="primary" onClick={() => onUseVersion(version)}>
+                        Use
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Modal.Body>
+      <Modal.Footer className="py-2">
+        <Button size="sm" variant="secondary" onClick={onHide}>
+          Close
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+};

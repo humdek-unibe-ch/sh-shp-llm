@@ -8,6 +8,8 @@ require_once __DIR__ . "/../../../../component/BaseHooks.php";
 require_once __DIR__ . "/../../../../component/style/BaseStyleComponent.php";
 require_once __DIR__ . "/../service/LlmService.php";
 require_once __DIR__ . "/../service/LlmScriptService.php";
+require_once __DIR__ . "/../service/LlmPromptRegistryService.php";
+require_once __DIR__ . "/../service/LlmPromptExecutionProfileService.php";
 
 /**
  * The class to define the hooks for the LLM plugin.
@@ -846,6 +848,255 @@ class LlmHooks extends BaseHooks
     public function outputFieldLlmResultPanelView($args)
     {
         return $this->returnSelectLlmResultPanelField($args, 1);
+    }
+
+    /* Prompt Registry Field Hooks ********************************************/
+
+    /**
+     * Render the React-based prompt field shell for CMS.
+     *
+     * @param array $args
+     * @param bool $disabled
+     * @return object
+     */
+    private function returnLlmPromptField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        if (($field['type'] ?? '') !== 'llm_prompt') {
+            return $res;
+        }
+
+        $cms_model = $this->get_private_property(array(
+            'hookedClassInstance' => $args['hookedClassInstance'],
+            'propertyName' => 'model'
+        ));
+
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $uid = 'llm_prompt_' . md5($field_name_prefix);
+        $endpoint = $this->get_link_url(LLM_PROMPT_LAB_PAGE_KEYWORD);
+        if (!$endpoint || strpos($endpoint, '[AjaxLlmPromptLab:class]') !== false || strpos($endpoint, '[dispatch:method]') !== false) {
+            $endpoint = '/request/AjaxLlmPromptLab/dispatch';
+        }
+
+        $templateComponent = new BaseStyleComponent("template", array(
+            "path" => __DIR__ . "/tpl_prompt_field.php",
+            "items" => array(
+                "uid" => $uid,
+                "fieldNamePrefix" => $field_name_prefix,
+                "inputName" => $field_name_prefix . "[content]",
+                "metaInputName" => $field_name_prefix . "[meta]",
+                "jsonConfig" => json_encode(array(
+                    'endpoint' => $endpoint,
+                    'csrfToken' => $_SESSION['csrf_token'] ?? '',
+                    'disabled' => $disabled ? 1 : 0,
+                    'ownerType' => LLM_PROMPT_OWNER_STYLE_FIELD,
+                    'ownerId' => $cms_model->get_active_section_id(),
+                    'pageId' => $cms_model->get_active_page_id(),
+                    'promptSlot' => $field['name'] ?? '',
+                    'languageId' => $field['id_language'] ?? 1,
+                    'title' => $field['label'] ?? ucfirst(str_replace('_', ' ', $field['name'] ?? 'Prompt')),
+                    'styleName' => $field['style_name'] ?? '',
+                    'sectionName' => $field['section_name'] ?? ''
+                ), JSON_UNESCAPED_SLASHES),
+                "contentValue" => $field['content'] ?? '',
+                "metaValue" => array_key_exists('meta', $field) ? $field['meta'] : '',
+                "disabled" => $disabled,
+                "fieldId" => $field['id'] ?? '',
+                "fieldType" => $field['type'] ?? '',
+                "fieldRelation" => $field['relation'] ?? '',
+            )
+        ));
+
+        if ($templateComponent && $res) {
+            $res->get_view()->set_children(array($templateComponent));
+        }
+
+        return $res;
+    }
+
+    /**
+     * Output custom prompt field in edit mode.
+     *
+     * @param array $args
+     * @return object
+     */
+    public function outputFieldLlmPromptEdit($args)
+    {
+        return $this->returnLlmPromptField($args, false);
+    }
+
+    /**
+     * Output custom prompt field in view mode.
+     *
+     * @param array $args
+     * @return object
+     */
+    public function outputFieldLlmPromptView($args)
+    {
+        return $this->returnLlmPromptField($args, true);
+    }
+
+    /**
+     * Sync prompt version history after the normal CMS field save completed.
+     *
+     * @param array $args
+     * @return mixed
+     */
+    public function syncPromptVersionOnCmsSave($args)
+    {
+        $res = $this->execute_private_method($args);
+
+        if ($res !== true) {
+            return $res;
+        }
+
+        $relation = $this->get_param_by_name($args, 'relation');
+        if ($relation !== RELATION_SECTION_FIELD) {
+            return $res;
+        }
+
+        $field_id = (int)$this->get_param_by_name($args, 'id');
+        if ($field_id <= 0) {
+            return $res;
+        }
+
+        $field_info = $this->services->get_db()->query_db_first(
+            "SELECT f.name, ft.name AS type
+             FROM fields f
+             INNER JOIN fieldType ft ON ft.id = f.id_type
+             WHERE f.id = :id",
+            array(':id' => $field_id)
+        );
+
+        if (!$field_info || ($field_info['type'] ?? '') !== 'llm_prompt') {
+            return $res;
+        }
+
+        $cms_model = $args['hookedClassInstance'];
+        $section_id = $cms_model->get_active_section_id();
+        if (!$section_id) {
+            return $res;
+        }
+
+        $registry = new LlmPromptRegistryService($this->services);
+        $profile_service = new LlmPromptExecutionProfileService($this->services);
+        $descriptor = array(
+            'owner_type' => LLM_PROMPT_OWNER_STYLE_FIELD,
+            'owner_id' => $section_id,
+            'prompt_slot' => $field_info['name'],
+            'id_languages' => (int)$this->get_param_by_name($args, 'id_language'),
+            'title' => ucfirst(str_replace('_', ' ', $field_info['name']))
+        );
+
+        $profile = $profile_service->resolveExecutionProfile($descriptor);
+        $runtime_values = $profile_service->getStyleFieldValues(
+            $section_id,
+            $descriptor['id_languages'],
+            $profile_service->getCompanionFieldNames($profile)
+        );
+
+        foreach ($this->getPostedRuntimeOverrides($profile_service->getCompanionFieldNames($profile)) as $key => $value) {
+            $runtime_values[$key] = $value;
+        }
+
+        $content = (string)$this->get_param_by_name($args, 'content');
+        $meta = $args['meta'] ?? null;
+        $sync = $registry->syncFieldSave($descriptor, $field_id, $content, $meta, $runtime_values);
+
+        $cms_model->update_section_fields_db(
+            $field_id,
+            $descriptor['id_languages'],
+            (int)$this->get_param_by_name($args, 'id_gender'),
+            $content,
+            $section_id,
+            $sync['meta_json']
+        );
+
+        return $res;
+    }
+
+    /**
+     * Ensure prompt field CSS is loaded on CMS pages.
+     *
+     * @param array $args
+     * @return array
+     */
+    public function addCmsPromptCssIncludes($args)
+    {
+        $res = $this->execute_private_method($args);
+        if (!is_array($res)) {
+            $res = array();
+        }
+
+        $css_file = __DIR__ . "/../../css/ext/llm-prompt-field.css";
+        if (file_exists($css_file) && !in_array($css_file, $res, true)) {
+            $res[] = $css_file;
+        }
+
+        return $res;
+    }
+
+    /**
+     * Ensure prompt field JS is loaded on CMS pages.
+     *
+     * @param array $args
+     * @return array
+     */
+    public function addCmsPromptJsIncludes($args)
+    {
+        $res = $this->execute_private_method($args);
+        if (!is_array($res)) {
+            $res = array();
+        }
+
+        $js_file = __DIR__ . "/../../js/ext/llm-prompt-field.umd.js";
+        if (file_exists($js_file) && !in_array($js_file, $res, true)) {
+            $res[] = $js_file;
+        }
+
+        return $res;
+    }
+
+    /**
+     * Read unsaved companion field values from the current CMS POST payload.
+     *
+     * @param array $field_names
+     * @return array
+     */
+    private function getPostedRuntimeOverrides($field_names)
+    {
+        $result = array();
+        $posted_fields = $_POST['fields'] ?? array();
+        if (!is_array($posted_fields)) {
+            return $result;
+        }
+
+        foreach ($field_names as $field_name) {
+            if (!isset($posted_fields[$field_name]) || !is_array($posted_fields[$field_name])) {
+                continue;
+            }
+
+            foreach ($posted_fields[$field_name] as $by_language) {
+                if (!is_array($by_language)) {
+                    continue;
+                }
+
+                foreach ($by_language as $by_gender) {
+                    if (!is_array($by_gender)) {
+                        continue;
+                    }
+
+                    if (array_key_exists('content', $by_gender)) {
+                        $result[$field_name] = $by_gender['content'];
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return $result;
     }
 
     /* LLM API Keys Manager Hooks *********************************************/

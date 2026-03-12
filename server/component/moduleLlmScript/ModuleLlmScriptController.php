@@ -173,10 +173,12 @@ class ModuleLlmScriptController extends BaseController
             $temperature = ($_POST['temperature'] ?? '') !== '' ? floatval($_POST['temperature']) : null;
             $max_tokens = ($_POST['max_tokens'] ?? '') !== '' ? intval($_POST['max_tokens']) : null;
             $refresh_sections = $_POST['refresh_sections'] ?? null;
+            $prompt_change_note = $_POST['prompt_change_note'] ?? null;
+            $prompt_meta_json = $_POST['prompt_meta_json'] ?? null;
 
             $res = $this->scriptService->update_script(
                 $sid, $name, $script, $test_variables,
-                $async, $data_config, $model, $temperature, $max_tokens, $refresh_sections
+                $async, $data_config, $model, $temperature, $max_tokens, $refresh_sections, $prompt_change_note, $prompt_meta_json
             );
 
             if ($res) {

@@ -1,17 +1,43 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Container, Row, Col, Card, Button, Badge, Alert, Spinner,
-  Table, Modal, Form, Dropdown
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Col,
+  Container,
+  Dropdown,
+  Form,
+  Modal,
+  Row,
+  Spinner,
+  Table,
 } from 'react-bootstrap';
 import type { ScriptsConfig } from '../../scripts';
-import { createScriptsApi, type LlmScript, type LlmModel, type SectionInfo, type LlmDefaults } from './scriptsApi';
+import {
+  createScriptsApi,
+  type LlmDefaults,
+  type LlmModel,
+  type LlmScript,
+  type SectionInfo,
+} from './scriptsApi';
 import { formatDateTime } from '../../utils/formatters';
-import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
+import { createPromptLabApi } from '../prompts/promptApi';
+import { PromptBuilderModal } from '../prompts/PromptBuilderModal';
+import { PromptDiffModal } from '../prompts/PromptDiffModal';
+import { PromptEditor } from '../prompts/PromptEditor';
+import { PromptPlaygroundModal } from '../prompts/PromptPlaygroundModal';
+import { PromptToolbar } from '../prompts/PromptToolbar';
+import { PromptVersionsModal } from '../prompts/PromptVersionsModal';
+import { usePromptBootstrap } from '../prompts/promptHooks';
+import type {
+  PromptDescriptor,
+  PromptVariableDefinition,
+  PromptVersion,
+} from '../prompts/promptTypes';
+import '../prompts/PromptLab.css';
 import './ScriptsManager.css';
 
-declare const monaco: any;
-declare const require: any;
-declare const BASE_PATH: string;
 declare const $: any;
 
 type ViewMode = 'list' | 'editor';
@@ -23,34 +49,61 @@ interface AclPerms {
   delete: boolean;
 }
 
-export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) => {
-  const api = useRef(createScriptsApi());
-  const copyFeedbackTimerRef = useRef<number | null>(null);
+interface ScriptFormState {
+  name: string;
+  script: string;
+  test_variables: string;
+  async: number;
+  data_config: string;
+  model: string;
+  temperature: string;
+  max_tokens: string;
+  refresh_sections: string;
+}
 
-  const [scripts, setScripts] = useState<LlmScript[]>([]);
-  const [selectedScript, setSelectedScript] = useState<LlmScript | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
-  const [copiedType, setCopiedType] = useState<'raw' | 'payload' | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<LlmScript | null>(null);
-  const [deleteInput, setDeleteInput] = useState('');
+interface DiffState {
+  leftTitle: string;
+  rightTitle: string;
+  leftContent: string;
+  rightContent: string;
+}
 
-  // Config data loaded from controller
-  const [models, setModels] = useState<LlmModel[]>([]);
-  const [sections, setSections] = useState<SectionInfo[]>([]);
-  const [defaults, setDefaults] = useState<LlmDefaults | null>(null);
-  const [acl, setAcl] = useState<AclPerms>({ select: true, insert: true, update: true, delete: true });
+function parseJsonObject(value: string): Record<string, unknown> {
+  if (!value.trim()) {
+    return {};
+  }
 
-  // Section search filter
-  const [sectionSearch, setSectionSearch] = useState('');
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
-  // Editor form state
-  const [form, setForm] = useState({
+function buildPromptMetaJson(
+  promptChangeNote: string,
+  promptVariablesSchema: PromptVariableDefinition[] | null,
+): string | null {
+  const prompt: Record<string, unknown> = {};
+
+  if (promptChangeNote.trim() !== '') {
+    prompt.pendingChangeNote = promptChangeNote.trim();
+  }
+
+  if (promptVariablesSchema && promptVariablesSchema.length > 0) {
+    prompt.variablesSchema = promptVariablesSchema;
+  }
+
+  if (Object.keys(prompt).length === 0) {
+    return null;
+  }
+
+  return JSON.stringify({ prompt });
+}
+
+function getEmptyForm(): ScriptFormState {
+  return {
     name: '',
     script: '',
     test_variables: '',
@@ -59,50 +112,61 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     model: '',
     temperature: '',
     max_tokens: '',
-    refresh_sections: '' as string,
+    refresh_sections: '[]',
+  };
+}
+
+export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) => {
+  const api = useRef(createScriptsApi());
+  const promptApi = useMemo(
+    () => createPromptLabApi(config.promptLabEndpoint || window.location.pathname, config.csrfToken),
+    [config.csrfToken, config.promptLabEndpoint],
+  );
+  const creatingRef = useRef(false);
+
+  const [scripts, setScripts] = useState<LlmScript[]>([]);
+  const [selectedScript, setSelectedScript] = useState<LlmScript | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [deleteConfirm, setDeleteConfirm] = useState<LlmScript | null>(null);
+  const [deleteInput, setDeleteInput] = useState('');
+  const [models, setModels] = useState<LlmModel[]>([]);
+  const [sections, setSections] = useState<SectionInfo[]>([]);
+  const [defaults, setDefaults] = useState<LlmDefaults | null>(null);
+  const [acl, setAcl] = useState<AclPerms>({ select: true, insert: true, update: true, delete: true });
+  const [sectionSearch, setSectionSearch] = useState('');
+  const [form, setForm] = useState<ScriptFormState>(getEmptyForm());
+  const [promptChangeNote, setPromptChangeNote] = useState('');
+  const [promptVariablesSchema, setPromptVariablesSchema] = useState<PromptVariableDefinition[] | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [showPlayground, setShowPlayground] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [diffState, setDiffState] = useState<DiffState>({
+    leftTitle: 'Current Draft',
+    rightTitle: 'Active Version',
+    leftContent: '',
+    rightContent: '',
   });
 
-  const editorRef = useRef<any>(null);
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-  const testVarsEditorRef = useRef<any>(null);
-  const testVarsContainerRef = useRef<HTMLDivElement>(null);
-
-  // Parse refresh_sections as array of numbers
-  const getRefreshSectionIds = (): number[] => {
-    if (!form.refresh_sections) return [];
-    try {
-      const parsed = JSON.parse(form.refresh_sections);
-      if (Array.isArray(parsed)) return parsed.map(Number).filter(n => !isNaN(n));
-    } catch { /* ignore */ }
-    return [];
-  };
-
-  const setRefreshSectionIds = (ids: number[]) => {
-    setForm(prev => ({ ...prev, refresh_sections: JSON.stringify(ids) }));
-  };
-
-  // Load configuration, models, sections on mount + relocate dataConfig modal to body
   useEffect(() => {
-    api.current.getConfig().then(cfg => {
+    api.current.getConfig().then((cfg) => {
       setDefaults(cfg);
-      if (cfg.acl) setAcl(cfg.acl);
-    }).catch(() => {});
-
-    api.current.getModels().then(m => setModels(m)).catch(() => {});
-    api.current.getSections().then(s => setSections(s)).catch(() => {});
-
-    // Move the core dataConfigBuilder modal from the hidden wrapper to body
-    // so Bootstrap can show/hide it independently of the wrapper's display:none
-    const modal = document.querySelector('#data-config-builder-wrapper .data_config_builder_modal_holder');
-    if (modal) document.body.appendChild(modal);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (copyFeedbackTimerRef.current) {
-        window.clearTimeout(copyFeedbackTimerRef.current);
+      if (cfg.acl) {
+        setAcl(cfg.acl);
       }
-    };
+    }).catch(() => undefined);
+
+    api.current.getModels().then((items) => setModels(items)).catch(() => undefined);
+    api.current.getSections().then((items) => setSections(items)).catch(() => undefined);
+
+    const modal = document.querySelector('#data-config-builder-wrapper .data_config_builder_modal_holder');
+    if (modal) {
+      document.body.appendChild(modal);
+    }
   }, []);
 
   const loadScripts = useCallback(async () => {
@@ -122,121 +186,111 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     loadScripts();
   }, [loadScripts]);
 
-  // Check URL for ?sid= parameter on mount to open script directly
+  const promptDescriptor = useMemo<PromptDescriptor>(() => ({
+    ownerType: 'llm_script',
+    ownerId: selectedScript?.id || 0,
+    promptSlot: 'script',
+    languageId: 1,
+    title: form.name || selectedScript?.name || 'Script Prompt',
+  }), [form.name, selectedScript]);
+
+  const promptMetaJson = useMemo(
+    () => buildPromptMetaJson(promptChangeNote, promptVariablesSchema) || '{}',
+    [promptChangeNote, promptVariablesSchema],
+  );
+
+  const promptRuntimeOverrides = useMemo(() => ({
+    name: form.name,
+    model: form.model || null,
+    temperature: form.temperature || null,
+    max_tokens: form.max_tokens || null,
+    data_config: form.data_config,
+    test_variables: form.test_variables,
+  }), [
+    form.data_config,
+    form.max_tokens,
+    form.model,
+    form.name,
+    form.temperature,
+    form.test_variables,
+  ]);
+
+  const {
+    bootstrap: promptBootstrap,
+    loading: promptLoading,
+    error: promptError,
+    reload: reloadPromptBootstrap,
+  } = usePromptBootstrap({
+    api: promptApi,
+    descriptor: promptDescriptor,
+    currentContent: form.script,
+    currentMeta: promptMetaJson,
+    runtimeOverrides: promptRuntimeOverrides,
+    enabled: !!config.promptLabEndpoint && !!selectedScript && viewMode === 'editor',
+  });
+
+  useEffect(() => {
+    if (!selectedScript) {
+      return;
+    }
+
+    if (!promptVariablesSchema && promptBootstrap?.variables_schema?.length) {
+      setPromptVariablesSchema(promptBootstrap.variables_schema);
+    }
+  }, [promptBootstrap, promptVariablesSchema, selectedScript]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sidParam = params.get('sid');
-    if (sidParam) {
-      const sid = parseInt(sidParam, 10);
-      if (sid > 0) {
-        api.current.get(sid).then(script => {
-          openScriptDirect(script);
-        }).catch(() => {});
-      }
+    if (!sidParam) {
+      return;
     }
+
+    const sid = parseInt(sidParam, 10);
+    if (sid <= 0) {
+      return;
+    }
+
+    api.current.get(sid).then((script) => {
+      openScriptDirect(script);
+    }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Initialize Monaco prompt editor when entering editor mode
-  useEffect(() => {
-    if (viewMode !== 'editor' || !editorContainerRef.current) return;
-
-    if (editorRef.current) {
-      editorRef.current.dispose();
-      editorRef.current = null;
+  const getRefreshSectionIds = (): number[] => {
+    if (!form.refresh_sections) {
+      return [];
     }
-
-    if (typeof window !== 'undefined' && typeof require !== 'undefined') {
-      try {
-        require.config({ paths: { vs: BASE_PATH + '/js/ext/vs' } });
-        require(['vs/editor/editor.main'], () => {
-          if (!editorContainerRef.current) return;
-          const editor = monaco.editor.create(editorContainerRef.current, {
-            value: form.script,
-            language: 'markdown',
-            automaticLayout: true,
-            renderLineHighlight: 'none',
-            wordWrap: 'on',
-            minimap: { enabled: false },
-            fontSize: 14,
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-          });
-          editorRef.current = editor;
-
-          editor.onDidChangeModelContent(() => {
-            setForm(prev => ({ ...prev, script: editor.getValue() }));
-          });
-        });
-      } catch { /* Monaco not available */ }
-    }
-
-    return () => {
-      if (editorRef.current) {
-        editorRef.current.dispose();
-        editorRef.current = null;
+    try {
+      const parsed = JSON.parse(form.refresh_sections);
+      if (Array.isArray(parsed)) {
+        return parsed.map(Number).filter((value) => !Number.isNaN(value));
       }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode]);
-
-  // Initialize Monaco test variables editor when entering editor mode
-  useEffect(() => {
-    if (viewMode !== 'editor' || !testVarsContainerRef.current) return;
-
-    if (testVarsEditorRef.current) {
-      testVarsEditorRef.current.dispose();
-      testVarsEditorRef.current = null;
+    } catch {
+      return [];
     }
+    return [];
+  };
 
-    if (typeof window !== 'undefined' && typeof require !== 'undefined') {
-      try {
-        require.config({ paths: { vs: BASE_PATH + '/js/ext/vs' } });
-        require(['vs/editor/editor.main'], () => {
-          if (!testVarsContainerRef.current) return;
-          const editor = monaco.editor.create(testVarsContainerRef.current, {
-            value: form.test_variables || '{\n  \n}',
-            language: 'json',
-            automaticLayout: true,
-            renderLineHighlight: 'none',
-            wordWrap: 'on',
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-          });
-          testVarsEditorRef.current = editor;
-
-          editor.onDidChangeModelContent(() => {
-            setForm(prev => ({ ...prev, test_variables: editor.getValue() }));
-          });
-        });
-      } catch { /* Monaco not available */ }
-    }
-
-    return () => {
-      if (testVarsEditorRef.current) {
-        testVarsEditorRef.current.dispose();
-        testVarsEditorRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode]);
+  const setRefreshSectionIds = (ids: number[]) => {
+    setForm((prev) => ({ ...prev, refresh_sections: JSON.stringify(ids) }));
+  };
 
   const openScriptDirect = (full: LlmScript) => {
     setError(null);
     setSuccess(null);
-    setTestResult(null);
     setSelectedScript(full);
+    setPromptChangeNote('');
+    setPromptVariablesSchema(null);
     setForm({
       name: full.name || '',
       script: full.script || '',
-      test_variables: full.test_variables || '',
+      test_variables: full.test_variables || '{\n  \n}',
       async: full.async ? 1 : 0,
       data_config: full.data_config || '',
       model: full.model || '',
       temperature: full.temperature != null ? String(full.temperature) : '',
-      max_tokens: full.max_tokens ? String(full.max_tokens) : '',
+      max_tokens: full.max_tokens != null ? String(full.max_tokens) : '',
       refresh_sections: full.refresh_sections || '[]',
     });
     setViewMode('editor');
@@ -245,11 +299,9 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   const openScript = async (script: LlmScript) => {
     setError(null);
     setSuccess(null);
-    setTestResult(null);
     try {
       const full = await api.current.get(script.id);
       openScriptDirect(full);
-      // Update URL with script ID for deep linking
       const url = new URL(window.location.href);
       url.searchParams.set('sid', String(script.id));
       window.history.replaceState({}, '', url.toString());
@@ -258,16 +310,17 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     }
   };
 
-  const creatingRef = useRef(false);
   const handleCreate = async () => {
-    if (creatingRef.current) return;
+    if (creatingRef.current) {
+      return;
+    }
     creatingRef.current = true;
     setLoading(true);
     setError(null);
     try {
       const newScript = await api.current.create();
       await loadScripts();
-      openScript(newScript);
+      await openScript(newScript);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -277,7 +330,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   };
 
   const handleSave = async () => {
-    if (!selectedScript) return;
+    if (!selectedScript) {
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -291,11 +347,16 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         data_config: form.data_config,
         model: form.model || null,
         temperature: form.temperature || null,
-        max_tokens: form.max_tokens ? parseInt(form.max_tokens) : null,
+        max_tokens: form.max_tokens ? parseInt(form.max_tokens, 10) : null,
         refresh_sections: form.refresh_sections || null,
-      } as any);
+        prompt_change_note: promptChangeNote || null,
+        prompt_meta_json: buildPromptMetaJson(promptChangeNote, promptVariablesSchema),
+      });
       setSelectedScript(updated);
-      setSuccess('Script saved at ' + new Date().toLocaleTimeString());
+      setPromptChangeNote('');
+      setSuccess(`Script saved at ${new Date().toLocaleTimeString()}`);
+      await reloadPromptBootstrap();
+      await loadScripts();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -304,11 +365,14 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   };
 
   const handleDelete = async () => {
-    if (!deleteConfirm) return;
+    if (!deleteConfirm) {
+      return;
+    }
     if (deleteInput !== deleteConfirm.generated_id) {
       setError('Verification text does not match the generated ID.');
       return;
     }
+
     setLoading(true);
     setError(null);
     try {
@@ -326,135 +390,14 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    setError(null);
-    try {
-      const result = await api.current.test({
-        script: form.script,
-        script_name: form.name || selectedScript?.name || 'Unnamed Script',
-        sid: selectedScript?.id?.toString() || '',
-        test_variables: form.test_variables,
-        data_config: form.data_config,
-        model: form.model,
-        temperature: form.temperature,
-        max_tokens: form.max_tokens,
-      });
-      setTestResult(result);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const setCopyFeedback = (type: 'raw' | 'payload') => {
-    setCopiedType(type);
-    if (copyFeedbackTimerRef.current) {
-      window.clearTimeout(copyFeedbackTimerRef.current);
-    }
-    copyFeedbackTimerRef.current = window.setTimeout(() => {
-      setCopiedType(null);
-      copyFeedbackTimerRef.current = null;
-    }, 1800);
-  };
-
-  const copyRawResponse = () => {
-    if (!testResult) return;
-    const data = testResult.data as any;
-    const raw = data?.raw_response || JSON.stringify(testResult, null, 2);
-    navigator.clipboard.writeText(typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2))
-      .then(() => setCopyFeedback('raw'))
-      .catch(() => setError('Failed to copy raw response'));
-  };
-
-  const getRequestPayloadFromTestResult = (): unknown => {
-    if (!testResult) return null;
-
-    const resultAny = testResult as any;
-    const data = resultAny?.data as any;
-
-    if (resultAny?.request_payload) return resultAny.request_payload;
-    if (data?.request_payload) return data.request_payload;
-
-    const raw = data?.raw_response ?? resultAny?.raw_response;
-    if (!raw) return null;
-
-    let parsedRaw: any = raw;
-    if (typeof raw === 'string') {
-      try {
-        parsedRaw = JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    }
-
-    return parsedRaw?.request_payload ?? null;
-  };
-
-  const copyPayload = () => {
-    const payload = getRequestPayloadFromTestResult();
-    if (!payload) {
-      setError('No payload available to copy');
-      return;
-    }
-    const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
-    navigator.clipboard.writeText(payloadString)
-      .then(() => setCopyFeedback('payload'))
-      .catch(() => setError('Failed to copy payload'));
-  };
-
-  const openDataConfigModal = () => {
-    if (typeof $ === 'undefined') return;
-
-    try {
-      const textarea = document.querySelector('textarea[name="data_config"]') as HTMLTextAreaElement;
-      if (textarea) {
-        textarea.value = form.data_config || '';
-        textarea.dispatchEvent(new Event('change'));
-      }
-
-      // If JSONEditor is already initialized, set its value from our form state
-      if (typeof (window as any).dataConfigEditor !== 'undefined' && (window as any).dataConfigEditor) {
-        try {
-          const val = form.data_config ? JSON.parse(form.data_config) : [];
-          (window as any).dataConfigEditor.setValue(val);
-        } catch { /* invalid JSON, editor will use empty */ }
-      }
-
-      // Ensure save button has data-dismiss so Bootstrap closes the modal
-      const saveBtn = document.querySelector('.saveDataConfig');
-      if (saveBtn) {
-        saveBtn.setAttribute('data-dismiss', 'modal');
-      }
-
-      // Rebind save handler: read from JSONEditor, update React state
-      $('.saveDataConfig').off('click.llmscripts').on('click.llmscripts', () => {
-        let val = '';
-        if (typeof (window as any).dataConfigEditor !== 'undefined' && (window as any).dataConfigEditor) {
-          const editorVal = (window as any).dataConfigEditor.getValue();
-          val = JSON.stringify(editorVal, null, 3);
-          if (val === '[]') val = '';
-        } else {
-          const ta = document.querySelector('textarea[name="data_config"]') as HTMLTextAreaElement;
-          if (ta) val = ta.value;
-        }
-        setForm(prev => ({ ...prev, data_config: val }));
-      });
-
-      // Open the modal
-      $('.data_config_builder_modal_holder').modal({ backdrop: false });
-    } catch { /* jQuery/modal not available */ }
-  };
-
   const backToList = () => {
     setViewMode('list');
     setSelectedScript(null);
-    setTestResult(null);
+    setPromptChangeNote('');
+    setPromptVariablesSchema(null);
+    setForm(getEmptyForm());
     setError(null);
     setSuccess(null);
-    // Remove sid from URL
     const url = new URL(window.location.href);
     url.searchParams.delete('sid');
     url.searchParams.delete('action');
@@ -462,34 +405,119 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     loadScripts();
   };
 
-  // Filtered sections for the dropdown
-  const filteredSections = sections.filter(s =>
-    !sectionSearch || (s.name && s.name.toLowerCase().includes(sectionSearch.toLowerCase()))
-  );
+  const openDataConfigModal = () => {
+    if (typeof $ === 'undefined') {
+      return;
+    }
+
+    try {
+      const textarea = document.querySelector('textarea[name="data_config"]') as HTMLTextAreaElement | null;
+      if (textarea) {
+        textarea.value = form.data_config || '';
+        textarea.dispatchEvent(new Event('change'));
+      }
+
+      if (typeof (window as any).dataConfigEditor !== 'undefined' && (window as any).dataConfigEditor) {
+        try {
+          const value = form.data_config ? JSON.parse(form.data_config) : [];
+          (window as any).dataConfigEditor.setValue(value);
+        } catch {
+          // keep editor empty
+        }
+      }
+
+      const saveBtn = document.querySelector('.saveDataConfig');
+      if (saveBtn) {
+        saveBtn.setAttribute('data-dismiss', 'modal');
+      }
+
+      $('.saveDataConfig').off('click.llmscripts').on('click.llmscripts', () => {
+        let value = '';
+        if (typeof (window as any).dataConfigEditor !== 'undefined' && (window as any).dataConfigEditor) {
+          const editorValue = (window as any).dataConfigEditor.getValue();
+          value = JSON.stringify(editorValue, null, 3);
+          if (value === '[]') {
+            value = '';
+          }
+        } else if (textarea) {
+          value = textarea.value;
+        }
+
+        setForm((prev) => ({ ...prev, data_config: value }));
+      });
+
+      $('.data_config_builder_modal_holder').modal({ backdrop: false });
+    } catch {
+      // keep silent, same as existing behavior
+    }
+  };
+
+  const filteredSections = sections.filter((section) => (
+    !sectionSearch || (section.name && section.name.toLowerCase().includes(sectionSearch.toLowerCase()))
+  ));
 
   const selectedSectionIds = getRefreshSectionIds();
 
   const toggleSection = (sectionId: number) => {
     const current = getRefreshSectionIds();
     if (current.includes(sectionId)) {
-      setRefreshSectionIds(current.filter(id => id !== sectionId));
-    } else {
-      setRefreshSectionIds([...current, sectionId]);
+      setRefreshSectionIds(current.filter((id) => id !== sectionId));
+      return;
     }
+
+    setRefreshSectionIds([...current, sectionId]);
   };
 
   const getDataConfigLabel = (): string => {
-    if (!form.data_config) return 'Add Data Config';
+    if (!form.data_config) {
+      return 'Add Data Config';
+    }
     try {
       const parsed = JSON.parse(form.data_config);
       if (parsed && (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0)) {
         return 'Edit Data Config';
       }
-    } catch { /* ignore */ }
+    } catch {
+      return 'Edit Data Config';
+    }
     return 'Add Data Config';
   };
 
-  // === LIST VIEW ===
+  const openDiffWithVersion = (version: PromptVersion) => {
+    setDiffState({
+      leftTitle: `v${version.version_no}`,
+      rightTitle: 'Current Draft',
+      leftContent: version.template_raw || '',
+      rightContent: form.script,
+    });
+    setShowDiff(true);
+  };
+
+  const handleUseVersion = (version: PromptVersion) => {
+    setForm((prev) => ({ ...prev, script: version.template_raw || '' }));
+    setPromptChangeNote((current) => current || `Restored from version ${version.version_no}`);
+    setShowVersions(false);
+  };
+
+  const handleBuilderApply = (
+    nextPrompt: string,
+    variables: PromptVariableDefinition[],
+    changeSummary: string,
+  ) => {
+    setForm((prev) => ({ ...prev, script: nextPrompt }));
+    if (variables.length > 0) {
+      setPromptVariablesSchema(variables);
+    }
+    if (!promptChangeNote && changeSummary) {
+      setPromptChangeNote(changeSummary);
+    }
+    setShowBuilder(false);
+  };
+
+  const effectiveVariablesSchema = promptVariablesSchema || promptBootstrap?.variables_schema || [];
+  const activeVersion = promptBootstrap?.active_version || null;
+  const promptDisabled = !acl.update || !config.promptLabEndpoint;
+
   if (viewMode === 'list') {
     return (
       <Container fluid className="llm-scripts-manager py-3">
@@ -508,7 +536,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
               <div>
                 {acl.insert && (
                   <Button size="sm" variant="primary" onClick={handleCreate} disabled={loading} className="mr-2">
-                    <i className="fas fa-plus mr-1"></i> New Script
+                    <i className="fas fa-plus mr-1"></i>
+                    New Script
                   </Button>
                 )}
                 <Button size="sm" variant="outline-secondary" onClick={loadScripts} disabled={loading}>
@@ -523,7 +552,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
           <Row className="mb-3">
             <Col>
               <Alert variant="danger" dismissible onClose={() => setError(null)}>
-                <i className="fas fa-exclamation-triangle mr-2"></i>{error}
+                <i className="fas fa-exclamation-triangle mr-2"></i>
+                {error}
               </Alert>
             </Col>
           </Row>
@@ -533,7 +563,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
           <Row className="mb-3">
             <Col>
               <Alert variant="success" dismissible onClose={() => setSuccess(null)}>
-                <i className="fas fa-check-circle mr-2"></i>{success}
+                <i className="fas fa-check-circle mr-2"></i>
+                {success}
               </Alert>
             </Col>
           </Row>
@@ -559,7 +590,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                     <i className="fas fa-scroll fa-3x text-muted mb-3"></i>
                     <h6 className="text-muted">No LLM scripts yet</h6>
                     <p className="text-muted small mb-0">
-                      Click "New Script" to create a reusable LLM prompt template.
+                      Click &quot;New Script&quot; to create a reusable LLM prompt template.
                     </p>
                   </div>
                 ) : (
@@ -576,12 +607,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                       </tr>
                     </thead>
                     <tbody>
-                      {scripts.map(script => (
-                        <tr
-                          key={script.id}
-                          className="cursor-pointer"
-                          onClick={() => openScript(script)}
-                        >
+                      {scripts.map((script) => (
+                        <tr key={script.id} className="cursor-pointer" onClick={() => openScript(script)}>
                           <td>{script.id}</td>
                           <td><code className="small">{script.generated_id}</code></td>
                           <td className="font-weight-bold">{script.name}</td>
@@ -608,7 +635,6 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     );
   }
 
-  // === EDITOR VIEW ===
   return (
     <Container fluid className="llm-scripts-manager py-3">
       <Row className="mb-3">
@@ -616,7 +642,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
           <div className="d-flex justify-content-between align-items-center flex-wrap">
             <div className="d-flex align-items-center">
               <Button size="sm" variant="outline-secondary" onClick={backToList} className="mr-2">
-                <i className="fas fa-arrow-left mr-1"></i> All Scripts
+                <i className="fas fa-arrow-left mr-1"></i>
+                All Scripts
               </Button>
               <h5 className="text-dark mb-0 font-weight-bold">
                 {selectedScript?.name || 'New Script'}
@@ -628,19 +655,6 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
               )}
             </div>
             <div>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={handleTest}
-                disabled={testing || !form.script}
-                className="mr-1"
-              >
-                {testing ? (
-                  <><Spinner animation="border" size="sm" className="mr-1" /> Testing...</>
-                ) : (
-                  <><i className="fas fa-play mr-1"></i> Test</>
-                )}
-              </Button>
               {acl.update && (
                 <Button
                   size="sm"
@@ -650,9 +664,15 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   className="mr-1"
                 >
                   {saving ? (
-                    <><Spinner animation="border" size="sm" className="mr-1" /> Saving...</>
+                    <>
+                      <Spinner animation="border" size="sm" className="mr-1" />
+                      Saving...
+                    </>
                   ) : (
-                    <><i className="fas fa-save mr-1"></i> Save</>
+                    <>
+                      <i className="fas fa-save mr-1"></i>
+                      Save
+                    </>
                   )}
                 </Button>
               )}
@@ -662,7 +682,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   variant="outline-danger"
                   onClick={() => setDeleteConfirm(selectedScript)}
                 >
-                  <i className="fas fa-trash-alt mr-1"></i> Delete
+                  <i className="fas fa-trash-alt mr-1"></i>
+                  Delete
                 </Button>
               )}
             </div>
@@ -674,7 +695,19 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         <Row className="mb-2">
           <Col>
             <Alert variant="danger" dismissible onClose={() => setError(null)} className="mb-0 py-2 small">
-              <i className="fas fa-exclamation-triangle mr-2"></i>{error}
+              <i className="fas fa-exclamation-triangle mr-2"></i>
+              {error}
+            </Alert>
+          </Col>
+        </Row>
+      )}
+
+      {promptError && (
+        <Row className="mb-2">
+          <Col>
+            <Alert variant="warning" className="mb-0 py-2 small">
+              <i className="fas fa-info-circle mr-2"></i>
+              {promptError}
             </Alert>
           </Col>
         </Row>
@@ -684,32 +717,60 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         <Row className="mb-2">
           <Col>
             <Alert variant="success" dismissible onClose={() => setSuccess(null)} className="mb-0 py-2 small">
-              <i className="fas fa-check-circle mr-2"></i>{success}
+              <i className="fas fa-check-circle mr-2"></i>
+              {success}
             </Alert>
           </Col>
         </Row>
       )}
 
       <Row>
-        {/* Left: Script editor */}
         <Col lg={8} className="mb-3 mb-lg-0">
+          <PromptToolbar
+            activeVersion={activeVersion}
+            dirty={form.script !== (activeVersion?.template_raw || '')}
+            disabled={promptDisabled}
+            changeNote={promptChangeNote}
+            onChangeNote={setPromptChangeNote}
+            onOpenVersions={() => setShowVersions(true)}
+            onOpenCompare={() => {
+              setDiffState({
+                leftTitle: activeVersion ? `v${activeVersion.version_no}` : 'Active Version',
+                rightTitle: 'Current Draft',
+                leftContent: activeVersion?.template_raw || '',
+                rightContent: form.script,
+              });
+              setShowDiff(true);
+            }}
+            onOpenPlayground={() => setShowPlayground(true)}
+            onOpenBuilder={() => setShowBuilder(true)}
+          />
+
           <Card className="border h-100">
-            <Card.Header className="bg-warning text-dark py-2">
+            <Card.Header className="bg-warning text-dark py-2 d-flex justify-content-between align-items-center">
               <span className="font-weight-bold small">
                 <i className="fas fa-code mr-2"></i>
-                LLM Script (Prompt Template)
+                LLM Script Prompt
               </span>
+              {promptLoading && (
+                <span className="small text-muted">
+                  <Spinner animation="border" size="sm" className="mr-1" />
+                  Loading prompt history...
+                </span>
+              )}
             </Card.Header>
             <Card.Body className="p-0">
-              <div
-                ref={editorContainerRef}
-                className="monaco-editor-container"
+              <PromptEditor
+                value={form.script}
+                onChange={(value) => setForm((prev) => ({ ...prev, script: value }))}
+                editorMode="monaco"
+                minHeight={560}
+                placeholder="Write the script prompt template here"
               />
             </Card.Body>
           </Card>
         </Col>
 
-        {/* Right: Configuration */}
         <Col lg={4}>
           <Card className="border mb-3">
             <Card.Header className="bg-light py-2">
@@ -725,7 +786,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   size="sm"
                   type="text"
                   value={form.name}
-                  onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
                   placeholder="Enter script name"
                 />
               </Form.Group>
@@ -735,7 +796,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   type="checkbox"
                   label={<span className="small">Async (run via cron, not immediately)</span>}
                   checked={!!form.async}
-                  onChange={e => setForm(prev => ({ ...prev, async: e.target.checked ? 1 : 0 }))}
+                  onChange={(event) => setForm((prev) => ({ ...prev, async: event.target.checked ? 1 : 0 }))}
                 />
               </Form.Group>
 
@@ -745,13 +806,13 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   as="select"
                   size="sm"
                   value={form.model}
-                  onChange={e => setForm(prev => ({ ...prev, model: e.target.value }))}
+                  onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))}
                 >
                   <option value="">
                     {defaults ? `Default (${defaults.default_model})` : 'Default'}
                   </option>
-                  {models.map(m => (
-                    <option key={m.id} value={m.id}>{m.id}</option>
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>{model.id}</option>
                   ))}
                 </Form.Control>
               </Form.Group>
@@ -765,7 +826,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   min="0"
                   max="2"
                   value={form.temperature}
-                  onChange={e => setForm(prev => ({ ...prev, temperature: e.target.value }))}
+                  onChange={(event) => setForm((prev) => ({ ...prev, temperature: event.target.value }))}
                   placeholder={defaults ? `Default: ${defaults.default_temperature}` : 'e.g. 0.7'}
                 />
               </Form.Group>
@@ -776,16 +837,19 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   size="sm"
                   type="number"
                   value={form.max_tokens}
-                  onChange={e => setForm(prev => ({ ...prev, max_tokens: e.target.value }))}
+                  onChange={(event) => setForm((prev) => ({ ...prev, max_tokens: event.target.value }))}
                   placeholder={defaults ? `Default: ${defaults.default_max_tokens}` : 'e.g. 2048'}
                 />
               </Form.Group>
 
-              {/* Refresh Sections Multi-Select */}
               <Form.Group className="mb-2">
                 <Form.Label className="small font-weight-bold mb-1">Refresh Sections</Form.Label>
                 <Dropdown>
-                  <Dropdown.Toggle size="sm" variant="outline-secondary" className="w-100 text-left d-flex justify-content-between align-items-center">
+                  <Dropdown.Toggle
+                    size="sm"
+                    variant="outline-secondary"
+                    className="w-100 text-left d-flex justify-content-between align-items-center"
+                  >
                     <span className="text-truncate">
                       {selectedSectionIds.length === 0
                         ? 'Select sections...'
@@ -799,30 +863,30 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                         type="text"
                         placeholder="Search sections..."
                         value={sectionSearch}
-                        onChange={e => setSectionSearch(e.target.value)}
-                        onClick={e => e.stopPropagation()}
+                        onChange={(event) => setSectionSearch(event.target.value)}
+                        onClick={(event) => event.stopPropagation()}
                       />
                     </div>
                     {filteredSections.length === 0 ? (
                       <Dropdown.ItemText className="text-muted small">No sections found</Dropdown.ItemText>
                     ) : (
-                      filteredSections.map(s => (
+                      filteredSections.map((section) => (
                         <Dropdown.Item
-                          key={s.id}
+                          key={section.id}
                           as="button"
                           className="small py-1"
-                          active={selectedSectionIds.includes(Number(s.id))}
-                          onClick={(e: any) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleSection(Number(s.id));
+                          active={selectedSectionIds.includes(Number(section.id))}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleSection(Number(section.id));
                           }}
                         >
                           <Form.Check
                             type="checkbox"
-                            checked={selectedSectionIds.includes(Number(s.id))}
-                            onChange={() => {}}
-                            label={<span>{s.name} <small className="text-muted">({s.id})</small></span>}
+                            checked={selectedSectionIds.includes(Number(section.id))}
+                            onChange={() => undefined}
+                            label={<span>{section.name} <small className="text-muted">({section.id})</small></span>}
                             className="mb-0"
                           />
                         </Dropdown.Item>
@@ -832,8 +896,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                 </Dropdown>
                 {selectedSectionIds.length > 0 && (
                   <div className="mt-1">
-                    {selectedSectionIds.map(id => {
-                      const sec = sections.find(s => Number(s.id) === id);
+                    {selectedSectionIds.map((id) => {
+                      const section = sections.find((item) => Number(item.id) === id);
                       return (
                         <Badge
                           key={id}
@@ -841,7 +905,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                           className="mr-1 mb-1 cursor-pointer"
                           onClick={() => toggleSection(id)}
                         >
-                          {sec?.name || id} <i className="fas fa-times ml-1"></i>
+                          {section?.name || id} <i className="fas fa-times ml-1"></i>
                         </Badge>
                       );
                     })}
@@ -854,7 +918,6 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
             </Card.Body>
           </Card>
 
-          {/* Data Config */}
           <Card className="border mb-3">
             <Card.Header className="bg-light py-2">
               <span className="font-weight-bold small">
@@ -869,19 +932,23 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                 className="w-100"
                 onClick={openDataConfigModal}
               >
-                <i className="fas fa-wrench mr-1"></i> {getDataConfigLabel()}
+                <i className="fas fa-wrench mr-1"></i>
+                {getDataConfigLabel()}
               </Button>
               {form.data_config && (
-                <pre className="mt-2 mb-0 small p-2 bg-light border rounded" style={{ maxHeight: '120px', overflow: 'auto', fontSize: '0.7rem' }}>
+                <pre className="mt-2 mb-0 small p-2 bg-light border rounded prompt-pre" style={{ maxHeight: '120px', overflow: 'auto', fontSize: '0.7rem' }}>
                   {(() => {
-                    try { return JSON.stringify(JSON.parse(form.data_config), null, 2); } catch { return form.data_config; }
+                    try {
+                      return JSON.stringify(JSON.parse(form.data_config), null, 2);
+                    } catch {
+                      return form.data_config;
+                    }
                   })()}
                 </pre>
               )}
             </Card.Body>
           </Card>
 
-          {/* Test Variables (Monaco JSON) */}
           <Card className="border">
             <Card.Header className="bg-light py-2">
               <span className="font-weight-bold small">
@@ -890,97 +957,68 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
               </span>
             </Card.Header>
             <Card.Body className="p-0">
-              <div
-                ref={testVarsContainerRef}
-                className="monaco-editor-container-small"
+              <PromptEditor
+                value={form.test_variables || '{\n  \n}'}
+                onChange={(value) => setForm((prev) => ({ ...prev, test_variables: value }))}
+                editorMode="monaco"
+                language="json"
+                minHeight={220}
               />
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Test Result */}
-      {testResult && (
-        <Row className="mt-3">
-          <Col>
-            <Card className={`border ${(testResult as any).result ? 'border-success' : 'border-danger'}`}>
-              <Card.Header className={`py-2 ${(testResult as any).result ? 'bg-success' : 'bg-danger'} text-white d-flex justify-content-between align-items-center`}>
-                <span className="font-weight-bold small">
-                  <i className={`fas ${(testResult as any).result ? 'fa-check-circle' : 'fa-times-circle'} mr-2`}></i>
-                  Test Result
-                </span>
-                <div>
-                  <Button
-                    size="sm"
-                    variant="outline-light"
-                    className="mr-2 py-0"
-                    onClick={copyRawResponse}
-                    title="Copy raw response"
-                  >
-                    <i className={`fas ${copiedType === 'raw' ? 'fa-check' : 'fa-copy'} mr-1`}></i>
-                    {copiedType === 'raw' ? 'Copied Raw' : 'Copy Raw'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline-light"
-                    className="mr-2 py-0"
-                    onClick={copyPayload}
-                    title="Copy payload"
-                    disabled={!getRequestPayloadFromTestResult()}
-                  >
-                    <i className={`fas ${copiedType === 'payload' ? 'fa-check' : 'fa-copy'} mr-1`}></i>
-                    {copiedType === 'payload' ? 'Copied Payload' : 'Copy Payload'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="link"
-                    className="text-white p-0"
-                    onClick={() => setTestResult(null)}
-                  >
-                    <i className="fas fa-times"></i>
-                  </Button>
-                </div>
-              </Card.Header>
-              <Card.Body className="py-2">
-                {(testResult as any).result && (testResult as any).data ? (
-                  <div>
-                    <div className="mb-2">
-                      <strong className="small">Content:</strong>
-                      <div className="p-2 bg-light border rounded mt-1 small llm-scripts-test-markdown">
-                        <MarkdownRenderer content={(testResult as any).data.content || ''} />
-                      </div>
-                    </div>
-                    <Row>
-                      <Col sm={4}>
-                        <small className="text-muted">Model:</small>
-                        <div className="small font-weight-bold">{(testResult as any).data.model || '-'}</div>
-                      </Col>
-                      <Col sm={4}>
-                        <small className="text-muted">Tokens:</small>
-                        <div className="small font-weight-bold">{(testResult as any).data.tokens_used || '-'}</div>
-                      </Col>
-                      <Col sm={4}>
-                        <small className="text-muted">Time:</small>
-                        <div className="small font-weight-bold">{(testResult as any).data.execution_time_ms ? `${(testResult as any).data.execution_time_ms}ms` : '-'}</div>
-                      </Col>
-                    </Row>
-                  </div>
-                ) : (
-                  <pre className="mb-0 pre-wrap small" style={{ maxHeight: '300px', overflow: 'auto' }}>
-                    {JSON.stringify(testResult, null, 2)}
-                  </pre>
-                )}
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
-      )}
+      <PromptVersionsModal
+        show={showVersions}
+        onHide={() => setShowVersions(false)}
+        versions={promptBootstrap?.versions || []}
+        activeVersionId={activeVersion?.id}
+        onUseVersion={handleUseVersion}
+        onCompareVersion={openDiffWithVersion}
+      />
 
-      {/* Delete Confirmation Modal */}
+      <PromptDiffModal
+        show={showDiff}
+        onHide={() => setShowDiff(false)}
+        leftTitle={diffState.leftTitle}
+        rightTitle={diffState.rightTitle}
+        leftContent={diffState.leftContent}
+        rightContent={diffState.rightContent}
+      />
+
+      <PromptPlaygroundModal
+        show={showPlayground}
+        onHide={() => setShowPlayground(false)}
+        api={promptApi}
+        descriptor={promptDescriptor}
+        executionProfile={promptBootstrap?.execution_profile || 'script_runtime'}
+        models={promptBootstrap?.models || models}
+        variablesSchema={effectiveVariablesSchema}
+        promptValue={form.script}
+        disabled={promptDisabled}
+        defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
+        resolveRuntimeOverrides={() => promptRuntimeOverrides}
+        resolveInitialVariables={() => parseJsonObject(form.test_variables)}
+      />
+
+      <PromptBuilderModal
+        show={showBuilder}
+        onHide={() => setShowBuilder(false)}
+        api={promptApi}
+        descriptor={promptDescriptor}
+        currentPrompt={form.script}
+        models={promptBootstrap?.models || models}
+        defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
+        disabled={promptDisabled}
+        onApplySuggestion={handleBuilderApply}
+      />
+
       <Modal show={!!deleteConfirm} onHide={() => { setDeleteConfirm(null); setDeleteInput(''); }} centered size="sm">
         <Modal.Header closeButton className="bg-danger text-white py-2">
           <Modal.Title className="h6">
-            <i className="fas fa-trash-alt mr-2"></i> Delete Script
+            <i className="fas fa-trash-alt mr-2"></i>
+            Delete Script
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
@@ -992,7 +1030,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
             size="sm"
             type="text"
             value={deleteInput}
-            onChange={e => setDeleteInput(e.target.value)}
+            onChange={(event) => setDeleteInput(event.target.value)}
             placeholder={`Type: ${deleteConfirm?.generated_id}`}
           />
         </Modal.Body>

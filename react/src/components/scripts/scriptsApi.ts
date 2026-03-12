@@ -44,6 +44,12 @@ export interface LlmDefaults {
   };
 }
 
+export interface ScriptUpdatePayload extends Partial<LlmScript> {
+  sid: number;
+  prompt_change_note?: string | null;
+  prompt_meta_json?: string | null;
+}
+
 function buildUrl(action: string, extraParams: Record<string, string> = {}): string {
   const url = new URL(window.location.href);
   url.searchParams.set('action', action);
@@ -115,7 +121,7 @@ export function createScriptsApi() {
       return res.script;
     },
 
-    async update(script: Partial<LlmScript> & { sid: number }): Promise<LlmScript> {
+    async update(script: ScriptUpdatePayload): Promise<LlmScript> {
       const formData = new FormData();
       formData.append('action', 'update');
       Object.entries(script).forEach(([key, value]) => {

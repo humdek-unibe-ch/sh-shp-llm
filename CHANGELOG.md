@@ -22,6 +22,30 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 |-------|------|---------|-------------|
 | `llm_api_keys` | json-llm-api-keys | `[]` | JSON array of server configs: `[{name, base_url, api_key}]` |
 
+### Prompt Registry, Versioning, and Playground
+
+- **New `llm_prompt` field type** - `conversation_context` and `llm_context` now use a React prompt field with version-aware tooling while keeping normal CMS save behavior.
+- **Prompt registry schema** - Added prompt tables:
+  - `llm_prompt_entries`
+  - `llm_prompt_locales`
+  - `llm_prompt_versions`
+  - `llm_prompt_playground_runs`
+- **Owner and run lookups** - Added lookup groups `llm_prompt_owner_types` and `llm_prompt_run_modes`.
+- **Script linkage** - Added `llm_scripts.id_llm_prompt_entries` so script prompts participate in the same registry.
+- **Immutable version snapshots** - Prompt saves now create immutable full snapshots (with hash dedupe) and optional `change_note`.
+- **Version comment UX** - Added toolbar hint/tooltip and explicit behavior messaging: comments are persisted only when a new version is created on normal Save.
+- **Diff and history UI** - Added versions list and Monaco-based compare modal for prompt diffs.
+- **Runtime-aware playground** - Playground uses owner runtime composition (chat/form/script) including companion runtime context, not raw prompt-only calls.
+- **Structured result rendering** - Playground shows parsed structured output, display output, fallback raw output, payload, and effective context/messages.
+- **Multi-model compare (phase 1)** - Playground supports selecting up to 3 models with grouped comparison logging.
+- **Build With AI assistant** - Added builder workflow that improves the current prompt draft and returns structured JSON (`prompt_template`, `variables`, `notes`, `change_summary`).
+- **Shared prompt AJAX endpoint** - Added `AjaxLlmPromptLab` with actions for bootstrap, versions, compare payload retrieval, playground run, and builder run.
+- **ACL and CSRF enforcement** - Prompt-lab actions now enforce explicit access checks (page/script scope) and CSRF checks for mutating actions.
+- **Base-path-safe frontend requests** - Prompt API endpoint resolution now honors `BASE_PATH`, fixing environments where AJAX routes are mounted under `/selfhelp`.
+- **Hook-based CMS integration** - Added hooks for prompt field rendering, prompt JS/CSS includes, and post-save version sync.
+- **Consistent modal layout** - Prompt modals now use max `90vw`/`90vh`, fixed header/footer, scrollable body, and compact Bootstrap small buttons.
+- **Central logging compatibility** - Playground and builder runs are logged through existing `llmConversations` / `llmMessages`, with optional prompt-run index rows.
+
 ### New Styles
 
 - **`llmFormRecord`** — LLM-enhanced form in record mode. Extends the core `formUserInputRecord` pattern. On form submit, stores data normally and sends an LLM request with configurable context interpolation. The LLM result is displayed in a configurable panel alongside the form.

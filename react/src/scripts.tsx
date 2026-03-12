@@ -5,6 +5,7 @@ import './components/scripts/ScriptsManager.css';
 
 export interface ScriptsConfig {
   csrfToken?: string;
+  promptLabEndpoint?: string;
 }
 
 function initializeScriptsManager(): void {

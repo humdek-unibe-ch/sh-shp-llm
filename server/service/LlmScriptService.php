@@ -5,6 +5,7 @@
 
 require_once __DIR__ . "/base/BaseLlmService.php";
 require_once __DIR__ . "/LlmService.php";
+require_once __DIR__ . "/LlmPromptRegistryService.php";
 
 /**
  * Service for LLM Script execution.
@@ -22,12 +23,16 @@ class LlmScriptService extends BaseLlmService
     /** @var object Transaction service */
     private $transaction;
 
+    /** @var LlmPromptRegistryService */
+    private $prompt_registry_service;
+
     public function __construct($services)
     {
         parent::__construct($services);
         $this->llmService = new LlmService($services);
         $this->user_input = $services->get_user_input();
         $this->transaction = $services->get_transaction();
+        $this->prompt_registry_service = new LlmPromptRegistryService($services);
     }
 
     /**
@@ -128,9 +133,10 @@ class LlmScriptService extends BaseLlmService
      * @param float|null $temperature Temperature override
      * @param int|null $max_tokens Max tokens override
      * @param string|null $refresh_sections JSON array of section IDs
+     * @param string|null $prompt_meta_json Prompt registry metadata snapshot
      * @return int|false Script ID or false on failure
      */
-    public function update_script($sid, $name, $script, $test_variables, $async, $data_config, $model = null, $temperature = null, $max_tokens = null, $refresh_sections = null)
+    public function update_script($sid, $name, $script, $test_variables, $async, $data_config, $model = null, $temperature = null, $max_tokens = null, $refresh_sections = null, $prompt_change_note = null, $prompt_meta_json = null)
     {
         try {
             $this->db->begin_transaction();
@@ -149,6 +155,12 @@ class LlmScriptService extends BaseLlmService
                 "max_tokens" => $max_tokens,
                 "refresh_sections" => $refresh_sections
             ), array('id' => $sid));
+
+            $updated_script = $this->fetch_script($sid);
+            if ($updated_script) {
+                $this->prompt_registry_service->syncScriptSave($updated_script, $prompt_change_note, $prompt_meta_json);
+            }
+
             $this->transaction->add_transaction(
                 transactionTypes_update,
                 transactionBy_by_user,
