@@ -85,8 +85,32 @@ function normalizePromptEndpoint(endpoint: string): string {
   return endpoint;
 }
 
+function resolveCsrfToken(explicitToken?: string): string {
+  if (explicitToken && explicitToken.trim() !== '') {
+    return explicitToken;
+  }
+
+  const hiddenInput = document.querySelector<HTMLInputElement>(
+    'input[name="csrf_token"], input[name="token"], input[name="_token"]',
+  );
+  if (hiddenInput?.value) {
+    return hiddenInput.value;
+  }
+
+  const win = window as any;
+  if (typeof win.csrf_token === 'string' && win.csrf_token) {
+    return win.csrf_token;
+  }
+  if (typeof win.CSRF_TOKEN === 'string' && win.CSRF_TOKEN) {
+    return win.CSRF_TOKEN;
+  }
+
+  return '';
+}
+
 export function createPromptLabApi(endpoint: string, csrfToken?: string) {
   const resolvedEndpoint = normalizePromptEndpoint(endpoint);
+  const resolvedCsrfToken = resolveCsrfToken(csrfToken);
 
   async function post<T>(formData: FormData): Promise<T> {
     const response = await fetch(resolvedEndpoint, {
@@ -170,7 +194,7 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       formData.append('action', 'playground_run');
       appendDescriptor(formData, descriptor);
       formData.append('draft_prompt', draftPrompt);
-      formData.append('csrf_token', csrfToken || '');
+      formData.append('csrf_token', resolvedCsrfToken);
       formData.append('runtime_overrides_json', JSON.stringify(runtimeOverrides || {}));
       formData.append('variables_json', JSON.stringify(variables || {}));
       formData.append('message_history_json', JSON.stringify(messageHistory || []));
@@ -189,7 +213,7 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       appendDescriptor(formData, descriptor);
       formData.append('current_prompt', currentPrompt);
       formData.append('instructions', instructions);
-      formData.append('csrf_token', csrfToken || '');
+      formData.append('csrf_token', resolvedCsrfToken);
       if (selectedModel) {
         formData.append('selected_model', selectedModel);
       }

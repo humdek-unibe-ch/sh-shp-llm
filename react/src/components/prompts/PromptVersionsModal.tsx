@@ -8,6 +8,7 @@ interface PromptVersionsModalProps {
   onHide: () => void;
   versions: PromptVersion[];
   activeVersionId?: number | null;
+  disabled?: boolean;
   onUseVersion: (version: PromptVersion) => void;
   onCompareVersion: (version: PromptVersion) => void;
 }
@@ -17,6 +18,7 @@ export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
   onHide,
   versions,
   activeVersionId,
+  disabled = false,
   onUseVersion,
   onCompareVersion,
 }) => {
@@ -32,7 +34,7 @@ export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
         {versions.length === 0 ? (
           <div className="p-4 text-center text-muted small">No saved versions yet.</div>
         ) : (
-          <Table hover responsive size="sm" className="mb-0">
+          <Table hover responsive size="sm" className="mb-0 prompt-versions-table">
             <thead>
               <tr>
                 <th>Version</th>
@@ -63,11 +65,17 @@ export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
                         size="sm"
                         variant="outline-secondary"
                         className="mr-2"
+                        disabled={disabled}
                         onClick={() => onCompareVersion(version)}
                       >
                         Compare
                       </Button>
-                      <Button size="sm" variant="primary" onClick={() => onUseVersion(version)}>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={disabled}
+                        onClick={() => onUseVersion(version)}
+                      >
                         Use
                       </Button>
                     </td>

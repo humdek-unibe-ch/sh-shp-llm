@@ -889,7 +889,7 @@ class LlmHooks extends BaseHooks
                 "metaInputName" => $field_name_prefix . "[meta]",
                 "jsonConfig" => json_encode(array(
                     'endpoint' => $endpoint,
-                    'csrfToken' => $_SESSION['csrf_token'] ?? '',
+                    'csrfToken' => $this->resolveCsrfToken(),
                     'disabled' => $disabled ? 1 : 0,
                     'ownerType' => LLM_PROMPT_OWNER_STYLE_FIELD,
                     'ownerId' => $cms_model->get_active_section_id(),
@@ -914,6 +914,26 @@ class LlmHooks extends BaseHooks
         }
 
         return $res;
+    }
+
+    /**
+     * Resolve CSRF token from known core session keys.
+     *
+     * @return string
+     */
+    private function resolveCsrfToken()
+    {
+        if (!empty($_SESSION['csrf_token'])) {
+            return (string)$_SESSION['csrf_token'];
+        }
+        if (!empty($_SESSION['token'])) {
+            return (string)$_SESSION['token'];
+        }
+        if (!empty($_SESSION['security_token'])) {
+            return (string)$_SESSION['security_token'];
+        }
+
+        return '';
     }
 
     /**

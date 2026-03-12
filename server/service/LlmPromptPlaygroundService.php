@@ -517,6 +517,11 @@ class LlmPromptChatRuntimeModel
         return ($this->runtime_values['strict_conversation_mode'] ?? '0') === '1';
     }
 
+    public function shouldApplyStrictMode()
+    {
+        return $this->isStrictConversationModeEnabled() && $this->hasConversationContext();
+    }
+
     public function hasConversationContext()
     {
         return trim($this->prompt) !== '';

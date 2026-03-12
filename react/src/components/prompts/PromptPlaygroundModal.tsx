@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
 import { PromptEffectiveContextPanel } from './PromptEffectiveContextPanel';
 import { PromptResultPanel } from './PromptResultPanel';
@@ -67,6 +68,12 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   resolveRuntimeOverrides,
   resolveInitialVariables,
 }) => {
+  const selectMenuStyles = {
+    menuList: (base: Record<string, unknown>) => ({
+      ...base,
+      maxHeight: 220,
+    }),
+  };
   const effectiveModels = useMemo(() => buildEffectiveModels(models, defaultModel), [defaultModel, models]);
   const initialVariables = useMemo(
     () => normalizeInitialValues(variablesSchema, resolveInitialVariables?.() || {}),
@@ -100,18 +107,6 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
 
   const isChatRuntime = executionProfile === 'chat_runtime' || executionProfile === 'therapy_chat_runtime';
   const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
-
-  const toggleModel = (modelId: string) => {
-    setSelectedModels((current) => {
-      if (current.includes(modelId)) {
-        return current.filter((item) => item !== modelId);
-      }
-      if (current.length >= 3) {
-        return current;
-      }
-      return [...current, modelId];
-    });
-  };
 
   const updateMessage = (index: number, field: keyof PromptMessage, value: string) => {
     setMessageHistory((current) => current.map((item, itemIndex) => (
@@ -170,28 +165,28 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
               {effectiveModels.length === 0 ? (
                 <div className="small text-muted">No models available.</div>
               ) : (
-                effectiveModels.map((model) => (
-                  <Form.Check
-                    key={model.id}
-                    id={`prompt-model-${model.id}`}
-                    type="checkbox"
-                    label={
-                      <span className="small">
-                        {model.id}
-                        {selectedModels[0] === model.id && selectedModels.length === 1 ? (
-                          <Badge variant="secondary" className="ml-2">Primary</Badge>
-                        ) : null}
-                      </span>
-                    }
-                    checked={selectedModels.includes(model.id)}
-                    disabled={!selectedModels.includes(model.id) && selectedModels.length >= 3}
-                    onChange={() => toggleModel(model.id)}
-                  />
-                ))
+                <Select
+                  classNamePrefix="react-select"
+                  isMulti
+                  isSearchable
+                  closeMenuOnSelect={false}
+                  options={effectiveModels.map((model) => ({ value: model.id, label: model.id }))}
+                  value={selectedModels.map((modelId) => ({ value: modelId, label: modelId }))}
+                  onChange={(options) => {
+                    const values = (options || []).map((option) => option.value).slice(0, 3);
+                    setSelectedModels(values);
+                  }}
+                  styles={selectMenuStyles as any}
+                />
               )}
               <Form.Text className="text-muted">
                 Select up to 3 models. Multiple selections enable compare mode.
               </Form.Text>
+              {selectedModels.length === 1 && (
+                <div className="mt-2">
+                  <Badge variant="secondary">Primary</Badge>
+                </div>
+              )}
             </div>
 
             <div className="border rounded p-3 mb-3">

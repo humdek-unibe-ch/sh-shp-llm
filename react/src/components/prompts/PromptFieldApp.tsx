@@ -35,10 +35,8 @@ interface PromptFieldAppProps {
 }
 
 interface DiffState {
-  leftTitle: string;
-  rightTitle: string;
-  leftContent: string;
-  rightContent: string;
+  initialLeftKey: string;
+  initialRightKey: string;
 }
 
 function dispatchFieldChange(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
@@ -120,10 +118,8 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
   const [showPlayground, setShowPlayground] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [diffState, setDiffState] = useState<DiffState>({
-    leftTitle: 'Current Draft',
-    rightTitle: 'Active Version',
-    leftContent: '',
-    rightContent: '',
+    initialLeftKey: 'draft',
+    initialRightKey: 'draft',
   });
   const [variablesSchemaOverride, setVariablesSchemaOverride] = useState<PromptVariableDefinition[] | null>(
     metaState.prompt?.variablesSchema || null,
@@ -192,11 +188,10 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
     const prompt = ensurePromptMeta(nextMeta);
     prompt.lastComparedVersionId = version.id;
     syncMeta(nextMeta);
+    setShowVersions(false);
     setDiffState({
-      leftTitle: `v${version.version_no}`,
-      rightTitle: 'Current Draft',
-      leftContent: version.template_raw || '',
-      rightContent: promptValue,
+      initialLeftKey: `v:${version.id}`,
+      initialRightKey: 'draft',
     });
     setShowDiff(true);
   };
@@ -230,11 +225,10 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         onChangeNote={handleChangeNote}
         onOpenVersions={() => setShowVersions(true)}
         onOpenCompare={() => {
+          const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft';
           setDiffState({
-            leftTitle: activeVersion ? `v${activeVersion.version_no}` : 'Active Version',
-            rightTitle: 'Current Draft',
-            leftContent: activeVersion?.template_raw || '',
-            rightContent: promptValue,
+            initialLeftKey: activeKey,
+            initialRightKey: 'draft',
           });
           setShowDiff(true);
         }}
@@ -268,6 +262,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         onHide={() => setShowVersions(false)}
         versions={bootstrap?.versions || []}
         activeVersionId={activeVersion?.id}
+        disabled={disabled}
         onUseVersion={handleUseVersion}
         onCompareVersion={openDiffWithVersion}
       />
@@ -275,10 +270,10 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
       <PromptDiffModal
         show={showDiff}
         onHide={() => setShowDiff(false)}
-        leftTitle={diffState.leftTitle}
-        rightTitle={diffState.rightTitle}
-        leftContent={diffState.leftContent}
-        rightContent={diffState.rightContent}
+        versions={bootstrap?.versions || []}
+        draftContent={promptValue}
+        initialLeftKey={diffState.initialLeftKey}
+        initialRightKey={diffState.initialRightKey}
       />
 
       <PromptPlaygroundModal

@@ -62,10 +62,8 @@ interface ScriptFormState {
 }
 
 interface DiffState {
-  leftTitle: string;
-  rightTitle: string;
-  leftContent: string;
-  rightContent: string;
+  initialLeftKey: string;
+  initialRightKey: string;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> {
@@ -146,10 +144,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   const [showPlayground, setShowPlayground] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [diffState, setDiffState] = useState<DiffState>({
-    leftTitle: 'Current Draft',
-    rightTitle: 'Active Version',
-    leftContent: '',
-    rightContent: '',
+    initialLeftKey: 'draft',
+    initialRightKey: 'draft',
   });
 
   useEffect(() => {
@@ -484,11 +480,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   };
 
   const openDiffWithVersion = (version: PromptVersion) => {
+    setShowVersions(false);
     setDiffState({
-      leftTitle: `v${version.version_no}`,
-      rightTitle: 'Current Draft',
-      leftContent: version.template_raw || '',
-      rightContent: form.script,
+      initialLeftKey: `v:${version.id}`,
+      initialRightKey: 'draft',
     });
     setShowDiff(true);
   };
@@ -734,11 +729,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
             onChangeNote={setPromptChangeNote}
             onOpenVersions={() => setShowVersions(true)}
             onOpenCompare={() => {
+              const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft';
               setDiffState({
-                leftTitle: activeVersion ? `v${activeVersion.version_no}` : 'Active Version',
-                rightTitle: 'Current Draft',
-                leftContent: activeVersion?.template_raw || '',
-                rightContent: form.script,
+                initialLeftKey: activeKey,
+                initialRightKey: 'draft',
               });
               setShowDiff(true);
             }}
@@ -974,6 +968,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         onHide={() => setShowVersions(false)}
         versions={promptBootstrap?.versions || []}
         activeVersionId={activeVersion?.id}
+        disabled={promptDisabled}
         onUseVersion={handleUseVersion}
         onCompareVersion={openDiffWithVersion}
       />
@@ -981,10 +976,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
       <PromptDiffModal
         show={showDiff}
         onHide={() => setShowDiff(false)}
-        leftTitle={diffState.leftTitle}
-        rightTitle={diffState.rightTitle}
-        leftContent={diffState.leftContent}
-        rightContent={diffState.rightContent}
+        versions={promptBootstrap?.versions || []}
+        draftContent={form.script}
+        initialLeftKey={diffState.initialLeftKey}
+        initialRightKey={diffState.initialRightKey}
       />
 
       <PromptPlaygroundModal

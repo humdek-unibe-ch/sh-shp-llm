@@ -71,9 +71,24 @@ class ModuleLlmScriptView extends BaseView
         }
 
         return json_encode([
-            'csrfToken' => $_SESSION['csrf_token'] ?? '',
+            'csrfToken' => $this->resolveCsrfToken(),
             'promptLabEndpoint' => $prompt_endpoint,
         ]);
+    }
+
+    private function resolveCsrfToken()
+    {
+        if (!empty($_SESSION['csrf_token'])) {
+            return (string)$_SESSION['csrf_token'];
+        }
+        if (!empty($_SESSION['token'])) {
+            return (string)$_SESSION['token'];
+        }
+        if (!empty($_SESSION['security_token'])) {
+            return (string)$_SESSION['security_token'];
+        }
+
+        return '';
     }
 }
 ?>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Badge, Button, Form } from 'react-bootstrap';
+import { Badge, Button, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import type { PromptVersion } from './promptTypes';
 
 interface PromptToolbarProps {
@@ -50,11 +50,11 @@ export const PromptToolbar: React.FC<PromptToolbarProps> = ({
         </div>
 
         <div className="btn-group btn-group-sm">
-          <Button variant="outline-secondary" onClick={onOpenVersions}>
+          <Button variant="outline-secondary" onClick={onOpenVersions} disabled={disabled}>
             <i className="fas fa-history mr-1"></i>
             Versions
           </Button>
-          <Button variant="outline-secondary" onClick={onOpenCompare} disabled={!activeVersion}>
+          <Button variant="outline-secondary" onClick={onOpenCompare} disabled={disabled || !activeVersion}>
             <i className="fas fa-code-branch mr-1"></i>
             Compare
           </Button>
@@ -74,10 +74,16 @@ export const PromptToolbar: React.FC<PromptToolbarProps> = ({
       <Form.Group className="mb-0 mt-2">
         <Form.Label className="small text-muted mb-1">
           Version Comment
-          <i
-            className="fas fa-info-circle ml-2 text-secondary"
-            title="Saved only on normal Save. If prompt text or config changed, this note is stored on the new version."
-          ></i>
+          <OverlayTrigger
+            placement="top"
+            overlay={(
+              <Tooltip id="prompt-version-comment-hint">
+                Saved only on normal Save. If prompt text or config changed, this note is stored on the new version.
+              </Tooltip>
+            )}
+          >
+            <i className="fas fa-info-circle ml-2 text-secondary"></i>
+          </OverlayTrigger>
         </Form.Label>
         <Form.Control
           size="sm"

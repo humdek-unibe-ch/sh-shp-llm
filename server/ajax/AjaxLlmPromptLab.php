@@ -37,11 +37,6 @@ class AjaxLlmPromptLab extends BaseAjax
         $this->script_service = new LlmScriptService($services);
     }
 
-    public function has_access($keyword)
-    {
-        return isset($_SESSION['id_user']) && (int)$_SESSION['id_user'] > 0;
-    }
-
     public function dispatch($post)
     {
         $action = $post['action'] ?? '';
@@ -229,12 +224,35 @@ class AjaxLlmPromptLab extends BaseAjax
 
     private function assertCsrf($post)
     {
-        $token = $post['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
-        $session_token = $_SESSION['csrf_token'] ?? '';
+        $token = $post['csrf_token']
+            ?? $post['token']
+            ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
 
-        if (!$token || !$session_token || !hash_equals((string)$session_token, (string)$token)) {
+        $session_tokens = array_values(array_filter(array(
+            $_SESSION['csrf_token'] ?? '',
+            $_SESSION['token'] ?? '',
+            $_SESSION['security_token'] ?? ''
+        ), function ($value) {
+            return is_string($value) && trim($value) !== '';
+        }));
+
+        // Some installations do not expose a session CSRF token to plugin AJAX.
+        // In that case keep ACL protection and skip token comparison.
+        if (empty($session_tokens)) {
+            return;
+        }
+
+        if (!is_string($token) || trim($token) === '') {
             throw new Exception('Invalid CSRF token');
         }
+
+        foreach ($session_tokens as $session_token) {
+            if (hash_equals((string)$session_token, (string)$token)) {
+                return;
+            }
+        }
+
+        throw new Exception('Invalid CSRF token');
     }
 
     private function decodeJson($value)

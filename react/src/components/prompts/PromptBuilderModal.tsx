@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Select from 'react-select';
 import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap';
 import type { createPromptLabApi } from './promptApi';
 import type {
@@ -19,6 +20,13 @@ interface PromptBuilderModalProps {
   onApplySuggestion: (promptTemplate: string, variables: PromptVariableDefinition[], changeSummary: string) => void;
   disabled?: boolean;
 }
+
+const selectMenuStyles = {
+  menuList: (base: Record<string, unknown>) => ({
+    ...base,
+    maxHeight: 190,
+  }),
+};
 
 function buildEffectiveModels(models: PromptModel[], defaultModel?: string | null): PromptModel[] {
   const normalized = Array.isArray(models) ? models.filter((item) => item?.id) : [];
@@ -53,6 +61,7 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
   const [result, setResult] = useState<PromptBuilderResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canGenerate = !disabled && !running && instructions.trim().length > 0;
 
   useEffect(() => {
     if (!show) {
@@ -106,16 +115,18 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
 
         <Form.Group>
           <Form.Label className="small font-weight-bold">Helper Model</Form.Label>
-          <Form.Control
-            as="select"
-            size="sm"
-            value={selectedModel}
-            onChange={(event) => setSelectedModel(event.target.value)}
-          >
-            {effectiveModels.map((model) => (
-              <option key={model.id} value={model.id}>{model.id}</option>
-            ))}
-          </Form.Control>
+          <Select
+            className="prompt-builder-select"
+            classNamePrefix="react-select"
+            options={effectiveModels.map((model) => ({ value: model.id, label: model.id }))}
+            value={effectiveModels.find((item) => item.id === selectedModel)
+              ? { value: selectedModel, label: selectedModel }
+              : null}
+            onChange={(option) => setSelectedModel(option?.value || '')}
+            isSearchable
+            isDisabled={disabled}
+            styles={selectMenuStyles as any}
+          />
         </Form.Group>
 
         <Form.Group>
@@ -123,7 +134,9 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
           <Form.Control
             as="textarea"
             rows={5}
+            className="prompt-builder-instructions"
             value={instructions}
+            disabled={disabled}
             onChange={(event) => setInstructions(event.target.value)}
             placeholder="Describe what should improve: tone, output format, variables, constraints, safety, etc."
           />
@@ -184,7 +197,7 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
         <Button size="sm" variant="secondary" onClick={onHide}>
           Close
         </Button>
-        <Button size="sm" variant="success" onClick={handleBuild} disabled={disabled || running}>
+        <Button size="sm" variant="success" onClick={handleBuild} disabled={!canGenerate}>
           {running ? (
             <>
               <Spinner animation="border" size="sm" className="mr-2" />
