@@ -980,6 +980,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         show={showDiff}
         onHide={() => setShowDiff(false)}
         api={promptApi}
+        descriptor={promptDescriptor}
         versions={promptBootstrap?.versions || []}
         draftContent={form.script}
         initialLeftKey={diffState.initialLeftKey}

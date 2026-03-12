@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
 import { PromptEditor } from './PromptEditor';
@@ -88,6 +88,15 @@ function stableStringify(value: unknown): string {
   }
 }
 
+function tryParseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = parseJsonObject(value);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   show,
   onHide,
@@ -129,6 +138,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDraft, setShowDraft] = useState(false);
+  const previousRawModeRef = useRef(useRawJson);
 
   useEffect(() => {
     if (!show) {
@@ -145,6 +155,35 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     setUseRawJson(false);
     setShowDraft(false);
   }, [defaultModel, effectiveModels, initialVariables, show]);
+
+  useEffect(() => {
+    if (!show) {
+      return;
+    }
+
+    if (previousRawModeRef.current !== useRawJson) {
+      if (useRawJson) {
+        setRawJson(JSON.stringify(variables, null, 2));
+      } else {
+        const parsed = tryParseJsonObject(rawJson);
+        if (parsed) {
+          setVariables(normalizeInitialValues(effectiveSchema, parsed));
+        }
+      }
+      previousRawModeRef.current = useRawJson;
+    }
+  }, [effectiveSchema, rawJson, show, useRawJson, variables]);
+
+  useEffect(() => {
+    if (!show || !useRawJson) {
+      return;
+    }
+
+    const parsed = tryParseJsonObject(rawJson);
+    if (parsed) {
+      setVariables(normalizeInitialValues(effectiveSchema, parsed));
+    }
+  }, [effectiveSchema, rawJson, show, useRawJson]);
 
   const isChatRuntime = executionProfile === 'chat_runtime' || executionProfile === 'therapy_chat_runtime';
   const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
@@ -339,6 +378,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
                     <PromptEffectiveContextPanel
                       effectiveContext={run.effective_context}
                       title={`Effective Context (${run.model})`}
+                      colorIndex={index}
                     />
                   )}
                 </div>
@@ -353,6 +393,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
               <PromptEffectiveContextPanel
                 effectiveContext={sharedEffectiveContext}
                 title="Effective Context (shared across selected models)"
+                colorIndex={0}
               />
             )}
           </Col>

@@ -175,10 +175,13 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       return result.versions || [];
     },
 
-    async getVersion(versionId: number) {
+    async getVersion(versionId: number, descriptor?: PromptDescriptor) {
       const formData = new FormData();
       formData.append('action', 'get_version');
       formData.append('version_id', String(versionId));
+      if (descriptor) {
+        appendDescriptor(formData, descriptor);
+      }
       return post(formData);
     },
 

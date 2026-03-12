@@ -187,6 +187,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             null
         );
 
+        $started_at = microtime(true);
         $response = $this->llm_service->callLlmApi(
             $effective_messages,
             $model_name,
@@ -203,6 +204,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $duration_ms = null;
         if (!empty($response['processing_time'])) {
             $duration_ms = (int)round(((float)$response['processing_time']) * 1000);
+        } else {
+            $duration_ms = (int)round((microtime(true) - $started_at) * 1000);
         }
         $result = array_merge($rendered, array(
             'model' => $model_name,
@@ -265,6 +268,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             null
         );
 
+        $started_at = microtime(true);
         $response = $this->llm_service->callLlmApi(
             $messages,
             $model_name,
@@ -281,6 +285,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $duration_ms = null;
         if (!empty($response['processing_time'])) {
             $duration_ms = (int)round(((float)$response['processing_time']) * 1000);
+        } else {
+            $duration_ms = (int)round((microtime(true) - $started_at) * 1000);
         }
         $result = array_merge($rendered, array(
             'model' => $model_name,

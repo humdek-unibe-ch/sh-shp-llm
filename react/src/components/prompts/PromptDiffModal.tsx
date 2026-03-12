@@ -12,6 +12,14 @@ interface PromptDiffModalProps {
   show: boolean;
   onHide: () => void;
   api: ReturnType<typeof createPromptLabApi>;
+  descriptor: {
+    ownerType: 'style_field' | 'llm_script';
+    ownerId: number;
+    promptSlot: string;
+    languageId?: number | null;
+    pageId?: number | null;
+    title?: string | null;
+  };
   versions: PromptVersion[];
   draftContent: string;
   initialLeftKey?: string;
@@ -22,6 +30,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
   show,
   onHide,
   api,
+  descriptor,
   versions,
   draftContent,
   initialLeftKey = 'draft',
@@ -109,7 +118,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
       }
 
       try {
-        const loaded = await api.getVersion(versionId) as PromptVersion;
+        const loaded = await api.getVersion(versionId, descriptor) as PromptVersion;
         setHydratedVersions((current) => ({
           ...current,
           [versionId]: loaded,

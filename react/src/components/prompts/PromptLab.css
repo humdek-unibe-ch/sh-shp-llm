@@ -95,6 +95,13 @@
   max-width: 100%;
 }
 
+.prompt-model-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 .prompt-versions-table th,
 .prompt-versions-table td {
   padding: 0.65rem 0.75rem;

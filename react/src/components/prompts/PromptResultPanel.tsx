@@ -32,6 +32,7 @@ function colorFromIndex(index: number): string {
 }
 
 export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, colorIndex = 0 }) => {
+  const color = colorFromIndex(colorIndex);
   const parsedFromRun = run.parsed_response && typeof run.parsed_response === 'object'
     ? run.parsed_response
     : null;
@@ -49,11 +50,14 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, color
   return (
     <div
       className="prompt-result-panel border rounded p-3 bg-white"
-      style={{ borderLeft: `4px solid ${colorFromIndex(colorIndex)}` }}
+      style={{ borderLeft: `4px solid ${color}` }}
     >
       <div className="d-flex justify-content-between align-items-start flex-wrap mb-3">
         <div>
-          <div className="font-weight-bold text-dark">{run.model}</div>
+          <div className="font-weight-bold text-dark d-flex align-items-center">
+            <span className="prompt-model-dot mr-2" style={{ backgroundColor: color }}></span>
+            {run.model}
+          </div>
           <div className="small text-muted">
             {run.tokens_used ? `${run.tokens_used} tokens` : 'Tokens unavailable'}
             {typeof run.duration_ms === 'number' ? ` • ${run.duration_ms} ms` : ''}

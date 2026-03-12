@@ -323,6 +323,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         show={showDiff}
         onHide={() => setShowDiff(false)}
         api={api}
+        descriptor={descriptor}
         versions={bootstrap?.versions || []}
         draftContent={promptValue}
         initialLeftKey={diffState.initialLeftKey}
