@@ -374,6 +374,36 @@ Use one shared template parser service across field prompts and scripts.
 - if no schema exists, auto-create simple inputs from detected placeholders
 - always provide an advanced raw JSON mode
 
+## Runtime-Aware Playground Strategy
+
+The playground must not test only the raw saved prompt text.
+
+It must test the same effective runtime input that production sends to the LLM.
+
+### Why this is required
+
+In both plugins, the saved prompt is only one part of the final LLM request.
+
+Production also adds extra context such as:
+
+- language instructions
+- response-format / JSON-schema instructions
+- danger detection and safety guidance
+- style-mode additions such as strict, floating, or form wrappers
+- therapy system prompts and therapist-authoritative message handling
+- script `data_config` expansion and test variable resolution
+
+So the playground must reuse the same runtime composition logic instead of constructing a simplified standalone request.
+
+### Effective context preview
+
+The playground should show both:
+
+- the editable prompt template
+- the fully rendered effective context/messages actually sent to the LLM
+
+This is important for debugging because the saved prompt alone does not explain the final runtime behavior.
+
 ## Shared Owner Adapter Pattern
 
 To avoid duplicating logic, introduce one shared prompt playground/versioning layer with owner-specific adapters.
@@ -384,11 +414,21 @@ Recommended adapters:
 - `FormPromptOwnerAdapter`
 - `ScriptPromptOwnerAdapter`
 
+Planned expansion adapters:
+
+- `TherapyChatPromptOwnerAdapter`
+- `TherapyDraftPromptOwnerAdapter`
+- `TherapySummaryPromptOwnerAdapter`
+- `TextOnlyPromptOwnerAdapter`
+
 Each adapter should know:
 
 - how to load the active owner prompt
 - how to resolve current config fields
+- how to resolve companion runtime fields that change the final context
+- how to build the effective runtime request exactly like production
 - how to test a draft prompt using the same runtime behavior as production
+- how to parse and render structured JSON results using the same production rules
 - how to sync the selected active prompt back into `content` or `llm_scripts.script`
 
 ### Why this matters
@@ -396,6 +436,45 @@ Each adapter should know:
 - `llmChat` testing must respect `LlmContextService`
 - `llmForm` testing must respect `LlmFormController` interpolation and prompt composition
 - `llm_scripts` testing must respect `LlmScriptService`
+
+### Execution profiles
+
+Prompt playground behavior should inherit from the owner/style runtime type, not from a manual UI toggle.
+
+Recommended execution profiles:
+
+- `chat_runtime` for `llmChat.conversation_context`
+- `form_runtime` for `llmFormRecord.llm_context` and `llmFormLog.llm_context`
+- `script_runtime` for `llm_scripts.script`
+- `therapy_chat_runtime` for therapy chat `conversation_context`
+- `therapy_draft_runtime` for `therapy_draft_context`
+- `therapy_summary_runtime` for `therapy_summary_context`
+- `text_only` for prompt-like text that is not sent through an LLM call, such as `therapy_auto_start_context`
+
+Each execution profile defines:
+
+- whether the playground is conversation-style or one-shot generation
+- whether message roles must be shown in the preview
+- which extra context layers are injected
+- which structured-response parser / renderer is used
+- whether the owner is playground-executable at all
+
+### Unsaved companion field overrides
+
+The playground should use unsaved CMS form values when those values affect runtime context.
+
+Reason:
+
+- a CMS editor may change model, temperature, language behavior, safety settings, or other related fields before saving
+- the playground should test that current draft state, not only the last persisted database state
+
+Recommended rule:
+
+- each adapter exposes a list of companion field names it depends on
+- the React UI sends current unsaved companion values as `runtime_overrides`
+- the backend composes the effective request from persisted owner data plus draft overrides
+
+This keeps playground behavior aligned with what the user is currently editing in the CMS.
 
 ## Expansion To `sh-shp-llm_therapy_chat`
 
@@ -425,7 +504,32 @@ The playground should be built on the central LLM logging flow, not as a side ch
 - set variables/test data
 - override model if needed
 - run one test
-- inspect rendered prompt, response, raw payload, tokens, and duration
+- inspect rendered prompt, effective context/messages, response, raw payload, tokens, and duration
+
+### Production-context requirement
+
+The playground must reuse the same runtime composition path as production.
+
+That means:
+
+- `llmChat` playground runs through the same context-building logic as live chat
+- `llmForm` playground runs through the same interpolation and one-shot request composition as form execution
+- script playground runs through the same interpolation, `data_config`, and test-variable resolution as script execution
+- therapy playground runs through the same therapy context builders, schema instructions, and response extraction logic as production
+
+The playground request is therefore not just "send this prompt".
+It is "send this prompt inside the owner's full runtime context".
+
+### Chat vs context testing
+
+The playground must distinguish between conversation-style testing and context-generation testing.
+
+Examples:
+
+- chat/therapy chat styles work with role-based message arrays
+- form/script/draft/summary styles usually work as one-shot generation with a built system/user composition
+
+This distinction should come from the execution profile and style type, not from a manual user choice.
 
 ### Model override
 
@@ -435,14 +539,40 @@ The playground should be built on the central LLM logging flow, not as a side ch
 
 ### Multi-model compare
 
-Recommended as a bounded feature:
+This should be part of phase 1, with bounded scope:
 
-- phase 1 base playground supports single-model testing
-- add optional compare mode if feasible
+- phase 1 supports both single-model run and compare mode
 - compare mode should be limited to 2-3 selected models to avoid cost and clutter
 - compare mode is playground-only, never runtime behavior
 
-If compare mode is implemented, log all runs with a shared `comparison_group_id`.
+Requirements:
+
+- every compared run uses the exact same effective context/messages
+- all compared runs are logged with a shared `comparison_group_id`
+- the UI renders each model result separately with model name, tokens, time, and parsed output
+
+### Structured response handling
+
+The playground should assume structured JSON responses are normal in this system.
+
+Recommended result payload:
+
+- `raw_content`
+- `display_content`
+- `parsed_response`
+- `safety`
+- `request_payload`
+- `effective_context`
+- `logged_message_id`
+
+Behavior:
+
+- if the owner/runtime expects structured JSON, parse it with the same runtime parser used in production
+- show both the raw JSON and the extracted display content
+- if the owner has a custom content extractor, use that extractor
+- if parsing fails, show fallback raw/markdown output and the parse error details for debugging
+
+For therapy and other structured flows, the visible result in the playground should match what users would effectively see in the product, not just the raw model JSON.
 
 ## Prompt Builder Assistant
 
@@ -455,6 +585,7 @@ Add a second tool in the playground called something like:
 
 The user describes:
 
+- the current prompt draft that already exists
 - what the prompt should do
 - target audience
 - tone
@@ -464,10 +595,52 @@ The user describes:
 
 The assistant returns:
 
-- a suggested prompt template
+- an improved prompt template based on the current draft
 - optional variable suggestions
 - optional tags / notes
-- a short explanation of why it is structured that way
+- a short change summary kept outside the prompt body
+
+### Builder input rule
+
+The builder should improve the current prompt draft or selected version.
+
+It should not assume every builder run starts from a blank prompt.
+
+Recommended input sources:
+
+- current unsaved draft first
+- otherwise selected active version
+- otherwise current stored owner prompt
+
+### Builder output structure
+
+Builder output should be structured JSON, not mixed prose inside the prompt body.
+
+Recommended response shape:
+
+```json
+{
+  "prompt_template": "Improved prompt text here",
+  "variables": [
+    {
+      "name": "context",
+      "type": "string",
+      "required": true,
+      "description": "Runtime context block"
+    }
+  ],
+  "notes": [
+    "Explains why the prompt structure was changed"
+  ],
+  "change_summary": "Condensed explanation of the improvement"
+}
+```
+
+UI rule:
+
+- only `prompt_template` is inserted into the editor
+- `variables`, `notes`, and `change_summary` are shown in separate UI panels
+- the builder must never silently append notes/explanations into the prompt text
 
 ### Model handling
 
@@ -493,8 +666,11 @@ Recommended `sent_context` additions:
 - `prompt_entry_id`
 - `prompt_locale_id`
 - `prompt_version_id`
+- `execution_profile`
 - `selected_model`
 - `comparison_group_id` nullable
+- `effective_context`
+- `runtime_overrides`
 
 ## Central Logging And Audit
 
@@ -566,6 +742,41 @@ All new prompt/version/playground endpoints must:
 - script prompt endpoints reuse the `moduleLlmScript` page ACL and still do explicit per-action checks
 - playground and builder actions are protected exactly like update actions, because they spend tokens and expose data
 
+## Backend Request Flow
+
+The new React field is mounted through hooks inside the CMS page, but the prompt-lab actions still need a dedicated backend entry point.
+
+### Recommended backend pattern
+
+Use a dedicated AJAX endpoint class for prompt-lab actions, for example:
+
+- `AjaxLlmPromptLab`
+
+This endpoint should handle requests such as:
+
+- bootstrap owner state
+- list/get versions
+- compare versions
+- run playground test
+- run builder
+- activate version
+- prepare save metadata
+
+### Why this is the best fit
+
+- the CMS field is already hook-rendered, so it can call a normal plugin AJAX endpoint without changing the CMS page controller structure
+- page controllers should stay focused on normal page rendering and save flows
+- the same prompt-lab endpoint can be reused by the scripts module and later by the therapy plugin
+
+### Controller and hook responsibilities
+
+- hooks render the field shell and mount the React app
+- the React app calls the dedicated prompt-lab AJAX endpoint
+- the standard CMS save still posts the field `content` and `meta` as usual
+- backend field-sync services convert that normal save into prompt-version updates
+
+So the request flow stays consistent with the existing CMS/plugin architecture and does not require extending the CMS controller for every new prompt action.
+
 ## React UI Plan
 
 ### 1. New CMS prompt field
@@ -624,12 +835,20 @@ Recommended features:
 - variable inputs
 - raw JSON mode
 - model selector
-- optional compare mode
+- compare mode for 2-3 models
+- effective context / final message preview
 - rendered prompt preview
-- response preview
+- parsed response preview
 - raw payload copy
 - tokens/time info
 - `Build With AI` tab or secondary modal
+
+The visible response area should support:
+
+- structured JSON viewer
+- extracted display-content preview
+- fallback plain/raw output view
+- per-model result cards in compare mode
 
 ### 5. Script editor integration
 
@@ -652,6 +871,8 @@ Recommended approach:
 - `react/src/components/prompts/PromptPlaygroundModal.tsx`
 - `react/src/components/prompts/PromptBuilderModal.tsx`
 - `react/src/components/prompts/PromptVariableInputs.tsx`
+- `react/src/components/prompts/PromptResultPanel.tsx`
+- `react/src/components/prompts/PromptEffectiveContextPanel.tsx`
 - `react/src/components/prompts/promptApi.ts`
 - `react/src/components/prompts/promptTypes.ts`
 - `react/src/components/prompts/promptHooks.ts`
@@ -670,10 +891,13 @@ Recommended new services:
 - `LlmPromptVersionService`
 - `LlmPromptResolverService`
 - `LlmPromptDiffService`
+- `LlmPromptExecutionProfileService`
 - `LlmPromptPlaygroundService`
 - `LlmPromptBuilderService`
 - `LlmPromptFieldSyncService`
 - `LlmPromptVariableService`
+- `LlmPromptResponseRenderService`
+- `LlmPromptAjaxService`
 
 ### `LlmPromptRegistryService`
 
@@ -687,15 +911,28 @@ Recommended new services:
 - resolve active prompt from field/script owner
 - fallback to current field content or `llm_scripts.script`
 
+### `LlmPromptExecutionProfileService`
+
+- resolve execution profile from owner type, slot, and style/module
+- declare required companion fields
+- choose the correct runtime composer and response renderer
+
 ### `LlmPromptPlaygroundService`
 
 - run owner-aware playground tests
+- build the same effective context/messages as production
 - log via central `llmConversations` / `llmMessages`
 - optionally write fast index rows to `llm_prompt_playground_runs`
 
+### `LlmPromptResponseRenderService`
+
+- parse structured JSON outputs
+- extract display content using owner/runtime-aware rules
+- build normalized playground response payloads
+
 ### `LlmPromptBuilderService`
 
-- generate prompt suggestions from user instructions
+- generate prompt suggestions from the current prompt draft plus user instructions
 - reuse same centralized logging path
 
 ### `LlmPromptFieldSyncService`
@@ -710,18 +947,29 @@ Recommended new services:
 
 - `conversation_context` remains the runtime source in phase 1
 - registry save flow keeps it synchronized
+- playground must still use the full `LlmContextService` composition, including language, schema, danger, and mode-specific additions
 
 ### `llmForm`
 
 - `llm_context` remains the runtime source in phase 1
 - prompt versions store raw template text before interpolation
 - playground uses the same interpolation flow as production
+- result rendering should respect structured JSON output rules when the form flow expects them
 
 ### `llm_scripts`
 
 - `llm_scripts.script` remains the runtime cache in phase 1
 - current scripts UI is upgraded to use the new versioning and playground
 - saved active version syncs back to `llm_scripts.script`
+- playground must include `data_config`, test variables, and any script-specific structured output handling
+
+### `sh-shp-llm_therapy_chat`
+
+When this expansion is wired in:
+
+- therapy chat playground must use the same built message context, therapist-authoritative history handling, and JSON extraction rules as production
+- therapy draft and summary playgrounds must use the same schema and context composition as their runtime generators
+- `therapy_auto_start_context` stays versionable but is treated as `text_only`, not playground-executable
 
 ## Migration Plan
 
@@ -754,6 +1002,7 @@ Backfill rules:
 
 - deploy the CMS prompt field
 - integrate shared prompt components into `ScriptsManager`
+- wire the dedicated prompt-lab AJAX endpoint and owner execution-profile resolution
 
 ### Step 5. Later plugin expansion
 
@@ -792,6 +1041,11 @@ The implementation should be accepted only if all of these are true:
 - scripts reuse the same versioning and playground logic instead of a separate implementation
 - owner types are lookup-backed
 - language version streams are separated through `id_languages`
+- playground runs use the same effective runtime context as production, not just the raw saved prompt
+- chat-style and one-shot context-style playground behavior is inherited from the owner runtime profile
+- structured JSON responses are parsed and rendered into display content in the playground
+- builder improves the current prompt draft/version instead of always starting from scratch
+- compare mode for 2-3 models exists in phase 1
 - playground and builder requests are logged through the central LLM conversation/message system
 - prompt lifecycle actions are logged in `transactions`
 - controller actions keep explicit ACL and CSRF checks
@@ -807,5 +1061,7 @@ The best path for `v1.1.0` is:
 - keep model/temperature/token fields where they are today
 - treat `config_json` as version snapshot metadata only
 - upgrade scripts to the new shared prompt UI and playground
+- make the playground runtime-aware so it reuses full production context composition and structured response rendering
+- use a dedicated prompt-lab AJAX endpoint for hook-mounted CMS fields and shared tool actions
 - log playground and builder traffic through `llmConversations` and `llmMessages`
 - design the shared services so therapy plugin prompt fields can adopt them later without another rewrite
