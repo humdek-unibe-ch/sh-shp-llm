@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Select from 'react-select';
-import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
+import { Col, Form, Modal, Row } from 'react-bootstrap';
+import type { createPromptLabApi } from './promptApi';
 import type { PromptVersion } from './promptTypes';
 
 declare const monaco: any;
@@ -10,6 +11,7 @@ declare const BASE_PATH: string;
 interface PromptDiffModalProps {
   show: boolean;
   onHide: () => void;
+  api: ReturnType<typeof createPromptLabApi>;
   versions: PromptVersion[];
   draftContent: string;
   initialLeftKey?: string;
@@ -19,6 +21,7 @@ interface PromptDiffModalProps {
 export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
   show,
   onHide,
+  api,
   versions,
   draftContent,
   initialLeftKey = 'draft',
@@ -26,20 +29,16 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
 }) => {
   const diffRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<any>(null);
+  const [hydratedVersions, setHydratedVersions] = useState<Record<number, PromptVersion>>({});
   const [fallback, setFallback] = useState(false);
   const [leftKey, setLeftKey] = useState(initialLeftKey);
   const [rightKey, setRightKey] = useState(initialRightKey);
-  const [comparedLeftKey, setComparedLeftKey] = useState(initialLeftKey);
-  const [comparedRightKey, setComparedRightKey] = useState(initialRightKey);
-
   useEffect(() => {
     if (!show) {
       return;
     }
     setLeftKey(initialLeftKey);
     setRightKey(initialRightKey);
-    setComparedLeftKey(initialLeftKey);
-    setComparedRightKey(initialRightKey);
   }, [initialLeftKey, initialRightKey, show]);
 
   const resolveVersionByKey = (key: string) => {
@@ -55,7 +54,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
     }
 
     const versionId = Number(key.replace('v:', ''));
-    const version = versions.find((item) => item.id === versionId);
+    const version = hydratedVersions[versionId] || versions.find((item) => item.id === versionId);
     if (!version) {
       return null;
     }
@@ -66,8 +65,8 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
     };
   };
 
-  const leftVersion = resolveVersionByKey(comparedLeftKey);
-  const rightVersion = resolveVersionByKey(comparedRightKey);
+  const leftVersion = resolveVersionByKey(leftKey);
+  const rightVersion = resolveVersionByKey(rightKey);
   const leftTitle = leftVersion?.title || 'Left';
   const rightTitle = rightVersion?.title || 'Right';
   const leftContent = leftVersion?.content || '';
@@ -80,6 +79,49 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
       label: `v${version.version_no} - ${version.created_at}${version.change_note ? ` - ${version.change_note}` : ''}`,
     })),
   ];
+
+  useEffect(() => {
+    if (!show) {
+      return;
+    }
+
+    const initialMap: Record<number, PromptVersion> = {};
+    versions.forEach((version) => {
+      if (version.id) {
+        initialMap[version.id] = version;
+      }
+    });
+    setHydratedVersions(initialMap);
+  }, [show, versions]);
+
+  useEffect(() => {
+    if (!show) {
+      return;
+    }
+
+    const maybeLoad = async (key: string) => {
+      if (!key.startsWith('v:')) {
+        return;
+      }
+      const versionId = Number(key.replace('v:', ''));
+      if (!versionId || hydratedVersions[versionId]?.template_raw) {
+        return;
+      }
+
+      try {
+        const loaded = await api.getVersion(versionId) as PromptVersion;
+        setHydratedVersions((current) => ({
+          ...current,
+          [versionId]: loaded,
+        }));
+      } catch {
+        // keep fallback data from bootstrap
+      }
+    };
+
+    maybeLoad(leftKey);
+    maybeLoad(rightKey);
+  }, [api, hydratedVersions, leftKey, rightKey, show]);
 
   useEffect(() => {
     if (!show || !diffRef.current || fallback) {
@@ -161,7 +203,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
       </Modal.Header>
       <Modal.Body>
         <Row className="align-items-end mb-3">
-          <Col md={5}>
+          <Col md={6}>
             <Form.Label className="small font-weight-bold text-muted mb-1">Left Version</Form.Label>
             <Select
               className="prompt-diff-select"
@@ -172,7 +214,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
               isSearchable
             />
           </Col>
-          <Col md={5}>
+          <Col md={6}>
             <Form.Label className="small font-weight-bold text-muted mb-1">Right Version</Form.Label>
             <Select
               className="prompt-diff-select"
@@ -182,20 +224,6 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
               onChange={(option) => setRightKey(option?.value || 'draft')}
               isSearchable
             />
-          </Col>
-          <Col md={2}>
-            <Button
-              size="sm"
-              variant="primary"
-              className="w-100 prompt-diff-compare-btn"
-              disabled={leftKey === rightKey}
-              onClick={() => {
-                setComparedLeftKey(leftKey);
-                setComparedRightKey(rightKey);
-              }}
-            >
-              Compare
-            </Button>
           </Col>
         </Row>
 

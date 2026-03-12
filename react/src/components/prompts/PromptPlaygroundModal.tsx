@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
+import { PromptEditor } from './PromptEditor';
 import { PromptEffectiveContextPanel } from './PromptEffectiveContextPanel';
 import { PromptResultPanel } from './PromptResultPanel';
 import { PromptVariableInputs } from './PromptVariableInputs';
@@ -54,6 +55,39 @@ function normalizeInitialValues(schema: PromptVariableDefinition[], currentValue
   return next;
 }
 
+function detectVariablesFromPrompt(prompt: string): PromptVariableDefinition[] {
+  const matches = Array.from(prompt.matchAll(/\{\{(\w+)\}\}/g)).map((entry) => entry[1]);
+  const unique = Array.from(new Set(matches));
+  return unique.map((name) => ({
+    name,
+    type: 'string',
+    required: false,
+    description: 'Auto-detected from draft prompt',
+  }));
+}
+
+function mergeVariableSchemas(
+  baseSchema: PromptVariableDefinition[],
+  detectedSchema: PromptVariableDefinition[],
+): PromptVariableDefinition[] {
+  const map = new Map<string, PromptVariableDefinition>();
+  baseSchema.forEach((item) => map.set(item.name, item));
+  detectedSchema.forEach((item) => {
+    if (!map.has(item.name)) {
+      map.set(item.name, item);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function stableStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return String(value);
+  }
+}
+
 export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   show,
   onHide,
@@ -75,9 +109,14 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }),
   };
   const effectiveModels = useMemo(() => buildEffectiveModels(models, defaultModel), [defaultModel, models]);
+  const detectedVariables = useMemo(() => detectVariablesFromPrompt(promptValue), [promptValue]);
+  const effectiveSchema = useMemo(
+    () => mergeVariableSchemas(variablesSchema || [], detectedVariables),
+    [detectedVariables, variablesSchema],
+  );
   const initialVariables = useMemo(
-    () => normalizeInitialValues(variablesSchema, resolveInitialVariables?.() || {}),
-    [resolveInitialVariables, variablesSchema],
+    () => normalizeInitialValues(effectiveSchema, resolveInitialVariables?.() || {}),
+    [effectiveSchema, resolveInitialVariables],
   );
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [variables, setVariables] = useState<Record<string, unknown>>(initialVariables);
@@ -89,6 +128,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   const [result, setResult] = useState<PromptPlaygroundResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDraft, setShowDraft] = useState(false);
 
   useEffect(() => {
     if (!show) {
@@ -103,6 +143,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     setResult(null);
     setError(null);
     setUseRawJson(false);
+    setShowDraft(false);
   }, [defaultModel, effectiveModels, initialVariables, show]);
 
   const isChatRuntime = executionProfile === 'chat_runtime' || executionProfile === 'therapy_chat_runtime';
@@ -146,6 +187,15 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
       setRunning(false);
     }
   };
+
+  const sharedEffectiveContext = useMemo(() => {
+    if (!result?.runs?.length) {
+      return null;
+    }
+    const first = stableStringify(result.runs[0].effective_context);
+    const allSame = result.runs.every((run) => stableStringify(run.effective_context) === first);
+    return allSame ? result.runs[0].effective_context : null;
+  }, [result]);
 
   return (
     <Modal show={show} onHide={onHide} centered dialogClassName="prompt-modal-90 prompt-playground-modal">
@@ -200,16 +250,16 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
                 label={<span className="small">Advanced raw JSON input</span>}
               />
               {useRawJson ? (
-                <Form.Control
-                  as="textarea"
-                  rows={10}
+                <PromptEditor
                   value={rawJson}
-                  onChange={(event) => setRawJson(event.target.value)}
-                  className="font-monospace small"
+                  onChange={setRawJson}
+                  editorMode="monaco"
+                  language="json"
+                  minHeight={260}
                 />
               ) : (
                 <PromptVariableInputs
-                  schema={variablesSchema}
+                  schema={effectiveSchema}
                   values={variables}
                   onChange={(name, value) => setVariables((current) => ({ ...current, [name]: value }))}
                 />
@@ -266,21 +316,44 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
 
           <Col lg={8}>
             <div className="border rounded p-3 mb-3">
-              <div className="small font-weight-bold text-muted mb-2">Draft Prompt</div>
-              <pre className="bg-light border rounded p-3 mb-0 prompt-pre">{promptValue}</pre>
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="small font-weight-bold text-muted">Draft Prompt</div>
+                <Button
+                  size="sm"
+                  variant="outline-secondary"
+                  onClick={() => setShowDraft((current) => !current)}
+                >
+                  {showDraft ? 'Collapse' : 'Expand'}
+                </Button>
+              </div>
+              {showDraft && (
+                <pre className="bg-light border rounded p-3 mt-2 mb-0 prompt-pre">{promptValue}</pre>
+              )}
             </div>
 
             {result?.runs?.length ? (
               result.runs.map((run, index) => (
                 <div key={`${run.model}-${index}`} className="mb-3">
-                  <PromptResultPanel run={run} />
-                  <PromptEffectiveContextPanel effectiveContext={run.effective_context} />
+                  <PromptResultPanel run={run} colorIndex={index} />
+                  {!sharedEffectiveContext && (
+                    <PromptEffectiveContextPanel
+                      effectiveContext={run.effective_context}
+                      title={`Effective Context (${run.model})`}
+                    />
+                  )}
                 </div>
               ))
             ) : (
               <div className="prompt-playground-empty border rounded bg-light p-4 text-center text-muted small">
                 Run the playground to inspect the effective context, structured result, and raw payload.
               </div>
+            )}
+
+            {sharedEffectiveContext && (
+              <PromptEffectiveContextPanel
+                effectiveContext={sharedEffectiveContext}
+                title="Effective Context (shared across selected models)"
+              />
             )}
           </Col>
         </Row>

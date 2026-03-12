@@ -7,6 +7,7 @@ import type { PromptPlaygroundRun } from './promptTypes';
 
 interface PromptResultPanelProps {
   run: PromptPlaygroundRun;
+  colorIndex?: number;
 }
 
 function safeStringify(value: unknown): string {
@@ -25,19 +26,37 @@ function safeStringify(value: unknown): string {
   }
 }
 
-export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run }) => {
-  const parsed = run.parsed_response && typeof run.parsed_response === 'object'
+function colorFromIndex(index: number): string {
+  const palette = ['#0d6efd', '#20c997', '#fd7e14', '#6f42c1', '#d63384', '#198754'];
+  return palette[index % palette.length];
+}
+
+export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, colorIndex = 0 }) => {
+  const parsedFromRun = run.parsed_response && typeof run.parsed_response === 'object'
     ? run.parsed_response
+    : null;
+  const parsed = parsedFromRun && isStructuredResponse(parsedFromRun)
+    ? (parsedFromRun as any)
     : parseStructuredResponse(run.raw_content);
-  const canRenderStructured = !!parsed && isStructuredResponse(parsed);
+  const normalizedStructured = parsed && isStructuredResponse(parsed)
+    ? ({
+      ...parsed,
+      meta: (parsed as any).meta || {},
+    } as any)
+    : null;
+  const canRenderStructured = !!normalizedStructured;
 
   return (
-    <div className="prompt-result-panel border rounded p-3 bg-white">
+    <div
+      className="prompt-result-panel border rounded p-3 bg-white"
+      style={{ borderLeft: `4px solid ${colorFromIndex(colorIndex)}` }}
+    >
       <div className="d-flex justify-content-between align-items-start flex-wrap mb-3">
         <div>
           <div className="font-weight-bold text-dark">{run.model}</div>
           <div className="small text-muted">
             {run.tokens_used ? `${run.tokens_used} tokens` : 'Tokens unavailable'}
+            {typeof run.duration_ms === 'number' ? ` • ${run.duration_ms} ms` : ''}
           </div>
         </div>
         <div>
@@ -64,7 +83,7 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run }) => 
         <div className="small font-weight-bold text-muted mb-2">Rendered Result</div>
         <div className="border rounded p-3 bg-light">
           {canRenderStructured ? (
-            <StructuredResponseRenderer response={parsed} />
+            <StructuredResponseRenderer response={normalizedStructured as any} />
           ) : (
             <MarkdownRenderer content={run.display_content || run.raw_content || ''} />
           )}
@@ -73,16 +92,36 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run }) => 
 
       <details className="mb-2">
         <summary className="small font-weight-bold text-muted">Raw Response</summary>
-        <pre className="small bg-light border rounded p-3 mt-2 mb-0 prompt-pre">
-          {safeStringify(run.raw_content)}
-        </pre>
+        <div className="position-relative mt-2">
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary prompt-copy-btn"
+            onClick={() => navigator.clipboard.writeText(safeStringify(run.raw_content))}
+          >
+            <i className="fas fa-copy mr-1"></i>
+            Copy
+          </button>
+          <pre className="small bg-light border rounded p-3 mb-0 prompt-pre">
+            {safeStringify(run.raw_content)}
+          </pre>
+        </div>
       </details>
 
       <details>
         <summary className="small font-weight-bold text-muted">Request Payload</summary>
-        <pre className="small bg-light border rounded p-3 mt-2 mb-0 prompt-pre">
-          {safeStringify(run.request_payload || {})}
-        </pre>
+        <div className="position-relative mt-2">
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary prompt-copy-btn"
+            onClick={() => navigator.clipboard.writeText(safeStringify(run.request_payload || {}))}
+          >
+            <i className="fas fa-copy mr-1"></i>
+            Copy
+          </button>
+          <pre className="small bg-light border rounded p-3 mb-0 prompt-pre">
+            {safeStringify(run.request_payload || {})}
+          </pre>
+        </div>
       </details>
     </div>
   );

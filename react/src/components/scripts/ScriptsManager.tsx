@@ -727,7 +727,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
             disabled={promptDisabled}
             changeNote={promptChangeNote}
             onChangeNote={setPromptChangeNote}
-            onOpenVersions={() => setShowVersions(true)}
+            onOpenVersions={() => {
+              reloadPromptBootstrap().catch(() => undefined);
+              setShowVersions(true);
+            }}
             onOpenCompare={() => {
               const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft';
               setDiffState({
@@ -976,6 +979,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
       <PromptDiffModal
         show={showDiff}
         onHide={() => setShowDiff(false)}
+        api={promptApi}
         versions={promptBootstrap?.versions || []}
         draftContent={form.script}
         initialLeftKey={diffState.initialLeftKey}

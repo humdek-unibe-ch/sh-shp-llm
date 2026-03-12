@@ -90,6 +90,7 @@ export interface PromptPlaygroundRun {
   id_llmMessages_request?: number | null;
   id_llmMessages_response?: number | null;
   tokens_used?: number | null;
+  duration_ms?: number | null;
   logged_message_id?: number | null;
   parse_errors?: string[];
   is_fallback?: boolean;
@@ -134,4 +135,3 @@ export function parsePromptMeta(value: string | null | undefined): PromptMetaSta
 export function stringifyPromptMeta(meta: PromptMetaState): string {
   return JSON.stringify(meta ?? {});
 }
-

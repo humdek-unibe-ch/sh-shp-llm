@@ -164,13 +164,13 @@ class LlmPromptPlaygroundService extends BaseLlmService
 
         $temperature = $config_snapshot['temperature'] ?? LLM_DEFAULT_TEMPERATURE;
         $max_tokens = $config_snapshot['max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS;
-        $conversation_id = $this->llm_service->createConversation(
-            $_SESSION['id_user'],
-            '[Prompt Lab] Section ' . ($descriptor['owner_id'] ?? '0') . ' ' . ($descriptor['prompt_slot'] ?? 'prompt'),
+        $conversation_id = $this->getOrCreatePromptLabConversation(
+            (int)($_SESSION['id_user'] ?? 0),
             $model_name,
             $temperature,
             $max_tokens,
-            $descriptor['owner_id'] ?? null
+            (int)($descriptor['owner_id'] ?? 0),
+            (string)($descriptor['prompt_slot'] ?? 'prompt')
         );
 
         $request_msg_id = $this->llm_service->addMessage(
@@ -200,6 +200,10 @@ class LlmPromptPlaygroundService extends BaseLlmService
         );
 
         $rendered = $this->render_service->render($response['content'] ?? '', $model_name);
+        $duration_ms = null;
+        if (!empty($response['processing_time'])) {
+            $duration_ms = (int)round(((float)$response['processing_time']) * 1000);
+        }
         $result = array_merge($rendered, array(
             'model' => $model_name,
             'execution_profile' => 'chat_runtime',
@@ -209,6 +213,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             'id_llmMessages_request' => $request_msg_id,
             'id_llmMessages_response' => $response['logged_message_id'] ?? null,
             'tokens_used' => $response['usage']['total_tokens'] ?? null,
+            'duration_ms' => $duration_ms,
             'logged_message_id' => $response['logged_message_id'] ?? null
         ));
 
@@ -237,13 +242,13 @@ class LlmPromptPlaygroundService extends BaseLlmService
 
         $temperature = $config_snapshot['temperature'] ?? LLM_DEFAULT_TEMPERATURE;
         $max_tokens = $config_snapshot['max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS;
-        $conversation_id = $this->llm_service->createConversation(
-            $_SESSION['id_user'],
-            '[Prompt Lab] Section ' . ($descriptor['owner_id'] ?? '0') . ' llm_context',
+        $conversation_id = $this->getOrCreatePromptLabConversation(
+            (int)($_SESSION['id_user'] ?? 0),
             $model_name,
             $temperature,
             $max_tokens,
-            $descriptor['owner_id'] ?? null
+            (int)($descriptor['owner_id'] ?? 0),
+            'llm_context'
         );
 
         $request_msg_id = $this->llm_service->addMessage(
@@ -273,6 +278,10 @@ class LlmPromptPlaygroundService extends BaseLlmService
         );
 
         $rendered = $this->render_service->render($response['content'] ?? '', $model_name);
+        $duration_ms = null;
+        if (!empty($response['processing_time'])) {
+            $duration_ms = (int)round(((float)$response['processing_time']) * 1000);
+        }
         $result = array_merge($rendered, array(
             'model' => $model_name,
             'execution_profile' => 'form_runtime',
@@ -282,6 +291,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             'id_llmMessages_request' => $request_msg_id,
             'id_llmMessages_response' => $response['logged_message_id'] ?? null,
             'tokens_used' => $response['usage']['total_tokens'] ?? null,
+            'duration_ms' => $duration_ms,
             'logged_message_id' => $response['logged_message_id'] ?? null
         ));
 
@@ -298,6 +308,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             $data_config = is_array($decoded) ? $decoded : array();
         }
 
+        $started_at = microtime(true);
         $result = $this->script_service->execute_llm_script(
             $draft_prompt,
             $data_config,
@@ -342,6 +353,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             'id_llmMessages_request' => null,
             'id_llmMessages_response' => $response_data['logged_message_id'] ?? null,
             'tokens_used' => $response_data['tokens_used'] ?? null,
+            'duration_ms' => (int)round((microtime(true) - $started_at) * 1000),
             'logged_message_id' => $response_data['logged_message_id'] ?? null
         ));
 
@@ -442,6 +454,41 @@ class LlmPromptPlaygroundService extends BaseLlmService
         }
 
         return strtolower(substr($locale, 0, 2));
+    }
+
+    private function getOrCreatePromptLabConversation($user_id, $model_name, $temperature, $max_tokens, $section_id, $prompt_slot)
+    {
+        $title = '[Prompt Lab] Section ' . ($section_id ?: 0) . ' ' . ($prompt_slot ?: 'prompt');
+        $existing = $this->db->query_db_first(
+            "SELECT id
+             FROM llmConversations
+             WHERE id_users = :id_users
+               AND id_sections <=> :id_sections
+               AND model = :model
+               AND title = :title
+               AND deleted = 0
+             ORDER BY updated_at DESC
+             LIMIT 1",
+            array(
+                ':id_users' => $user_id,
+                ':id_sections' => $section_id ?: null,
+                ':model' => $model_name,
+                ':title' => $title
+            )
+        );
+
+        if (!empty($existing['id'])) {
+            return (int)$existing['id'];
+        }
+
+        return $this->llm_service->createConversation(
+            $user_id,
+            $title,
+            $model_name,
+            $temperature,
+            $max_tokens,
+            $section_id ?: null
+        );
     }
 }
 

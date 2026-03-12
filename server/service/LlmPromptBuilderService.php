@@ -63,13 +63,16 @@ PROMPT;
             array('role' => 'user', 'content' => $user_prompt)
         );
 
-        $conversation_id = $this->llm_service->createConversation(
-            $_SESSION['id_user'],
-            '[Prompt Builder] ' . ($descriptor['prompt_slot'] ?? 'prompt'),
+        $section_id = ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_STYLE_FIELD
+            ? (int)($descriptor['owner_id'] ?? 0)
+            : null;
+        $conversation_id = $this->getOrCreatePromptBuilderConversation(
+            (int)($_SESSION['id_user'] ?? 0),
             $model_name,
             $temperature,
             $max_tokens,
-            ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_STYLE_FIELD ? ($descriptor['owner_id'] ?? null) : null
+            $section_id,
+            (string)($descriptor['prompt_slot'] ?? 'prompt')
         );
 
         $request_msg_id = $this->llm_service->addMessage(
@@ -135,6 +138,45 @@ PROMPT;
             'variables' => is_array($decoded['variables'] ?? null) ? $decoded['variables'] : array(),
             'notes' => is_array($decoded['notes'] ?? null) ? $decoded['notes'] : array(),
             'change_summary' => (string)($decoded['change_summary'] ?? '')
+        );
+    }
+
+    private function getOrCreatePromptBuilderConversation($user_id, $model_name, $temperature, $max_tokens, $section_id, $prompt_slot)
+    {
+        $title = '[Prompt Builder] ' . ($prompt_slot ?: 'prompt');
+        if ($section_id) {
+            $title .= ' Section ' . $section_id;
+        }
+
+        $existing = $this->db->query_db_first(
+            "SELECT id
+             FROM llmConversations
+             WHERE id_users = :id_users
+               AND id_sections <=> :id_sections
+               AND model = :model
+               AND title = :title
+               AND deleted = 0
+             ORDER BY updated_at DESC
+             LIMIT 1",
+            array(
+                ':id_users' => $user_id,
+                ':id_sections' => $section_id ?: null,
+                ':model' => $model_name,
+                ':title' => $title
+            )
+        );
+
+        if (!empty($existing['id'])) {
+            return (int)$existing['id'];
+        }
+
+        return $this->llm_service->createConversation(
+            $user_id,
+            $title,
+            $model_name,
+            $temperature,
+            $max_tokens,
+            $section_id ?: null
         );
     }
 }

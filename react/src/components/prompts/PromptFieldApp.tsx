@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Spinner } from 'react-bootstrap';
 import { createPromptLabApi } from './promptApi';
 import { usePromptBootstrap } from './promptHooks';
@@ -124,6 +124,8 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
   const [variablesSchemaOverride, setVariablesSchemaOverride] = useState<PromptVariableDefinition[] | null>(
     metaState.prompt?.variablesSchema || null,
   );
+  const promptValueRef = useRef(promptValue);
+  const metaStateRef = useRef(metaState);
 
   const api = useMemo(() => createPromptLabApi(config.endpoint, config.csrfToken), [config.csrfToken, config.endpoint]);
   const descriptor = useMemo<PromptDescriptor>(() => ({
@@ -139,7 +141,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
     collectCmsRuntimeOverrides(container, fieldNames, config.languageId)
   ), [config.languageId, container]);
 
-  const { bootstrap, loading, error } = usePromptBootstrap({
+  const { bootstrap, loading, error, reload } = usePromptBootstrap({
     api,
     descriptor,
     currentContent: promptValue,
@@ -169,6 +171,53 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
     setMetaState(nextMeta);
     dispatchFieldChange(metaInput, stringifyPromptMeta(nextMeta));
   }, [metaInput]);
+
+  useEffect(() => {
+    promptValueRef.current = promptValue;
+  }, [promptValue]);
+
+  useEffect(() => {
+    metaStateRef.current = metaState;
+  }, [metaState]);
+
+  useEffect(() => {
+    const pullExternalState = () => {
+      const nextContent = contentInput.value || '';
+      const nextMetaRaw = metaInput.value || '';
+
+      let hasChanged = false;
+
+      if (nextContent !== promptValueRef.current) {
+        setPromptValue(nextContent);
+        hasChanged = true;
+      }
+
+      const currentMetaRaw = stringifyPromptMeta(metaStateRef.current);
+      if (nextMetaRaw !== currentMetaRaw) {
+        setMetaState(parsePromptMeta(nextMetaRaw));
+        hasChanged = true;
+      }
+
+      if (hasChanged) {
+        reload().catch(() => undefined);
+      }
+    };
+
+    const onWindowFocus = () => pullExternalState();
+    contentInput.addEventListener('change', pullExternalState);
+    contentInput.addEventListener('input', pullExternalState);
+    metaInput.addEventListener('change', pullExternalState);
+    metaInput.addEventListener('input', pullExternalState);
+    window.addEventListener('focus', onWindowFocus);
+
+    return () => {
+      contentInput.removeEventListener('change', pullExternalState);
+      contentInput.removeEventListener('input', pullExternalState);
+      metaInput.removeEventListener('change', pullExternalState);
+      metaInput.removeEventListener('input', pullExternalState);
+      window.removeEventListener('focus', onWindowFocus);
+    };
+  }, [contentInput, metaInput, reload]);
 
   const handleChangeNote = (value: string) => {
     const nextMeta = { ...metaState };
@@ -223,7 +272,10 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         disabled={disabled}
         changeNote={changeNote}
         onChangeNote={handleChangeNote}
-        onOpenVersions={() => setShowVersions(true)}
+        onOpenVersions={() => {
+          reload().catch(() => undefined);
+          setShowVersions(true);
+        }}
         onOpenCompare={() => {
           const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft';
           setDiffState({
@@ -270,6 +322,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
       <PromptDiffModal
         show={showDiff}
         onHide={() => setShowDiff(false)}
+        api={api}
         versions={bootstrap?.versions || []}
         draftContent={promptValue}
         initialLeftKey={diffState.initialLeftKey}

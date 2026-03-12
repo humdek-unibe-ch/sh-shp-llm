@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap';
 import type { createPromptLabApi } from './promptApi';
@@ -55,7 +55,10 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
   onApplySuggestion,
   disabled = false,
 }) => {
-  const effectiveModels = buildEffectiveModels(models, defaultModel);
+  const effectiveModels = useMemo(
+    () => buildEffectiveModels(models, defaultModel),
+    [defaultModel, models],
+  );
   const [instructions, setInstructions] = useState('');
   const [selectedModel, setSelectedModel] = useState(defaultModel || effectiveModels[0]?.id || '');
   const [result, setResult] = useState<PromptBuilderResponse | null>(null);
@@ -71,7 +74,7 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
     setSelectedModel(defaultModel || effectiveModels[0]?.id || '');
     setResult(null);
     setError(null);
-  }, [defaultModel, effectiveModels, show]);
+  }, [defaultModel, show]);
 
   const handleBuild = async () => {
     if (disabled) {

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Col, Form, Row } from 'react-bootstrap';
+import { Form, Row } from 'react-bootstrap';
+import { PromptEditor } from './PromptEditor';
 import type { PromptVariableDefinition } from './promptTypes';
 
 interface PromptVariableInputsProps {
@@ -41,7 +42,7 @@ export const PromptVariableInputs: React.FC<PromptVariableInputsProps> = ({
         const controlValue = normalizeValue(values[variable.name], type);
 
         return (
-          <Col md={6} key={variable.name} className="mb-2">
+          <div key={variable.name} className="col-12 mb-2">
             <Form.Group className="mb-0">
               <Form.Label className="small font-weight-bold mb-1">
                 {variable.name}
@@ -55,21 +56,33 @@ export const PromptVariableInputs: React.FC<PromptVariableInputsProps> = ({
                   label={<span className="small">Enabled</span>}
                 />
               ) : (
-                <Form.Control
-                  as={isMultiline ? 'textarea' : undefined}
-                  size="sm"
-                  type={type === 'number' || type === 'integer' ? 'number' : 'text'}
-                  value={controlValue}
-                  onChange={(event) => onChange(variable.name, event.target.value)}
-                  placeholder={variable.description || `${variable.name} value`}
-                  {...(isMultiline ? { rows: 3 } : {})}
-                />
+                <>
+                  {isMultiline ? (
+                    <PromptEditor
+                      value={String(controlValue || '')}
+                      onChange={(value) => onChange(variable.name, value)}
+                      editorMode="textarea"
+                      language="markdown"
+                      rows={4}
+                      className="prompt-variable-editor"
+                      placeholder={variable.description || `${variable.name} value`}
+                    />
+                  ) : (
+                    <Form.Control
+                      size="sm"
+                      type={type === 'number' || type === 'integer' ? 'number' : 'text'}
+                      value={controlValue}
+                      onChange={(event) => onChange(variable.name, event.target.value)}
+                      placeholder={variable.description || `${variable.name} value`}
+                    />
+                  )}
+                </>
               )}
               {variable.description && (
                 <Form.Text className="text-muted">{variable.description}</Form.Text>
               )}
             </Form.Group>
-          </Col>
+          </div>
         );
       })}
     </Row>
