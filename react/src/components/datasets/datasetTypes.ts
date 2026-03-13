@@ -38,6 +38,7 @@ export interface PromptImportCandidate {
   created_at?: string;
   updated_at?: string;
   id_llmConversations?: number | null;
+  id_llm_scripts?: number | null;
   id_llmMessages_request?: number | null;
   id_llmMessages_response?: number | null;
   id_dataRows?: number | null;

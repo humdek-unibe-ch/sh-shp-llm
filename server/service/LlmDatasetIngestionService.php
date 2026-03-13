@@ -61,7 +61,9 @@ class LlmDatasetIngestionService extends BaseLlmService
             return $this->isStyleOwner($descriptor) ? $this->listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id) : array();
         }
         if ($source_type === 'conversation_message') {
-            return $this->isStyleOwner($descriptor) ? $this->listConversationCandidates($limit, $descriptor, $allowed_page_id) : array();
+            return ($this->isStyleOwner($descriptor) || $this->isScriptOwner($descriptor))
+                ? $this->listConversationCandidates($limit, $descriptor, $allowed_page_id)
+                : array();
         }
         if ($source_type === 'script_run') {
             return $allow_script_source ? $this->listScriptCandidates($limit, $descriptor) : array();
@@ -196,16 +198,19 @@ class LlmDatasetIngestionService extends BaseLlmService
     {
         $params = array();
         $where = array("m.role = 'user'");
-        if (!empty($descriptor['owner_id'])) {
+        if (!empty($descriptor['owner_id']) && $this->isStyleOwner($descriptor)) {
             $where[] = 'lc.id_sections = :section_id';
             $params[':section_id'] = (int)$descriptor['owner_id'];
+        } elseif (!empty($descriptor['owner_id']) && $this->isScriptOwner($descriptor)) {
+            $where[] = 'lc.id_llm_scripts = :script_id';
+            $params[':script_id'] = (int)$descriptor['owner_id'];
         } elseif ($allowed_page_id > 0) {
             $where[] = 'ps.id_pages = :allowed_page_id';
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
         return $this->db->query_db(
-            "SELECT m.id, m.id_llmConversations, m.timestamp AS created_at, m.role, m.content
+            "SELECT m.id, m.id_llmConversations, m.timestamp AS created_at, m.role, m.content, lc.id_llm_scripts
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
@@ -246,6 +251,11 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function isStyleOwner($descriptor)
     {
         return ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_STYLE_FIELD;
+    }
+
+    private function isScriptOwner($descriptor)
+    {
+        return ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT;
     }
 
     private function importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
@@ -359,7 +369,7 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
     {
         $message = $this->db->query_db_first(
-            "SELECT m.id, m.id_llmConversations, m.content, lc.id_sections, ps.id_pages AS source_page_id
+            "SELECT m.id, m.id_llmConversations, m.content, lc.id_sections, lc.id_llm_scripts AS source_script_id, ps.id_pages AS source_page_id
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
@@ -520,6 +530,10 @@ class LlmDatasetIngestionService extends BaseLlmService
             return false;
         }
         if ($owner_id > 0 && ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT) {
+            $source_script_id = (int)($row['source_script_id'] ?? 0);
+            if ($source_script_id > 0) {
+                return $source_script_id === $owner_id;
+            }
             $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
             if ($prompt_owner_id > 0) {
                 return $prompt_owner_id === $owner_id;

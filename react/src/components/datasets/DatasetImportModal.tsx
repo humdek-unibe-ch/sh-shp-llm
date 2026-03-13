@@ -32,6 +32,9 @@ function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImpo
   if (candidate.id_llmConversations) {
     parts.push(`conversation #${candidate.id_llmConversations}`);
   }
+  if (candidate.id_llm_scripts) {
+    parts.push(`script #${candidate.id_llm_scripts}`);
+  }
   if (candidate.id_dataRows) {
     parts.push(`data row #${candidate.id_dataRows}`);
   }
