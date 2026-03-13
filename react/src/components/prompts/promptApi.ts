@@ -82,6 +82,13 @@ interface SaveHumanScoreRequest {
   details?: Record<string, unknown>;
 }
 
+interface LinkEvalRunBaselineRequest {
+  descriptor: PromptDescriptor;
+  runId: number;
+  baselineRunId: number;
+  baselineSummary?: Record<string, unknown>;
+}
+
 function appendDescriptor(formData: FormData, descriptor: PromptDescriptor): void {
   formData.append('owner_type', descriptor.ownerType);
   formData.append('owner_id', String(descriptor.ownerId));
@@ -495,6 +502,31 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       appendDescriptor(formData, descriptor);
       formData.append('run_id', String(runId));
       return post<PromptEvalRunCase[]>(formData);
+    },
+
+    async listEvalRuns(descriptor: PromptDescriptor, datasetId: number, limit = 20): Promise<Array<Record<string, unknown>>> {
+      const formData = new FormData();
+      formData.append('action', 'list_eval_runs');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('limit', String(limit));
+      return post<Array<Record<string, unknown>>>(formData);
+    },
+
+    async linkEvalRunBaseline({
+      descriptor,
+      runId,
+      baselineRunId,
+      baselineSummary,
+    }: LinkEvalRunBaselineRequest): Promise<Record<string, unknown>> {
+      const formData = new FormData();
+      formData.append('action', 'link_eval_run_baseline');
+      appendDescriptor(formData, descriptor);
+      formData.append('run_id', String(runId));
+      formData.append('baseline_run_id', String(baselineRunId));
+      formData.append('baseline_summary_json', JSON.stringify(baselineSummary || {}));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<Record<string, unknown>>(formData);
     },
 
     async saveHumanScore({

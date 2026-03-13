@@ -119,6 +119,55 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
 
   useEffect(() => { if (show && selectedDatasetId) refreshSelectedDataset().catch(() => undefined); }, [selectedDatasetId, show]);
 
+  useEffect(() => {
+    if (!show || !selectedDatasetId) {
+      return;
+    }
+
+    const loadLatestEvaluation = async () => {
+      try {
+        const runs = await evaluationApi.listEvalRuns(descriptor, selectedDatasetId, 10);
+        const latest = (runs || []).find((row: any) => String((row as any).status_code || '') === 'completed') as any;
+        if (!latest?.id) {
+          setEvalResult(null);
+          setEvalRunCases([]);
+          setEvalRunSources([]);
+          setBaselineSummary(null);
+          return;
+        }
+
+        const targetRunId = Number(latest.id);
+        const targetRef = latest.target_ref && typeof latest.target_ref === 'object' ? latest.target_ref : {};
+        const summary = latest.summary && typeof latest.summary === 'object' ? latest.summary : {};
+        const baselineRunId = Number((targetRef as any).baseline_run_id || summary.baseline_run_id || 0);
+        const sources: Array<{ runId: number; label: 'Target' | 'Baseline' }> = [{ runId: targetRunId, label: 'Target' }];
+        if (baselineRunId > 0) {
+          sources.push({ runId: baselineRunId, label: 'Baseline' });
+        }
+
+        setEvalResult({ run: latest, cases: [] });
+        setEvalRunSources(sources);
+        await refreshEvalRunCases(sources);
+
+        if (baselineRunId > 0) {
+          setBaselineSummary({
+            baselinePassRate: typeof summary.baseline_pass_rate === 'number' ? summary.baseline_pass_rate : null,
+            baselineAvgScore: typeof summary.baseline_avg_score === 'number' ? summary.baseline_avg_score : null,
+            passRateDelta: typeof summary.pass_rate_delta === 'number' ? summary.pass_rate_delta : null,
+            avgScoreDelta: typeof summary.avg_score_delta === 'number' ? summary.avg_score_delta : null,
+            combinedExecutionCount: typeof summary.combined_execution_count === 'number' ? summary.combined_execution_count : null,
+          });
+        } else {
+          setBaselineSummary(null);
+        }
+      } catch {
+        // Non-blocking: keep UI usable even if run history cannot be loaded.
+      }
+    };
+
+    loadLatestEvaluation().catch(() => undefined);
+  }, [show, selectedDatasetId, descriptor.ownerId, descriptor.ownerType]);
+
   const handleCreateDataset = async () => {
     setLoading(true); setError(null); setSuccess(null);
     try {
@@ -284,6 +333,21 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
         avgScoreDelta: (mainAvgScore != null && baselineAvgScore != null) ? Number((mainAvgScore - baselineAvgScore).toFixed(4)) : null,
         combinedExecutionCount: (executionCountMain != null && executionCountBase != null) ? executionCountMain + executionCountBase : null,
       });
+
+      if (result?.run?.id && baselineResult?.run?.id) {
+        await evaluationApi.linkEvalRunBaseline({
+          descriptor,
+          runId: Number(result.run.id),
+          baselineRunId: Number(baselineResult.run.id),
+          baselineSummary: {
+            baseline_pass_rate: baselinePassRate,
+            baseline_avg_score: baselineAvgScore,
+            pass_rate_delta: (mainPassRate != null && baselinePassRate != null) ? Number((mainPassRate - baselinePassRate).toFixed(2)) : null,
+            avg_score_delta: (mainAvgScore != null && baselineAvgScore != null) ? Number((mainAvgScore - baselineAvgScore).toFixed(4)) : null,
+            combined_execution_count: (executionCountMain != null && executionCountBase != null) ? executionCountMain + executionCountBase : null,
+          },
+        });
+      }
     }
     setEvalRunSources(sources);
     await refreshEvalRunCases(sources);
@@ -363,10 +427,10 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
       </Modal>
 
       <DatasetImportModal show={showImportModal} onHide={() => setShowImportModal(false)} descriptor={descriptor} executionProfile={executionProfile} datasetId={selectedDatasetId} datasetApi={datasetApi} resolveRuntimeOverrides={resolveRuntimeOverrides} onImported={(count) => { refreshSelectedDataset().catch(() => undefined); setSuccess(`Imported ${count} case(s).`); }} />
-      <EvaluationRunnerModal show={showRunnerModal} onHide={() => setShowRunnerModal(false)} versions={versions} activeVersionId={activeVersionId} models={models} defaultModel={defaultModel} evalDefinitions={evalDefs} disabled={disabled} onRun={handleRunEvaluation} />
+      <EvaluationRunnerModal show={showRunnerModal} onHide={() => setShowRunnerModal(false)} versions={versions} activeVersionId={activeVersionId} draftPromptPreview={promptValue} models={models} defaultModel={defaultModel} evalDefinitions={evalDefs} disabled={disabled} onRun={handleRunEvaluation} />
       <DatasetCasePreviewModal datasetCase={casePreview} onHide={() => setCasePreview(null)} />
 
-      <Modal show={!!selectedEvalCase} onHide={() => setSelectedEvalCase(null)} centered dialogClassName="prompt-modal-90">
+      <Modal show={!!selectedEvalCase} onHide={() => setSelectedEvalCase(null)} centered dialogClassName="prompt-modal-90 prompt-eval-detail-modal">
         <Modal.Header closeButton className="py-2"><Modal.Title className="h6">Evaluation Case Detail</Modal.Title></Modal.Header>
         <Modal.Body>
           {selectedEvalCase && (

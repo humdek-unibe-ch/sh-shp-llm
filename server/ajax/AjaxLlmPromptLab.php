@@ -134,6 +134,15 @@ class AjaxLlmPromptLab extends BaseAjax
                     $this->assertAccess($descriptor, 'select');
                     return $this->handleListEvalRunCases($post);
 
+                case 'list_eval_runs':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListEvalRuns($post);
+
+                case 'link_eval_run_baseline':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleLinkEvalRunBaseline($post);
+
                 case 'save_human_score':
                     $this->assertAccess($descriptor, 'update');
                     $this->assertCsrf($post);
@@ -440,6 +449,28 @@ class AjaxLlmPromptLab extends BaseAjax
             throw new Exception('Missing run_id');
         }
         return $this->evaluation_service->listEvalRunCases($run_id);
+    }
+
+    private function handleListEvalRuns($post)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        $limit = isset($post['limit']) ? (int)$post['limit'] : 20;
+        return $this->evaluation_service->listEvalRuns($dataset_id, $limit);
+    }
+
+    private function handleLinkEvalRunBaseline($post)
+    {
+        $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
+        $baseline_run_id = isset($post['baseline_run_id']) ? (int)$post['baseline_run_id'] : 0;
+        if ($run_id <= 0 || $baseline_run_id <= 0) {
+            throw new Exception('run_id and baseline_run_id are required');
+        }
+
+        $baseline_summary = $this->decodeJson($post['baseline_summary_json'] ?? '{}');
+        return $this->evaluation_service->linkBaselineRun($run_id, $baseline_run_id, is_array($baseline_summary) ? $baseline_summary : array());
     }
 
     private function handleSaveHumanScore($post)

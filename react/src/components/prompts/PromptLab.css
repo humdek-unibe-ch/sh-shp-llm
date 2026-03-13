@@ -274,10 +274,60 @@
   overflow-y: auto;
 }
 
+.prompt-eval-inline-diff {
+  height: 280px;
+  min-height: 280px;
+  max-height: 280px;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.prompt-eval-inline-diff .prompt-diff-monaco {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
 .prompt-json-preview {
   max-height: 280px;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+.prompt-wrap-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.prompt-eval-detail-modal .prompt-json-preview {
+  overflow-x: hidden;
+  overflow-y: auto;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.prompt-eval-detail-modal .prompt-lab-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.prompt-eval-detail-modal .prompt-lab-table th,
+.prompt-eval-detail-modal .prompt-lab-table td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.prompt-eval-detail-modal .prompt-lab-table td pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 .prompt-human-review-grid {

@@ -5,7 +5,9 @@ export function createEvaluationApi(api: ReturnType<typeof createPromptLabApi>) 
     listEvalDefinitions: api.listEvalDefinitions,
     runDatasetEval: api.runDatasetEval,
     getEvalRun: api.getEvalRun,
+    listEvalRuns: api.listEvalRuns,
     listEvalRunCases: api.listEvalRunCases,
+    linkEvalRunBaseline: api.linkEvalRunBaseline,
     saveHumanScore: api.saveHumanScore,
   };
 }

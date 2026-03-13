@@ -1,12 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Select from 'react-select';
 import { Col, Form, Modal, Row } from 'react-bootstrap';
 import type { createPromptLabApi } from './promptApi';
 import type { PromptVersion } from './promptTypes';
-
-declare const monaco: any;
-declare const require: any;
-declare const BASE_PATH: string;
+import { PromptDiffViewer } from './PromptDiffViewer';
 
 interface PromptDiffModalProps {
   show: boolean;
@@ -36,10 +33,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
   initialLeftKey = 'draft',
   initialRightKey = 'draft',
 }) => {
-  const diffRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef<any>(null);
   const [hydratedVersions, setHydratedVersions] = useState<Record<number, PromptVersion>>({});
-  const [fallback, setFallback] = useState(false);
   const [leftKey, setLeftKey] = useState(initialLeftKey);
   const [rightKey, setRightKey] = useState(initialRightKey);
   useEffect(() => {
@@ -132,108 +126,12 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
     maybeLoad(rightKey);
   }, [api, hydratedVersions, leftKey, rightKey, show]);
 
-  useEffect(() => {
-    if (!show || !diffRef.current || fallback) {
-      return;
-    }
-
-    let disposed = false;
-
-    const mountDiff = () => {
-      if (!diffRef.current || disposed) {
-        return;
-      }
-
-      const originalModel = monaco.editor.createModel(leftContent, 'markdown');
-      const modifiedModel = monaco.editor.createModel(rightContent, 'markdown');
-
-      editorRef.current = monaco.editor.createDiffEditor(diffRef.current, {
-        readOnly: true,
-        automaticLayout: true,
-        renderSideBySide: true,
-        ignoreTrimWhitespace: false,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        wordWrap: 'on',
-        hideUnchangedRegions: { enabled: false },
-        overviewRulerLanes: 0,
-      });
-
-      editorRef.current.setModel({
-        original: originalModel,
-        modified: modifiedModel,
-      });
-
-      const originalEditor = editorRef.current.getOriginalEditor?.();
-      const modifiedEditor = editorRef.current.getModifiedEditor?.();
-      originalEditor?.updateOptions?.({
-        scrollbar: {
-          vertical: 'hidden',
-          horizontal: 'auto',
-        },
-      });
-      modifiedEditor?.updateOptions?.({
-        scrollbar: {
-          vertical: 'hidden',
-          horizontal: 'auto',
-        },
-      });
-
-      let syncing = false;
-      const syncScroll = (source: any, target: any) => source?.onDidScrollChange?.((event: any) => {
-        if (!event?.scrollTopChanged || syncing || !target) {
-          return;
-        }
-        syncing = true;
-        target.setScrollTop?.(source.getScrollTop?.() || 0);
-        syncing = false;
-      });
-
-      const disposeOriginalSync = syncScroll(originalEditor, modifiedEditor);
-      const disposeModifiedSync = syncScroll(modifiedEditor, originalEditor);
-      originalEditor?.setScrollTop?.(0);
-      modifiedEditor?.setScrollTop?.(0);
-      originalEditor?.revealLine?.(1);
-      modifiedEditor?.revealLine?.(1);
-      editorRef.current.layout?.();
-
-      (editorRef.current as any).__promptSyncDisposables = [disposeOriginalSync, disposeModifiedSync];
-    };
-
-    try {
-      if (typeof monaco !== 'undefined' && monaco?.editor) {
-        mountDiff();
-      } else if (typeof require !== 'undefined') {
-        require.config({ paths: { vs: `${BASE_PATH}/js/ext/vs` } });
-        require(['vs/editor/editor.main'], mountDiff);
-      } else {
-        setFallback(true);
-      }
-    } catch {
-      setFallback(true);
-    }
-
-    return () => {
-      disposed = true;
-      if (editorRef.current) {
-        const syncDisposables = (editorRef.current as any).__promptSyncDisposables || [];
-        syncDisposables.forEach((disposable: any) => disposable?.dispose?.());
-        const model = editorRef.current.getModel?.();
-        model?.original?.dispose?.();
-        model?.modified?.dispose?.();
-        editorRef.current.dispose();
-        editorRef.current = null;
-      }
-    };
-  }, [fallback, leftContent, rightContent, show]);
-
   return (
     <Modal
       show={show}
       onHide={onHide}
       centered
       dialogClassName="prompt-modal-90 prompt-diff-modal"
-      onEntered={() => editorRef.current?.layout?.()}
     >
       <Modal.Header closeButton className="py-2">
         <Modal.Title className="h6">
@@ -271,18 +169,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
           <Col>{leftTitle}</Col>
           <Col className="text-right">{rightTitle}</Col>
         </Row>
-        {fallback ? (
-          <Row>
-            <Col md={6}>
-              <pre className="prompt-diff-fallback border rounded p-3 bg-light mb-0">{leftContent}</pre>
-            </Col>
-            <Col md={6}>
-              <pre className="prompt-diff-fallback border rounded p-3 bg-light mb-0">{rightContent}</pre>
-            </Col>
-          </Row>
-        ) : (
-          <div ref={diffRef} className="prompt-diff-monaco flex-grow-1" />
-        )}
+        <PromptDiffViewer leftContent={leftContent} rightContent={rightContent} className="prompt-diff-monaco flex-grow-1" />
       </Modal.Body>
       <Modal.Footer className="py-2">
         <button type="button" className="btn btn-sm btn-secondary" onClick={onHide}>

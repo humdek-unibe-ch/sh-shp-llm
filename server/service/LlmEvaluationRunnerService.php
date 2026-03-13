@@ -205,6 +205,65 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $this->getEvalRun($run_id);
     }
 
+    public function listEvalRuns($dataset_id, $limit = 20)
+    {
+        $dataset_id = (int)$dataset_id;
+        $limit = max(1, min((int)$limit, 100));
+        if ($dataset_id <= 0) {
+            throw new Exception('dataset_id is required');
+        }
+
+        $rows = $this->db->query_db(
+            "SELECT r.*, s.lookup_code AS status_code, rm.lookup_code AS run_mode_code
+             FROM llm_eval_runs r
+             LEFT JOIN lookups s ON s.id = r.id_lookups_status
+             LEFT JOIN lookups rm ON rm.id = r.id_lookups_run_mode
+             WHERE r.id_llm_eval_datasets = :dataset_id
+             ORDER BY r.created_at DESC, r.id DESC
+             LIMIT {$limit}",
+            array(':dataset_id' => $dataset_id)
+        );
+
+        foreach ($rows as &$row) {
+            $row['summary'] = $this->decodeJsonValue($row['summary_json'] ?? '{}', array());
+            $row['target_ref'] = $this->decodeJsonValue($row['target_ref_json'] ?? '{}', array());
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    public function linkBaselineRun($run_id, $baseline_run_id, $baseline_summary = array())
+    {
+        $run = $this->getEvalRun($run_id);
+        if (!$run) {
+            throw new Exception('Evaluation run not found');
+        }
+        $baseline_run = $this->getEvalRun($baseline_run_id);
+        if (!$baseline_run) {
+            throw new Exception('Baseline evaluation run not found');
+        }
+
+        $target_ref = is_array($run['target_ref'] ?? null) ? $run['target_ref'] : array();
+        $target_ref['baseline_run_id'] = (int)$baseline_run_id;
+        $target_ref['comparison_mode'] = 'target_vs_baseline';
+
+        $summary = is_array($run['summary'] ?? null) ? $run['summary'] : array();
+        $summary['baseline_run_id'] = (int)$baseline_run_id;
+        if (is_array($baseline_summary)) {
+            foreach ($baseline_summary as $key => $value) {
+                $summary[$key] = $value;
+            }
+        }
+
+        $this->db->update_by_ids('llm_eval_runs', array(
+            'target_ref_json' => $this->jsonEncode($target_ref),
+            'summary_json' => $this->jsonEncode($summary)
+        ), array('id' => (int)$run_id));
+
+        return $this->getEvalRun($run_id);
+    }
+
     private function loadRunCaseScores($run_case_ids)
     {
         $run_case_ids = array_values(array_filter(array_map('intval', (array)$run_case_ids)));

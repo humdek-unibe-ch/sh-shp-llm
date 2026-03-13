@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Select from 'react-select';
 import { Button, Form, Modal, Row, Col, Spinner } from 'react-bootstrap';
+import { PromptDiffViewer } from '../prompts/PromptDiffViewer';
 import type { PromptModel, PromptVersion } from '../prompts/promptTypes';
 import type { PromptEvalDefinition } from './evaluationTypes';
 
@@ -9,6 +10,7 @@ interface EvaluationRunnerModalProps {
   onHide: () => void;
   versions: PromptVersion[];
   activeVersionId: number | null;
+  draftPromptPreview?: string;
   models: PromptModel[];
   defaultModel?: string | null;
   evalDefinitions: PromptEvalDefinition[];
@@ -29,6 +31,7 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
   onHide,
   versions,
   activeVersionId,
+  draftPromptPreview = '',
   models,
   defaultModel,
   evalDefinitions,
@@ -73,6 +76,20 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
   const selectedVersionOption = versionOptions.find((option) => Number(option.value) === (targetVersionId ?? 0)) || null;
   const selectedBaselineType = baselineTypeOptions.find((option) => option.value === baselineTargetType) || baselineTypeOptions[0];
   const selectedBaselineVersion = versionOptions.find((option) => Number(option.value) === (baselineTargetVersionId ?? 0)) || null;
+  const activeVersion = versions.find((version) => Number(version.id) === Number(activeVersionId || 0)) || null;
+  const selectedTargetVersion = versions.find((version) => Number(version.id) === Number(targetVersionId || 0)) || null;
+  const selectedBaselineVersionRow = versions.find((version) => Number(version.id) === Number(baselineTargetVersionId || 0)) || null;
+
+  const getTargetLabel = () => {
+    if (targetType === 'draft') return 'Current draft';
+    if (targetType === 'active_version') return `Active version${activeVersion ? ` (v${activeVersion.version_no})` : ''}`;
+    return selectedTargetVersion ? `Specific version (v${selectedTargetVersion.version_no})` : 'Specific version';
+  };
+
+  const getBaselineLabel = () => {
+    if (baselineTargetType === 'active_version') return `Active version${activeVersion ? ` (v${activeVersion.version_no})` : ''}`;
+    return selectedBaselineVersionRow ? `Specific version (v${selectedBaselineVersionRow.version_no})` : 'Specific version';
+  };
 
   const handleRun = async () => {
     setRunning(true);
@@ -91,6 +108,16 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
       setRunning(false);
     }
   };
+
+  const resolvePromptText = (kind: 'draft' | 'active_version' | 'version', versionId: number | null) => {
+    if (kind === 'draft') return String(draftPromptPreview || '');
+    if (kind === 'active_version') return String(activeVersion?.template_raw || '');
+    const row = versions.find((version) => Number(version.id) === Number(versionId || 0));
+    return String(row?.template_raw || '');
+  };
+
+  const diffLeftText = resolvePromptText(baselineEnabled ? baselineTargetType : targetType, baselineEnabled ? baselineTargetVersionId : targetVersionId);
+  const diffRightText = resolvePromptText(targetType, targetVersionId);
 
   return (
     <Modal show={show} onHide={onHide} centered dialogClassName="prompt-modal-90">
@@ -213,6 +240,23 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
             ))}
           </div>
         </Form.Group>
+
+        <div className="border rounded bg-light p-2">
+          <div className="small font-weight-bold mb-1">Comparison Preview</div>
+          <div className="small text-muted mb-1">
+            <strong>Target:</strong> {getTargetLabel()} | <strong>Models:</strong> {selectedModels.length > 0 ? selectedModels.join(', ') : (defaultModel || 'default')}
+          </div>
+          {baselineEnabled && (
+            <div className="mt-2">
+              <div className="small text-muted mb-1">
+                <strong>Inline Diff:</strong> {getBaselineLabel()} vs {getTargetLabel()}
+              </div>
+              <div className="prompt-eval-inline-diff">
+                <PromptDiffViewer leftContent={diffLeftText} rightContent={diffRightText} />
+              </div>
+            </div>
+          )}
+        </div>
       </Modal.Body>
       <Modal.Footer className="py-2">
         <Button size="sm" variant="secondary" onClick={onHide}>Close</Button>

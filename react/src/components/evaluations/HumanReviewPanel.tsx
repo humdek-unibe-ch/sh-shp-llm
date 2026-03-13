@@ -21,40 +21,49 @@ export const HumanReviewPanel: React.FC<HumanReviewPanelProps> = ({
   onDraftChange,
   onSave,
 }) => (
-  <div className="prompt-human-review-grid">
-    <Form.Control
-      size="sm"
-      type="number"
-      min={1}
-      max={5}
-      value={draft.numeric}
-      onChange={(event) => onDraftChange({ ...draft, numeric: event.target.value })}
-      placeholder="1-5"
-    />
-    <Form.Control
-      size="sm"
-      value={draft.label}
-      onChange={(event) => onDraftChange({ ...draft, label: event.target.value })}
-      placeholder="label"
-    />
-    <Form.Control
-      as="select"
-      size="sm"
-      value={draft.passed}
-      onChange={(event) => onDraftChange({ ...draft, passed: event.target.value })}
-    >
-      <option value="">Pending</option>
-      <option value="1">Pass</option>
-      <option value="0">Fail</option>
-    </Form.Control>
-    <Form.Control
-      size="sm"
-      value={draft.reason}
-      onChange={(event) => onDraftChange({ ...draft, reason: event.target.value })}
-      placeholder="reason"
-    />
-    <Button size="sm" variant="outline-primary" disabled={disabled} onClick={onSave}>
-      {disabled ? 'Saving...' : 'Save'}
-    </Button>
+  <div>
+    <div className="small text-muted mb-1">
+      Human review:
+    </div>
+    <div className="prompt-human-review-grid">
+      <Form.Control
+        size="sm"
+        type="number"
+        min={1}
+        max={5}
+        value={draft.numeric}
+        onChange={(event) => onDraftChange({ ...draft, numeric: event.target.value })}
+        placeholder="Score (1-5)"
+        title="Numeric quality score from 1 to 5"
+      />
+      <Form.Control
+        size="sm"
+        value={draft.label}
+        onChange={(event) => onDraftChange({ ...draft, label: event.target.value })}
+        placeholder="Label (optional)"
+        title="Optional short label, e.g. helpful / unclear"
+      />
+      <Form.Control
+        as="select"
+        size="sm"
+        value={draft.passed}
+        onChange={(event) => onDraftChange({ ...draft, passed: event.target.value })}
+        title="Final decision for this evaluator"
+      >
+        <option value="">Decision: Pending</option>
+        <option value="1">Decision: Pass</option>
+        <option value="0">Decision: Fail</option>
+      </Form.Control>
+      <Form.Control
+        size="sm"
+        value={draft.reason}
+        onChange={(event) => onDraftChange({ ...draft, reason: event.target.value })}
+        placeholder="Reason / notes"
+        title="Why this score was chosen"
+      />
+      <Button size="sm" variant="outline-primary" disabled={disabled} onClick={onSave}>
+        {disabled ? 'Saving...' : 'Save'}
+      </Button>
+    </div>
   </div>
 );
