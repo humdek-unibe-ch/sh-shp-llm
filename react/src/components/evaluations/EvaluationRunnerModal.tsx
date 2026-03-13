@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Select from 'react-select';
 import { Button, Form, Modal, Row, Col, Spinner } from 'react-bootstrap';
-import type { PromptVersion } from '../prompts/promptTypes';
+import type { PromptModel, PromptVersion } from '../prompts/promptTypes';
 import type { PromptEvalDefinition } from './evaluationTypes';
 
 interface EvaluationRunnerModalProps {
@@ -9,6 +9,7 @@ interface EvaluationRunnerModalProps {
   onHide: () => void;
   versions: PromptVersion[];
   activeVersionId: number | null;
+  models: PromptModel[];
   defaultModel?: string | null;
   evalDefinitions: PromptEvalDefinition[];
   disabled?: boolean;
@@ -28,11 +29,23 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
   onHide,
   versions,
   activeVersionId,
+  models,
   defaultModel,
   evalDefinitions,
   disabled = false,
   onRun,
 }) => {
+  const selectMenuStyles = {
+    menuList: (base: Record<string, unknown>) => ({
+      ...base,
+      maxHeight: 220,
+    }),
+  };
+  const normalizedModels = (Array.isArray(models) ? models : []).filter((item) => !!item?.id);
+  const effectiveModels = defaultModel && !normalizedModels.some((item) => item.id === defaultModel)
+    ? [{ id: defaultModel }, ...normalizedModels]
+    : normalizedModels;
+  const modelOptions = effectiveModels.map((item) => ({ value: item.id, label: item.id }));
   const [targetType, setTargetType] = useState<'draft' | 'active_version' | 'version'>('draft');
   const [targetVersionId, setTargetVersionId] = useState<number | null>(activeVersionId ?? null);
   const [selectedModels, setSelectedModels] = useState<string[]>(defaultModel ? [defaultModel] : []);
@@ -117,11 +130,20 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small mb-1">Models (optional)</Form.Label>
-              <Form.Control
-                size="sm"
-                value={selectedModels.join(', ')}
-                onChange={(event) => setSelectedModels(event.target.value.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 3))}
-                placeholder={defaultModel || 'model-a, model-b'}
+              <Select
+                className="prompt-select"
+                classNamePrefix="react-select"
+                isMulti
+                isSearchable
+                closeMenuOnSelect={false}
+                options={modelOptions}
+                value={selectedModels.map((modelId) => ({ value: modelId, label: modelId }))}
+                onChange={(options) => {
+                  const values = (options || []).map((option) => option.value).slice(0, 3);
+                  setSelectedModels(values);
+                }}
+                placeholder={defaultModel || 'Select up to 3 models'}
+                styles={selectMenuStyles as any}
               />
             </Form.Group>
           </Col>

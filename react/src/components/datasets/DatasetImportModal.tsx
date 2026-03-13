@@ -46,6 +46,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   const [sourceType, setSourceType] = useState<PromptImportSourceType>('playground_run');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<PromptImportCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const sourceOptions = [
@@ -71,15 +72,18 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   useEffect(() => {
     if (!show) return;
     setLoading(true);
+    setError(null);
     setSelectedIds([]);
     datasetApi.getImportCandidates(descriptor, sourceType, 80)
       .then((rows) => setCandidates(rows || []))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load import candidates'))
       .finally(() => setLoading(false));
   }, [datasetApi, descriptor, show, sourceType]);
 
   const handleImport = async () => {
     if (!datasetId || selectedIds.length === 0) return;
     setLoading(true);
+    setError(null);
     try {
       const inserted = await datasetApi.addCasesFromSource({
         descriptor,
@@ -91,9 +95,19 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
       });
       onImported(inserted.length);
       onHide();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import selected cases');
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleSelected = (candidateId: number) => {
+    setSelectedIds((current) => (
+      current.includes(candidateId)
+        ? current.filter((value) => value !== candidateId)
+        : [...current, candidateId]
+    ));
   };
 
   return (
@@ -102,6 +116,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
         <Modal.Title className="h6">Import Dataset Cases</Modal.Title>
       </Modal.Header>
       <Modal.Body>
+        {error && <div className="alert alert-danger py-2 small">{error}</div>}
         <Form.Group className="mb-2">
           <Form.Label className="small mb-1">Import Source</Form.Label>
           <Select
@@ -136,25 +151,31 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
                 <tr><td colSpan={4} className="text-muted small">Loading candidates...</td></tr>
               ) : filteredCandidates.length === 0 ? (
                 <tr><td colSpan={4} className="text-muted small">No candidates found.</td></tr>
-              ) : filteredCandidates.map((candidate) => (
-                <tr key={candidate.id}>
+              ) : filteredCandidates.map((candidate) => {
+                const candidateId = Number(candidate.id);
+                const isSelected = selectedIds.includes(candidateId);
+                return (
+                <tr
+                  key={candidate.id}
+                  className={isSelected ? 'table-primary' : ''}
+                  onClick={() => toggleSelected(candidateId)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <td>
                     <Form.Check
-                      checked={selectedIds.includes(candidate.id)}
+                      checked={isSelected}
                       onChange={(event) => {
-                        setSelectedIds((current) => (
-                          event.target.checked
-                            ? [...current, candidate.id]
-                            : current.filter((value) => value !== candidate.id)
-                        ));
+                        event.stopPropagation();
+                        toggleSelected(candidateId);
                       }}
+                      onClick={(event) => event.stopPropagation()}
                     />
                   </td>
                   <td className="small">{candidate.id}</td>
                   <td className="small">{candidatePreview(sourceType, candidate)}</td>
                   <td className="small">{candidate.created_at || candidate.updated_at || '-'}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </Table>
         </div>

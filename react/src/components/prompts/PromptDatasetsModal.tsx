@@ -12,7 +12,7 @@ import { EvaluationRunnerModal } from '../evaluations/EvaluationRunnerModal';
 import { HumanReviewPanel } from '../evaluations/HumanReviewPanel';
 import type { PromptEvalDefinition, PromptEvalRunCase, PromptEvalRunResult } from '../evaluations/evaluationTypes';
 import type { createPromptLabApi } from './promptApi';
-import type { PromptDescriptor, PromptExecutionProfile, PromptMessage, PromptVersion } from './promptTypes';
+import type { PromptDescriptor, PromptExecutionProfile, PromptMessage, PromptModel, PromptVersion } from './promptTypes';
 
 interface PlaygroundCapture {
   variables: Record<string, unknown>;
@@ -33,6 +33,7 @@ interface PromptDatasetsModalProps {
   descriptor: PromptDescriptor;
   versions: PromptVersion[];
   activeVersionId: number | null;
+  models: PromptModel[];
   executionProfile: PromptExecutionProfile;
   promptValue: string;
   disabled?: boolean;
@@ -53,6 +54,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   descriptor,
   versions,
   activeVersionId,
+  models,
   executionProfile,
   promptValue,
   disabled = false,
@@ -246,7 +248,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
       </Modal>
 
       <DatasetImportModal show={showImportModal} onHide={() => setShowImportModal(false)} descriptor={descriptor} executionProfile={executionProfile} datasetId={selectedDatasetId} datasetApi={datasetApi} resolveRuntimeOverrides={resolveRuntimeOverrides} onImported={(count) => { refreshSelectedDataset().catch(() => undefined); setSuccess(`Imported ${count} case(s).`); }} />
-      <EvaluationRunnerModal show={showRunnerModal} onHide={() => setShowRunnerModal(false)} versions={versions} activeVersionId={activeVersionId} defaultModel={defaultModel} evalDefinitions={evalDefs} disabled={disabled} onRun={handleRunEvaluation} />
+      <EvaluationRunnerModal show={showRunnerModal} onHide={() => setShowRunnerModal(false)} versions={versions} activeVersionId={activeVersionId} models={models} defaultModel={defaultModel} evalDefinitions={evalDefs} disabled={disabled} onRun={handleRunEvaluation} />
       <DatasetCasePreviewModal datasetCase={casePreview} onHide={() => setCasePreview(null)} />
 
       <Modal show={!!selectedEvalCase} onHide={() => setSelectedEvalCase(null)} centered dialogClassName="prompt-modal-90">

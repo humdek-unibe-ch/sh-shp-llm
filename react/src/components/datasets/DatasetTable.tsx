@@ -25,7 +25,7 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
           <th>Profile</th>
           <th>Cases</th>
           <th>Status</th>
-          <th style={{ width: 140 }}>Actions</th>
+          <th style={{ width: 210 }}>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -43,16 +43,19 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
             <td className="small">{dataset.cases_count ?? 0}</td>
             <td>
               <Badge variant={dataset.is_locked ? 'dark' : 'secondary'}>
-                {dataset.is_locked ? 'Locked' : 'Open'}
+                <i className={`fas ${dataset.is_locked ? 'fa-lock' : 'fa-check-circle'} mr-1`}></i>
+                {dataset.is_locked ? 'Locked' : 'Ready'}
               </Badge>
             </td>
             <td>
               <div className="prompt-row-actions">
                 <Button size="sm" variant={dataset.id === selectedDatasetId ? 'primary' : 'outline-primary'} onClick={() => onSelect(dataset.id)} disabled={disabled}>
-                  {dataset.id === selectedDatasetId ? 'Selected' : 'Open'}
+                  <i className={`fas ${dataset.id === selectedDatasetId ? 'fa-eye' : 'fa-arrow-right'} mr-1`}></i>
+                  {dataset.id === selectedDatasetId ? 'Viewing' : 'View'}
                 </Button>
                 {onToggleLock && (
                   <Button size="sm" variant="outline-secondary" onClick={() => onToggleLock(dataset)} disabled={disabled}>
+                    <i className={`fas ${dataset.is_locked ? 'fa-unlock' : 'fa-lock'} mr-1`}></i>
                     {dataset.is_locked ? 'Unlock' : 'Lock'}
                   </Button>
                 )}

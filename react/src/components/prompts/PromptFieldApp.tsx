@@ -386,6 +386,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         descriptor={descriptor}
         versions={bootstrap?.versions || []}
         activeVersionId={activeVersion?.id || null}
+        models={bootstrap?.models || []}
         executionProfile={bootstrap?.execution_profile || 'text_only'}
         promptValue={promptValue}
         disabled={disabled}

@@ -1046,6 +1046,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         descriptor={promptDescriptor}
         versions={promptBootstrap?.versions || []}
         activeVersionId={activeVersion?.id || null}
+        models={promptBootstrap?.models || models}
         executionProfile={promptBootstrap?.execution_profile || 'script_runtime'}
         promptValue={form.script}
         disabled={promptDisabled}
