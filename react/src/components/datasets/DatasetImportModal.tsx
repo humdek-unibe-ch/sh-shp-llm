@@ -5,14 +5,47 @@ import type { PromptDescriptor, PromptExecutionProfile } from '../prompts/prompt
 import type { createDatasetApi } from './datasetApi';
 import type { PromptImportCandidate, PromptImportSourceType } from './datasetTypes';
 
+function shortText(value: string, max = 140): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) {
+    return normalized;
+  }
+  return `${normalized.slice(0, max)}...`;
+}
+
 function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
   if (sourceType === 'script_run') {
-    return `${candidate.name || 'Script'} (${candidate.model || 'default'})`;
+    return shortText(`${candidate.name || 'Script'} (${candidate.model || 'default'})`, 110);
   }
   if (sourceType === 'playground_run') {
-    return (candidate.request_content || candidate.response_content || '').slice(0, 120);
+    return shortText(candidate.request_content || candidate.response_content || '', 140) || '(no request/response text)';
   }
-  return (candidate.content || '').slice(0, 120);
+  return shortText(candidate.content || '', 140) || '(empty message)';
+}
+
+function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
+  if (sourceType === 'script_run') {
+    return `Script #${candidate.id} | model: ${candidate.model || 'default'}`;
+  }
+
+  const parts: string[] = [];
+  if (candidate.id_llmConversations) {
+    parts.push(`conversation #${candidate.id_llmConversations}`);
+  }
+  if (candidate.id_dataRows) {
+    parts.push(`data row #${candidate.id_dataRows}`);
+  }
+  if (candidate.id_llmMessages_request) {
+    parts.push(`request #${candidate.id_llmMessages_request}`);
+  }
+  if (candidate.id_llmMessages_response) {
+    parts.push(`response #${candidate.id_llmMessages_response}`);
+  }
+  if (candidate.role) {
+    parts.push(`role: ${candidate.role}`);
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : 'No linked IDs';
 }
 
 function sourceExecutionProfile(sourceType: PromptImportSourceType, fallback: PromptExecutionProfile): string {
@@ -63,10 +96,11 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
       return true;
     }
     const preview = candidatePreview(sourceType, candidate).toLowerCase();
+    const meta = candidateMeta(sourceType, candidate).toLowerCase();
     const idText = String(candidate.id);
     const name = String(candidate.name || '').toLowerCase();
     const model = String(candidate.model || '').toLowerCase();
-    return preview.includes(term) || idText.includes(term) || name.includes(term) || model.includes(term);
+    return preview.includes(term) || meta.includes(term) || idText.includes(term) || name.includes(term) || model.includes(term);
   });
 
   useEffect(() => {
@@ -143,14 +177,15 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
                 <th style={{ width: 40 }}></th>
                 <th>ID</th>
                 <th>Preview</th>
+                <th>Details</th>
                 <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={4} className="text-muted small">Loading candidates...</td></tr>
+                <tr><td colSpan={5} className="text-muted small">Loading candidates...</td></tr>
               ) : filteredCandidates.length === 0 ? (
-                <tr><td colSpan={4} className="text-muted small">No candidates found.</td></tr>
+                <tr><td colSpan={5} className="text-muted small">No candidates found.</td></tr>
               ) : filteredCandidates.map((candidate) => {
                 const candidateId = Number(candidate.id);
                 const isSelected = selectedIds.includes(candidateId);
@@ -173,6 +208,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
                   </td>
                   <td className="small">{candidate.id}</td>
                   <td className="small">{candidatePreview(sourceType, candidate)}</td>
+                  <td className="small text-muted">{candidateMeta(sourceType, candidate)}</td>
                   <td className="small">{candidate.created_at || candidate.updated_at || '-'}</td>
                 </tr>
               )})}

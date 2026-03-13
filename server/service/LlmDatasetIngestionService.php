@@ -154,7 +154,7 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id)
     {
         $params = array();
-        $where = array("m.role = 'user'", 'm.id_dataRows IS NOT NULL');
+        $where = array("m.role = 'user'");
         if (!empty($descriptor['owner_id'])) {
             $where[] = 'lc.id_sections = :section_id';
             $params[':section_id'] = (int)$descriptor['owner_id'];
@@ -163,16 +163,33 @@ class LlmDatasetIngestionService extends BaseLlmService
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
-        return $this->db->query_db(
+        $rows = $this->db->query_db(
             "SELECT m.id, m.id_llmConversations, m.id_dataRows, m.timestamp AS created_at, m.content
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
              LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE " . implode(' AND ', $where) . "
-             ORDER BY m.timestamp DESC LIMIT {$limit}",
+             ORDER BY m.timestamp DESC LIMIT " . (int)($limit * 4),
             $params
         );
+
+        $filtered = array();
+        foreach ($rows as $row) {
+            if (!empty($row['id_dataRows'])) {
+                $filtered[] = $row;
+                continue;
+            }
+            $parsed = $this->dataset_service->parseFieldLines((string)($row['content'] ?? ''));
+            if (!empty($parsed)) {
+                $filtered[] = $row;
+            }
+            if (count($filtered) >= $limit) {
+                break;
+            }
+        }
+
+        return $filtered;
     }
 
     private function listConversationCandidates($limit, $descriptor, $allowed_page_id)
@@ -301,7 +318,7 @@ class LlmDatasetIngestionService extends BaseLlmService
              WHERE m.id = :id LIMIT 1",
             array(':id' => $source_id)
         );
-        if (!$message || empty($message['id_dataRows']) || !$this->matchesDescriptorScope($message, $descriptor, $allowed_page_id)) {
+        if (!$message || !$this->matchesDescriptorScope($message, $descriptor, $allowed_page_id)) {
             return null;
         }
 
@@ -325,7 +342,7 @@ class LlmDatasetIngestionService extends BaseLlmService
                     'id_llmConversations' => !empty($message['id_llmConversations']) ? (int)$message['id_llmConversations'] : null,
                     'id_llmMessages_request' => (int)$message['id'],
                     'id_llmMessages_response' => !empty($assistant_reply['id']) ? (int)$assistant_reply['id'] : null,
-                    'id_dataRows' => (int)$message['id_dataRows']
+                    'id_dataRows' => !empty($message['id_dataRows']) ? (int)$message['id_dataRows'] : null
                 )
             ),
             'expected_output' => !empty($assistant_reply['content']) ? array('assistant_text' => (string)$assistant_reply['content']) : null,
@@ -333,7 +350,7 @@ class LlmDatasetIngestionService extends BaseLlmService
                 'id_llmConversations' => !empty($message['id_llmConversations']) ? (int)$message['id_llmConversations'] : null,
                 'id_llmMessages_request' => (int)$message['id'],
                 'id_llmMessages_response' => !empty($assistant_reply['id']) ? (int)$assistant_reply['id'] : null,
-                'id_dataRows' => (int)$message['id_dataRows']
+                'id_dataRows' => !empty($message['id_dataRows']) ? (int)$message['id_dataRows'] : null
             ),
             'tags' => array('imported', 'form_submission')
         ));
