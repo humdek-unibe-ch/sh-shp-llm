@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Select from 'react-select';
 import { Button, Form, Modal, Row, Col, Spinner } from 'react-bootstrap';
 import type { PromptVersion } from '../prompts/promptTypes';
 import type { PromptEvalDefinition } from './evaluationTypes';
@@ -42,6 +43,23 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
   const [baselineTargetType, setBaselineTargetType] = useState<'active_version' | 'version'>('active_version');
   const [baselineTargetVersionId, setBaselineTargetVersionId] = useState<number | null>(activeVersionId ?? null);
   const [running, setRunning] = useState(false);
+  const targetTypeOptions = [
+    { value: 'draft', label: 'Current draft' },
+    { value: 'active_version', label: 'Active version' },
+    { value: 'version', label: 'Specific version' },
+  ];
+  const versionOptions = versions.map((version) => ({
+    value: String(version.id),
+    label: `v${version.version_no}${version.id === activeVersionId ? ' (active)' : ''}`,
+  }));
+  const baselineTypeOptions = [
+    { value: 'active_version', label: 'Active version' },
+    { value: 'version', label: 'Specific version' },
+  ];
+  const selectedTargetType = targetTypeOptions.find((option) => option.value === targetType) || targetTypeOptions[0];
+  const selectedVersionOption = versionOptions.find((option) => Number(option.value) === (targetVersionId ?? 0)) || null;
+  const selectedBaselineType = baselineTypeOptions.find((option) => option.value === baselineTargetType) || baselineTypeOptions[0];
+  const selectedBaselineVersion = versionOptions.find((option) => Number(option.value) === (baselineTargetVersionId ?? 0)) || null;
 
   const handleRun = async () => {
     setRunning(true);
@@ -71,20 +89,29 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small mb-1">Target</Form.Label>
-              <Form.Control as="select" size="sm" value={targetType} onChange={(event) => setTargetType(event.target.value as 'draft' | 'active_version' | 'version')}>
-                <option value="draft">Current draft</option>
-                <option value="active_version">Active version</option>
-                <option value="version">Specific version</option>
-              </Form.Control>
+              <Select
+                className="prompt-select"
+                classNamePrefix="react-select"
+                isSearchable={false}
+                options={targetTypeOptions}
+                value={selectedTargetType}
+                onChange={(option) => setTargetType((option?.value as 'draft' | 'active_version' | 'version') || 'draft')}
+              />
             </Form.Group>
           </Col>
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small mb-1">Version</Form.Label>
-              <Form.Control as="select" size="sm" value={targetVersionId ?? ''} onChange={(event) => setTargetVersionId(Number(event.target.value) || null)} disabled={targetType !== 'version'}>
-                <option value="">Choose version</option>
-                {versions.map((version) => <option key={version.id} value={version.id}>v{version.version_no}{version.id === activeVersionId ? ' (active)' : ''}</option>)}
-              </Form.Control>
+              <Select
+                className="prompt-select"
+                classNamePrefix="react-select"
+                isSearchable
+                isDisabled={targetType !== 'version'}
+                options={versionOptions}
+                value={selectedVersionOption}
+                onChange={(option) => setTargetVersionId(option?.value ? Number(option.value) : null)}
+                placeholder="Choose version"
+              />
             </Form.Group>
           </Col>
           <Col md={4}>
@@ -114,19 +141,29 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
             <Col md={6}>
               <Form.Group>
                 <Form.Label className="small mb-1">Baseline Target</Form.Label>
-                <Form.Control as="select" size="sm" value={baselineTargetType} onChange={(event) => setBaselineTargetType(event.target.value as 'active_version' | 'version')}>
-                  <option value="active_version">Active version</option>
-                  <option value="version">Specific version</option>
-                </Form.Control>
+                <Select
+                  className="prompt-select"
+                  classNamePrefix="react-select"
+                  isSearchable={false}
+                  options={baselineTypeOptions}
+                  value={selectedBaselineType}
+                  onChange={(option) => setBaselineTargetType((option?.value as 'active_version' | 'version') || 'active_version')}
+                />
               </Form.Group>
             </Col>
             <Col md={6}>
               <Form.Group>
                 <Form.Label className="small mb-1">Baseline Version</Form.Label>
-                <Form.Control as="select" size="sm" value={baselineTargetVersionId ?? ''} onChange={(event) => setBaselineTargetVersionId(Number(event.target.value) || null)} disabled={baselineTargetType !== 'version'}>
-                  <option value="">Choose version</option>
-                  {versions.map((version) => <option key={`baseline-${version.id}`} value={version.id}>v{version.version_no}{version.id === activeVersionId ? ' (active)' : ''}</option>)}
-                </Form.Control>
+                <Select
+                  className="prompt-select"
+                  classNamePrefix="react-select"
+                  isSearchable
+                  isDisabled={baselineTargetType !== 'version'}
+                  options={versionOptions}
+                  value={selectedBaselineVersion}
+                  onChange={(option) => setBaselineTargetVersionId(option?.value ? Number(option.value) : null)}
+                  placeholder="Choose version"
+                />
               </Form.Group>
             </Col>
           </Row>

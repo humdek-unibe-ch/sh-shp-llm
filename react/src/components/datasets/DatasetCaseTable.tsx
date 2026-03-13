@@ -18,7 +18,7 @@ export const DatasetCaseTable: React.FC<DatasetCaseTableProps> = ({
   onDelete,
 }) => (
   <div className="table-responsive">
-    <Table striped bordered hover size="sm" className="mb-0">
+    <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
         <tr>
           <th>Case</th>
@@ -51,8 +51,10 @@ export const DatasetCaseTable: React.FC<DatasetCaseTableProps> = ({
                 ))}
               </td>
               <td>
-                <Button size="sm" variant="outline-secondary" className="mr-1" onClick={() => onPreview(datasetCase)}>Preview</Button>
-                {canDelete && <Button size="sm" variant="outline-danger" onClick={() => onDelete(datasetCase)}>Remove</Button>}
+                <div className="prompt-row-actions">
+                  <Button size="sm" variant="outline-secondary" onClick={() => onPreview(datasetCase)}>Preview</Button>
+                  {canDelete && <Button size="sm" variant="outline-danger" onClick={() => onDelete(datasetCase)}>Remove</Button>}
+                </div>
               </td>
             </tr>
           );

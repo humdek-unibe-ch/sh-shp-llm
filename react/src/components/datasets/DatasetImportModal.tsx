@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Modal, Spinner, Tab, Table, Tabs } from 'react-bootstrap';
+import Select from 'react-select';
+import { Button, Form, Modal, Spinner, Table } from 'react-bootstrap';
 import type { PromptDescriptor, PromptExecutionProfile } from '../prompts/promptTypes';
 import type { createDatasetApi } from './datasetApi';
 import type { PromptImportCandidate, PromptImportSourceType } from './datasetTypes';
@@ -43,9 +44,29 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   onImported,
 }) => {
   const [sourceType, setSourceType] = useState<PromptImportSourceType>('playground_run');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [candidates, setCandidates] = useState<PromptImportCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const sourceOptions = [
+    { value: 'playground_run', label: 'From playground runs' },
+    { value: 'form_submission', label: 'From form submissions' },
+    { value: 'conversation_message', label: 'From conversations' },
+    { value: 'script_run', label: 'From scripts' },
+  ];
+  const selectedSourceOption = sourceOptions.find((option) => option.value === sourceType) || sourceOptions[0];
+
+  const filteredCandidates = candidates.filter((candidate) => {
+    const term = search.trim().toLowerCase();
+    if (term === '') {
+      return true;
+    }
+    const preview = candidatePreview(sourceType, candidate).toLowerCase();
+    const idText = String(candidate.id);
+    const name = String(candidate.name || '').toLowerCase();
+    const model = String(candidate.model || '').toLowerCase();
+    return preview.includes(term) || idText.includes(term) || name.includes(term) || model.includes(term);
+  });
 
   useEffect(() => {
     if (!show) return;
@@ -81,15 +102,27 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
         <Modal.Title className="h6">Import Dataset Cases</Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        <Tabs activeKey={sourceType} onSelect={(key) => setSourceType((key as PromptImportSourceType) || 'playground_run')}>
-          <Tab eventKey="playground_run" title="From playground runs" />
-          <Tab eventKey="form_submission" title="From form submissions" />
-          <Tab eventKey="conversation_message" title="From conversations" />
-          <Tab eventKey="script_run" title="From scripts" />
-        </Tabs>
+        <Form.Group className="mb-2">
+          <Form.Label className="small mb-1">Import Source</Form.Label>
+          <Select
+            className="prompt-select"
+            classNamePrefix="react-select"
+            isSearchable
+            options={sourceOptions}
+            value={selectedSourceOption}
+            onChange={(option) => setSourceType((option?.value as PromptImportSourceType) || 'playground_run')}
+          />
+        </Form.Group>
+        <Form.Control
+          size="sm"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search candidates"
+          className="mb-2"
+        />
 
-        <div className="table-responsive mt-3">
-          <Table bordered hover size="sm" className="mb-0">
+        <div className="table-responsive">
+          <Table hover size="sm" className="mb-0 prompt-lab-table">
             <thead>
               <tr>
                 <th style={{ width: 40 }}></th>
@@ -101,9 +134,9 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
             <tbody>
               {loading ? (
                 <tr><td colSpan={4} className="text-muted small">Loading candidates...</td></tr>
-              ) : candidates.length === 0 ? (
+              ) : filteredCandidates.length === 0 ? (
                 <tr><td colSpan={4} className="text-muted small">No candidates found.</td></tr>
-              ) : candidates.map((candidate) => (
+              ) : filteredCandidates.map((candidate) => (
                 <tr key={candidate.id}>
                   <td>
                     <Form.Check

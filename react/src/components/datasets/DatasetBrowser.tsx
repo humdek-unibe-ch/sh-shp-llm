@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button, Form } from 'react-bootstrap';
+import Select from 'react-select';
 import type { PromptDataset } from './datasetTypes';
 import { DatasetTable } from './DatasetTable';
 
@@ -33,8 +34,19 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
   onToggleLock,
   disabled = false,
   loading = false,
-}) => (
-  <div className="border rounded p-3 bg-white h-100">
+}) => {
+  const datasetTypeOptions = [
+    { value: 'golden_manual', label: 'golden_manual' },
+    { value: 'production_replay', label: 'production_replay' },
+    { value: 'pilot_study_replay', label: 'pilot_study_replay' },
+    { value: 'conversation_replay', label: 'conversation_replay' },
+    { value: 'form_submission_replay', label: 'form_submission_replay' },
+    { value: 'script_fixture', label: 'script_fixture' },
+  ];
+  const selectedType = datasetTypeOptions.find((option) => option.value === newDatasetType) || datasetTypeOptions[0];
+
+  return (
+  <div className="border rounded p-3 bg-white h-100 prompt-dataset-browser">
     <div className="small font-weight-bold text-muted mb-2">Datasets</div>
     <Form.Control
       size="sm"
@@ -59,22 +71,17 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
       placeholder="e.g. Pilot Study Replay Set"
       className="mb-2"
     />
-    <Form.Control
-      as="select"
-      size="sm"
-      value={newDatasetType}
-      onChange={(event) => onNewDatasetTypeChange(event.target.value)}
-      className="mb-2"
-    >
-      <option value="golden_manual">golden_manual</option>
-      <option value="production_replay">production_replay</option>
-      <option value="pilot_study_replay">pilot_study_replay</option>
-      <option value="conversation_replay">conversation_replay</option>
-      <option value="form_submission_replay">form_submission_replay</option>
-      <option value="script_fixture">script_fixture</option>
-    </Form.Control>
+    <Select
+      className="prompt-select mb-2"
+      classNamePrefix="react-select"
+      isSearchable
+      options={datasetTypeOptions}
+      value={selectedType}
+      onChange={(option) => onNewDatasetTypeChange(option?.value || 'golden_manual')}
+    />
     <Button size="sm" variant="outline-secondary" onClick={onCreateDataset} disabled={disabled || loading || newDatasetName.trim() === ''}>
       Create Dataset
     </Button>
   </div>
-);
+  );
+};

@@ -230,9 +230,9 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                     <div className="small font-weight-bold">{selectedDataset?.name || 'Select a dataset'}</div>
                     <div className="small text-muted">{selectedDataset ? `${selectedDataset.dataset_type_code || 'dataset'} / ${selectedDataset.execution_profile_code || 'profile'}` : 'Create or choose a dataset to continue.'}</div>
                   </div>
-                  <div className="mt-2 mt-md-0">
-                    <Button size="sm" variant="outline-secondary" className="mr-1" onClick={handleAddCurrentCase} disabled={disabled || !selectedDatasetId || !lastPlaygroundCapture || promptValue.trim() === ''}>Add Latest Playground</Button>
-                    <Button size="sm" variant="outline-info" className="mr-1" onClick={() => setShowImportModal(true)} disabled={disabled || !selectedDatasetId}>Import Cases</Button>
+                  <div className="mt-2 mt-md-0 prompt-header-actions">
+                    <Button size="sm" variant="outline-secondary" onClick={handleAddCurrentCase} disabled={disabled || !selectedDatasetId || !lastPlaygroundCapture || promptValue.trim() === ''}>Add Latest Playground</Button>
+                    <Button size="sm" variant="outline-info" onClick={() => setShowImportModal(true)} disabled={disabled || !selectedDatasetId}>Import Cases</Button>
                     <Button size="sm" variant="primary" onClick={() => setShowRunnerModal(true)} disabled={disabled || !selectedDatasetId || promptValue.trim() === ''}>Run Evaluation</Button>
                   </div>
                 </div>
@@ -258,7 +258,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
               <div className="small text-muted mb-1">Normalized Output</div>
               <pre className="small border rounded bg-light p-2 mb-3 prompt-json-preview">{JSON.stringify(selectedEvalCase.normalized_output || parseJsonSafe(selectedEvalCase.normalized_output_json, {}), null, 2)}</pre>
               <div className="small text-muted mb-1">Scores</div>
-              <Table bordered size="sm">
+              <Table size="sm" className="prompt-lab-table">
                 <thead><tr><th>Evaluator</th><th>Score</th><th>Status</th><th>Details</th></tr></thead>
                 <tbody>
                   {(selectedEvalCase.scores || []).map((score, index) => {

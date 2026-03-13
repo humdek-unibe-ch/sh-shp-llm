@@ -25,7 +25,7 @@ export const EvaluationCaseTable: React.FC<{
   onInspect: (runCase: PromptEvalRunCase) => void;
 }> = ({ cases, onInspect }) => (
   <div className="table-responsive mt-3">
-    <Table striped bordered hover size="sm" className="mb-0">
+    <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
         <tr>
           <th>Case</th>
@@ -57,7 +57,11 @@ export const EvaluationCaseTable: React.FC<{
                   </span>
                 ))}
               </td>
-              <td><Button size="sm" variant="outline-secondary" onClick={() => onInspect(item)}>Inspect</Button></td>
+              <td>
+                <div className="prompt-row-actions">
+                  <Button size="sm" variant="outline-secondary" onClick={() => onInspect(item)}>Inspect</Button>
+                </div>
+              </td>
             </tr>
           );
         })}

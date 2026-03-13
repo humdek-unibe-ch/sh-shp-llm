@@ -156,6 +156,69 @@
   background: #fff;
 }
 
+.prompt-select .react-select__control {
+  min-height: 31px;
+  border-color: #ced4da;
+  box-shadow: none;
+}
+
+.prompt-select .react-select__value-container {
+  min-height: 31px;
+  padding: 0 8px;
+}
+
+.prompt-select .react-select__input-container,
+.prompt-select .react-select__single-value,
+.prompt-select .react-select__placeholder,
+.prompt-select .react-select__option {
+  font-size: 0.875rem;
+}
+
+.prompt-select .react-select__indicator {
+  padding: 6px;
+}
+
+.prompt-select .react-select__menu {
+  z-index: 1062;
+}
+
+.prompt-lab-table {
+  border: 1px solid #dee2e6;
+}
+
+.prompt-lab-table thead th {
+  background: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  white-space: nowrap;
+}
+
+.prompt-lab-table td,
+.prompt-lab-table th {
+  vertical-align: middle;
+}
+
+.prompt-lab-table tbody tr.table-info {
+  background-color: #e7f5ff;
+}
+
+.prompt-row-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt-row-actions .btn {
+  min-width: 72px;
+}
+
+.prompt-header-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .prompt-eval-def-list {
   max-height: 190px;
   overflow-y: auto;
@@ -177,5 +240,11 @@
 @media (max-width: 991.98px) {
   .prompt-human-review-grid {
     grid-template-columns: 1fr;
+  }
+
+  .prompt-header-actions {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 }

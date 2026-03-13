@@ -18,7 +18,7 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
   disabled = false,
 }) => (
   <div className="table-responsive">
-    <Table hover size="sm" className="mb-0">
+    <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
         <tr>
           <th>Name</th>
@@ -47,14 +47,16 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
               </Badge>
             </td>
             <td>
-              <Button size="sm" variant={dataset.id === selectedDatasetId ? 'primary' : 'outline-primary'} className="mr-1" onClick={() => onSelect(dataset.id)} disabled={disabled}>
-                {dataset.id === selectedDatasetId ? 'Selected' : 'Open'}
-              </Button>
-              {onToggleLock && (
-                <Button size="sm" variant="outline-secondary" onClick={() => onToggleLock(dataset)} disabled={disabled}>
-                  {dataset.is_locked ? 'Unlock' : 'Lock'}
+              <div className="prompt-row-actions">
+                <Button size="sm" variant={dataset.id === selectedDatasetId ? 'primary' : 'outline-primary'} onClick={() => onSelect(dataset.id)} disabled={disabled}>
+                  {dataset.id === selectedDatasetId ? 'Selected' : 'Open'}
                 </Button>
-              )}
+                {onToggleLock && (
+                  <Button size="sm" variant="outline-secondary" onClick={() => onToggleLock(dataset)} disabled={disabled}>
+                    {dataset.is_locked ? 'Unlock' : 'Lock'}
+                  </Button>
+                )}
+              </div>
             </td>
           </tr>
         ))}
