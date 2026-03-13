@@ -47,6 +47,13 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - Added `llm_judge` scoring support and saved human-review scores in the same score table.
 - Added prompt-lab UI flows for dataset browsing, case preview, source import, evaluation runs, result inspection, and manual review.
 - Exposed the same datasets/evaluations workflow in both CMS prompt fields and the scripts manager.
+- Added consistent CMS-style delete confirmation for dataset deletion (`$.confirm` with safe browser fallback).
+- Added therapy runtime support in prompt-lab execution profile resolution and replay:
+  - `therapy_chat_runtime`
+  - `therapy_draft_runtime`
+  - `therapy_summary_runtime`
+- Mapped therapy prompt slots to executable runtime profiles so therapy contexts no longer fall back to `text_only`.
+- Enabled therapy-aware dataset conversation imports by preserving therapy execution profiles during import.
 
 ### LLM forms
 

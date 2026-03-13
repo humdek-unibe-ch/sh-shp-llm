@@ -53,7 +53,16 @@ function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImpo
 
 function sourceExecutionProfile(sourceType: PromptImportSourceType, fallback: PromptExecutionProfile): string {
   if (sourceType === 'form_submission') return 'form_runtime';
-  if (sourceType === 'conversation_message') return 'chat_runtime';
+  if (sourceType === 'conversation_message') {
+    if (
+      fallback === 'therapy_chat_runtime'
+      || fallback === 'therapy_draft_runtime'
+      || fallback === 'therapy_summary_runtime'
+    ) {
+      return fallback;
+    }
+    return 'chat_runtime';
+  }
   if (sourceType === 'script_run') return 'script_runtime';
   return fallback;
 }

@@ -181,7 +181,10 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }
   }, [effectiveSchema, rawJson, show, useRawJson, variables]);
 
-  const isChatRuntime = executionProfile === 'chat_runtime' || executionProfile === 'therapy_chat_runtime';
+  const isChatRuntime = executionProfile === 'chat_runtime'
+    || executionProfile === 'therapy_chat_runtime'
+    || executionProfile === 'therapy_draft_runtime'
+    || executionProfile === 'therapy_summary_runtime';
   const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
 
   const updateMessage = (index: number, field: keyof PromptMessage, value: string) => {

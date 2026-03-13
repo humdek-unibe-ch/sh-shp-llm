@@ -142,26 +142,51 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
       setError('Unlock dataset before deleting it.');
       return;
     }
-    if (!window.confirm(`Delete dataset "${dataset.name}" and all related cases/evaluation runs? This cannot be undone.`)) {
+    const performDelete = async () => {
+      try {
+        await datasetApi.deleteDataset(descriptor, dataset.id);
+        const rows = await datasetApi.listDatasets(descriptor, executionProfile, datasetSearch);
+        setDatasets(rows || []);
+        const fallbackId = rows?.[0]?.id ?? null;
+        setSelectedDatasetId((current) => (current === dataset.id ? fallbackId : current));
+        if (selectedDatasetId === dataset.id) {
+          setCases([]);
+          setEvalResult(null);
+          setEvalRunCases([]);
+          setBaselineSummary(null);
+        }
+        setSuccess(`Dataset "${dataset.name}" deleted.`);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete dataset');
+      }
+    };
+
+    const jquery = (window as any).$;
+    if (jquery?.confirm) {
+      jquery.confirm({
+        title: 'Delete dataset?',
+        content: `Delete dataset "${dataset.name}" and all related cases/evaluation runs? This cannot be undone.`,
+        type: 'red',
+        buttons: {
+          confirm: {
+            text: 'Delete',
+            btnClass: 'btn-danger',
+            action: () => {
+              void performDelete();
+            },
+          },
+          cancel: {
+            text: 'Cancel',
+            action: () => {},
+          },
+        },
+      });
       return;
     }
 
-    try {
-      await datasetApi.deleteDataset(descriptor, dataset.id);
-      const rows = await datasetApi.listDatasets(descriptor, executionProfile, datasetSearch);
-      setDatasets(rows || []);
-      const fallbackId = rows?.[0]?.id ?? null;
-      setSelectedDatasetId((current) => (current === dataset.id ? fallbackId : current));
-      if (selectedDatasetId === dataset.id) {
-        setCases([]);
-        setEvalResult(null);
-        setEvalRunCases([]);
-        setBaselineSummary(null);
-      }
-      setSuccess(`Dataset "${dataset.name}" deleted.`);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete dataset');
+    if (window.confirm(`Delete dataset "${dataset.name}" and all related cases/evaluation runs? This cannot be undone.`)) {
+      await performDelete();
     }
   };
 

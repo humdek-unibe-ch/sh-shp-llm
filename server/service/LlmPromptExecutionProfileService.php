@@ -17,12 +17,32 @@ class LlmPromptExecutionProfileService extends BaseLlmService
     {
         $owner_type = $descriptor['owner_type'] ?? '';
         $prompt_slot = $descriptor['prompt_slot'] ?? '';
+        $owner_id = (int)($descriptor['owner_id'] ?? 0);
 
         if ($owner_type === LLM_PROMPT_OWNER_SCRIPT || $prompt_slot === 'script') {
             return 'script_runtime';
         }
 
+        if ($prompt_slot === 'therapy_draft_context') {
+            return 'therapy_draft_runtime';
+        }
+
+        if ($prompt_slot === 'therapy_summary_context') {
+            return 'therapy_summary_runtime';
+        }
+
+        if ($prompt_slot === 'therapy_auto_start_context') {
+            return 'therapy_chat_runtime';
+        }
+
         if ($prompt_slot === 'conversation_context') {
+            $style_name = $this->resolveSectionStyleName($owner_id);
+            if ($style_name === 'therapychat') {
+                return 'therapy_chat_runtime';
+            }
+            if ($style_name === 'therapistdashboard') {
+                return 'therapy_draft_runtime';
+            }
             return 'chat_runtime';
         }
 
@@ -59,6 +79,42 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'enable_floating_button',
                 'enable_media_rendering',
                 'allowed_media_domains'
+            );
+        }
+
+        if ($profile === 'therapy_chat_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens',
+                'therapy_enable_ai',
+                'therapy_chat_default_mode',
+                'enable_danger_detection',
+                'danger_keywords',
+                'danger_notification_emails',
+                'danger_blocked_message',
+                'enable_speech_to_text',
+                'speech_to_text_model',
+                'speech_to_text_language'
+            );
+        }
+
+        if ($profile === 'therapy_draft_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens',
+                'conversation_context',
+                'therapy_draft_context'
+            );
+        }
+
+        if ($profile === 'therapy_summary_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens',
+                'therapy_summary_context'
             );
         }
 
@@ -189,7 +245,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             'max_tokens' => $this->normalizeInt($runtime_values['llm_max_tokens'] ?? null)
         );
 
-        if ($profile === 'chat_runtime') {
+        if ($profile === 'chat_runtime' || $profile === 'therapy_chat_runtime') {
             $snapshot['strict_conversation_mode'] = $this->toBoolString($runtime_values['strict_conversation_mode'] ?? null);
             $snapshot['enable_form_mode'] = $this->toBoolString($runtime_values['enable_form_mode'] ?? null);
             $snapshot['enable_progress_tracking'] = $this->toBoolString($runtime_values['enable_progress_tracking'] ?? null);
@@ -200,6 +256,24 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         }
 
         return $snapshot;
+    }
+
+    private function resolveSectionStyleName($section_id)
+    {
+        if ($section_id <= 0) {
+            return '';
+        }
+
+        $row = $this->db->query_db_first(
+            "SELECT st.name
+             FROM sections s
+             INNER JOIN styles st ON st.id = s.id_styles
+             WHERE s.id = :sid
+             LIMIT 1",
+            array(':sid' => $section_id)
+        );
+
+        return strtolower((string)($row['name'] ?? ''));
     }
 
     private function normalizeNumber($value)

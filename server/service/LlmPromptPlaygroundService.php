@@ -99,8 +99,9 @@ class LlmPromptPlaygroundService extends BaseLlmService
 
     private function runSingleModel($profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
-        if ($profile === 'chat_runtime') {
+        if (in_array($profile, array('chat_runtime', 'therapy_chat_runtime', 'therapy_draft_runtime', 'therapy_summary_runtime'), true)) {
             return $this->runChatRuntime(
+                $profile,
                 $descriptor,
                 $draft_prompt,
                 $runtime_values,
@@ -141,7 +142,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         throw new Exception('Prompt owner is not playground-executable');
     }
 
-    private function runChatRuntime($descriptor, $draft_prompt, $runtime_values, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
+    private function runChatRuntime($execution_profile, $descriptor, $draft_prompt, $runtime_values, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $proxy = new LlmPromptChatRuntimeModel($draft_prompt, $runtime_values, $model_name);
         $floating_mode_service = new LlmFloatingModeService();
@@ -160,7 +161,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $history = $this->normalizeMessageHistory($message_history);
         if (empty($history)) {
             $history = array(
-                array('role' => 'user', 'content' => 'Test this prompt in playground mode.')
+                array('role' => 'user', 'content' => $this->getDefaultChatPromptForProfile($execution_profile))
             );
         }
 
@@ -214,7 +215,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         }
         $result = array_merge($rendered, array(
             'model' => $model_name,
-            'execution_profile' => 'chat_runtime',
+            'execution_profile' => $execution_profile,
             'request_payload' => $response['request_payload'] ?? null,
             'effective_context' => $effective_messages,
             'id_llmConversations' => $conversation_id,
@@ -228,6 +229,17 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $result['id_llm_prompt_playground_runs'] = $this->logRun($descriptor, $config_snapshot, array(), $result, $comparison_group_id, $options);
 
         return $result;
+    }
+
+    private function getDefaultChatPromptForProfile($profile)
+    {
+        if ($profile === 'therapy_draft_runtime') {
+            return 'Create a therapist-facing reply draft for the latest patient message.';
+        }
+        if ($profile === 'therapy_summary_runtime') {
+            return 'Summarize this therapy conversation with key themes, risks, and next steps.';
+        }
+        return 'Test this prompt in playground mode.';
     }
 
     private function runFormRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
