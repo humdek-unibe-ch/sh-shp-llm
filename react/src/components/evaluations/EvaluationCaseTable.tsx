@@ -28,7 +28,9 @@ export const EvaluationCaseTable: React.FC<{
     <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
         <tr>
+          <th>Target</th>
           <th>Case</th>
+          <th>Input</th>
           <th>Model</th>
           <th>Status</th>
           <th>Output</th>
@@ -38,14 +40,33 @@ export const EvaluationCaseTable: React.FC<{
       </thead>
       <tbody>
         {cases.length === 0 ? (
-          <tr><td colSpan={6} className="text-muted small">No evaluation cases yet.</td></tr>
+          <tr><td colSpan={8} className="text-muted small">No evaluation cases yet.</td></tr>
         ) : cases.map((item) => {
           const runCaseId = Number(item.run_case_id || item.id || 0);
           const status = item.status || (item.passed === false ? 'failed' : 'passed');
           const outputText = (item.display_content || String((item.normalized_output || {})['display_content'] || '')).slice(0, 140);
+          const inputText = (item.input_preview || '').slice(0, 160);
           return (
             <tr key={`${runCaseId}-${item.dataset_case_id || item.id}`}>
+              <td className="small">
+                <Badge variant={item.comparison_label === 'Baseline' ? 'secondary' : 'primary'}>
+                  {item.comparison_label || 'Target'}
+                </Badge>
+              </td>
               <td className="small">{item.title || item.dataset_case_title || `Case ${item.dataset_case_id || item.id}`}</td>
+              <td className="small">
+                <div>{inputText || '-'}</div>
+                {(item.input_fields || []).length > 0 && (
+                  <div className="text-muted mt-1">
+                    {(item.input_fields || []).map((field, index) => (
+                      <span key={`${runCaseId}-input-${index}`} className="mr-2">
+                        <Badge variant="light" className="mr-1">{field.key}</Badge>
+                        {field.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </td>
               <td className="small">{item.model || '-'}</td>
               <td><Badge variant={caseBadgeVariant(status)}>{caseStatusLabel(status)}</Badge></td>
               <td className="small">{outputText}</td>

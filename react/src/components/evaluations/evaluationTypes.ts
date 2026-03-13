@@ -20,11 +20,17 @@ export interface PromptEvalScore {
 
 export interface PromptEvalRunCase {
   run_case_id?: number;
+  id_llm_eval_runs?: number;
   dataset_case_id?: number;
   title?: string;
+  comparison_label?: 'Target' | 'Baseline' | string;
   passed?: boolean;
   status?: 'passed' | 'failed' | 'pending_review';
   model?: string;
+  input_preview?: string;
+  input_fields?: Array<{ key: string; value: string }>;
+  input_payload_json?: string | null;
+  input_payload?: Record<string, unknown> | null;
   display_content?: string;
   id?: number;
   id_llm_eval_dataset_cases?: number;

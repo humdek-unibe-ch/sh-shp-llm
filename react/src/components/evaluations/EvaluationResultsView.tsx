@@ -11,6 +11,7 @@ interface EvaluationResultsViewProps {
     baselineAvgScore: number | null;
     passRateDelta: number | null;
     avgScoreDelta: number | null;
+    combinedExecutionCount?: number | null;
   } | null;
   onInspectCase: (runCase: PromptEvalRunCase) => void;
 }

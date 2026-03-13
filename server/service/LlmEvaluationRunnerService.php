@@ -159,7 +159,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
     public function listEvalRunCases($run_id)
     {
         $cases = $this->db->query_db(
-            "SELECT rc.*, dc.title AS dataset_case_title
+            "SELECT rc.*, dc.title AS dataset_case_title, dc.input_payload_json
              FROM llm_eval_run_cases rc
              LEFT JOIN llm_eval_dataset_cases dc ON dc.id = rc.id_llm_eval_dataset_cases
              WHERE rc.id_llm_eval_runs = :run_id
@@ -174,8 +174,11 @@ class LlmEvaluationRunnerService extends BaseLlmService
         foreach ($cases as &$case_row) {
             $case_row['scores'] = $scores_by_case[(int)$case_row['id']] ?? array();
             $case_row['normalized_output'] = $this->decodeJsonValue($case_row['normalized_output_json'] ?? '{}', array());
+            $case_row['input_payload'] = $this->decodeJsonValue($case_row['input_payload_json'] ?? '{}', array());
             $case_row['model'] = (string)($case_row['normalized_output']['model'] ?? '');
             $case_row['display_content'] = (string)($case_row['normalized_output']['display_content'] ?? '');
+            $case_row['input_preview'] = $this->buildInputPreview($case_row['input_payload']);
+            $case_row['input_fields'] = $this->buildInputFields($case_row['input_payload']);
             $case_row['status'] = $this->deriveCaseStatus($case_row['scores']);
             $case_row['passed'] = $case_row['status'] === 'passed';
         }
@@ -282,6 +285,103 @@ class LlmEvaluationRunnerService extends BaseLlmService
             throw new Exception('Evaluation lookup setup is incomplete');
         }
         return $lookup_id;
+    }
+
+    private function buildInputPreview($input_payload)
+    {
+        if (!is_array($input_payload)) {
+            return '';
+        }
+
+        $trigger = trim((string)($input_payload['trigger_message'] ?? ''));
+        if ($trigger !== '') {
+            return $this->truncateText($trigger, 220);
+        }
+
+        $variables = is_array($input_payload['form_data'] ?? null)
+            ? $input_payload['form_data']
+            : (is_array($input_payload['variables'] ?? null) ? $input_payload['variables'] : array());
+        if (!empty($variables)) {
+            $parts = array();
+            foreach ($variables as $key => $value) {
+                $text = $this->flattenInputValue($value);
+                if ($text === '') {
+                    continue;
+                }
+                $parts[] = (string)$key . ': ' . $text;
+                if (count($parts) >= 3) {
+                    break;
+                }
+            }
+            if (!empty($parts)) {
+                return $this->truncateText(implode(' | ', $parts), 220);
+            }
+        }
+
+        $history = is_array($input_payload['message_history'] ?? null) ? $input_payload['message_history'] : array();
+        for ($i = count($history) - 1; $i >= 0; $i--) {
+            $row = is_array($history[$i] ?? null) ? $history[$i] : array();
+            if (($row['role'] ?? '') !== 'user') {
+                continue;
+            }
+            $content = trim((string)($row['content'] ?? ''));
+            if ($content !== '') {
+                return $this->truncateText($content, 220);
+            }
+        }
+
+        return '';
+    }
+
+    private function buildInputFields($input_payload)
+    {
+        if (!is_array($input_payload)) {
+            return array();
+        }
+
+        $source = is_array($input_payload['form_data'] ?? null)
+            ? $input_payload['form_data']
+            : (is_array($input_payload['variables'] ?? null) ? $input_payload['variables'] : array());
+
+        $fields = array();
+        foreach ($source as $key => $value) {
+            $text = $this->flattenInputValue($value);
+            if ($text === '') {
+                continue;
+            }
+            $fields[] = array(
+                'key' => (string)$key,
+                'value' => $this->truncateText($text, 80)
+            );
+            if (count($fields) >= 4) {
+                break;
+            }
+        }
+
+        return $fields;
+    }
+
+    private function flattenInputValue($value)
+    {
+        if ($value === null) {
+            return '';
+        }
+        if (is_scalar($value)) {
+            return trim((string)$value);
+        }
+        if (is_array($value)) {
+            return $this->truncateText(json_encode($value), 140);
+        }
+        return '';
+    }
+
+    private function truncateText($text, $max_len)
+    {
+        $text = trim((string)$text);
+        if ($text === '' || strlen($text) <= (int)$max_len) {
+            return $text;
+        }
+        return substr($text, 0, max(0, (int)$max_len - 3)) . '...';
     }
 }
 ?>

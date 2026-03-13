@@ -9,13 +9,17 @@ interface EvaluationSummaryCardsProps {
     baselineAvgScore: number | null;
     passRateDelta: number | null;
     avgScoreDelta: number | null;
+    combinedExecutionCount?: number | null;
   } | null;
 }
 
 export const EvaluationSummaryCards: React.FC<EvaluationSummaryCardsProps> = ({ summary, baselineSummary }) => (
   <div className="d-flex flex-wrap">
     <Badge variant="secondary" className="mr-2 mb-2">Dataset Cases: {summary.dataset_case_count ?? summary.total_cases ?? 0}</Badge>
-    <Badge variant="secondary" className="mr-2 mb-2">Executions: {summary.execution_count ?? summary.total_cases ?? 0}</Badge>
+    <Badge variant="secondary" className="mr-2 mb-2">{baselineSummary ? 'Target Executions' : 'Executions'}: {summary.execution_count ?? summary.total_cases ?? 0}</Badge>
+    {baselineSummary?.combinedExecutionCount != null && (
+      <Badge variant="primary" className="mr-2 mb-2">Compared Executions: {baselineSummary.combinedExecutionCount}</Badge>
+    )}
     <Badge variant="success" className="mr-2 mb-2">Pass: {summary.pass_count ?? 0}</Badge>
     <Badge variant="danger" className="mr-2 mb-2">Fail: {summary.fail_count ?? 0}</Badge>
     <Badge variant="warning" className="mr-2 mb-2">Pending: {summary.pending_review_count ?? 0}</Badge>

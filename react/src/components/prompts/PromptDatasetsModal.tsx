@@ -80,7 +80,8 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const [evalDefs, setEvalDefs] = useState<PromptEvalDefinition[]>([]);
   const [evalResult, setEvalResult] = useState<PromptEvalRunResult | null>(null);
   const [evalRunCases, setEvalRunCases] = useState<PromptEvalRunCase[]>([]);
-  const [baselineSummary, setBaselineSummary] = useState<{ baselinePassRate: number | null; baselineAvgScore: number | null; passRateDelta: number | null; avgScoreDelta: number | null } | null>(null);
+  const [baselineSummary, setBaselineSummary] = useState<{ baselinePassRate: number | null; baselineAvgScore: number | null; passRateDelta: number | null; avgScoreDelta: number | null; combinedExecutionCount?: number | null } | null>(null);
+  const [evalRunSources, setEvalRunSources] = useState<Array<{ runId: number; label: 'Target' | 'Baseline' }>>([]);
   const [selectedEvalCase, setSelectedEvalCase] = useState<PromptEvalRunCase | null>(null);
   const [savingHumanKey, setSavingHumanKey] = useState<string | null>(null);
   const [humanDrafts, setHumanDrafts] = useState<Record<string, { numeric: string; label: string; passed: string; reason: string }>>({});
@@ -154,6 +155,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
           setCases([]);
           setEvalResult(null);
           setEvalRunCases([]);
+          setEvalRunSources([]);
           setBaselineSummary(null);
         }
         setSuccess(`Dataset "${dataset.name}" deleted.`);
@@ -222,25 +224,69 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
   };
 
-  const refreshEvalRunCases = async (runId: number) => {
+  const fetchEvalRunCases = async (runId: number, label: 'Target' | 'Baseline') => {
     const rows = await evaluationApi.listEvalRunCases(descriptor, runId);
-    setEvalRunCases((rows || []).map((row) => ({ ...row, normalized_output: row.normalized_output || parseJsonSafe(row.normalized_output_json || null, null), scores: (row.scores || []).map((score) => ({ ...score, details: score.details || parseJsonSafe(score.details_json || null, null) })) })));
+    return (rows || []).map((row) => ({
+      ...row,
+      comparison_label: label,
+      normalized_output: row.normalized_output || parseJsonSafe(row.normalized_output_json || null, null),
+      input_payload: row.input_payload || parseJsonSafe(row.input_payload_json || null, null),
+      scores: (row.scores || []).map((score) => ({ ...score, details: score.details || parseJsonSafe(score.details_json || null, null) })),
+    }));
+  };
+
+  const refreshEvalRunCases = async (sources: Array<{ runId: number; label: 'Target' | 'Baseline' }>) => {
+    if (!sources.length) {
+      setEvalRunCases([]);
+      return;
+    }
+    const all = await Promise.all(sources.map((source) => fetchEvalRunCases(source.runId, source.label)));
+    const merged = ([] as PromptEvalRunCase[]).concat(...all);
+    merged.sort((a, b) => {
+      const titleA = String(a.title || a.dataset_case_title || '');
+      const titleB = String(b.title || b.dataset_case_title || '');
+      if (titleA !== titleB) return titleA.localeCompare(titleB);
+      const modelA = String(a.model || '');
+      const modelB = String(b.model || '');
+      if (modelA !== modelB) return modelA.localeCompare(modelB);
+      const labelA = String(a.comparison_label || 'Target');
+      const labelB = String(b.comparison_label || 'Target');
+      return labelA.localeCompare(labelB);
+    });
+    setEvalRunCases(merged);
   };
 
   const handleRunEvaluation = async (config: { targetType: 'draft' | 'active_version' | 'version'; targetVersionId?: number; selectedModels: string[]; evalDefinitionIds: number[]; baselineEnabled: boolean; baselineTargetType: 'active_version' | 'version'; baselineTargetVersionId?: number }) => {
     if (!selectedDatasetId) return;
-    setError(null); setSuccess(null); setEvalRunCases([]); setEvalResult(null); setBaselineSummary(null); setHumanDrafts({});
+    setError(null); setSuccess(null); setEvalRunCases([]); setEvalResult(null); setBaselineSummary(null); setEvalRunSources([]); setHumanDrafts({});
     const result = await evaluationApi.runDatasetEval({ descriptor, datasetId: selectedDatasetId, targetType: config.targetType, targetVersionId: config.targetVersionId, draftPrompt: promptValue, runtimeOverrides: resolveRuntimeOverrides(), selectedModels: config.selectedModels, evalDefinitionIds: config.evalDefinitionIds });
-    setEvalResult(result); if (result?.run?.id) await refreshEvalRunCases(Number(result.run.id));
+    const sources: Array<{ runId: number; label: 'Target' | 'Baseline' }> = [];
+    setEvalResult(result);
+    if (result?.run?.id) {
+      sources.push({ runId: Number(result.run.id), label: 'Target' });
+    }
     if (config.baselineEnabled) {
       const baselineResult = await evaluationApi.runDatasetEval({ descriptor, datasetId: selectedDatasetId, targetType: config.baselineTargetType, targetVersionId: config.baselineTargetVersionId, draftPrompt: promptValue, runtimeOverrides: resolveRuntimeOverrides(), selectedModels: config.selectedModels, evalDefinitionIds: config.evalDefinitionIds });
+      if (baselineResult?.run?.id) {
+        sources.push({ runId: Number(baselineResult.run.id), label: 'Baseline' });
+      }
       const mainSummary = result?.run?.summary || {}; const baseSummary = baselineResult?.run?.summary || {};
       const mainPassRate = typeof mainSummary.pass_rate === 'number' ? mainSummary.pass_rate : null;
       const baselinePassRate = typeof baseSummary.pass_rate === 'number' ? baseSummary.pass_rate : null;
       const mainAvgScore = typeof mainSummary.avg_score === 'number' ? mainSummary.avg_score : null;
       const baselineAvgScore = typeof baseSummary.avg_score === 'number' ? baseSummary.avg_score : null;
-      setBaselineSummary({ baselinePassRate, baselineAvgScore, passRateDelta: (mainPassRate != null && baselinePassRate != null) ? Number((mainPassRate - baselinePassRate).toFixed(2)) : null, avgScoreDelta: (mainAvgScore != null && baselineAvgScore != null) ? Number((mainAvgScore - baselineAvgScore).toFixed(4)) : null });
+      const executionCountMain = typeof mainSummary.execution_count === 'number' ? mainSummary.execution_count : null;
+      const executionCountBase = typeof baseSummary.execution_count === 'number' ? baseSummary.execution_count : null;
+      setBaselineSummary({
+        baselinePassRate,
+        baselineAvgScore,
+        passRateDelta: (mainPassRate != null && baselinePassRate != null) ? Number((mainPassRate - baselinePassRate).toFixed(2)) : null,
+        avgScoreDelta: (mainAvgScore != null && baselineAvgScore != null) ? Number((mainAvgScore - baselineAvgScore).toFixed(4)) : null,
+        combinedExecutionCount: (executionCountMain != null && executionCountBase != null) ? executionCountMain + executionCountBase : null,
+      });
     }
+    setEvalRunSources(sources);
+    await refreshEvalRunCases(sources);
     setSuccess('Dataset evaluation completed.');
   };
 
@@ -249,7 +295,11 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     setSavingHumanKey(key);
     try {
       await evaluationApi.saveHumanScore({ descriptor, runCaseId, definitionId, scoreValueNumeric: draft.numeric.trim() === '' ? null : Number(draft.numeric), scoreValueLabel: draft.label || null, passed: draft.passed === '' ? null : Number(draft.passed), details: { reason: draft.reason || '' } });
-      if (evalResult?.run?.id) await refreshEvalRunCases(Number(evalResult.run.id));
+      if (evalRunSources.length > 0) {
+        await refreshEvalRunCases(evalRunSources);
+      } else if (evalResult?.run?.id) {
+        await refreshEvalRunCases([{ runId: Number(evalResult.run.id), label: 'Target' }]);
+      }
       setSuccess('Human review score saved.');
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed to save human score'); } finally { setSavingHumanKey(null); }
   };
@@ -322,6 +372,9 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
           {selectedEvalCase && (
             <>
               <div className="small mb-2"><strong>Case:</strong> {selectedEvalCase.title || selectedEvalCase.dataset_case_title || '-'}</div>
+              <div className="small mb-2"><strong>Target:</strong> {selectedEvalCase.comparison_label || 'Target'} {selectedEvalCase.model ? `| ${selectedEvalCase.model}` : ''}</div>
+              <div className="small text-muted mb-1">Input Snapshot</div>
+              <pre className="small border rounded bg-light p-2 mb-3 prompt-json-preview">{selectedEvalCase.input_preview || JSON.stringify(selectedEvalCase.input_payload || parseJsonSafe(selectedEvalCase.input_payload_json, {}), null, 2)}</pre>
               <div className="small text-muted mb-1">Normalized Output</div>
               <pre className="small border rounded bg-light p-2 mb-3 prompt-json-preview">{JSON.stringify(selectedEvalCase.normalized_output || parseJsonSafe(selectedEvalCase.normalized_output_json, {}), null, 2)}</pre>
               <div className="small text-muted mb-1">Scores</div>
