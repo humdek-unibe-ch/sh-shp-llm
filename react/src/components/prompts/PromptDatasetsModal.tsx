@@ -85,6 +85,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const [savingHumanKey, setSavingHumanKey] = useState<string | null>(null);
   const [humanDrafts, setHumanDrafts] = useState<Record<string, { numeric: string; label: string; passed: string; reason: string }>>({});
   const selectedDataset = useMemo(() => datasets.find((item) => item.id === selectedDatasetId) || null, [datasets, selectedDatasetId]);
+  const isSelectedDatasetLocked = !!selectedDataset?.is_locked;
   const evaluationCases = evalRunCases.length > 0 ? evalRunCases : (evalResult?.cases || []);
 
   const loadDatasets = async (searchText = datasetSearch) => {
@@ -162,8 +163,8 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
       }
     };
 
-    const jquery = (window as any).$;
-    if (jquery?.confirm) {
+    const jquery = (window as any).$ || (window as any).jQuery;
+    if (typeof jquery?.confirm === 'function') {
       jquery.confirm({
         title: 'Delete dataset?',
         content: `Delete dataset "${dataset.name}" and all related cases/evaluation runs? This cannot be undone.`,
@@ -291,11 +292,17 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                     <div className="small text-muted">{selectedDataset ? `${selectedDataset.dataset_type_code || 'dataset'} / ${selectedDataset.execution_profile_code || 'profile'}` : 'Create or choose a dataset to continue.'}</div>
                   </div>
                   <div className="mt-2 mt-md-0 prompt-header-actions">
-                    <Button size="sm" variant="outline-secondary" onClick={handleAddCurrentCase} disabled={disabled || !selectedDatasetId || !lastPlaygroundCapture || promptValue.trim() === ''}>Add Latest Playground</Button>
-                    <Button size="sm" variant="outline-info" onClick={() => setShowImportModal(true)} disabled={disabled || !selectedDatasetId}>Import Cases</Button>
+                    <Button size="sm" variant="outline-secondary" onClick={handleAddCurrentCase} disabled={disabled || !selectedDatasetId || isSelectedDatasetLocked || !lastPlaygroundCapture || promptValue.trim() === ''}>Add Latest Playground</Button>
+                    <Button size="sm" variant="outline-info" onClick={() => setShowImportModal(true)} disabled={disabled || !selectedDatasetId || isSelectedDatasetLocked}>Import Cases</Button>
                     <Button size="sm" variant="primary" onClick={() => setShowRunnerModal(true)} disabled={disabled || !selectedDatasetId || promptValue.trim() === ''}>Run Evaluation</Button>
                   </div>
                 </div>
+                {isSelectedDatasetLocked && (
+                  <div className="small text-warning mb-2">
+                    <i className="fas fa-lock mr-1"></i>
+                    This dataset is locked. Unlock it to add, import, or remove cases.
+                  </div>
+                )}
                 <DatasetCaseTable cases={cases} loading={loadingCases} canDelete={!selectedDataset?.is_locked} onPreview={setCasePreview} onDelete={handleDeleteCase} />
                 <EvaluationResultsView result={evalResult} cases={evaluationCases} baselineSummary={baselineSummary} onInspectCase={setSelectedEvalCase} />
               </div>

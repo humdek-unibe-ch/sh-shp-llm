@@ -47,99 +47,104 @@ class AjaxLlmPromptLab extends BaseAjax
         $action = $post['action'] ?? '';
         $descriptor = $this->readDescriptor($post);
 
-        switch ($action) {
-            case 'bootstrap_owner':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleBootstrap($post, $descriptor);
+        try {
+            switch ($action) {
+                case 'bootstrap_owner':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleBootstrap($post, $descriptor);
 
-            case 'get_version':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleGetVersion($post);
+                case 'get_version':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleGetVersion($post);
 
-            case 'list_versions':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleListVersions($post, $descriptor);
+                case 'list_versions':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListVersions($post, $descriptor);
 
-            case 'playground_run':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handlePlaygroundRun($post, $descriptor);
+                case 'playground_run':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handlePlaygroundRun($post, $descriptor);
 
-            case 'builder_run':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleBuilderRun($post, $descriptor);
+                case 'builder_run':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleBuilderRun($post, $descriptor);
 
-            case 'list_datasets':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleListDatasets($post);
+                case 'list_datasets':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListDatasets($post);
 
-            case 'get_dataset':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleGetDataset($post);
+                case 'get_dataset':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleGetDataset($post);
 
-            case 'create_dataset':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleCreateDataset($post, $descriptor);
+                case 'create_dataset':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleCreateDataset($post, $descriptor);
 
-            case 'update_dataset':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleUpdateDataset($post);
+                case 'update_dataset':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleUpdateDataset($post);
 
-            case 'delete_dataset':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleDeleteDataset($post);
+                case 'delete_dataset':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleDeleteDataset($post);
 
-            case 'list_dataset_cases':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleListDatasetCases($post);
+                case 'list_dataset_cases':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListDatasetCases($post);
 
-            case 'add_case_from_playground_run':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleAddCaseFromPlaygroundRun($post, $descriptor);
+                case 'add_case_from_playground_run':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleAddCaseFromPlaygroundRun($post, $descriptor);
 
-            case 'get_import_candidates':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleGetImportCandidates($post);
+                case 'get_import_candidates':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleGetImportCandidates($post);
 
-            case 'add_cases_from_source':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleAddCasesFromSource($post, $descriptor);
+                case 'add_cases_from_source':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleAddCasesFromSource($post, $descriptor);
 
-            case 'delete_dataset_case':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleDeleteDatasetCase($post);
+                case 'delete_dataset_case':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleDeleteDatasetCase($post);
 
-            case 'list_eval_definitions':
-                $this->assertAccess($descriptor, 'select');
-                return $this->evaluation_service->listDefinitions();
+                case 'list_eval_definitions':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->evaluation_service->listDefinitions();
 
-            case 'run_dataset_eval':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleRunDatasetEval($post, $descriptor);
+                case 'run_dataset_eval':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleRunDatasetEval($post, $descriptor);
 
-            case 'get_eval_run':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleGetEvalRun($post);
+                case 'get_eval_run':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleGetEvalRun($post);
 
-            case 'list_eval_run_cases':
-                $this->assertAccess($descriptor, 'select');
-                return $this->handleListEvalRunCases($post);
+                case 'list_eval_run_cases':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListEvalRunCases($post);
 
-            case 'save_human_score':
-                $this->assertAccess($descriptor, 'update');
-                $this->assertCsrf($post);
-                return $this->handleSaveHumanScore($post);
+                case 'save_human_score':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleSaveHumanScore($post);
+            }
+
+            throw new Exception('Unknown prompt lab action: ' . $action);
+        } catch (Exception $e) {
+            error_log('AjaxLlmPromptLab error [' . $action . ']: ' . $e->getMessage());
+            return array('error' => $e->getMessage());
         }
-
-        throw new Exception('Unknown prompt lab action: ' . $action);
     }
 
     private function handleBootstrap($post, $descriptor)

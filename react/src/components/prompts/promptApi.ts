@@ -193,6 +193,15 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       throw new Error(extractErrorMessage(payload.data));
     }
 
+    if (
+      payload.data
+      && typeof payload.data === 'object'
+      && typeof (payload.data as Record<string, unknown>).error === 'string'
+      && ((payload.data as Record<string, unknown>).error as string).trim() !== ''
+    ) {
+      throw new Error((payload.data as Record<string, unknown>).error as string);
+    }
+
     return payload.data as T;
   }
 
