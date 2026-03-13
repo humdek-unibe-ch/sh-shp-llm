@@ -11,8 +11,10 @@ interface PromptToolbarProps {
   onOpenVersions: () => void;
   onOpenCompare: () => void;
   onOpenPlayground: () => void;
+  onOpenDatasets: () => void;
   onOpenBuilder: () => void;
   showBuilder?: boolean;
+  showDatasets?: boolean;
 }
 
 export const PromptToolbar: React.FC<PromptToolbarProps> = ({
@@ -24,8 +26,10 @@ export const PromptToolbar: React.FC<PromptToolbarProps> = ({
   onOpenVersions,
   onOpenCompare,
   onOpenPlayground,
+  onOpenDatasets,
   onOpenBuilder,
   showBuilder = true,
+  showDatasets = true,
 }) => {
   return (
     <div className="prompt-toolbar border rounded bg-light px-3 py-2 mb-3">
@@ -62,6 +66,12 @@ export const PromptToolbar: React.FC<PromptToolbarProps> = ({
             <i className="fas fa-flask mr-1"></i>
             Playground
           </Button>
+          {showDatasets && (
+            <Button variant="outline-info" onClick={onOpenDatasets} disabled={disabled}>
+              <i className="fas fa-layer-group mr-1"></i>
+              Datasets
+            </Button>
+          )}
           {showBuilder && (
             <Button variant="outline-success" onClick={onOpenBuilder} disabled={disabled}>
               <i className="fas fa-magic mr-1"></i>

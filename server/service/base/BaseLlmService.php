@@ -592,4 +592,33 @@ abstract class BaseLlmService
         }
         return date($format, strtotime($timestamp));
     }
+
+    /**
+     * Record a plugin-scoped transaction log entry.
+     *
+     * @param string $action insert|update|delete
+     * @param string $table
+     * @param int $ref_id
+     * @param string $message
+     * @return void
+     */
+    protected function addPluginTransaction($action, $table, $ref_id, $message)
+    {
+        $type = transactionTypes_update;
+        if ($action === 'insert') {
+            $type = transactionTypes_insert;
+        } elseif ($action === 'delete') {
+            $type = transactionTypes_delete;
+        }
+
+        $this->services->get_transaction()->add_transaction(
+            $type,
+            TRANSACTION_BY_LLM_PLUGIN,
+            $_SESSION['id_user'] ?? null,
+            $table,
+            $ref_id,
+            false,
+            $message
+        );
+    }
 }

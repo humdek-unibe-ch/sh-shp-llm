@@ -4,261 +4,69 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ## [1.1.0] - 2026-03-10
 
-### Multi-Server API Keys
+### Multi-server model configuration
 
-- **Multiple LLM Endpoints** — New `llm_api_keys` JSON field replaces the single `llm_base_url` / `llm_api_key` pair. Admins can now configure multiple LLM server endpoints, each with its own name, base URL, and API key.
-- **Custom CMS Interface** — The `llm_api_keys` field renders as an interactive card-based manager in the CMS. Each server entry is displayed as a card showing the server name, URL, and a masked API key. Admins can:
-  - **Add** new servers via the "Add Server" button
-  - **Edit** existing entries inline (name, base URL, API key)
-  - **Delete** entries with confirmation
-  - All data is stored as a JSON array in a single field
-- **Aggregated Model Lists** — Model dropdowns aggregate models from all configured servers and expose canonical scoped IDs: `ServerName :: model-id` (e.g., `GPUStack Production :: qwen3-vl-8b-instruct`).
-- **Automatic Server Resolution** — When an API call is made (chat, form, script), the system resolves which server to use based on the model identifier prefix. The correct base URL and API key are applied automatically.
-- **Automatic Migration** — The v1.1.0 migration automatically converts existing `llm_base_url` / `llm_api_key` values into a single "Default" server entry in the new `llm_api_keys` JSON field. After migration, the legacy fields are removed from the database.
-- **Unified Model Catalog** — One backend catalog function now powers all model dropdowns and runtime lookups (chat + speech-to-text), so hooks and services stay in sync.
-- **Audio Models** — Speech-to-text model fetching also aggregates across all configured servers and uses the same scoped ID format.
+- Replaced the single `llm_base_url` / `llm_api_key` setup with the new `llm_api_keys` JSON field.
+- Added a dedicated CMS manager UI for named LLM server entries.
+- Unified model discovery so chat, forms, scripts, prompt lab, and speech-to-text all use the same scoped model catalog.
+- Added migration from legacy API settings into a default multi-server entry.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `llm_api_keys` | json-llm-api-keys | `[]` | JSON array of server configs: `[{name, base_url, api_key}]` |
+### Prompt registry and prompt lab
 
-### Prompt Registry, Versioning, and Playground
-
-- **New `llm_prompt` field type** - `conversation_context` and `llm_context` now use a React prompt field with version-aware tooling while keeping normal CMS save behavior.
-- **Prompt registry schema** - Added prompt tables:
+- Added the shared prompt registry schema:
   - `llm_prompt_entries`
   - `llm_prompt_locales`
   - `llm_prompt_versions`
   - `llm_prompt_playground_runs`
-- **Owner and run lookups** - Added lookup groups `llm_prompt_owner_types` and `llm_prompt_run_modes`.
-- **Script linkage** - Added `llm_scripts.id_llm_prompt_entries` so script prompts participate in the same registry.
-- **Immutable version snapshots** - Prompt saves now create immutable full snapshots (with hash dedupe) and optional `change_note`.
-- **Version comment UX** - Added toolbar hint/tooltip and explicit behavior messaging: comments are persisted only when a new version is created on normal Save.
-- **Diff and history UI** - Added versions list and Monaco-based compare modal for prompt diffs.
-- **Runtime-aware playground** - Playground uses owner runtime composition (chat/form/script) including companion runtime context, not raw prompt-only calls.
-- **Structured result rendering** - Playground shows parsed structured output, display output, fallback raw output, payload, and effective context/messages.
-- **Multi-model compare (phase 1)** - Playground supports selecting up to 3 models with grouped comparison logging.
-- **Build With AI assistant** - Added builder workflow that improves the current prompt draft and returns structured JSON (`prompt_template`, `variables`, `notes`, `change_summary`).
-- **Shared prompt AJAX endpoint** - Added `AjaxLlmPromptLab` with actions for bootstrap, versions, compare payload retrieval, playground run, and builder run.
-- **ACL and CSRF enforcement** - Prompt-lab actions now enforce explicit access checks (page/script scope) and CSRF checks for mutating actions.
-- **Base-path-safe frontend requests** - Prompt API endpoint resolution now honors `BASE_PATH`, fixing environments where AJAX routes are mounted under `/selfhelp`.
-- **Hook-based CMS integration** - Added hooks for prompt field rendering, prompt JS/CSS includes, and post-save version sync.
-- **Consistent modal layout** - Prompt modals now use max `90vw`/`90vh`, fixed header/footer, scrollable body, and compact Bootstrap small buttons.
-- **Central logging compatibility** - Playground and builder runs are logged through existing `llmConversations` / `llmMessages`, with optional prompt-run index rows.
+- Added the `llm_prompt` field type for version-aware CMS prompt editing.
+- Added immutable prompt versions, version comments, version restore, diffing, runtime-aware playground runs, and build-with-AI suggestions.
+- Connected `llm_scripts.script` to the same prompt registry through `llm_scripts.id_llm_prompt_entries`.
+- Added `AjaxLlmPromptLab` as the shared endpoint for prompt bootstrap, versions, compare, playground, builder, datasets, and evaluations.
 
-### New Styles
+### Datasets and evaluations
 
-- **`llmFormRecord`** — LLM-enhanced form in record mode. Extends the core `formUserInputRecord` pattern. On form submit, stores data normally and sends an LLM request with configurable context interpolation. The LLM result is displayed in a configurable panel alongside the form.
-- **`llmFormLog`** — LLM-enhanced form in log mode. Extends the core `formUserInputLog` pattern. Each submission creates a new log entry with both the form data and the LLM response.
+- Added first-class dataset storage with:
+  - `llm_eval_datasets`
+  - `llm_eval_dataset_cases`
+- Added first-class evaluation storage with:
+  - `llm_eval_definitions`
+  - `llm_eval_runs`
+  - `llm_eval_run_cases`
+  - `llm_eval_scores`
+- Implemented dataset ingestion from:
+  - latest playground runs
+  - saved form submissions
+  - conversation history
+  - script runs
+- Implemented shared dataset replay through the existing runtime-aware prompt execution path.
+- Added programmatic evaluators:
+  - `json_validity`
+  - `required_fields_present`
+  - `no_empty_output`
+  - `safety_label_match`
+- Added `llm_judge` scoring support and saved human-review scores in the same score table.
+- Added prompt-lab UI flows for dataset browsing, case preview, source import, evaluation runs, result inspection, and manual review.
+- Exposed the same datasets/evaluations workflow in both CMS prompt fields and the scripts manager.
 
-### New Fields (LLM Form Configuration)
+### LLM forms
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `llm_enabled` | checkbox | `1` | Enable/disable LLM generation per form |
-| `llm_model` | select-llm-model | (global default) | Model to use for generation |
-| `llm_temperature` | text | `1` | Randomness control (0-2) |
-| `llm_max_tokens` | number | `2048` | Max tokens for LLM response |
-| `llm_context` | markdown | (empty) | System prompt / instructions for the LLM. Supports `{{field_name}}` interpolation with submitted form values. This is the **system message** sent to the LLM. |
-| `llm_show_previous_result` | checkbox | `1` (record) / `0` (log) | Show previously generated result on refresh |
-| `llm_result_field_name` | text | `llm_result` | Storage field name for LLM result text |
-| `llm_result_meta_field_name` | text | `llm_result_meta` | Storage field name for result metadata JSON |
-| `llm_result_placement` | select | `bottom` | Panel position: top, bottom, left, right |
-| `llm_result_panel` | select | `card` | Panel type: default, card, modal, collapse |
-| `llm_result_title` | text | `Result` | Panel title/label (translatable, display=1) |
-| `llm_result_closable` | checkbox | `1` | Allow dismissing the result panel |
-| `llm_result_css` | text | (empty) | Additional Bootstrap/CSS classes for result container |
-| `llm_result_css_mobile` | text | (empty) | Mobile-specific CSS classes |
-| `llm_show_errors` | checkbox | `1` | Show error alerts on LLM failure |
-| `llm_retry_enabled` | checkbox | `1` | Allow retrying without resubmitting |
-| `llm_retry_label` | text | `Retry` | Retry button label (translatable) |
-| `llm_regenerate_enabled` | checkbox | `1` | Allow regenerating from saved data |
-| `llm_regenerate_label` | text | `Regenerate` | Regenerate button label (translatable) |
-| `llm_generating_text` | text | `Generating response...` | Loading indicator text (translatable) |
+- Added the new `llmFormRecord` and `llmFormLog` styles.
+- Added configurable result placement, panel type, result metadata storage, retry/regenerate behavior, and inline result rendering.
+- Added manual feedback mode for `llmFormRecord`, including a separate feedback button and no-save generation flow.
+- Kept all LLM form requests on the shared logging path through `llmConversations` and `llmMessages`.
 
-### Manual LLM Feedback Generation (llmFormRecord only)
+### Migration and packaging
 
-- **Manual Feedback Mode** — New `llm_manual_feedback_enabled` field that separates form saving from LLM feedback generation. When enabled, the **Save** button only saves form data without calling the LLM. A separate **Generate Feedback** button allows users to trigger LLM feedback on demand using the current form field values, without saving.
-- **Regenerate Override** — When manual feedback mode is active, the regenerate button is automatically hidden, even if `llm_regenerate_enabled` is checked. Manual mode takes precedence.
-- **Context-Aware Visibility** — The Generate Feedback button dynamically tracks required form fields (those referenced via `{{field_name}}` in `llm_context`) and only becomes visible when all required fields have non-empty values.
-- **Button Customization**:
-  - `llm_feedback_button_label` — Configurable label (translatable). Default: "Generate Feedback". Examples: "Get AI Feedback", "Evaluate Answer".
-  - `llm_feedback_button_color` — Bootstrap color class via `style-bootstrap` dropdown (primary, secondary, success, danger, warning, info, light, dark). Default: "primary".
-  - Follows the same small/default button size as all other form buttons (`use_small_buttons` field).
-- **No-Save Feedback** — The Generate Feedback action sends current form field values to the LLM without persisting them. This is useful for evaluation scenarios where users want to preview AI feedback before deciding to save.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `llm_manual_feedback_enabled` | checkbox | `0` | Enable manual feedback mode (Save does not call LLM; separate button for feedback) |
-| `llm_feedback_button_label` | text | `Generate Feedback` | Label for the Generate Feedback button (translatable) |
-| `llm_feedback_button_color` | style-bootstrap | `primary` | Bootstrap color class for the button |
-
-### Features
-
-- **Two-Part Prompt System** — The `llm_context` field serves as the **system prompt** (instructions/persona). The submitted form data is automatically formatted as a structured **user message** sent alongside the system prompt. This separation gives clear control over the LLM's behavior and the data it processes.
-- **Context Interpolation** — `llm_context` supports `{{field_name}}` placeholders replaced with submitted form values at runtime (e.g., `"You are a coach. The student answered: {{reflection}}"`)
-- **Language-Aware Responses** — Automatically appends the user's selected session language to the system prompt for localized output
-- **DataTable Auto-Creation** — When an llmFormRecord/llmFormLog section is created, the corresponding dataTable is automatically created with the form name as `displayName`. Changing the form name updates the displayName.
-- **Configurable Result Panel** — Four panel types (inline, card, modal, collapse) with four placement options, custom CSS classes, closable behavior
-- **Smart Modal Behavior** — Modal panel only opens for fresh LLM responses; on page refresh, previous results render as an inline card instead of blocking the view
-- **Empty State** — When there is no result (no previous result or no response yet), nothing is rendered—no empty containers or panels
-- **Retry & Regenerate** — Retry on error (same saved data, new LLM call) or regenerate successful results; both update the stored record via `UserInput::save_data()` with `updateBasedOn` for correct record targeting
-- **Error Handling UX** — Clean Bootstrap alerts on LLM failure with configurable visibility
-- **Previous Result Display** — Optionally show the last generated LLM result when the form reloads (disabled by default for modal panels on refresh)
-- **Result Metadata** — Stores model, temperature, token usage, timestamp, and status as JSON alongside the result text
-- **Audit Logging** — All LLM interactions logged to `llmMessages` table with the system prompt as `sent_context` and the form data as a readable user message
-- **Confirmation Dialog** — Preserves the core `$.confirm` modal behavior from `formUserInput`
-- **Always AJAX** — LLM forms always submit via AJAX to receive the LLM response inline
-
-### Database
-
-- New lookup enums: `llmResultPlacement` (top/bottom/left/right), `llmResultPanel` (default/card/modal/collapse)
-- New field types: `select-llm-result-placement`, `select-llm-result-panel`
-- CMS hooks for placement and panel field selection dropdowns
-- Transaction type: `by_llm_form`
-
-### Architecture
-
-- **LlmFormModel** extends `FormUserInputModel` — adds LLM config getters, previous result retrieval, auto-creates dataTable with displayName
-- **LlmFormView** extends `FormUserInputView` — wraps form output with React container div
-- **LlmFormController** extends `FormUserInputController` — intercepts save, calls LLM with two-part prompt (system + user message), handles regenerate/retry via correct `save_data()` signature
-- **React bundle** `llm-form.umd.js` — separate Vite build for the form result panel UI
-- **LlmResultDisplay** React component — renders result in the configured panel type with markdown formatting; modal auto-opens only for fresh responses
-- Reuses existing `MarkdownRenderer` from the chat module for consistent markdown rendering
+- Expanded `server/db/v1.1.0.sql` to include prompt lab, datasets, and evaluations.
+- Kept the migration rerunnable with `INSERT IGNORE`, `CREATE TABLE IF NOT EXISTS`, and helper-based key/index convergence.
+- Added prompt-lab frontend bundles and refreshed the shipped prompt-field and scripts assets.
+- Added prompt-lab documentation for editors and developers, including dataset, replay-import, payload-shape, evaluator-authoring, and migration guides.
 
 ## [1.0.0] - 2026-02-26
 
-Initial release of the SelfHelp LLM plugin. Provides a complete AI chat integration layer for SelfHelp CMS with structured responses, multi-provider support, and an admin console.
+### Initial release
 
-### Core Chat System
-
-- **Real-Time Chat Interface** — React 18 + TypeScript frontend with conversation sidebar, message input with markdown support, and streaming-style message rendering
-- **Conversation Management** — Create, list, soft-delete conversations; per-user isolation with configurable limits (default: 20 conversations, 100 messages each)
-- **Structured JSON Responses** — All LLM responses follow a mandatory JSON schema (`schemas/llm-response.schema.json`) with `safety`, `content`, `progress`, and `metadata` fields
-- **Schema Validation with Auto-Retry** — Responses are validated against the JSON schema; invalid responses trigger up to 3 automatic retry attempts with error feedback to the LLM
-- **Rate Limiting** — Built-in protection: 10 requests/minute, 3 concurrent conversations, 60-second cooldown
-
-### Provider System
-
-- **Multi-Provider Architecture** — Pluggable provider system (`LlmProviderInterface`) with automatic detection based on `llm_base_url`
-- **GPUStack Provider** — Standard OpenAI-compatible API support (tested with UniBE GPUStack)
-- **BFH Provider** — Bern University of Applied Sciences inference API with reasoning content support
-- **Model Capabilities** — Automatic detection of vision, code, and reasoning capabilities per model
-
-### Conversation Context
-
-- **Configurable System Instructions** — Define AI behavior per chat section via the `conversation_context` CMS field (supports markdown and JSON array formats)
-- **Strict Conversation Mode** — Optional topic enforcement that keeps the AI focused on defined subjects and politely redirects off-topic questions
-- **Auto-Start Conversations** — Automatically initiate conversations with a context-aware opening message when users first visit
-- **Context Tracking** — Every message records the full context sent to the LLM in the `sent_context` database column for audit
-
-### Safety and Danger Detection
-
-- **LLM-Based Safety Assessment** — Every response includes a `safety` field with `is_safe`, `danger_level` (null/warning/critical/emergency), `detected_concerns`, `requires_intervention`, and `safety_message`
-- **Configurable Keywords** — CMS field `danger_keywords` injects safety-relevant topics into the LLM context
-- **Automatic Blocking** — Critical/emergency danger levels trigger immediate conversation blocking
-- **Email Notifications** — Configurable notification emails via SelfHelp's `JobScheduler` for safety events
-- **Audit Logging** — All safety detections logged to the `transactions` table
-
-### File Uploads
-
-- **Image and Document Uploads** — Support for images (jpg, png, gif, webp), documents (pdf, txt, md, csv, json, xml), and code files (py, js, php, etc.)
-- **Vision Model Support** — Images sent to vision-capable models (InternVL3, Qwen3-VL) for analysis
-- **Automatic Image Resizing** — Large images resized to max 1024px and converted to optimized JPEG before sending to prevent context window overflow
-- **Secure File Handling** — User-specific upload directories, MIME type validation, 10 MB size limit, max 5 files per message
-- **Contextual File Naming** — Files named with prefixes: `{user_id}_section_{section_id}_conv_{conversation_id}_msg_{message_id}_{random}.{ext}`
-
-### Speech-to-Text
-
-- **Whisper Integration** — Voice input via MediaRecorder API with transcription through GPUStack faster-whisper models
-- **Configurable Models** — CMS dropdown for selecting Whisper model (faster-whisper-large-v3, whisper-large-v3, etc.)
-- **Audio File Storage** — Recordings saved with proper naming convention for audit trail
-
-### Forms and Data Collection
-
-- **Form Mode** — LLM can generate structured forms (radio, checkbox, select, text, textarea, number, scale fields) within the JSON response schema
-- **Suggestions** — Quick-reply suggestion buttons returned by the LLM for common responses
-- **Data Saving** — Form submissions saved to SelfHelp `dataTables` via `UserInput::save_data()` following the R Serve pattern
-- **Progress Tracking** — Optional topic coverage tracking with percentage and per-topic status
-
-### LLM Scripts Module
-
-- **Script CRUD** — Full create, read, update, delete interface for reusable LLM prompt templates
-- **React-Based Editor** — Scripts manager built with React 18 and Monaco Editor for script editing
-- **Script Configuration** — Per-script settings for name, async/sync execution mode, model override, temperature, max tokens, data config, and test variables
-- **Script Testing** — Test scripts directly from the UI with configurable test variables
-- **Job Scheduler Integration** — Scripts can be assigned as scheduled job actions for automated execution
-- **One Conversation Per Script** — Script executions reuse a single conversation in `llmConversations` (linked via `id_llm_scripts` FK)
-- **Execution Logging** — Script results saved to `dataTables` with full context (template, data_config, test variables, resolved data, interpolated prompt) stored in `sent_context`
-
-### LLM Response Component
-
-- **`llmResponse` Style** — Display component for visualizing LLM response data with `{{field.path}}` interpolation syntax
-- **Editable Mode** — Optional inline editing controlled by `enable_editing` field
-- **Loading UX** — Automatic spinner overlay during async script execution with highlight animation on content arrival (uses core SelfHelp v7.8.0 event refresh mechanism via `data-event-refresh-loading="1"`)
-
-### Floating Chat Button
-
-- **Floating Mode** — Chat can appear as a floating button with configurable position and icon
-- **Page Integration** — Configurable per section; works alongside the standard embedded mode
-
-### Admin Console
-
-- **Conversation Browser** — View all user conversations with date, user, and section filters
-- **Message Inspector** — Chat-style message view with markdown rendering, validation status badges, and role indicators
-- **Payload Inspector** — View the exact API request payload sent to the LLM for any message (model, temperature, messages array)
-- **Validation Tracking** — Each assistant message shows green "Valid" or yellow "Invalid" badge; failed attempts are visually distinct
-- **Script Filter** — Filter conversations by linked LLM script
-- **Block/Unblock** — Admin controls for conversation blocking
-
-### Message Validation Tracking
-
-- **Schema Validation Logging** — Every LLM response attempt is saved with `is_validated` status (1=valid, 0=failed)
-- **Full Request Payload** — Complete API payload (model, temperature, max_tokens, messages) stored in `request_payload` column
-- **Failed Attempt History** — When retries occur, each failed attempt is preserved as a separate message for debugging
-
-### Architecture
-
-- **MVC Components** — `llmChat` (style), `llmResponse` (style), `moduleLlmAdminConsole` (module), `moduleLlmScript` (module)
-- **Service Layer** — 20+ dedicated PHP services organized by responsibility (core, context, response, files, safety, scripts, speech, etc.)
-- **Provider Abstraction** — `LlmProviderInterface` → `BaseProvider` → `GpuStackProvider` / `BfhProvider` with `LlmProviderRegistry`
-- **Exception Hierarchy** — `LlmException` → `LlmApiException`, `LlmRateLimitException`, `LlmValidationException`
-- **Callback Endpoint** — `CallbackLlm.php` for async script result processing
-- **APCu Caching** — `LlmCacheManager` for conversations, messages, and rate limit data
-- **React Build** — Five separate Vite entry points: chat (`llm-chat.umd.js`), admin (`llm-admin.umd.js`), scripts (`llm-scripts.umd.js`), form (`llm-form.umd.js`), api-keys (`llm-apikeys.umd.js`)
-- **Gulp Integration** — Build tasks for installing dependencies, building React, and watching for changes
-
-### Database Tables
-
-| Table | Purpose |
-|-------|---------|
-| `llmConversations` | Conversations with user, section, model config, soft-delete, and blocking fields |
-| `llmMessages` | Messages with role, content, attachments, tokens, context, validation status, and payload |
-| `llmConversationProgress` | Topic coverage tracking per conversation and section |
-| `llm_scripts` | Reusable prompt templates with execution configuration |
-
-### Configuration
-
-| Setting | Location | Description |
-|---------|----------|-------------|
-| `llm_api_keys` | Module config | JSON array of server configs (name, base_url, api_key). Replaces legacy `llm_base_url` / `llm_api_key` fields (removed in v1.1.0). |
-| `llm_default_model` | Module config | Default model for all chats |
-| `llm_timeout` | Module config | API request timeout (seconds) |
-| `llm_max_tokens` | Module config | Max tokens per response |
-| `llm_temperature` | Module config | Response randomness (0-2) |
-| `llm_model` | Style field | Per-section model override |
-| `conversation_context` | Style field | System instructions for the AI |
-| `strict_conversation_mode` | Style field | Enable topic enforcement |
-| `auto_start_conversation` | Style field | Auto-start conversations |
-| `enable_conversations_list` | Style field | Show/hide conversation sidebar |
-| `enable_file_uploads` | Style field | Enable file attachments |
-| `enable_speech_to_text` | Style field | Enable voice input |
-| `speech_to_text_model` | Style field | Whisper model for transcription |
-| `enable_danger_detection` | Style field | Enable safety assessment |
-| `danger_keywords` | Style field | Keywords for LLM safety context |
-| `danger_notification_emails` | Style field | Safety notification recipients |
-| `danger_blocked_message` | Style field | Message shown when conversation is blocked |
-
-### Documentation
-
-Detailed guides available in the `doc/` folder and 17 example conversation contexts in `examples/`.
+- Added the core chat system with structured JSON responses, conversation history, safety handling, file uploads, and speech-to-text.
+- Added reusable LLM scripts with sync/async execution, testing, and scheduler integration.
+- Added the admin console for conversation inspection, payload debugging, and conversation blocking.
+- Added the `llmResponse` rendering component and the initial React build pipeline.

@@ -7,8 +7,9 @@ require_once __DIR__ . '/../../../../ajax/BaseAjax.php';
 require_once __DIR__ . '/../service/LlmPromptRegistryService.php';
 require_once __DIR__ . '/../service/LlmPromptPlaygroundService.php';
 require_once __DIR__ . '/../service/LlmPromptBuilderService.php';
-require_once __DIR__ . '/../service/LlmPromptExecutionProfileService.php';
-require_once __DIR__ . '/../service/LlmScriptService.php';
+require_once __DIR__ . '/../service/LlmPromptRuntimeValueService.php';
+require_once __DIR__ . '/../service/LlmDatasetService.php';
+require_once __DIR__ . '/../service/LlmEvaluationService.php';
 
 class AjaxLlmPromptLab extends BaseAjax
 {
@@ -21,11 +22,14 @@ class AjaxLlmPromptLab extends BaseAjax
     /** @var LlmPromptBuilderService */
     private $builder_service;
 
-    /** @var LlmPromptExecutionProfileService */
-    private $profile_service;
+    /** @var LlmDatasetService */
+    private $dataset_service;
 
-    /** @var LlmScriptService */
-    private $script_service;
+    /** @var LlmEvaluationService */
+    private $evaluation_service;
+
+    /** @var LlmPromptRuntimeValueService */
+    private $runtime_value_service;
 
     public function __construct($services)
     {
@@ -33,8 +37,9 @@ class AjaxLlmPromptLab extends BaseAjax
         $this->registry_service = new LlmPromptRegistryService($services);
         $this->playground_service = new LlmPromptPlaygroundService($services);
         $this->builder_service = new LlmPromptBuilderService($services);
-        $this->profile_service = new LlmPromptExecutionProfileService($services);
-        $this->script_service = new LlmScriptService($services);
+        $this->runtime_value_service = new LlmPromptRuntimeValueService($services);
+        $this->dataset_service = new LlmDatasetService($services);
+        $this->evaluation_service = new LlmEvaluationService($services);
     }
 
     public function dispatch($post)
@@ -64,6 +69,69 @@ class AjaxLlmPromptLab extends BaseAjax
                 $this->assertAccess($descriptor, 'update');
                 $this->assertCsrf($post);
                 return $this->handleBuilderRun($post, $descriptor);
+
+            case 'list_datasets':
+                $this->assertAccess($descriptor, 'select');
+                return $this->handleListDatasets($post);
+
+            case 'get_dataset':
+                $this->assertAccess($descriptor, 'select');
+                return $this->handleGetDataset($post);
+
+            case 'create_dataset':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleCreateDataset($post, $descriptor);
+
+            case 'update_dataset':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleUpdateDataset($post);
+
+            case 'list_dataset_cases':
+                $this->assertAccess($descriptor, 'select');
+                return $this->handleListDatasetCases($post);
+
+            case 'add_case_from_playground_run':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleAddCaseFromPlaygroundRun($post, $descriptor);
+
+            case 'get_import_candidates':
+                $this->assertAccess($descriptor, 'select');
+                return $this->handleGetImportCandidates($post);
+
+            case 'add_cases_from_source':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleAddCasesFromSource($post, $descriptor);
+
+            case 'delete_dataset_case':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleDeleteDatasetCase($post);
+
+            case 'list_eval_definitions':
+                $this->assertAccess($descriptor, 'select');
+                return $this->evaluation_service->listDefinitions();
+
+            case 'run_dataset_eval':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleRunDatasetEval($post, $descriptor);
+
+            case 'get_eval_run':
+                $this->assertAccess($descriptor, 'select');
+                return $this->handleGetEvalRun($post);
+
+            case 'list_eval_run_cases':
+                $this->assertAccess($descriptor, 'select');
+                return $this->handleListEvalRunCases($post);
+
+            case 'save_human_score':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleSaveHumanScore($post);
         }
 
         throw new Exception('Unknown prompt lab action: ' . $action);
@@ -151,48 +219,256 @@ class AjaxLlmPromptLab extends BaseAjax
         return $result;
     }
 
+    private function handleListDatasets($post)
+    {
+        $filters = array(
+            'search' => $post['search'] ?? '',
+            'owner_type_scope' => $post['owner_type_scope'] ?? '',
+            'owner_id_scope' => $post['owner_id_scope'] ?? '',
+            'execution_profile' => $post['execution_profile'] ?? ''
+        );
+        return $this->dataset_service->listDatasets($filters);
+    }
+
+    private function handleGetDataset($post)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+
+        $dataset = $this->dataset_service->getDataset($dataset_id);
+        if (!$dataset) {
+            throw new Exception('Dataset not found');
+        }
+
+        return array(
+            'dataset' => $dataset,
+            'cases' => $this->dataset_service->listDatasetCases($dataset_id)
+        );
+    }
+
+    private function handleCreateDataset($post, $descriptor)
+    {
+        $payload = array(
+            'name' => (string)($post['name'] ?? ''),
+            'description' => (string)($post['description'] ?? ''),
+            'dataset_type' => (string)($post['dataset_type'] ?? 'golden_manual'),
+            'execution_profile' => (string)($post['execution_profile'] ?? 'text_only'),
+            'owner_type_scope' => $descriptor['owner_type'] ?? null,
+            'owner_id_scope' => $descriptor['owner_id'] ?? null
+        );
+        return $this->dataset_service->createDataset($payload);
+    }
+
+    private function handleUpdateDataset($post)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+
+        $payload = array();
+        if (array_key_exists('name', $post)) {
+            $payload['name'] = $post['name'];
+        }
+        if (array_key_exists('description', $post)) {
+            $payload['description'] = $post['description'];
+        }
+        if (array_key_exists('dataset_type', $post)) {
+            $payload['dataset_type'] = $post['dataset_type'];
+        }
+        if (array_key_exists('execution_profile', $post)) {
+            $payload['execution_profile'] = $post['execution_profile'];
+        }
+        if (array_key_exists('is_locked', $post)) {
+            $payload['is_locked'] = $post['is_locked'];
+        }
+
+        return $this->dataset_service->updateDataset($dataset_id, $payload);
+    }
+
+    private function handleListDatasetCases($post)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        return $this->dataset_service->listDatasetCases($dataset_id);
+    }
+
+    private function handleAddCaseFromPlaygroundRun($post, $descriptor)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+
+        $payload = array(
+            'title' => (string)($post['title'] ?? ''),
+            'descriptor' => $descriptor,
+            'execution_profile' => (string)($post['execution_profile'] ?? 'text_only'),
+            'variables' => $this->decodeJson($post['variables_json'] ?? '{}'),
+            'message_history' => $this->decodeJson($post['message_history_json'] ?? '[]'),
+            'runtime_overrides' => $this->decodeJson($post['runtime_overrides_json'] ?? '{}'),
+            'id_llm_prompt_playground_runs' => isset($post['id_llm_prompt_playground_runs']) ? (int)$post['id_llm_prompt_playground_runs'] : null,
+            'id_llmConversations' => isset($post['id_llmConversations']) ? (int)$post['id_llmConversations'] : null,
+            'id_llmMessages_request' => isset($post['id_llmMessages_request']) ? (int)$post['id_llmMessages_request'] : null,
+            'id_llmMessages_response' => isset($post['id_llmMessages_response']) ? (int)$post['id_llmMessages_response'] : null,
+            'expected_labels' => $this->decodeJson($post['expected_labels_json'] ?? '{}'),
+            'tags' => $this->decodeJson($post['tags_json'] ?? '[]'),
+            'notes' => (string)($post['notes'] ?? '')
+        );
+
+        return $this->dataset_service->addCaseFromPlaygroundRun($dataset_id, $payload);
+    }
+
+    private function handleGetImportCandidates($post)
+    {
+        $source_type = (string)($post['source_type'] ?? '');
+        if ($source_type === '') {
+            throw new Exception('Missing source_type');
+        }
+        $limit = isset($post['limit']) ? (int)$post['limit'] : 50;
+        if ($source_type === 'script_run') {
+            $this->assertScriptSourceAccess('select');
+        }
+
+        return $this->dataset_service->getImportCandidates(
+            $source_type,
+            $limit,
+            array(
+                'descriptor' => $this->readDescriptor($post),
+                'allowed_page_id' => $this->resolveDescriptorPageId($this->readDescriptor($post)),
+                'allow_script_source' => ($source_type === 'script_run')
+            )
+        );
+    }
+
+    private function handleAddCasesFromSource($post, $descriptor)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+
+        $source_type = (string)($post['source_type'] ?? '');
+        if ($source_type === '') {
+            throw new Exception('Missing source_type');
+        }
+
+        if ($source_type === 'script_run') {
+            $this->assertScriptSourceAccess('update');
+        }
+
+        $source_ids = $this->decodeJson($post['source_ids_json'] ?? '[]');
+        if (!is_array($source_ids)) {
+            $source_ids = array();
+        }
+
+        $context = array(
+            'descriptor' => $descriptor,
+            'execution_profile' => (string)($post['execution_profile'] ?? 'text_only'),
+            'runtime_overrides' => $this->decodeJson($post['runtime_overrides_json'] ?? '{}'),
+            'allowed_page_id' => $this->resolveDescriptorPageId($descriptor),
+            'allow_script_source' => ($source_type === 'script_run')
+        );
+
+        return $this->dataset_service->addCasesFromSource($dataset_id, $source_type, $source_ids, $context);
+    }
+
+    private function handleDeleteDatasetCase($post)
+    {
+        $case_id = isset($post['dataset_case_id']) ? (int)$post['dataset_case_id'] : 0;
+        if ($case_id <= 0) {
+            throw new Exception('Missing dataset_case_id');
+        }
+        return array('deleted' => $this->dataset_service->deleteDatasetCase($case_id));
+    }
+
+    private function handleRunDatasetEval($post, $descriptor)
+    {
+        $payload = array(
+            'dataset_id' => isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0,
+            'descriptor' => $descriptor,
+            'target_type' => (string)($post['target_type'] ?? 'draft'),
+            'target_version_id' => isset($post['target_version_id']) ? (int)$post['target_version_id'] : null,
+            'draft_prompt' => (string)($post['draft_prompt'] ?? ''),
+            'runtime_overrides' => $this->decodeJson($post['runtime_overrides_json'] ?? '{}'),
+            'selected_models' => $this->decodeJson($post['selected_models_json'] ?? '[]'),
+            'eval_definition_ids' => $this->decodeJson($post['eval_definition_ids_json'] ?? '[]')
+        );
+        return $this->evaluation_service->runDatasetEval($payload);
+    }
+
+    private function handleGetEvalRun($post)
+    {
+        $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
+        if ($run_id <= 0) {
+            throw new Exception('Missing run_id');
+        }
+        $run = $this->evaluation_service->getEvalRun($run_id);
+        if (!$run) {
+            throw new Exception('Evaluation run not found');
+        }
+        return $run;
+    }
+
+    private function handleListEvalRunCases($post)
+    {
+        $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
+        if ($run_id <= 0) {
+            throw new Exception('Missing run_id');
+        }
+        return $this->evaluation_service->listEvalRunCases($run_id);
+    }
+
+    private function handleSaveHumanScore($post)
+    {
+        $payload = array(
+            'id_llm_eval_run_cases' => isset($post['id_llm_eval_run_cases']) ? (int)$post['id_llm_eval_run_cases'] : 0,
+            'id_llm_eval_definitions' => isset($post['id_llm_eval_definitions']) ? (int)$post['id_llm_eval_definitions'] : 0,
+            'score_value_numeric' => ($post['score_value_numeric'] ?? '') !== '' ? (float)$post['score_value_numeric'] : null,
+            'score_value_label' => (string)($post['score_value_label'] ?? ''),
+            'passed' => ($post['passed'] ?? '') !== '' ? (int)$post['passed'] : null,
+            'details' => $this->decodeJson($post['details_json'] ?? '{}')
+        );
+        return $this->evaluation_service->saveHumanScore($payload);
+    }
+
     private function readDescriptor($post)
     {
+        $owner_type = (string)($post['owner_type'] ?? ($post['ownerType'] ?? ''));
+        $owner_id = isset($post['owner_id']) ? (int)$post['owner_id'] : (isset($post['ownerId']) ? (int)$post['ownerId'] : 0);
+        $prompt_slot = (string)($post['prompt_slot'] ?? ($post['promptSlot'] ?? ''));
+        $language_id = ($post['id_languages'] ?? ($post['languageId'] ?? ''));
+        $page_id = isset($post['page_id']) ? (int)$post['page_id'] : (isset($post['pageId']) ? (int)$post['pageId'] : null);
+        $title = $post['title'] ?? null;
+
         return array(
-            'owner_type' => $post['owner_type'] ?? '',
-            'owner_id' => isset($post['owner_id']) ? (int)$post['owner_id'] : 0,
-            'prompt_slot' => $post['prompt_slot'] ?? '',
-            'id_languages' => ($post['id_languages'] ?? '') !== '' ? (int)$post['id_languages'] : null,
-            'page_id' => isset($post['page_id']) ? (int)$post['page_id'] : null,
-            'title' => $post['title'] ?? null
+            'owner_type' => $owner_type,
+            'owner_id' => $owner_id,
+            'prompt_slot' => $prompt_slot,
+            'id_languages' => ($language_id !== '' && $language_id !== null) ? (int)$language_id : null,
+            'page_id' => $page_id,
+            'title' => $title
         );
     }
 
     private function resolveRuntimeValues($descriptor, $post)
     {
-        $profile = $this->profile_service->resolveExecutionProfile($descriptor);
         $overrides = $this->decodeJson($post['runtime_overrides_json'] ?? '{}');
         if (!is_array($overrides)) {
             $overrides = array();
         }
-
-        if (($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT) {
-            $script = $this->script_service->fetch_script((int)$descriptor['owner_id']);
-            $runtime_values = is_array($script) ? $script : array();
-        } else {
-            $field_names = $this->profile_service->getCompanionFieldNames($profile);
-            $runtime_values = $this->profile_service->getStyleFieldValues(
-                (int)$descriptor['owner_id'],
-                $descriptor['id_languages'] ?? null,
-                $field_names
-            );
-        }
-
-        foreach ($overrides as $key => $value) {
-            $runtime_values[$key] = $value;
-        }
-
-        return $runtime_values;
+        return $this->runtime_value_service->resolveRuntimeValues($descriptor, $overrides);
     }
 
     private function assertAccess($descriptor, $mode)
     {
-        if (($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT) {
+        $owner_type = (string)($descriptor['owner_type'] ?? '');
+        $prompt_slot = (string)($descriptor['prompt_slot'] ?? '');
+        if ($owner_type === LLM_PROMPT_OWNER_SCRIPT || ($owner_type === '' && $prompt_slot === 'script')) {
             $page_id = $this->db->fetch_page_id_by_keyword(LLM_SCRIPTS_PAGE_KEYWORD);
             $method = 'has_access_' . $mode;
             if (!$page_id || !$this->acl->$method($_SESSION['id_user'], $page_id)) {
@@ -219,6 +495,38 @@ class AjaxLlmPromptLab extends BaseAjax
         if (!$this->acl->$method($_SESSION['id_user'], $page_id)) {
             throw new Exception('Access denied');
         }
+    }
+
+    private function resolveDescriptorPageId($descriptor)
+    {
+        $page_id = (int)($descriptor['page_id'] ?? 0);
+        if ($page_id > 0) {
+            return $page_id;
+        }
+
+        $owner_id = (int)($descriptor['owner_id'] ?? 0);
+        if ($owner_id <= 0) {
+            return 0;
+        }
+
+        $resolved = $this->db->query_db_first(
+            "SELECT id_pages FROM sections WHERE id = :id LIMIT 1",
+            array(':id' => $owner_id)
+        );
+
+        return !empty($resolved['id_pages']) ? (int)$resolved['id_pages'] : 0;
+    }
+
+    private function assertScriptSourceAccess($mode)
+    {
+        $this->assertAccess(
+            array(
+                'owner_type' => LLM_PROMPT_OWNER_SCRIPT,
+                'owner_id' => 0,
+                'page_id' => null
+            ),
+            $mode
+        );
     }
 
     private function canMutate($descriptor)

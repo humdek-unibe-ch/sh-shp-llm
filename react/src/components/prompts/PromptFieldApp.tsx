@@ -3,12 +3,13 @@ import { Alert, Spinner } from 'react-bootstrap';
 import { createPromptLabApi } from './promptApi';
 import { usePromptBootstrap } from './promptHooks';
 import { PromptBuilderModal } from './PromptBuilderModal';
+import { PromptDatasetsModal } from './PromptDatasetsModal';
 import { PromptDiffModal } from './PromptDiffModal';
 import { PromptEditor } from './PromptEditor';
 import { PromptPlaygroundModal } from './PromptPlaygroundModal';
 import { PromptToolbar } from './PromptToolbar';
 import { PromptVersionsModal } from './PromptVersionsModal';
-import type { PromptDescriptor, PromptMetaState, PromptVariableDefinition, PromptVersion } from './promptTypes';
+import type { PromptDescriptor, PromptMetaState, PromptVariableDefinition, PromptVersion, PromptPlaygroundResponse } from './promptTypes';
 import { parsePromptMeta, stringifyPromptMeta } from './promptTypes';
 
 declare const $: any;
@@ -116,7 +117,19 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
   const [showVersions, setShowVersions] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [showPlayground, setShowPlayground] = useState(false);
+  const [showDatasets, setShowDatasets] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
+  const [lastPlaygroundCapture, setLastPlaygroundCapture] = useState<{
+    variables: Record<string, unknown>;
+    messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    runtimeOverrides: Record<string, unknown>;
+    runRef: {
+      id_llm_prompt_playground_runs?: number | null;
+      id_llmConversations?: number | null;
+      id_llmMessages_request?: number | null;
+      id_llmMessages_response?: number | null;
+    } | null;
+  } | null>(null);
   const [diffState, setDiffState] = useState<DiffState>({
     initialLeftKey: 'draft',
     initialRightKey: 'draft',
@@ -285,6 +298,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
           setShowDiff(true);
         }}
         onOpenPlayground={() => setShowPlayground(true)}
+        onOpenDatasets={() => setShowDatasets(true)}
         onOpenBuilder={() => setShowBuilder(true)}
       />
 
@@ -342,6 +356,42 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         disabled={disabled || (bootstrap?.execution_profile || 'text_only') === 'text_only'}
         defaultModel={defaultPromptModel}
         resolveRuntimeOverrides={() => currentRuntimeOverrides}
+        onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
+          variables: Record<string, unknown>;
+          messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+          runtimeOverrides: Record<string, unknown>;
+          response: PromptPlaygroundResponse;
+        }) => {
+          const firstRun = response.runs?.[0];
+          setLastPlaygroundCapture({
+            variables,
+            messageHistory,
+            runtimeOverrides,
+            runRef: firstRun
+              ? {
+                id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null,
+                id_llmConversations: firstRun.id_llmConversations ?? null,
+                id_llmMessages_request: firstRun.id_llmMessages_request ?? null,
+                id_llmMessages_response: firstRun.id_llmMessages_response ?? null,
+              }
+              : null,
+          });
+        }}
+      />
+
+      <PromptDatasetsModal
+        show={showDatasets}
+        onHide={() => setShowDatasets(false)}
+        api={api}
+        descriptor={descriptor}
+        versions={bootstrap?.versions || []}
+        activeVersionId={activeVersion?.id || null}
+        executionProfile={bootstrap?.execution_profile || 'text_only'}
+        promptValue={promptValue}
+        disabled={disabled}
+        defaultModel={defaultPromptModel}
+        resolveRuntimeOverrides={() => currentRuntimeOverrides}
+        lastPlaygroundCapture={lastPlaygroundCapture}
       />
 
       <PromptBuilderModal

@@ -24,6 +24,7 @@ import {
 import { formatDateTime } from '../../utils/formatters';
 import { createPromptLabApi } from '../prompts/promptApi';
 import { PromptBuilderModal } from '../prompts/PromptBuilderModal';
+import { PromptDatasetsModal } from '../prompts/PromptDatasetsModal';
 import { PromptDiffModal } from '../prompts/PromptDiffModal';
 import { PromptEditor } from '../prompts/PromptEditor';
 import { PromptPlaygroundModal } from '../prompts/PromptPlaygroundModal';
@@ -32,6 +33,7 @@ import { PromptVersionsModal } from '../prompts/PromptVersionsModal';
 import { usePromptBootstrap } from '../prompts/promptHooks';
 import type {
   PromptDescriptor,
+  PromptPlaygroundResponse,
   PromptVariableDefinition,
   PromptVersion,
 } from '../prompts/promptTypes';
@@ -142,7 +144,19 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
   const [showVersions, setShowVersions] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [showPlayground, setShowPlayground] = useState(false);
+  const [showDatasets, setShowDatasets] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
+  const [lastPlaygroundCapture, setLastPlaygroundCapture] = useState<{
+    variables: Record<string, unknown>;
+    messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    runtimeOverrides: Record<string, unknown>;
+    runRef: {
+      id_llm_prompt_playground_runs?: number | null;
+      id_llmConversations?: number | null;
+      id_llmMessages_request?: number | null;
+      id_llmMessages_response?: number | null;
+    } | null;
+  } | null>(null);
   const [diffState, setDiffState] = useState<DiffState>({
     initialLeftKey: 'draft',
     initialRightKey: 'draft',
@@ -740,7 +754,9 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
               setShowDiff(true);
             }}
             onOpenPlayground={() => setShowPlayground(true)}
+            onOpenDatasets={() => setShowDatasets(true)}
             onOpenBuilder={() => setShowBuilder(true)}
+            showDatasets
           />
 
           <Card className="border h-100">
@@ -1000,6 +1016,42 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
         resolveRuntimeOverrides={() => promptRuntimeOverrides}
         resolveInitialVariables={() => parseJsonObject(form.test_variables)}
+        onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
+          variables: Record<string, unknown>;
+          messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+          runtimeOverrides: Record<string, unknown>;
+          response: PromptPlaygroundResponse;
+        }) => {
+          const firstRun = response.runs?.[0];
+          setLastPlaygroundCapture({
+            variables,
+            messageHistory,
+            runtimeOverrides,
+            runRef: firstRun
+              ? {
+                id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null,
+                id_llmConversations: firstRun.id_llmConversations ?? null,
+                id_llmMessages_request: firstRun.id_llmMessages_request ?? null,
+                id_llmMessages_response: firstRun.id_llmMessages_response ?? null,
+              }
+              : null,
+          });
+        }}
+      />
+
+      <PromptDatasetsModal
+        show={showDatasets}
+        onHide={() => setShowDatasets(false)}
+        api={promptApi}
+        descriptor={promptDescriptor}
+        versions={promptBootstrap?.versions || []}
+        activeVersionId={activeVersion?.id || null}
+        executionProfile={promptBootstrap?.execution_profile || 'script_runtime'}
+        promptValue={form.script}
+        disabled={promptDisabled}
+        defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
+        resolveRuntimeOverrides={() => promptRuntimeOverrides}
+        lastPlaygroundCapture={lastPlaygroundCapture}
       />
 
       <PromptBuilderModal

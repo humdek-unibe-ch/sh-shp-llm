@@ -41,6 +41,11 @@ define('LLM_PROMPT_RUN_MODE_PLAYGROUND', 'playground');
 define('LLM_PROMPT_RUN_MODE_BUILDER', 'builder');
 define('LLM_PROMPT_RUN_MODE_COMPARE', 'compare');
 define('LLM_PROMPT_META_KEY', 'prompt');
+define('LLM_PROMPT_RUN_MODE_DATASET_EVAL', 'dataset_eval');
+
+define('LLM_EVAL_TYPE_PROGRAMMATIC', 'programmatic');
+define('LLM_EVAL_TYPE_LLM_JUDGE', 'llm_judge');
+define('LLM_EVAL_TYPE_HUMAN_REVIEW', 'human_review');
 
 // File upload limits
 define('LLM_MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB

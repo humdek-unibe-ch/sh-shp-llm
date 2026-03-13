@@ -28,6 +28,12 @@ interface PromptPlaygroundModalProps {
   defaultModel?: string | null;
   resolveRuntimeOverrides: () => Record<string, unknown>;
   resolveInitialVariables?: () => Record<string, unknown>;
+  onRunComplete?: (payload: {
+    variables: Record<string, unknown>;
+    messageHistory: PromptMessage[];
+    runtimeOverrides: Record<string, unknown>;
+    response: PromptPlaygroundResponse;
+  }) => void;
 }
 
 function buildEffectiveModels(models: PromptModel[], defaultModel?: string | null): PromptModel[] {
@@ -110,6 +116,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   defaultModel,
   resolveRuntimeOverrides,
   resolveInitialVariables,
+  onRunComplete,
 }) => {
   const selectMenuStyles = {
     menuList: (base: Record<string, unknown>) => ({
@@ -201,15 +208,22 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     setResult(null);
     try {
       const payloadVariables = useRawJson ? parseJsonObject(rawJson) : variables;
+      const resolvedRuntimeOverrides = resolveRuntimeOverrides();
       const nextResult = await api.playgroundRun({
         descriptor,
         draftPrompt: promptValue,
-        runtimeOverrides: resolveRuntimeOverrides(),
+        runtimeOverrides: resolvedRuntimeOverrides,
         variables: payloadVariables,
         messageHistory,
         selectedModels,
       });
       setResult(nextResult);
+      onRunComplete?.({
+        variables: payloadVariables,
+        messageHistory,
+        runtimeOverrides: resolvedRuntimeOverrides,
+        response: nextResult,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Playground run failed');
     } finally {

@@ -51,9 +51,10 @@ class LlmPromptPlaygroundService extends BaseLlmService
      * @param array $variables
      * @param array $message_history
      * @param array $selected_models
+     * @param array $options
      * @return array
      */
-    public function run($descriptor, $draft_prompt, $runtime_values = array(), $variables = array(), $message_history = array(), $selected_models = array())
+    public function run($descriptor, $draft_prompt, $runtime_values = array(), $variables = array(), $message_history = array(), $selected_models = array(), $options = array())
     {
         $profile = $this->profile_service->resolveExecutionProfile($descriptor);
         $config_snapshot = $this->profile_service->buildConfigSnapshot($profile, $runtime_values);
@@ -84,7 +85,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
                 $message_history,
                 $model_name,
                 $config_snapshot,
-                $comparison_group_id
+                $comparison_group_id,
+                $options
             );
         }
 
@@ -95,7 +97,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         );
     }
 
-    private function runSingleModel($profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id)
+    private function runSingleModel($profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         if ($profile === 'chat_runtime') {
             return $this->runChatRuntime(
@@ -105,7 +107,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
                 $message_history,
                 $model_name,
                 $config_snapshot,
-                $comparison_group_id
+                $comparison_group_id,
+                $options
             );
         }
 
@@ -117,7 +120,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
                 $variables,
                 $model_name,
                 $config_snapshot,
-                $comparison_group_id
+                $comparison_group_id,
+                $options
             );
         }
 
@@ -129,14 +133,15 @@ class LlmPromptPlaygroundService extends BaseLlmService
                 $variables,
                 $model_name,
                 $config_snapshot,
-                $comparison_group_id
+                $comparison_group_id,
+                $options
             );
         }
 
         throw new Exception('Prompt owner is not playground-executable');
     }
 
-    private function runChatRuntime($descriptor, $draft_prompt, $runtime_values, $message_history, $model_name, $config_snapshot, $comparison_group_id)
+    private function runChatRuntime($descriptor, $draft_prompt, $runtime_values, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $proxy = new LlmPromptChatRuntimeModel($draft_prompt, $runtime_values, $model_name);
         $floating_mode_service = new LlmFloatingModeService();
@@ -220,12 +225,12 @@ class LlmPromptPlaygroundService extends BaseLlmService
             'logged_message_id' => $response['logged_message_id'] ?? null
         ));
 
-        $this->logRun($descriptor, $config_snapshot, array(), $result, $comparison_group_id);
+        $result['id_llm_prompt_playground_runs'] = $this->logRun($descriptor, $config_snapshot, array(), $result, $comparison_group_id, $options);
 
         return $result;
     }
 
-    private function runFormRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id)
+    private function runFormRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $context_clean = trim(strip_tags((string)$draft_prompt));
         $filtered_form_data = $this->filterInterpolationValues($context_clean, $variables);
@@ -301,12 +306,12 @@ class LlmPromptPlaygroundService extends BaseLlmService
             'logged_message_id' => $response['logged_message_id'] ?? null
         ));
 
-        $this->logRun($descriptor, $config_snapshot, $filtered_form_data, $result, $comparison_group_id);
+        $result['id_llm_prompt_playground_runs'] = $this->logRun($descriptor, $config_snapshot, $filtered_form_data, $result, $comparison_group_id, $options);
 
         return $result;
     }
 
-    private function runScriptRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id)
+    private function runScriptRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $data_config = $runtime_values['data_config'] ?? '[]';
         if (is_string($data_config)) {
@@ -363,22 +368,29 @@ class LlmPromptPlaygroundService extends BaseLlmService
             'logged_message_id' => $response_data['logged_message_id'] ?? null
         ));
 
-        $this->logRun($descriptor, $config_snapshot, $variables, $normalized, $comparison_group_id);
+        $normalized['id_llm_prompt_playground_runs'] = $this->logRun($descriptor, $config_snapshot, $variables, $normalized, $comparison_group_id, $options);
 
         return $normalized;
     }
 
-    private function logRun($descriptor, $config_snapshot, $variables, $result, $comparison_group_id)
+    private function logRun($descriptor, $config_snapshot, $variables, $result, $comparison_group_id, $options = array())
     {
         $bootstrap = $this->registry_service->bootstrapOwner($descriptor);
-        $this->registry_service->logPlaygroundRun(array(
+        $run_mode = !empty($options['run_mode'])
+            ? (string)$options['run_mode']
+            : ($comparison_group_id ? LLM_PROMPT_RUN_MODE_COMPARE : LLM_PROMPT_RUN_MODE_PLAYGROUND);
+        $target_version_id = isset($options['target_version_id']) ? (int)$options['target_version_id'] : 0;
+
+        return $this->registry_service->logPlaygroundRun(array(
             'id_llm_prompt_entries' => $bootstrap['entry']['id'] ?? null,
             'id_llm_prompt_locales' => $bootstrap['locale']['id'] ?? null,
-            'id_llm_prompt_versions' => $bootstrap['active_version']['id'] ?? null,
+            'id_llm_prompt_versions' => $target_version_id > 0
+                ? $target_version_id
+                : ($bootstrap['active_version']['id'] ?? null),
             'id_llmConversations' => $result['id_llmConversations'] ?? null,
             'id_llmMessages_request' => $result['id_llmMessages_request'] ?? null,
             'id_llmMessages_response' => $result['id_llmMessages_response'] ?? null,
-            'run_mode' => $comparison_group_id ? LLM_PROMPT_RUN_MODE_COMPARE : LLM_PROMPT_RUN_MODE_PLAYGROUND,
+            'run_mode' => $run_mode,
             'comparison_group_id' => $comparison_group_id,
             'variables_json' => $variables,
             'config_snapshot_json' => $config_snapshot

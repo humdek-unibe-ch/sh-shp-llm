@@ -1,3 +1,16 @@
+export type {
+  PromptDataset,
+  PromptDatasetCase,
+  PromptImportCandidate,
+  PromptImportSourceType,
+} from '../datasets/datasetTypes';
+export type {
+  PromptEvalDefinition,
+  PromptEvalRunCase,
+  PromptEvalRunResult,
+  PromptEvalScore,
+} from '../evaluations/evaluationTypes';
+
 export type PromptOwnerType = 'style_field' | 'llm_script';
 
 export type PromptExecutionProfile =
@@ -92,6 +105,7 @@ export interface PromptPlaygroundRun {
   tokens_used?: number | null;
   duration_ms?: number | null;
   logged_message_id?: number | null;
+  id_llm_prompt_playground_runs?: number | null;
   parse_errors?: string[];
   is_fallback?: boolean;
 }

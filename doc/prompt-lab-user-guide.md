@@ -18,6 +18,9 @@ The prompt field now supports:
 - version compare (diff)
 - playground testing with real runtime context
 - multi-model compare (up to 3 models)
+- reusable datasets
+- dataset replay against drafts and versions
+- automatic and human-reviewed evaluations
 - "Build With AI" prompt improvement assistant
 
 Important: the normal CMS translation behavior is unchanged. You still edit per language in CMS.
@@ -29,6 +32,7 @@ In the prompt toolbar you have:
 - `Versions`: open full version history
 - `Compare`: compare active version vs current draft
 - `Playground`: test prompt with runtime context and inspect output
+- `Datasets`: create datasets, import replay cases, and run evaluations
 - `Build With AI`: improve current draft
 - `Version Comment`: optional note for the next saved version
 
@@ -87,6 +91,23 @@ Builder uses the current prompt draft as input and improves it.
 - notes/variable suggestions/change summary are shown separately
 - helper model can be selected per run
 
+## Datasets and evaluations
+
+The `Datasets` modal lets you:
+
+- create reusable datasets
+- add the latest playground run as a dataset case
+- import cases from playground runs, form submissions, conversations, and scripts
+- run objective evaluators against the current draft, active version, or a saved version
+- inspect per-case failures and add human-review scores
+
+Recommended editor workflow:
+
+1. Build a small golden dataset from important examples.
+2. Import a replay dataset from real submitted data when needed.
+3. Run the dataset before saving or promoting prompt changes.
+4. Inspect failed cases before rollout.
+
 ## Scripts module behavior
 
 Scripts now use the same prompt-lab flow:
@@ -121,3 +142,8 @@ Prompt-lab actions are permission checked.
 - `Playground disabled`: owner runtime profile is non-executable (`text_only`) or field is read-only.
 - Model list empty: check module LLM server/API-key configuration and model availability.
 - API returns HTML/non-JSON: endpoint/path is wrong; Prompt Lab expects the plugin AJAX endpoint and base path.
+
+## Related guides
+
+- [prompt-datasets-user-guide.md](prompt-datasets-user-guide.md)
+- [prompt-replay-import-guide.md](prompt-replay-import-guide.md)

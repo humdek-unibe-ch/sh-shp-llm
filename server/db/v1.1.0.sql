@@ -231,7 +231,8 @@ INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_descrip
 VALUES
 ('llm_prompt_run_modes', 'playground', 'playground', 'Single-model playground run'),
 ('llm_prompt_run_modes', 'builder', 'builder', 'Prompt builder assistant run'),
-('llm_prompt_run_modes', 'compare', 'compare', 'Multi-model playground comparison run');
+('llm_prompt_run_modes', 'compare', 'compare', 'Multi-model playground comparison run'),
+('llm_prompt_run_modes', 'dataset_eval', 'dataset_eval', 'Dataset replay execution run');
 
 INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`) VALUES (NULL, 'llm_prompt', '12');
 
@@ -389,3 +390,293 @@ VALUES (NULL, 'ajax_llm_prompt_lab', '/request/[AjaxLlmPromptLab:class]/[dispatc
 
 INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ('0000000001', (SELECT id FROM pages WHERE keyword = 'ajax_llm_prompt_lab'), '1', '1', '1', '1');
+
+-- =====================================================
+-- DATASETS AND EVALUATIONS
+-- =====================================================
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_dataset_types', 'golden_manual', 'golden_manual', 'Manually curated golden dataset'),
+('llm_eval_dataset_types', 'production_replay', 'production_replay', 'Cases replayed from production logs'),
+('llm_eval_dataset_types', 'pilot_study_replay', 'pilot_study_replay', 'Pilot-study replay dataset'),
+('llm_eval_dataset_types', 'conversation_replay', 'conversation_replay', 'Conversation-based replay dataset'),
+('llm_eval_dataset_types', 'form_submission_replay', 'form_submission_replay', 'Form-submission replay dataset'),
+('llm_eval_dataset_types', 'script_fixture', 'script_fixture', 'Script fixture dataset');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_execution_profiles', 'chat_runtime', 'chat_runtime', 'Chat runtime profile'),
+('llm_eval_execution_profiles', 'form_runtime', 'form_runtime', 'Form runtime profile'),
+('llm_eval_execution_profiles', 'script_runtime', 'script_runtime', 'Script runtime profile'),
+('llm_eval_execution_profiles', 'therapy_chat_runtime', 'therapy_chat_runtime', 'Therapy chat runtime profile'),
+('llm_eval_execution_profiles', 'therapy_draft_runtime', 'therapy_draft_runtime', 'Therapy draft runtime profile'),
+('llm_eval_execution_profiles', 'therapy_summary_runtime', 'therapy_summary_runtime', 'Therapy summary runtime profile'),
+('llm_eval_execution_profiles', 'text_only', 'text_only', 'Text-only non-executable profile');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_case_types', 'chat_case', 'chat_case', 'Dataset case for chat runtime'),
+('llm_eval_case_types', 'form_case', 'form_case', 'Dataset case for form runtime'),
+('llm_eval_case_types', 'script_case', 'script_case', 'Dataset case for script runtime'),
+('llm_eval_case_types', 'text_only_case', 'text_only_case', 'Dataset case for text-only profile');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_source_types', 'manual_entry', 'manual_entry', 'Case created manually'),
+('llm_eval_source_types', 'playground_run', 'playground_run', 'Case imported from prompt playground run'),
+('llm_eval_source_types', 'conversation_message', 'conversation_message', 'Case imported from conversation message history'),
+('llm_eval_source_types', 'form_submission', 'form_submission', 'Case imported from form submission'),
+('llm_eval_source_types', 'script_run', 'script_run', 'Case imported from script context');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_types', 'programmatic', 'programmatic', 'Programmatic evaluator'),
+('llm_eval_types', 'llm_judge', 'llm_judge', 'LLM-as-judge evaluator'),
+('llm_eval_types', 'human_review', 'human_review', 'Human-review evaluator');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_run_modes', 'dataset_eval_single', 'dataset_eval_single', 'Single-model dataset evaluation run'),
+('llm_eval_run_modes', 'dataset_eval_compare', 'dataset_eval_compare', 'Multi-model dataset evaluation run');
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('llm_eval_run_statuses', 'queued', 'queued', 'Evaluation run queued'),
+('llm_eval_run_statuses', 'running', 'running', 'Evaluation run in progress'),
+('llm_eval_run_statuses', 'completed', 'completed', 'Evaluation run completed'),
+('llm_eval_run_statuses', 'failed', 'failed', 'Evaluation run failed');
+
+CREATE TABLE IF NOT EXISTS `llm_eval_datasets` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(190) NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `id_lookups_dataset_type` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_lookups_execution_profile` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `owner_type_scope` VARCHAR(64) DEFAULT NULL,
+    `owner_id_scope` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `is_locked` TINYINT(1) NOT NULL DEFAULT 0,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_eval_datasets_type` (`id_lookups_dataset_type`),
+    KEY `idx_eval_datasets_profile` (`id_lookups_execution_profile`),
+    KEY `idx_eval_datasets_owner` (`owner_type_scope`, `owner_id_scope`),
+    CONSTRAINT `fk_eval_datasets_type` FOREIGN KEY (`id_lookups_dataset_type`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_eval_datasets_profile` FOREIGN KEY (`id_lookups_execution_profile`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_eval_datasets_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_datasets_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_eval_dataset_cases` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_eval_datasets` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `case_key` VARCHAR(96) NOT NULL,
+    `id_lookups_case_type` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `title` VARCHAR(255) DEFAULT NULL,
+    `input_payload_json` LONGTEXT NOT NULL,
+    `expected_output_json` LONGTEXT DEFAULT NULL,
+    `expected_labels_json` LONGTEXT DEFAULT NULL,
+    `id_lookups_source_type` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `source_ref_json` LONGTEXT DEFAULT NULL,
+    `tags_json` LONGTEXT DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_eval_case_key_per_dataset` (`id_llm_eval_datasets`, `case_key`),
+    KEY `idx_eval_case_dataset` (`id_llm_eval_datasets`),
+    KEY `idx_eval_case_type` (`id_lookups_case_type`),
+    KEY `idx_eval_case_source` (`id_lookups_source_type`),
+    CONSTRAINT `fk_eval_case_dataset` FOREIGN KEY (`id_llm_eval_datasets`) REFERENCES `llm_eval_datasets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_case_type` FOREIGN KEY (`id_lookups_case_type`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_eval_case_source_type` FOREIGN KEY (`id_lookups_source_type`) REFERENCES `lookups` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_case_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_case_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_eval_definitions` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(190) NOT NULL,
+    `id_lookups_eval_type` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `config_json` LONGTEXT DEFAULT NULL,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_eval_definition_name` (`name`),
+    KEY `idx_eval_definition_type` (`id_lookups_eval_type`),
+    CONSTRAINT `fk_eval_definition_type` FOREIGN KEY (`id_lookups_eval_type`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_eval_definition_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_definition_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_eval_runs` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_eval_datasets` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `target_type` VARCHAR(64) NOT NULL,
+    `target_ref_json` LONGTEXT DEFAULT NULL,
+    `id_lookups_run_mode` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_lookups_status` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `summary_json` LONGTEXT DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `completed_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_eval_runs_dataset` (`id_llm_eval_datasets`),
+    KEY `idx_eval_runs_mode` (`id_lookups_run_mode`),
+    KEY `idx_eval_runs_status` (`id_lookups_status`),
+    KEY `idx_eval_runs_created` (`created_at`),
+    CONSTRAINT `fk_eval_runs_dataset` FOREIGN KEY (`id_llm_eval_datasets`) REFERENCES `llm_eval_datasets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_runs_mode` FOREIGN KEY (`id_lookups_run_mode`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_eval_runs_status` FOREIGN KEY (`id_lookups_status`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `fk_eval_runs_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_eval_run_cases` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_eval_runs` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_llm_eval_dataset_cases` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_llmConversations` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llmMessages_request` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_llmMessages_response` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `output_payload_json` LONGTEXT DEFAULT NULL,
+    `normalized_output_json` LONGTEXT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_eval_run_cases_run` (`id_llm_eval_runs`),
+    KEY `idx_eval_run_cases_case` (`id_llm_eval_dataset_cases`),
+    CONSTRAINT `fk_eval_run_cases_run` FOREIGN KEY (`id_llm_eval_runs`) REFERENCES `llm_eval_runs` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_run_cases_dataset_case` FOREIGN KEY (`id_llm_eval_dataset_cases`) REFERENCES `llm_eval_dataset_cases` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_run_cases_conversation` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_run_cases_request_message` FOREIGN KEY (`id_llmMessages_request`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_run_cases_response_message` FOREIGN KEY (`id_llmMessages_response`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_eval_scores` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_eval_run_cases` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_llm_eval_definitions` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `score_type` VARCHAR(64) NOT NULL,
+    `score_value_numeric` DECIMAL(10,4) DEFAULT NULL,
+    `score_value_label` VARCHAR(255) DEFAULT NULL,
+    `passed` TINYINT(1) DEFAULT NULL,
+    `details_json` LONGTEXT DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_eval_scores_run_case` (`id_llm_eval_run_cases`),
+    KEY `idx_eval_scores_definition` (`id_llm_eval_definitions`),
+    KEY `idx_eval_scores_type` (`score_type`),
+    CONSTRAINT `fk_eval_scores_run_case` FOREIGN KEY (`id_llm_eval_run_cases`) REFERENCES `llm_eval_run_cases` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_scores_definition` FOREIGN KEY (`id_llm_eval_definitions`) REFERENCES `llm_eval_definitions` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_scores_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Re-apply critical unique keys and indexes so rerunning v1.1.0 converges an
+-- interrupted or partially applied schema on the intended prompt-lab layout.
+CALL add_unique_key('llm_prompt_entries', 'uniq_prompt_owner_slot', 'id_llm_prompt_owner_types,owner_id,prompt_slot');
+CALL add_index('llm_prompt_entries', 'idx_prompt_owner_type', 'id_llm_prompt_owner_types');
+
+CALL add_unique_key('llm_prompt_locales', 'uniq_prompt_entry_language', 'id_llm_prompt_entries,id_languages');
+CALL add_index('llm_prompt_locales', 'idx_prompt_locale_language', 'id_languages');
+CALL add_index('llm_prompt_locales', 'idx_prompt_locale_active_version', 'active_version_id');
+
+CALL add_unique_key('llm_prompt_versions', 'uniq_prompt_locale_version', 'id_llm_prompt_locales,version_no');
+CALL add_index('llm_prompt_versions', 'idx_prompt_version_hash', 'template_hash');
+CALL add_index('llm_prompt_versions', 'idx_prompt_version_based_on', 'based_on_version_id');
+
+CALL add_index('llm_prompt_playground_runs', 'idx_prompt_runs_entry', 'id_llm_prompt_entries');
+CALL add_index('llm_prompt_playground_runs', 'idx_prompt_runs_locale', 'id_llm_prompt_locales');
+CALL add_index('llm_prompt_playground_runs', 'idx_prompt_runs_version', 'id_llm_prompt_versions');
+CALL add_index('llm_prompt_playground_runs', 'idx_prompt_runs_conversation', 'id_llmConversations');
+CALL add_index('llm_prompt_playground_runs', 'idx_prompt_runs_group', 'comparison_group_id');
+
+CALL add_index('llm_eval_datasets', 'idx_eval_datasets_type', 'id_lookups_dataset_type');
+CALL add_index('llm_eval_datasets', 'idx_eval_datasets_profile', 'id_lookups_execution_profile');
+CALL add_index('llm_eval_datasets', 'idx_eval_datasets_owner', 'owner_type_scope,owner_id_scope');
+
+CALL add_unique_key('llm_eval_dataset_cases', 'uniq_eval_case_key_per_dataset', 'id_llm_eval_datasets,case_key');
+CALL add_index('llm_eval_dataset_cases', 'idx_eval_case_dataset', 'id_llm_eval_datasets');
+CALL add_index('llm_eval_dataset_cases', 'idx_eval_case_type', 'id_lookups_case_type');
+CALL add_index('llm_eval_dataset_cases', 'idx_eval_case_source', 'id_lookups_source_type');
+
+CALL add_unique_key('llm_eval_definitions', 'uniq_eval_definition_name', 'name');
+CALL add_index('llm_eval_definitions', 'idx_eval_definition_type', 'id_lookups_eval_type');
+
+CALL add_index('llm_eval_runs', 'idx_eval_runs_dataset', 'id_llm_eval_datasets');
+CALL add_index('llm_eval_runs', 'idx_eval_runs_mode', 'id_lookups_run_mode');
+CALL add_index('llm_eval_runs', 'idx_eval_runs_status', 'id_lookups_status');
+CALL add_index('llm_eval_runs', 'idx_eval_runs_created', 'created_at');
+
+CALL add_index('llm_eval_run_cases', 'idx_eval_run_cases_run', 'id_llm_eval_runs');
+CALL add_index('llm_eval_run_cases', 'idx_eval_run_cases_case', 'id_llm_eval_dataset_cases');
+
+CALL add_index('llm_eval_scores', 'idx_eval_scores_run_case', 'id_llm_eval_run_cases');
+CALL add_index('llm_eval_scores', 'idx_eval_scores_definition', 'id_llm_eval_definitions');
+CALL add_index('llm_eval_scores', 'idx_eval_scores_type', 'score_type');
+
+INSERT IGNORE INTO `llm_eval_definitions`
+(`name`, `id_lookups_eval_type`, `description`, `config_json`, `is_active`, `id_users_created`, `id_users_updated`)
+VALUES
+(
+    'json_validity',
+    (SELECT id FROM lookups WHERE type_code = 'llm_eval_types' AND lookup_code = 'programmatic' LIMIT 1),
+    'Checks whether output is parseable structured content.',
+    '{}',
+    1,
+    NULL,
+    NULL
+),
+(
+    'required_fields_present',
+    (SELECT id FROM lookups WHERE type_code = 'llm_eval_types' AND lookup_code = 'programmatic' LIMIT 1),
+    'Checks whether required fields exist in parsed output.',
+    '{"required_fields":[]}',
+    1,
+    NULL,
+    NULL
+),
+(
+    'no_empty_output',
+    (SELECT id FROM lookups WHERE type_code = 'llm_eval_types' AND lookup_code = 'programmatic' LIMIT 1),
+    'Checks that response text is not empty.',
+    '{}',
+    1,
+    NULL,
+    NULL
+),
+(
+    'safety_label_match',
+    (SELECT id FROM lookups WHERE type_code = 'llm_eval_types' AND lookup_code = 'programmatic' LIMIT 1),
+    'Checks that the produced safety danger level matches the dataset expectation.',
+    '{}',
+    1,
+    NULL,
+    NULL
+),
+(
+    'llm_judge_helpfulness',
+    (SELECT id FROM lookups WHERE type_code = 'llm_eval_types' AND lookup_code = 'llm_judge' LIMIT 1),
+    'LLM judge template for helpfulness scoring.',
+    '{"scale_min":1,"scale_max":5}',
+    1,
+    NULL,
+    NULL
+),
+(
+    'human_review_quality',
+    (SELECT id FROM lookups WHERE type_code = 'llm_eval_types' AND lookup_code = 'human_review' LIMIT 1),
+    'Manual reviewer score used for subjective quality checks.',
+    '{"scale_min":1,"scale_max":5}',
+    1,
+    NULL,
+    NULL
+);

@@ -28,10 +28,23 @@ New/relevant schema in `server/db/v1.1.0.sql`:
 - `llm_prompt_locales`
 - `llm_prompt_versions`
 - `llm_prompt_playground_runs`
+- `llm_eval_datasets`
+- `llm_eval_dataset_cases`
+- `llm_eval_definitions`
+- `llm_eval_runs`
+- `llm_eval_run_cases`
+- `llm_eval_scores`
 - `llm_scripts.id_llm_prompt_entries`
 - lookup types:
   - `llm_prompt_owner_types`
   - `llm_prompt_run_modes`
+  - `llm_eval_dataset_types`
+  - `llm_eval_execution_profiles`
+  - `llm_eval_case_types`
+  - `llm_eval_source_types`
+  - `llm_eval_types`
+  - `llm_eval_run_modes`
+  - `llm_eval_run_statuses`
 - field type: `llm_prompt`
 
 Registry semantics:
@@ -47,10 +60,20 @@ Prompt-lab services:
 
 - `LlmPromptRegistryService`
 - `LlmPromptExecutionProfileService`
+- `LlmPromptRuntimeValueService`
 - `LlmPromptPlaygroundService`
 - `LlmPromptBuilderService`
 - `LlmPromptResponseRenderService`
 - `LlmPromptVariableService`
+- `LlmDatasetService`
+- `LlmDatasetIngestionService`
+- `LlmDatasetReplayService`
+- `LlmEvaluationService`
+- `LlmEvaluationDefinitionService`
+- `LlmEvaluationRunnerService`
+- `LlmEvaluationScoringService`
+- `LlmEvaluationAggregationService`
+- `LlmEvaluationReviewService`
 
 ### `LlmPromptRegistryService`
 
@@ -72,6 +95,38 @@ Prompt-lab services:
 - supports single-model and 2-3 model compare runs
 - logs each run via existing `LlmService::callLlmApi(...)`
 - attaches `comparison_group_id` for compare mode
+- returns `id_llm_prompt_playground_runs` so latest runs can be promoted into dataset cases
+
+### `LlmDatasetService`
+
+- dataset CRUD/listing
+- dataset case CRUD/listing
+- lock-state enforcement
+- shared normalization helpers used by ingestion/replay flows
+
+### `LlmDatasetIngestionService`
+
+- add case from latest playground payload
+- import candidates from production-like sources (playground runs, form submissions, conversation messages, scripts)
+- bulk import from selected source IDs
+- owner-aware source filtering for import candidate and import execution paths
+- capture original assistant output when a source already has one
+
+### `LlmDatasetReplayService`
+
+- replays one normalized dataset case through the same prompt runtime path used by production-like playground execution
+- resolves live runtime values plus case overrides
+- logs replay runs in the normal LLM logging system
+
+### `LlmEvaluationService`
+
+- evaluation definition listing
+- dataset run execution orchestration
+- run/case/score persistence
+- baseline programmatic evaluators (`json_validity`, `required_fields_present`, `no_empty_output`, `safety_label_match`)
+- `llm_judge` execution with structured JSON scoring output
+- human-review score save endpoint
+- run status lifecycle handling (`running` -> `completed` / `failed`)
 
 ### `LlmPromptBuilderService`
 
@@ -101,6 +156,20 @@ Supported actions:
 - `get_version`
 - `playground_run`
 - `builder_run`
+- `list_datasets`
+- `get_dataset`
+- `create_dataset`
+- `update_dataset`
+- `list_dataset_cases`
+- `add_case_from_playground_run`
+- `get_import_candidates`
+- `add_cases_from_source`
+- `delete_dataset_case`
+- `list_eval_definitions`
+- `run_dataset_eval`
+- `get_eval_run`
+- `list_eval_run_cases`
+- `save_human_score`
 
 Access/security:
 
@@ -142,6 +211,7 @@ Prompt components under `react/src/components/prompts/`:
 - `PromptDiffModal.tsx`
 - `PromptPlaygroundModal.tsx`
 - `PromptBuilderModal.tsx`
+- `PromptDatasetsModal.tsx`
 - `PromptResultPanel.tsx`
 - `PromptEffectiveContextPanel.tsx`
 - `PromptVariableInputs.tsx`
@@ -155,6 +225,7 @@ Key UI behavior:
 - modal header/footer fixed, body scrollable
 - buttons use Bootstrap small size (`btn-sm`)
 - toolbar contains explicit version-comment hint/tooltip
+- toolbar now includes `Datasets` entry point for replay/evaluation workflows
 
 ## Runtime-awareness details
 
@@ -232,3 +303,9 @@ To onboard therapy owners later:
 1. Add execution-profile mappings for therapy slots.
 2. Implement owner-specific runtime composition and response extraction.
 3. Reuse the same prompt-lab endpoint and React components.
+
+## Related documents
+
+- [prompt-lab-payload-shapes.md](prompt-lab-payload-shapes.md)
+- [prompt-evaluator-authoring-guide.md](prompt-evaluator-authoring-guide.md)
+- [prompt-lab-migration-notes-v1.1.0.md](prompt-lab-migration-notes-v1.1.0.md)

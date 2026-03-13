@@ -29,6 +29,7 @@ This plugin provides a general-purpose LLM integration layer for SelfHelp. It is
 - Configurable system instructions per chat section
 - LLM-based safety assessment and danger detection
 - Reusable prompt scripts with sync/async execution and job scheduler integration
+- Prompt datasets and replay-based evaluations in prompt lab
 - Admin console for monitoring all user conversations
 
 ## Prerequisites
@@ -57,9 +58,11 @@ server/plugins/sh-shp-llm/
 
 ```bash
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.0.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.1.0.sql
 ```
 
-This creates the plugin tables (`llmConversations`, `llmMessages`, `llmConversationProgress`, `llm_scripts`), registers components, hooks, page types, and CMS fields.
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations). The v1.1.0 migration is rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed.
 
 ### 3. Build Frontend Assets
 
@@ -372,6 +375,13 @@ Detailed guides are available in the `doc/` folder:
 | [speech-to-text.md](doc/speech-to-text.md) | Whisper integration and configuration |
 | [file-naming-conventions.md](doc/file-naming-conventions.md) | Upload file naming and directory structure |
 | [message-validation-tracking.md](doc/message-validation-tracking.md) | Validation status and payload debugging |
+| [prompt-lab-user-guide.md](doc/prompt-lab-user-guide.md) | Prompt versions, playground, datasets, and evaluations for editors |
+| [prompt-datasets-user-guide.md](doc/prompt-datasets-user-guide.md) | How to build reusable benchmark datasets |
+| [prompt-replay-import-guide.md](doc/prompt-replay-import-guide.md) | How to turn real submitted data into replay datasets |
+| [prompt-lab-payload-shapes.md](doc/prompt-lab-payload-shapes.md) | Normalized dataset case payload formats |
+| [prompt-evaluator-authoring-guide.md](doc/prompt-evaluator-authoring-guide.md) | How to add or extend evaluators |
+| [prompt-lab-developer-guide.md](doc/prompt-lab-developer-guide.md) | Prompt registry, replay, and evaluation architecture |
+| [prompt-lab-migration-notes-v1.1.0.md](doc/prompt-lab-migration-notes-v1.1.0.md) | Migration details for prompt-lab and dataset/eval schema |
 | [form-data-saving.md](doc/form-data-saving.md) | How form responses are saved to dataTables |
 | [progress-tracking-system.md](doc/progress-tracking-system.md) | Topic coverage and progress tracking |
 | [floating-chat-button.md](doc/floating-chat-button.md) | Floating chat button setup |

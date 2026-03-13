@@ -147,3 +147,35 @@
   display: flex;
   flex-direction: column;
 }
+
+.prompt-datasets-modal .modal-body {
+  background: #f8f9fa;
+}
+
+.prompt-datasets-modal .border.rounded.p-3 {
+  background: #fff;
+}
+
+.prompt-eval-def-list {
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.prompt-json-preview {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.prompt-human-review-grid {
+  display: grid;
+  grid-template-columns: 110px 1fr 120px 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+@media (max-width: 991.98px) {
+  .prompt-human-review-grid {
+    grid-template-columns: 1fr;
+  }
+}
