@@ -381,20 +381,25 @@ class LlmDatasetIngestionService extends BaseLlmService
             return null;
         }
 
-        $chat_profile = in_array($execution_profile, array('chat_runtime', 'therapy_chat_runtime'), true) ? $execution_profile : 'chat_runtime';
+        $is_script_owner = $this->isScriptOwner($descriptor);
+        $runtime_profile = $is_script_owner
+            ? 'script_runtime'
+            : (in_array($execution_profile, array('chat_runtime', 'therapy_chat_runtime'), true) ? $execution_profile : 'chat_runtime');
         $history = $this->loadConversationWindow((int)$message['id_llmConversations'], (int)$message['id'], 12);
         $assistant_reply = $this->loadNextAssistantMessage((int)$message['id_llmConversations'], (int)$message['id']);
+        $trigger_message = (string)$message['content'];
+        $variables = $is_script_owner ? $this->buildScriptVariablesFromMessage($trigger_message) : array();
 
         return $this->dataset_service->createCase($dataset_id, array(
             'title' => 'Conversation message #' . $message['id'],
-            'case_type' => $this->dataset_service->toCaseType($chat_profile),
+            'case_type' => $this->dataset_service->toCaseType($runtime_profile),
             'source_type' => 'conversation_message',
             'input_payload' => array(
-                'execution_profile' => $chat_profile,
+                'execution_profile' => $runtime_profile,
                 'owner_descriptor' => $this->dataset_service->buildOwnerDescriptor($descriptor),
                 'message_history' => $history,
-                'trigger_message' => (string)$message['content'],
-                'variables' => array(),
+                'trigger_message' => $trigger_message,
+                'variables' => $variables,
                 'runtime_overrides' => $runtime_overrides,
                 'source_context' => array(
                     'id_llmConversations' => (int)$message['id_llmConversations'],
@@ -409,8 +414,46 @@ class LlmDatasetIngestionService extends BaseLlmService
                 'id_llmMessages_request' => (int)$message['id'],
                 'id_llmMessages_response' => !empty($assistant_reply['id']) ? (int)$assistant_reply['id'] : null
             ),
-            'tags' => array('imported', 'conversation')
+            'tags' => $is_script_owner
+                ? array('imported', 'conversation', 'script_conversation')
+                : array('imported', 'conversation')
         ));
+    }
+
+    private function buildScriptVariablesFromMessage($message_content)
+    {
+        $content = trim((string)$message_content);
+        if ($content === '') {
+            return array();
+        }
+
+        $decoded = json_decode($content, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded) && $this->isAssoc($decoded)) {
+            return $decoded;
+        }
+
+        $parsed_lines = $this->dataset_service->parseFieldLines($content);
+        if (!empty($parsed_lines)) {
+            return $parsed_lines;
+        }
+
+        // Fallback aliases improve interpolation compatibility across scripts.
+        return array(
+            'input' => $content,
+            'user_input' => $content,
+            'message' => $content,
+            'query' => $content,
+            'topic' => $content,
+            'text' => $content
+        );
+    }
+
+    private function isAssoc($value)
+    {
+        if (!is_array($value)) {
+            return false;
+        }
+        return array_keys($value) !== range(0, count($value) - 1);
     }
 
     private function importScriptFixtureCase($dataset_id, $source_id, $descriptor, $runtime_overrides)

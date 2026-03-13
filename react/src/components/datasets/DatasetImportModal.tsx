@@ -172,6 +172,12 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
           placeholder="Search candidates"
           className="mb-2"
         />
+        {sourceType === 'conversation_message' && executionProfile === 'script_runtime' && (
+          <div className="alert alert-info py-2 small mb-2">
+            Conversation imports for scripts auto-derive variables from the message text.
+            Prefer structured messages (JSON or key:value lines) for best replay accuracy.
+          </div>
+        )}
 
         <div className="table-responsive">
           <Table hover size="sm" className="mb-0 prompt-lab-table">
