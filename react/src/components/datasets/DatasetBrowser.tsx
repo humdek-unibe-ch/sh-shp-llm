@@ -80,8 +80,9 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
       onChange={(option) => onNewDatasetTypeChange(option?.value || 'golden_manual')}
     />
     <Button size="sm" variant="outline-secondary" onClick={onCreateDataset} disabled={disabled || loading || newDatasetName.trim() === ''}>
+      <i className="fas fa-plus mr-1"></i>
       Create Dataset
     </Button>
   </div>
-  );
+);
 };

@@ -201,15 +201,65 @@
   background-color: #e7f5ff;
 }
 
+.prompt-dataset-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.prompt-dataset-table th:nth-child(1),
+.prompt-dataset-table td:nth-child(1) {
+  width: 30%;
+}
+
+.prompt-dataset-table th:nth-child(2),
+.prompt-dataset-table td:nth-child(2) {
+  width: 19%;
+}
+
+.prompt-dataset-table th:nth-child(3),
+.prompt-dataset-table td:nth-child(3) {
+  width: 11%;
+}
+
+.prompt-dataset-table th:nth-child(4),
+.prompt-dataset-table td:nth-child(4) {
+  width: 14%;
+}
+
+.prompt-dataset-table th:nth-child(5),
+.prompt-dataset-table td:nth-child(5) {
+  width: 26%;
+}
+
+.prompt-dataset-table td:nth-child(1),
+.prompt-dataset-table td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .prompt-row-actions {
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .prompt-row-actions .btn {
-  min-width: 72px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.prompt-compact-btn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.15;
+  width: 92px;
+  min-width: 92px;
+  max-width: 92px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .prompt-header-actions {

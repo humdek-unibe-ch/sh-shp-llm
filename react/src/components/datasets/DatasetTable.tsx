@@ -17,15 +17,15 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
   onToggleLock,
   disabled = false,
 }) => (
-  <div className="table-responsive">
-    <Table hover size="sm" className="mb-0 prompt-lab-table">
+  <div>
+    <Table hover size="sm" className="mb-0 prompt-lab-table prompt-dataset-table">
       <thead>
         <tr>
           <th>Name</th>
           <th>Profile</th>
           <th>Cases</th>
           <th>Status</th>
-          <th style={{ width: 210 }}>Actions</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -49,14 +49,26 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
             </td>
             <td>
               <div className="prompt-row-actions">
-                <Button size="sm" variant={dataset.id === selectedDatasetId ? 'primary' : 'outline-primary'} onClick={() => onSelect(dataset.id)} disabled={disabled}>
+                <Button
+                  size="sm"
+                  className="prompt-compact-btn"
+                  variant={dataset.id === selectedDatasetId ? 'primary' : 'outline-primary'}
+                  onClick={() => onSelect(dataset.id)}
+                  disabled={disabled}
+                >
                   <i className={`fas ${dataset.id === selectedDatasetId ? 'fa-eye' : 'fa-arrow-right'} mr-1`}></i>
-                  {dataset.id === selectedDatasetId ? 'Viewing' : 'View'}
+                  <span>{dataset.id === selectedDatasetId ? 'Viewing' : 'View'}</span>
                 </Button>
                 {onToggleLock && (
-                  <Button size="sm" variant="outline-secondary" onClick={() => onToggleLock(dataset)} disabled={disabled}>
+                  <Button
+                    size="sm"
+                    className="prompt-compact-btn"
+                    variant="outline-secondary"
+                    onClick={() => onToggleLock(dataset)}
+                    disabled={disabled}
+                  >
                     <i className={`fas ${dataset.is_locked ? 'fa-unlock' : 'fa-lock'} mr-1`}></i>
-                    {dataset.is_locked ? 'Unlock' : 'Lock'}
+                    <span>{dataset.is_locked ? 'Unlock' : 'Lock'}</span>
                   </Button>
                 )}
               </div>

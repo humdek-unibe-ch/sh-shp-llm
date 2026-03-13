@@ -207,8 +207,9 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
         <Modal.Body>
           {error && <Alert variant="danger" className="py-2">{error}</Alert>}
           {success && <Alert variant="success" className="py-2">{success}</Alert>}
-          <Row>
-            <Col lg={4} className="mb-3 mb-lg-0">
+          <Row className="mb-3">
+            <Col lg={12}>
+              <div className="border rounded p-3 bg-white">
               <DatasetBrowser
                 datasets={datasets}
                 selectedDatasetId={selectedDatasetId}
@@ -224,8 +225,11 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                 disabled={disabled}
                 loading={loading}
               />
+              </div>
             </Col>
-            <Col lg={8}>
+          </Row>
+          <Row>
+            <Col lg={12}>
               <div className="border rounded p-3 bg-white">
                 <div className="d-flex justify-content-between align-items-center flex-wrap mb-3">
                   <div>
