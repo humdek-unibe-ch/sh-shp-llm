@@ -137,6 +137,34 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
   };
 
+  const handleDeleteDataset = async (dataset: PromptDataset) => {
+    if (dataset.is_locked) {
+      setError('Unlock dataset before deleting it.');
+      return;
+    }
+    if (!window.confirm(`Delete dataset "${dataset.name}" and all related cases/evaluation runs? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await datasetApi.deleteDataset(descriptor, dataset.id);
+      const rows = await datasetApi.listDatasets(descriptor, executionProfile, datasetSearch);
+      setDatasets(rows || []);
+      const fallbackId = rows?.[0]?.id ?? null;
+      setSelectedDatasetId((current) => (current === dataset.id ? fallbackId : current));
+      if (selectedDatasetId === dataset.id) {
+        setCases([]);
+        setEvalResult(null);
+        setEvalRunCases([]);
+        setBaselineSummary(null);
+      }
+      setSuccess(`Dataset "${dataset.name}" deleted.`);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete dataset');
+    }
+  };
+
   const handleAddCurrentCase = async () => {
     if (!selectedDatasetId || !lastPlaygroundCapture) return;
     setLoading(true); setError(null); setSuccess(null);
@@ -222,6 +250,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                 onSelect={setSelectedDatasetId}
                 onCreateDataset={handleCreateDataset}
                 onToggleLock={handleToggleLock}
+                onDeleteDataset={handleDeleteDataset}
                 disabled={disabled}
                 loading={loading}
               />

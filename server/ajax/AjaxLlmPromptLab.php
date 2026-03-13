@@ -88,6 +88,11 @@ class AjaxLlmPromptLab extends BaseAjax
                 $this->assertCsrf($post);
                 return $this->handleUpdateDataset($post);
 
+            case 'delete_dataset':
+                $this->assertAccess($descriptor, 'update');
+                $this->assertCsrf($post);
+                return $this->handleDeleteDataset($post);
+
             case 'list_dataset_cases':
                 $this->assertAccess($descriptor, 'select');
                 return $this->handleListDatasetCases($post);
@@ -295,6 +300,15 @@ class AjaxLlmPromptLab extends BaseAjax
             throw new Exception('Missing dataset_id');
         }
         return $this->dataset_service->listDatasetCases($dataset_id);
+    }
+
+    private function handleDeleteDataset($post)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        return array('deleted' => $this->dataset_service->deleteDataset($dataset_id));
     }
 
     private function handleAddCaseFromPlaygroundRun($post, $descriptor)

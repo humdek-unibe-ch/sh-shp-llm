@@ -44,6 +44,9 @@ export function createDatasetApi(api: PromptLabApi) {
     ): Promise<PromptDataset> {
       return api.updateDataset(descriptor, datasetId, payload);
     },
+    deleteDataset(descriptor: PromptDescriptor, datasetId: number): Promise<{ deleted: boolean }> {
+      return api.deleteDataset(descriptor, datasetId);
+    },
     addCaseFromPlaygroundRun: api.addCaseFromPlaygroundRun,
     getImportCandidates(descriptor: PromptDescriptor, sourceType: PromptImportSourceType, limit = 50): Promise<PromptImportCandidate[]> {
       return api.getImportCandidates(descriptor, sourceType, limit);

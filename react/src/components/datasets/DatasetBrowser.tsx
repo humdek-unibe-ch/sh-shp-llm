@@ -16,6 +16,7 @@ interface DatasetBrowserProps {
   onSelect: (datasetId: number) => void;
   onCreateDataset: () => void;
   onToggleLock: (dataset: PromptDataset) => void;
+  onDeleteDataset: (dataset: PromptDataset) => void;
   disabled?: boolean;
   loading?: boolean;
 }
@@ -32,6 +33,7 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
   onSelect,
   onCreateDataset,
   onToggleLock,
+  onDeleteDataset,
   disabled = false,
   loading = false,
 }) => {
@@ -60,6 +62,7 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
       selectedDatasetId={selectedDatasetId}
       onSelect={onSelect}
       onToggleLock={onToggleLock}
+      onDelete={onDeleteDataset}
       disabled={disabled || loading}
     />
 

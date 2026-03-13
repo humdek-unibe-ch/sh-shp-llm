@@ -7,6 +7,7 @@ interface DatasetTableProps {
   selectedDatasetId: number | null;
   onSelect: (datasetId: number) => void;
   onToggleLock?: (dataset: PromptDataset) => void;
+  onDelete?: (dataset: PromptDataset) => void;
   disabled?: boolean;
 }
 
@@ -15,6 +16,7 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
   selectedDatasetId,
   onSelect,
   onToggleLock,
+  onDelete,
   disabled = false,
 }) => (
   <div>
@@ -69,6 +71,19 @@ export const DatasetTable: React.FC<DatasetTableProps> = ({
                   >
                     <i className={`fas ${dataset.is_locked ? 'fa-unlock' : 'fa-lock'} mr-1`}></i>
                     <span>{dataset.is_locked ? 'Unlock' : 'Lock'}</span>
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    size="sm"
+                    className="prompt-compact-btn"
+                    variant="outline-danger"
+                    onClick={() => onDelete(dataset)}
+                    disabled={disabled || !!dataset.is_locked}
+                    title={dataset.is_locked ? 'Unlock dataset before deleting' : 'Delete dataset'}
+                  >
+                    <i className="fas fa-trash-alt mr-1"></i>
+                    <span>Delete</span>
                   </Button>
                 )}
               </div>

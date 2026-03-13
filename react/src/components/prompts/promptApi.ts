@@ -345,6 +345,15 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       return post<PromptDataset>(formData);
     },
 
+    async deleteDataset(descriptor: PromptDescriptor, datasetId: number): Promise<{ deleted: boolean }> {
+      const formData = new FormData();
+      formData.append('action', 'delete_dataset');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<{ deleted: boolean }>(formData);
+    },
+
     async listDatasetCases(descriptor: PromptDescriptor, datasetId: number): Promise<PromptDatasetCase[]> {
       const formData = new FormData();
       formData.append('action', 'list_dataset_cases');

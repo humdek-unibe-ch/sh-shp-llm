@@ -138,6 +138,21 @@ class LlmDatasetService extends BaseLlmService
         return $this->getDataset($dataset_id);
     }
 
+    public function deleteDataset($dataset_id)
+    {
+        $dataset = $this->getDataset($dataset_id);
+        if (!$dataset) {
+            return true;
+        }
+        if (!empty($dataset['is_locked'])) {
+            throw new Exception('Dataset is locked');
+        }
+
+        $this->db->remove_by_ids('llm_eval_datasets', array('id' => (int)$dataset_id));
+        $this->addPluginTransaction('delete', 'llm_eval_datasets', $dataset_id, 'LLM dataset deleted');
+        return true;
+    }
+
     public function listDatasetCases($dataset_id)
     {
         return $this->db->query_db(

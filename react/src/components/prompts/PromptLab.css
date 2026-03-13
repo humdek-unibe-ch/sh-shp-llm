@@ -208,27 +208,27 @@
 
 .prompt-dataset-table th:nth-child(1),
 .prompt-dataset-table td:nth-child(1) {
-  width: 30%;
+  width: 24%;
 }
 
 .prompt-dataset-table th:nth-child(2),
 .prompt-dataset-table td:nth-child(2) {
-  width: 19%;
+  width: 16%;
 }
 
 .prompt-dataset-table th:nth-child(3),
 .prompt-dataset-table td:nth-child(3) {
-  width: 11%;
+  width: 8%;
 }
 
 .prompt-dataset-table th:nth-child(4),
 .prompt-dataset-table td:nth-child(4) {
-  width: 14%;
+  width: 12%;
 }
 
 .prompt-dataset-table th:nth-child(5),
 .prompt-dataset-table td:nth-child(5) {
-  width: 26%;
+  width: 40%;
 }
 
 .prompt-dataset-table td:nth-child(1),
@@ -251,12 +251,12 @@
 }
 
 .prompt-compact-btn {
-  padding: 0.2rem 0.5rem;
-  font-size: 0.9rem;
-  line-height: 1.15;
-  width: 92px;
-  min-width: 92px;
-  max-width: 92px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  width: 76px;
+  min-width: 76px;
+  max-width: 76px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
