@@ -73,6 +73,7 @@ class LlmDatasetIngestionService extends BaseLlmService
     public function addCasesFromSource($dataset_id, $source_type, $source_ids, $context = array())
     {
         $created = array();
+        $attempted = 0;
         $descriptor = is_array($context['descriptor'] ?? null) ? $context['descriptor'] : array();
         $execution_profile = (string)($context['execution_profile'] ?? 'text_only');
         $runtime_overrides = is_array($context['runtime_overrides'] ?? null) ? $context['runtime_overrides'] : array();
@@ -84,6 +85,7 @@ class LlmDatasetIngestionService extends BaseLlmService
             if ($source_id <= 0) {
                 continue;
             }
+            $attempted++;
 
             if ($source_type === 'playground_run') {
                 $case = $this->importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id);
@@ -100,6 +102,13 @@ class LlmDatasetIngestionService extends BaseLlmService
             if ($case) {
                 $created[] = $case;
             }
+        }
+
+        if ($attempted > 0 && empty($created)) {
+            throw new Exception(
+                'No cases were imported for source "' . $source_type . '". ' .
+                'Selected records may be outside scope, missing owner metadata, or unavailable.'
+            );
         }
 
         return $created;
@@ -122,7 +131,7 @@ class LlmDatasetIngestionService extends BaseLlmService
                 $params[':prompt_slot'] = (string)$descriptor['prompt_slot'];
             }
         } elseif ($allowed_page_id > 0) {
-            $where[] = 'sec.id_pages = :allowed_page_id';
+            $where[] = 'ps.id_pages = :allowed_page_id';
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
@@ -135,6 +144,7 @@ class LlmDatasetIngestionService extends BaseLlmService
              LEFT JOIN llmMessages res ON res.id = pr.id_llmMessages_response
              LEFT JOIN llmConversations lc ON lc.id = pr.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
+             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE " . implode(' AND ', $where) . "
              ORDER BY pr.created_at DESC LIMIT {$limit}",
             $params
@@ -149,7 +159,7 @@ class LlmDatasetIngestionService extends BaseLlmService
             $where[] = 'lc.id_sections = :section_id';
             $params[':section_id'] = (int)$descriptor['owner_id'];
         } elseif ($allowed_page_id > 0) {
-            $where[] = 'sec.id_pages = :allowed_page_id';
+            $where[] = 'ps.id_pages = :allowed_page_id';
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
@@ -158,6 +168,7 @@ class LlmDatasetIngestionService extends BaseLlmService
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
+             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE " . implode(' AND ', $where) . "
              ORDER BY m.timestamp DESC LIMIT {$limit}",
             $params
@@ -172,7 +183,7 @@ class LlmDatasetIngestionService extends BaseLlmService
             $where[] = 'lc.id_sections = :section_id';
             $params[':section_id'] = (int)$descriptor['owner_id'];
         } elseif ($allowed_page_id > 0) {
-            $where[] = 'sec.id_pages = :allowed_page_id';
+            $where[] = 'ps.id_pages = :allowed_page_id';
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
@@ -181,6 +192,7 @@ class LlmDatasetIngestionService extends BaseLlmService
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
+             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE " . implode(' AND ', $where) . "
              ORDER BY m.timestamp DESC LIMIT {$limit}",
             $params
@@ -223,11 +235,12 @@ class LlmDatasetIngestionService extends BaseLlmService
     {
         $row = $this->db->query_db_first(
             "SELECT pr.*, pe.owner_id AS prompt_owner_id, pe.id_llm_prompt_owner_types AS prompt_owner_type_id, lc.id_sections,
-                    sec.id_pages AS source_page_id, req.content AS request_content, res.content AS response_content
+                    ps.id_pages AS source_page_id, req.content AS request_content, res.content AS response_content
              FROM llm_prompt_playground_runs pr
              LEFT JOIN llm_prompt_entries pe ON pe.id = pr.id_llm_prompt_entries
              LEFT JOIN llmConversations lc ON lc.id = pr.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
+             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              LEFT JOIN llmMessages req ON req.id = pr.id_llmMessages_request
              LEFT JOIN llmMessages res ON res.id = pr.id_llmMessages_response
              WHERE pr.id = :id LIMIT 1",
@@ -280,10 +293,11 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function importFormSubmissionCase($dataset_id, $source_id, $descriptor, $runtime_overrides, $allowed_page_id)
     {
         $message = $this->db->query_db_first(
-            "SELECT m.id, m.id_llmConversations, m.id_dataRows, m.content, lc.id_sections, sec.id_pages AS source_page_id
+            "SELECT m.id, m.id_llmConversations, m.id_dataRows, m.content, lc.id_sections, ps.id_pages AS source_page_id
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
+             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE m.id = :id LIMIT 1",
             array(':id' => $source_id)
         );
@@ -328,10 +342,11 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
     {
         $message = $this->db->query_db_first(
-            "SELECT m.id, m.id_llmConversations, m.content, lc.id_sections, sec.id_pages AS source_page_id
+            "SELECT m.id, m.id_llmConversations, m.content, lc.id_sections, ps.id_pages AS source_page_id
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
+             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE m.id = :id LIMIT 1",
             array(':id' => $source_id)
         );
@@ -460,10 +475,41 @@ class LlmDatasetIngestionService extends BaseLlmService
     {
         $owner_id = (int)($descriptor['owner_id'] ?? 0);
         if ($owner_id > 0 && $this->isStyleOwner($descriptor)) {
-            return (int)($row['id_sections'] ?? 0) === $owner_id;
+            $source_section_id = (int)($row['id_sections'] ?? 0);
+            $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
+            $source_page_id = (int)($row['source_page_id'] ?? 0);
+
+            // Prefer strict owner matching whenever source metadata is available.
+            if ($source_section_id === $owner_id || $prompt_owner_id === $owner_id) {
+                return true;
+            }
+
+            // Allow page-level replay imports when ACL already validated page access.
+            if ($allowed_page_id > 0 && $source_page_id > 0 && $source_page_id === $allowed_page_id) {
+                return true;
+            }
+
+            // Fallback: allow page-scoped match when owner-id metadata is missing.
+            if ($source_section_id === 0 && $prompt_owner_id === 0 && $allowed_page_id > 0 && $source_page_id > 0) {
+                return $source_page_id === $allowed_page_id;
+            }
+
+            // Some legacy rows do not carry section/owner references. Do not hard-fail
+            // the import in that case; ACL was already enforced at request level.
+            if ($source_section_id === 0 && $prompt_owner_id === 0 && $source_page_id === 0) {
+                return true;
+            }
+
+            return false;
         }
         if ($owner_id > 0 && ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT) {
-            return (int)($row['prompt_owner_id'] ?? $owner_id) === $owner_id;
+            $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
+            if ($prompt_owner_id > 0) {
+                return $prompt_owner_id === $owner_id;
+            }
+
+            // Legacy script-linked rows can miss prompt owner linkage.
+            return true;
         }
         if ($allowed_page_id > 0) {
             return (int)($row['source_page_id'] ?? 0) === $allowed_page_id;

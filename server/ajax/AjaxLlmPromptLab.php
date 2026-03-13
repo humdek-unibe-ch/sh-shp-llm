@@ -480,7 +480,7 @@ class AjaxLlmPromptLab extends BaseAjax
         $page_id = (int)($descriptor['page_id'] ?? 0);
         if ($page_id <= 0 && (int)($descriptor['owner_id'] ?? 0) > 0) {
             $resolved = $this->db->query_db_first(
-                "SELECT id_pages FROM sections WHERE id = :id LIMIT 1",
+                "SELECT id_pages FROM pages_sections WHERE id_sections = :id LIMIT 1",
                 array(':id' => (int)$descriptor['owner_id'])
             );
             if (!empty($resolved['id_pages'])) {
@@ -510,7 +510,7 @@ class AjaxLlmPromptLab extends BaseAjax
         }
 
         $resolved = $this->db->query_db_first(
-            "SELECT id_pages FROM sections WHERE id = :id LIMIT 1",
+            "SELECT id_pages FROM pages_sections WHERE id_sections = :id LIMIT 1",
             array(':id' => $owner_id)
         );
 
