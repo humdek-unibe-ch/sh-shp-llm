@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import Select from 'react-select';
 import type { PromptDataset } from './datasetTypes';
@@ -14,7 +14,7 @@ interface DatasetBrowserProps {
   onNewDatasetNameChange: (value: string) => void;
   onNewDatasetTypeChange: (value: string) => void;
   onSelect: (datasetId: number) => void;
-  onCreateDataset: () => void;
+  onCreateDataset: () => Promise<boolean> | boolean;
   onToggleLock: (dataset: PromptDataset) => void;
   onDeleteDataset: (dataset: PromptDataset) => void;
   disabled?: boolean;
@@ -37,6 +37,7 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
   disabled = false,
   loading = false,
 }) => {
+  const [createExpanded, setCreateExpanded] = useState(false);
   const datasetTypeOptions = [
     { value: 'golden_manual', label: 'golden_manual' },
     { value: 'production_replay', label: 'production_replay' },
@@ -67,25 +68,63 @@ export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
     />
 
     <div className="small font-weight-bold text-muted mt-3 mb-2">Create Dataset</div>
-    <Form.Control
-      size="sm"
-      value={newDatasetName}
-      onChange={(event) => onNewDatasetNameChange(event.target.value)}
-      placeholder="e.g. Pilot Study Replay Set"
-      className="mb-2"
-    />
-    <Select
-      className="prompt-select mb-2"
-      classNamePrefix="react-select"
-      isSearchable
-      options={datasetTypeOptions}
-      value={selectedType}
-      onChange={(option) => onNewDatasetTypeChange(option?.value || 'golden_manual')}
-    />
-    <Button size="sm" variant="outline-secondary" onClick={onCreateDataset} disabled={disabled || loading || newDatasetName.trim() === ''}>
-      <i className="fas fa-plus mr-1"></i>
-      Create Dataset
-    </Button>
+    {!createExpanded ? (
+      <Button
+        size="sm"
+        variant="outline-secondary"
+        onClick={() => setCreateExpanded(true)}
+        disabled={disabled || loading}
+      >
+        <i className="fas fa-plus mr-1"></i>
+        Create Dataset
+      </Button>
+    ) : (
+      <div className="border rounded p-2 bg-light">
+        <Form.Label className="small mb-1">Dataset Name</Form.Label>
+        <Form.Control
+          size="sm"
+          value={newDatasetName}
+          onChange={(event) => onNewDatasetNameChange(event.target.value)}
+          placeholder="e.g. Pilot Study Replay Set"
+          className="mb-2"
+          autoFocus
+        />
+        <Form.Label className="small mb-1">Dataset Type</Form.Label>
+        <Select
+          className="prompt-select mb-2"
+          classNamePrefix="react-select"
+          isSearchable
+          options={datasetTypeOptions}
+          value={selectedType}
+          onChange={(option) => onNewDatasetTypeChange(option?.value || 'golden_manual')}
+        />
+        <div className="d-flex">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={async () => {
+              const created = await onCreateDataset();
+              if (created) {
+                setCreateExpanded(false);
+              }
+            }}
+            disabled={disabled || loading || newDatasetName.trim() === ''}
+          >
+            <i className="fas fa-save mr-1"></i>
+            Save Dataset
+          </Button>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            className="ml-2"
+            onClick={() => setCreateExpanded(false)}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )}
   </div>
 );
 };

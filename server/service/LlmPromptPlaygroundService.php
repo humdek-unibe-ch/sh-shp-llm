@@ -99,7 +99,9 @@ class LlmPromptPlaygroundService extends BaseLlmService
 
     private function runSingleModel($profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
-        if ($this->profile_service->isChatLikeExecutionProfile($profile)) {
+        $runtime_type = $this->profile_service->getPlaygroundRuntimeType($profile);
+
+        if ($runtime_type === 'chat' || $this->profile_service->isChatLikeExecutionProfile($profile)) {
             return $this->runChatRuntime(
                 $profile,
                 $descriptor,
@@ -113,8 +115,9 @@ class LlmPromptPlaygroundService extends BaseLlmService
             );
         }
 
-        if ($profile === 'form_runtime') {
+        if ($runtime_type === 'form' || $profile === 'form_runtime') {
             return $this->runFormRuntime(
+                $profile,
                 $descriptor,
                 $draft_prompt,
                 $runtime_values,
@@ -126,7 +129,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             );
         }
 
-        if ($profile === 'script_runtime') {
+        if ($runtime_type === 'script' || $profile === 'script_runtime') {
             return $this->runScriptRuntime(
                 $descriptor,
                 $draft_prompt,
@@ -231,7 +234,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         return $result;
     }
 
-    private function runFormRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
+    private function runFormRuntime($execution_profile, $descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $context_clean = trim(strip_tags((string)$draft_prompt));
         $filtered_form_data = $this->filterInterpolationValues($context_clean, $variables);
@@ -296,7 +299,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         }
         $result = array_merge($rendered, array(
             'model' => $model_name,
-            'execution_profile' => 'form_runtime',
+            'execution_profile' => $execution_profile,
             'request_payload' => $response['request_payload'] ?? null,
             'effective_context' => $messages,
             'id_llmConversations' => $conversation_id,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
 import { PromptEditor } from './PromptEditor';
@@ -56,7 +56,10 @@ function parseJsonObject(value: string): Record<string, unknown> {
 }
 
 function normalizeInitialValues(schema: PromptVariableDefinition[], currentValues: Record<string, unknown>) {
-  const next: Record<string, unknown> = {};
+  const next: Record<string, unknown> = { ...currentValues };
+  if (!schema.length) {
+    return next;
+  }
   schema.forEach((item) => {
     next[item.name] = currentValues[item.name] ?? '';
   });
@@ -88,6 +91,15 @@ function mergeVariableSchemas(
   return Array.from(map.values());
 }
 
+function deriveVariableSchemaFromValues(values: Record<string, unknown>): PromptVariableDefinition[] {
+  return Object.keys(values || {}).map((name) => ({
+    name,
+    type: 'string',
+    required: false,
+    description: 'Derived from JSON payload',
+  }));
+}
+
 function stableStringify(value: unknown): string {
   try {
     return JSON.stringify(value ?? null);
@@ -104,6 +116,51 @@ function tryParseJsonObject(value: string): Record<string, unknown> | null {
     return null;
   }
 }
+
+function isValidMessageRole(role: string): role is PromptMessage['role'] {
+  return role === 'system' || role === 'user' || role === 'assistant';
+}
+
+function normalizeMessageHistory(messages: unknown): PromptMessage[] {
+  if (!Array.isArray(messages)) {
+    return [];
+  }
+
+  return messages
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+      const role = String((item as Record<string, unknown>).role || '');
+      const content = String((item as Record<string, unknown>).content || '').trim();
+      if (!isValidMessageRole(role) || content === '') {
+        return null;
+      }
+      return { role, content };
+    })
+    .filter((item): item is PromptMessage => item !== null);
+}
+
+function buildRawPayload(
+  isChatRuntime: boolean,
+  variables: Record<string, unknown>,
+  messageHistory: PromptMessage[],
+): Record<string, unknown> {
+  if (!isChatRuntime) {
+    return variables;
+  }
+
+  return {
+    variables,
+    message_history: messageHistory,
+  };
+}
+
+const messageRoleOptions = [
+  { value: 'user', label: 'user' },
+  { value: 'assistant', label: 'assistant' },
+  { value: 'system', label: 'system' },
+];
 
 export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   show,
@@ -129,14 +186,16 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   };
   const effectiveModels = useMemo(() => buildEffectiveModels(models, defaultModel), [defaultModel, models]);
   const detectedVariables = useMemo(() => detectVariablesFromPrompt(promptValue), [promptValue]);
-  const effectiveSchema = useMemo(
-    () => mergeVariableSchemas(variablesSchema || [], detectedVariables),
-    [detectedVariables, variablesSchema],
+  const initialRuntimeValues = useMemo(() => resolveInitialVariables?.() || {}, [resolveInitialVariables]);
+  const valueDerivedSchema = useMemo(
+    () => deriveVariableSchemaFromValues(initialRuntimeValues),
+    [initialRuntimeValues],
   );
-  const initialVariables = useMemo(
-    () => normalizeInitialValues(effectiveSchema, resolveInitialVariables?.() || {}),
-    [effectiveSchema, resolveInitialVariables],
-  );
+  const effectiveSchema = useMemo(() => {
+    const merged = mergeVariableSchemas(variablesSchema || [], detectedVariables);
+    return mergeVariableSchemas(merged, valueDerivedSchema);
+  }, [detectedVariables, valueDerivedSchema, variablesSchema]);
+  const initialVariables = useMemo(() => normalizeInitialValues(effectiveSchema, initialRuntimeValues), [effectiveSchema, initialRuntimeValues]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [variables, setVariables] = useState<Record<string, unknown>>(initialVariables);
   const [useRawJson, setUseRawJson] = useState(false);
@@ -147,8 +206,11 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   const [result, setResult] = useState<PromptPlaygroundResponse | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [jsonSyncError, setJsonSyncError] = useState<string | null>(null);
   const [showDraft, setShowDraft] = useState(false);
-  const previousRawModeRef = useRef(useRawJson);
+  const [schemaFromJson, setSchemaFromJson] = useState<PromptVariableDefinition[]>([]);
+  const isChatRuntime = playgroundRuntimeType === 'chat'
+    || (playgroundRuntimeType === 'none' && executionProfile === 'chat_runtime');
 
   useEffect(() => {
     if (!show) {
@@ -158,34 +220,47 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     const initialModel = defaultModel || effectiveModels[0]?.id || '';
     setSelectedModels(initialModel ? [initialModel] : []);
     setVariables(initialVariables);
-    setRawJson(JSON.stringify(initialVariables, null, 2));
     setMessageHistory([{ role: 'user', content: 'Test this prompt in playground mode.' }]);
+    setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, initialVariables, [{ role: 'user', content: 'Test this prompt in playground mode.' }]), null, 2));
     setResult(null);
     setError(null);
+    setJsonSyncError(null);
+    setSchemaFromJson([]);
     setUseRawJson(false);
     setShowDraft(false);
-  }, [defaultModel, effectiveModels, initialVariables, show]);
+  }, [defaultModel, effectiveModels, initialVariables, isChatRuntime, show]);
 
   useEffect(() => {
-    if (!show) {
+    if (!show || !useRawJson) {
       return;
     }
-
-    if (previousRawModeRef.current !== useRawJson) {
-      if (useRawJson) {
-        setRawJson(JSON.stringify(variables, null, 2));
-      } else {
-        const parsed = tryParseJsonObject(rawJson);
-        if (parsed) {
-          setVariables(normalizeInitialValues(effectiveSchema, parsed));
+    const parsed = tryParseJsonObject(rawJson);
+    if (parsed) {
+      if (isChatRuntime) {
+        const parsedVariables = (parsed.variables && typeof parsed.variables === 'object' && !Array.isArray(parsed.variables))
+          ? (parsed.variables as Record<string, unknown>)
+          : {};
+        const parsedHistory = normalizeMessageHistory(parsed.message_history);
+        setVariables(normalizeInitialValues(effectiveSchema, parsedVariables));
+        if (parsedHistory.length > 0) {
+          setMessageHistory(parsedHistory);
         }
+        setSchemaFromJson(deriveVariableSchemaFromValues(parsedVariables));
+      } else {
+        setVariables(normalizeInitialValues(effectiveSchema, parsed));
+        setSchemaFromJson(deriveVariableSchemaFromValues(parsed));
       }
-      previousRawModeRef.current = useRawJson;
+      setJsonSyncError(null);
     }
-  }, [effectiveSchema, rawJson, show, useRawJson, variables]);
+  }, [effectiveSchema, isChatRuntime, rawJson, show, useRawJson]);
 
-  const isChatRuntime = playgroundRuntimeType === 'chat'
-    || (playgroundRuntimeType === 'none' && executionProfile === 'chat_runtime');
+  useEffect(() => {
+    if (!show || useRawJson) {
+      return;
+    }
+    setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, variables, messageHistory), null, 2));
+  }, [isChatRuntime, messageHistory, show, useRawJson, variables]);
+
   const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
 
   const updateMessage = (index: number, field: keyof PromptMessage, value: string) => {
@@ -202,6 +277,45 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     setMessageHistory((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
+  const handleRawToggle = (checked: boolean) => {
+    if (checked) {
+      setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, variables, messageHistory), null, 2));
+      setUseRawJson(true);
+      setJsonSyncError(null);
+      return;
+    }
+
+    const parsed = tryParseJsonObject(rawJson);
+    if (!parsed) {
+      setJsonSyncError('JSON is invalid. Fix it before switching back to variable inputs.');
+      return;
+    }
+
+    if (isChatRuntime) {
+      const parsedVariables = (parsed.variables && typeof parsed.variables === 'object' && !Array.isArray(parsed.variables))
+        ? (parsed.variables as Record<string, unknown>)
+        : {};
+      const parsedHistory = normalizeMessageHistory(parsed.message_history);
+      setVariables(normalizeInitialValues(effectiveSchema, parsedVariables));
+      setSchemaFromJson(deriveVariableSchemaFromValues(parsedVariables));
+      if (parsedHistory.length > 0) {
+        setMessageHistory(parsedHistory);
+      }
+    } else {
+      setVariables(normalizeInitialValues(effectiveSchema, parsed));
+      setSchemaFromJson(deriveVariableSchemaFromValues(parsed));
+    }
+    setUseRawJson(false);
+    setJsonSyncError(null);
+  };
+
+  const displaySchema = useMemo(() => {
+    if (!schemaFromJson.length) {
+      return effectiveSchema;
+    }
+    return mergeVariableSchemas(effectiveSchema, schemaFromJson);
+  }, [effectiveSchema, schemaFromJson]);
+
   const handleRun = async () => {
     if (!canRun) {
       return;
@@ -211,20 +325,36 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     setError(null);
     setResult(null);
     try {
-      const payloadVariables = useRawJson ? parseJsonObject(rawJson) : variables;
+      let payloadVariables = variables;
+      let payloadMessageHistory = messageHistory;
+      if (useRawJson) {
+        const parsed = parseJsonObject(rawJson);
+        if (isChatRuntime) {
+          const parsedVariables = (parsed.variables && typeof parsed.variables === 'object' && !Array.isArray(parsed.variables))
+            ? (parsed.variables as Record<string, unknown>)
+            : {};
+          const parsedHistory = normalizeMessageHistory(parsed.message_history);
+          payloadVariables = parsedVariables;
+          if (parsedHistory.length > 0) {
+            payloadMessageHistory = parsedHistory;
+          }
+        } else {
+          payloadVariables = parsed;
+        }
+      }
       const resolvedRuntimeOverrides = resolveRuntimeOverrides();
       const nextResult = await api.playgroundRun({
         descriptor,
         draftPrompt: promptValue,
         runtimeOverrides: resolvedRuntimeOverrides,
         variables: payloadVariables,
-        messageHistory,
+        messageHistory: payloadMessageHistory,
         selectedModels,
       });
       setResult(nextResult);
       onRunComplete?.({
         variables: payloadVariables,
-        messageHistory,
+        messageHistory: payloadMessageHistory,
         runtimeOverrides: resolvedRuntimeOverrides,
         response: nextResult,
       });
@@ -293,9 +423,14 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
                 type="switch"
                 className="mb-2"
                 checked={useRawJson}
-                onChange={(event) => setUseRawJson(event.target.checked)}
+                onChange={(event) => handleRawToggle(event.target.checked)}
                 label={<span className="small">Advanced raw JSON input</span>}
               />
+              {jsonSyncError && (
+                <Alert variant="warning" className="py-1 px-2 small mb-2">
+                  {jsonSyncError}
+                </Alert>
+              )}
               {useRawJson ? (
                 <PromptEditor
                   value={rawJson}
@@ -306,14 +441,14 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
                 />
               ) : (
                 <PromptVariableInputs
-                  schema={effectiveSchema}
+                  schema={displaySchema}
                   values={variables}
                   onChange={(name, value) => setVariables((current) => ({ ...current, [name]: value }))}
                 />
               )}
             </div>
 
-            {isChatRuntime && (
+            {isChatRuntime && !useRawJson && (
               <div className="border rounded p-3">
                 <div className="d-flex justify-content-between align-items-center mb-2">
                   <div className="small font-weight-bold text-muted">Conversation Messages</div>
@@ -325,16 +460,13 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
                   <div key={`${message.role}-${index}`} className="border rounded p-2 mb-2 bg-light">
                     <Row>
                       <Col sm={4}>
-                        <Form.Control
-                          as="select"
-                          size="sm"
-                          value={message.role}
-                          onChange={(event) => updateMessage(index, 'role', event.target.value)}
-                        >
-                          <option value="user">user</option>
-                          <option value="assistant">assistant</option>
-                          <option value="system">system</option>
-                        </Form.Control>
+                        <Select
+                          classNamePrefix="react-select"
+                          isSearchable={false}
+                          options={messageRoleOptions}
+                          value={messageRoleOptions.find((option) => option.value === message.role) || messageRoleOptions[0]}
+                          onChange={(option) => updateMessage(index, 'role', option?.value || 'user')}
+                        />
                       </Col>
                       <Col sm={8} className="text-right">
                         <Button

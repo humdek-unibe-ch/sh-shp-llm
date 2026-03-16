@@ -168,13 +168,15 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     loadLatestEvaluation().catch(() => undefined);
   }, [show, selectedDatasetId, descriptor.ownerId, descriptor.ownerType]);
 
-  const handleCreateDataset = async () => {
+  const handleCreateDataset = async (): Promise<boolean> => {
     setLoading(true); setError(null); setSuccess(null);
     try {
       const created = await datasetApi.createDataset(descriptor, newDatasetName.trim(), executionProfile, '', newDatasetType);
       setSelectedDatasetId(created.id); setNewDatasetName(''); await loadDatasets(); setSuccess(`Dataset "${created.name}" created.`);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create dataset');
+      return false;
     } finally { setLoading(false); }
   };
 
