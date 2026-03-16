@@ -17,6 +17,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import type { Components } from 'react-markdown';
+import { normalizeEscapedText } from '../../../utils/text';
 
 /**
  * Props for MarkdownRenderer
@@ -395,6 +396,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
   className = ''
 }) => {
+  const normalized = normalizeEscapedText(content);
+
   return (
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
@@ -402,7 +405,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={markdownComponents}
       >
-        {content}
+        {normalized}
       </ReactMarkdown>
     </div>
   );
