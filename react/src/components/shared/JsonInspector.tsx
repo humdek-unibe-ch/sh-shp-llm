@@ -122,6 +122,20 @@ export const JsonInspector: React.FC<JsonInspectorProps> = ({
 }) => {
   const parsed = useMemo(() => parseJsonCandidate(value, maxAutoParseDepth), [value, maxAutoParseDepth]);
   const [treeMode, setTreeMode] = useState(defaultTreeMode);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const textToCopy = parsed.kind === 'json'
+      ? parsed.textValue
+      : parsed.textValue || String(value ?? '');
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // no-op fallback for environments without clipboard support
+    }
+  };
 
   if (parsed.kind === 'empty') {
     return <div className={`json-inspector-empty text-muted small ${className}`}>{emptyLabel}</div>;
@@ -147,6 +161,15 @@ export const JsonInspector: React.FC<JsonInspectorProps> = ({
           onClick={() => setTreeMode(false)}
         >
           Raw
+        </button>
+        <button
+          type="button"
+          className={`btn btn-xs ml-auto ${copied ? 'btn-success' : 'btn-outline-secondary'}`}
+          onClick={handleCopy}
+          title="Copy full raw data"
+        >
+          <i className={`fas ${copied ? 'fa-check' : 'fa-copy'} mr-1`}></i>
+          {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
       {treeMode ? (

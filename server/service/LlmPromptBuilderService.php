@@ -120,10 +120,20 @@ class LlmPromptBuilderService extends BaseLlmService
             return null;
         }
 
+        $notes = array();
+        if (is_array($decoded['notes'] ?? null)) {
+            $notes = $decoded['notes'];
+        } elseif (is_string($decoded['notes'] ?? null)) {
+            $single_note = trim((string)$decoded['notes']);
+            if ($single_note !== '') {
+                $notes = array($single_note);
+            }
+        }
+
         return array(
             'prompt_template' => (string)($decoded['prompt_template'] ?? ''),
             'variables' => is_array($decoded['variables'] ?? null) ? $decoded['variables'] : array(),
-            'notes' => is_array($decoded['notes'] ?? null) ? $decoded['notes'] : array(),
+            'notes' => $notes,
             'change_summary' => (string)($decoded['change_summary'] ?? '')
         );
     }
