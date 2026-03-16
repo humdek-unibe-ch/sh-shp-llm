@@ -566,6 +566,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
         onHide={() => setShowAiImportModal(false)}
         descriptor={descriptor}
         executionProfile={executionProfile}
+        promptTemplate={promptValue}
         datasetId={selectedDatasetId}
         datasetApi={datasetApi}
         resolveRuntimeOverrides={resolveRuntimeOverrides}
@@ -577,7 +578,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
         }}
       />
       <EvaluationRunnerModal show={showRunnerModal} onHide={() => setShowRunnerModal(false)} versions={versions} activeVersionId={activeVersionId} draftPromptPreview={promptValue} models={models} defaultModel={defaultModel} evalDefinitions={evalDefs} disabled={disabled} onRun={handleRunEvaluation} />
-      <DatasetCasePreviewModal datasetCase={casePreview} onHide={() => setCasePreview(null)} />
+      <DatasetCasePreviewModal datasetCase={casePreview} promptTemplate={promptValue} onHide={() => setCasePreview(null)} />
 
       <Modal show={!!selectedEvalCase} onHide={() => setSelectedEvalCase(null)} centered dialogClassName="prompt-modal-90 prompt-eval-detail-modal">
         <Modal.Header closeButton className="py-2"><Modal.Title className="h6">Evaluation Case Detail</Modal.Title></Modal.Header>

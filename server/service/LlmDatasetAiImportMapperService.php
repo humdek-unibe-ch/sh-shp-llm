@@ -61,6 +61,9 @@ class LlmDatasetAiImportMapperService
         $trigger_message = trim((string)($row['trigger_message'] ?? ''));
         if ($trigger_message === '' && !empty($variables)) {
             $trigger_message = trim((string)($variables['student_answer'] ?? $variables['answer'] ?? $variables['input'] ?? ''));
+            if ($trigger_message === '') {
+                $trigger_message = $this->firstNonEmptyScalarValue($variables);
+            }
         }
 
         $expected_output = $this->normalizeExpectedOutput($row);
@@ -188,9 +191,10 @@ class LlmDatasetAiImportMapperService
             return $variables;
         }
 
-        $mapped = $variables;
+        $mapped = array();
         foreach ($placeholders as $placeholder) {
-            if (isset($mapped[$placeholder]) && trim((string)$mapped[$placeholder]) !== '') {
+            if (isset($variables[$placeholder]) && trim((string)$variables[$placeholder]) !== '') {
+                $mapped[$placeholder] = trim((string)$variables[$placeholder]);
                 continue;
             }
 
@@ -200,7 +204,9 @@ class LlmDatasetAiImportMapperService
             }
         }
 
-        return $mapped;
+        // Prefer context-placeholder-shaped payloads for form runtime.
+        // If nothing could be mapped, fall back to original variables.
+        return !empty($mapped) ? $mapped : $variables;
     }
 
     private function resolveBestVariableMatch($placeholder, $variables)
@@ -272,6 +278,22 @@ class LlmDatasetAiImportMapperService
         }
 
         return $overlap;
+    }
+
+    private function firstNonEmptyScalarValue($values)
+    {
+        foreach ((array)$values as $value) {
+            if (is_array($value)) {
+                $scalar = trim((string)json_encode($value));
+            } else {
+                $scalar = trim((string)$value);
+            }
+            if ($scalar !== '') {
+                return $scalar;
+            }
+        }
+
+        return '';
     }
 }
 ?>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
-import { Alert, Button, Form, Modal, Spinner, Table } from 'react-bootstrap';
+import { Alert, Button, Form, Modal, OverlayTrigger, Popover, Spinner, Table } from 'react-bootstrap';
 import { JsonInspector } from '../shared/JsonInspector';
 import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import type { PromptDescriptor, PromptExecutionProfile, PromptModel } from '../prompts/promptTypes';
@@ -19,6 +19,7 @@ interface DatasetAiImportModalProps {
   resolveRuntimeOverrides: () => Record<string, unknown>;
   models: PromptModel[];
   defaultModel?: string | null;
+  promptTemplate?: string;
   onImported: (count: number) => void;
 }
 
@@ -81,6 +82,7 @@ export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
   resolveRuntimeOverrides,
   models,
   defaultModel,
+  promptTemplate = '',
   onImported,
 }) => {
   const [step, setStep] = useState<WizardStep>(1);
@@ -101,6 +103,65 @@ export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
   const modelOptions = useMemo(
     () => models.filter((model) => !!model.id).map((model) => ({ value: model.id, label: model.id })),
     [models],
+  );
+  const placeholderKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const regex = /\{\{(\w+)\}\}/g;
+    let match = regex.exec(promptTemplate || '');
+    while (match) {
+      if (match[1]) {
+        keys.add(match[1]);
+      }
+      match = regex.exec(promptTemplate || '');
+    }
+    return Array.from(keys);
+  }, [promptTemplate]);
+
+  const textAreaPlaceholder = useMemo(() => {
+    const profile = executionProfile || 'text_only';
+    if (profile === 'form_runtime') {
+      const keyHint = placeholderKeys.length > 0
+        ? `Use columns/keys that match your context placeholders: ${placeholderKeys.map((key) => `{{${key}}}`).join(', ')}.`
+        : 'Use columns/keys named like your context placeholders, for example {{student_support}}.';
+      return `${keyHint}\n\nExample columns: reflection_question | student_support | feedback | notes\nPaste from Excel/Sheets/TSV or free text blocks.`;
+    }
+    if (profile === 'chat_runtime') {
+      return 'Paste conversation-style examples. Best input includes role/content history (user, assistant, system), plus optional expected feedback/output.';
+    }
+    if (profile === 'script_runtime') {
+      return 'Paste examples where input fields map to script variables. Include optional expected output and notes.';
+    }
+    return 'Paste examples from Excel/Sheets/CSV/TSV or free text blocks. Include clear input fields, expected output, and notes where possible.';
+  }, [executionProfile, placeholderKeys]);
+
+  const helpPopover = (
+    <Popover id="dataset-ai-import-help-popover">
+      <Popover.Title as="h3">AI Import Guidance</Popover.Title>
+      <Popover.Content>
+        <div className="small">
+          <div className="mb-2">
+            <strong>How import works:</strong> pasted text is parsed by LLM, normalized into dataset cases, reviewed by you, then imported on explicit approval.
+          </div>
+          <div className="mb-2">
+            <strong>Form runtime:</strong> name fields to match prompt placeholders used in your context (for example <code>{'{{student_support}}'}</code>).
+            {placeholderKeys.length > 0 && (
+              <div className="mt-1">
+                Detected placeholders now: {placeholderKeys.map((key) => `{{${key}}}`).join(', ')}
+              </div>
+            )}
+          </div>
+          <div className="mb-2">
+            <strong>If no matching variables are available:</strong> replay can fall back to generic user text <code>Form submission</code> for form runtime.
+          </div>
+          <div className="mb-2">
+            <strong>Chat runtime:</strong> provide role/content conversation examples; message history is the primary replay input.
+          </div>
+          <div>
+            <strong>Script runtime:</strong> provide key/value inputs that map to script variables.
+          </div>
+        </div>
+      </Popover.Content>
+    </Popover>
   );
 
   useEffect(() => {
@@ -274,13 +335,20 @@ export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
               />
             </Form.Group>
             <Form.Group>
-              <Form.Label className="small mb-1">Paste Cases (tabular or free text)</Form.Label>
+              <div className="d-flex align-items-center justify-content-between mb-1">
+                <Form.Label className="small mb-0">Paste Cases (tabular or free text)</Form.Label>
+                <OverlayTrigger trigger={['hover', 'focus', 'click']} placement="left" overlay={helpPopover} rootClose>
+                  <Button size="sm" variant="link" className="p-0 text-info" aria-label="Import guidance">
+                    <i className="fas fa-info-circle"></i>
+                  </Button>
+                </OverlayTrigger>
+              </div>
               <Form.Control
                 as="textarea"
                 rows={14}
                 value={rawText}
                 onChange={(event) => setRawText(event.target.value)}
-                placeholder="Paste examples from Excel/Sheets/CSV/TSV or free text blocks..."
+                placeholder={textAreaPlaceholder}
               />
             </Form.Group>
           </>
