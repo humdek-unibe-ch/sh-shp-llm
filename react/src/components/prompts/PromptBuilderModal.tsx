@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap';
+import { PromptDiffViewer } from './PromptDiffViewer';
+import { JsonInspector, normalizeGeneratedPromptTemplate } from '../shared/JsonInspector';
 import type { createPromptLabApi } from './promptApi';
 import type {
   PromptBuilderResponse,
@@ -36,14 +38,6 @@ function buildEffectiveModels(models: PromptModel[], defaultModel?: string | nul
   return normalized;
 }
 
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
   show,
   onHide,
@@ -62,6 +56,8 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
   const [instructions, setInstructions] = useState('');
   const [selectedModel, setSelectedModel] = useState(defaultModel || effectiveModels[0]?.id || '');
   const [result, setResult] = useState<PromptBuilderResponse | null>(null);
+  const [editablePromptTemplate, setEditablePromptTemplate] = useState('');
+  const [autoApplyOnClose, setAutoApplyOnClose] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canGenerate = !disabled && !running && instructions.trim().length > 0;
@@ -73,8 +69,15 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
     setInstructions('');
     setSelectedModel(defaultModel || effectiveModels[0]?.id || '');
     setResult(null);
+    setEditablePromptTemplate('');
+    setAutoApplyOnClose(true);
     setError(null);
   }, [defaultModel, show]);
+
+  useEffect(() => {
+    const nextPrompt = normalizeGeneratedPromptTemplate(result?.suggestion?.prompt_template || '');
+    setEditablePromptTemplate(nextPrompt);
+  }, [result]);
 
   const handleBuild = async () => {
     if (disabled) {
@@ -90,7 +93,15 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
         instructions,
         selectedModel,
       });
-      setResult(nextResult);
+      const normalizedTemplate = normalizeGeneratedPromptTemplate(nextResult?.suggestion?.prompt_template || '');
+      setEditablePromptTemplate(normalizedTemplate);
+      setResult({
+        ...nextResult,
+        suggestion: {
+          ...nextResult.suggestion,
+          prompt_template: normalizedTemplate,
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Prompt builder failed');
     } finally {
@@ -98,10 +109,28 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
     }
   };
 
+  const applySuggestionToField = () => {
+    if (!suggestion) {
+      return;
+    }
+    onApplySuggestion(
+      editablePromptTemplate,
+      suggestion.variables,
+      suggestion.change_summary,
+    );
+  };
+
+  const handleClose = () => {
+    if (autoApplyOnClose && suggestion) {
+      applySuggestionToField();
+    }
+    onHide();
+  };
+
   const suggestion = result?.suggestion;
 
   return (
-    <Modal show={show} onHide={onHide} centered dialogClassName="prompt-modal-90 prompt-builder-modal">
+    <Modal show={show} onHide={handleClose} centered dialogClassName="prompt-modal-90 prompt-builder-modal">
       <Modal.Header closeButton className="py-2">
         <Modal.Title className="h6">
           <i className="fas fa-magic mr-2"></i>
@@ -112,8 +141,10 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
         {error && <Alert variant="danger">{error}</Alert>}
 
         <Form.Group>
-          <Form.Label className="small font-weight-bold">Current Prompt</Form.Label>
-          <pre className="bg-light border rounded p-3 prompt-pre small">{currentPrompt || 'No prompt yet.'}</pre>
+          <details className="prompt-current-collapsible">
+            <summary className="small font-weight-bold text-muted">Current Prompt (click to expand)</summary>
+            <pre className="bg-light border rounded p-3 prompt-pre small mt-2 mb-0">{currentPrompt || 'No prompt yet.'}</pre>
+          </details>
         </Form.Group>
 
         <Form.Group>
@@ -147,16 +178,21 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
 
         {suggestion && (
           <div className="prompt-builder-result border rounded p-3 bg-light">
-            <div className="small font-weight-bold text-muted mb-2">Suggested Prompt</div>
-            <pre className="border rounded bg-white p-3 prompt-pre small">{suggestion.prompt_template}</pre>
+            <div className="small font-weight-bold text-muted mb-2">Prompt Diff (Current vs Generated)</div>
+            <div className="prompt-builder-diff mb-3">
+              <PromptDiffViewer
+                leftContent={currentPrompt || ''}
+                rightContent={editablePromptTemplate || ''}
+                readOnly={false}
+                onRightContentChange={setEditablePromptTemplate}
+              />
+            </div>
 
             <div className="small font-weight-bold text-muted mt-3 mb-2">Variables</div>
             {suggestion.variables.length === 0 ? (
               <div className="small text-muted">No variable suggestions.</div>
             ) : (
-              <pre className="border rounded bg-white p-3 prompt-pre small">
-                {safeStringify(suggestion.variables)}
-              </pre>
+              <JsonInspector value={suggestion.variables} className="small" />
             )}
 
             <div className="small font-weight-bold text-muted mt-3 mb-2">Notes</div>
@@ -175,29 +211,36 @@ export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
 
             <details className="mt-3">
               <summary className="small font-weight-bold text-muted">Builder Request Payload</summary>
-              <pre className="small bg-white border rounded p-3 mt-2 mb-0 prompt-pre">
-                {safeStringify(result?.request_payload || {})}
-              </pre>
+              <div className="mt-2">
+                <JsonInspector value={result?.request_payload || {}} className="small" />
+              </div>
             </details>
 
             <div className="d-flex justify-content-end mt-3">
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => onApplySuggestion(
-                  suggestion.prompt_template,
-                  suggestion.variables,
-                  suggestion.change_summary,
-                )}
+                onClick={applySuggestionToField}
               >
-                Apply Suggested Prompt
+                Apply To Field
               </Button>
             </div>
           </div>
         )}
       </Modal.Body>
       <Modal.Footer className="py-2">
-        <Button size="sm" variant="secondary" onClick={onHide}>
+        <div className="mr-auto d-flex align-items-center">
+          <Form.Check
+            id="prompt-builder-auto-apply"
+            type="checkbox"
+            className="small mb-0"
+            checked={autoApplyOnClose}
+            onChange={(event) => setAutoApplyOnClose(event.target.checked)}
+            label="Auto-apply on close"
+            disabled={!suggestion}
+          />
+        </div>
+        <Button size="sm" variant="secondary" onClick={handleClose}>
           Close
         </Button>
         <Button size="sm" variant="success" onClick={handleBuild} disabled={!canGenerate}>

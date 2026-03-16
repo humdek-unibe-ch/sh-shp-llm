@@ -14,6 +14,7 @@ import React, { useState } from 'react';
 import { Button } from 'react-bootstrap';
 import { useModalDismiss } from '../../hooks/useModalDismiss';
 import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
+import { JsonInspector } from '../shared/JsonInspector';
 import type { Message } from '../../types';
 
 interface ContextPopupProps {
@@ -147,6 +148,17 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
   };
 
   const renderContent = (content: string) => {
+    const trimmed = content.trim();
+    const maybeJson = trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"');
+    if (maybeJson) {
+      try {
+        JSON.parse(trimmed);
+        return <JsonInspector value={content} />;
+      } catch {
+        // fall back to markdown/html render
+      }
+    }
+
     const hasHtml = /<[^>]+>/.test(content);
     if (hasHtml) {
       return <div className="context-content-body" dangerouslySetInnerHTML={{ __html: content }} />;

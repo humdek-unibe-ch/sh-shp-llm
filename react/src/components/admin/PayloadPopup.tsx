@@ -13,6 +13,7 @@
 import React, { useState } from 'react';
 import { Button, Badge } from 'react-bootstrap';
 import { useModalDismiss } from '../../hooks/useModalDismiss';
+import { JsonInspector } from '../shared/JsonInspector';
 import type { Message } from '../../types';
 
 interface PayloadPopupProps {
@@ -20,21 +21,6 @@ interface PayloadPopupProps {
   show: boolean;
   onHide: () => void;
 }
-
-/** Inline style for JSON <pre> blocks */
-const preStyle: React.CSSProperties = {
-  fontSize: '0.75rem',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  maxHeight: '400px',
-  overflow: 'auto',
-  backgroundColor: '#f8f9fa',
-  padding: '1rem',
-  borderRadius: '4px',
-};
-
-/** Shorter variant used inside message cards */
-const preStyleShort: React.CSSProperties = { ...preStyle, maxHeight: '200px', padding: '0.5rem' };
 
 export const PayloadPopup: React.FC<PayloadPopupProps> = ({ message, show, onHide }) => {
   const [copied, setCopied] = useState(false);
@@ -84,9 +70,10 @@ export const PayloadPopup: React.FC<PayloadPopupProps> = ({ message, show, onHid
                   <span className="ml-auto badge badge-secondary">Message {index + 1}</span>
                 </div>
                 <div className="card-body py-2">
-                  <pre className="mb-0" style={preStyleShort}>
-                    {typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)}
-                  </pre>
+                  <JsonInspector
+                    value={typeof msg.content === 'string' ? msg.content : msg.content ?? ''}
+                    className="small"
+                  />
                 </div>
               </div>
             ))}
@@ -94,9 +81,9 @@ export const PayloadPopup: React.FC<PayloadPopupProps> = ({ message, show, onHid
         );
       }
       
-      return <pre style={preStyle}>{JSON.stringify(parsed, null, 2)}</pre>;
+      return <JsonInspector value={parsed} className="small" />;
     } catch {
-      return <pre style={preStyle}>{payload}</pre>;
+      return <JsonInspector value={payload} className="small" />;
     }
   };
 

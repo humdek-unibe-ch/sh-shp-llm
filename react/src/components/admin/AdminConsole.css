@@ -215,6 +215,15 @@
 .context-content-body ul, .context-content-body ol { padding-left: 1.25rem; margin-bottom: 0.5rem; }
 .context-content-body li { margin-bottom: 0.25rem; }
 
+.admin-json-message .json-inspector {
+  margin-top: 0.25rem;
+}
+
+.admin-json-message .json-inspector-tree,
+.admin-json-message .json-inspector-pre {
+  max-height: 420px;
+}
+
 /* ===== Mobile Header ===== */
 @media (max-width: 767.98px) {
   .llm-admin-console .admin-header {

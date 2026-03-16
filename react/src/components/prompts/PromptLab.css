@@ -47,6 +47,42 @@
   padding-left: 1.1rem;
 }
 
+.prompt-current-collapsible summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.prompt-current-collapsible summary:hover {
+  color: #495057;
+}
+
+.prompt-builder-diff {
+  height: 260px;
+  min-height: 260px;
+  max-height: 260px;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.prompt-builder-diff .prompt-diff-monaco {
+  border: 0;
+  border-radius: 0;
+}
+
+.prompt-builder-editable {
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  resize: vertical;
+  min-height: 180px;
+}
+
+.prompt-diff-fallback-editor {
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .prompt-playground-empty {
   min-height: 220px;
   display: flex;

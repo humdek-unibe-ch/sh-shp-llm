@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Badge, Button } from 'react-bootstrap';
+import { JsonInspector } from '../shared/JsonInspector';
 import type { PromptMessage } from './promptTypes';
 
 interface PromptEffectiveContextPanelProps {
@@ -58,9 +59,9 @@ export const PromptEffectiveContextPanel: React.FC<PromptEffectiveContextPanelPr
           </div>
         </div>
         {expanded && (
-          <pre className="small bg-light border rounded p-3 mt-2 mb-0">
-            {stringify(effectiveContext)}
-          </pre>
+          <div className="mt-2">
+            <JsonInspector value={effectiveContext} className="small" />
+          </div>
         )}
       </div>
     );
@@ -96,7 +97,7 @@ export const PromptEffectiveContextPanel: React.FC<PromptEffectiveContextPanelPr
               <div className="mb-2">
                 <Badge variant="secondary">{message.role}</Badge>
               </div>
-              <pre className="small mb-0 prompt-pre">{stringify(message.content)}</pre>
+              <JsonInspector value={message.content} className="small" />
             </div>
           ))}
         </div>

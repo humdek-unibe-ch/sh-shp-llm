@@ -8,19 +8,41 @@ interface PromptDiffViewerProps {
   leftContent: string;
   rightContent: string;
   className?: string;
+  readOnly?: boolean;
+  onRightContentChange?: (value: string) => void;
 }
 
 export const PromptDiffViewer: React.FC<PromptDiffViewerProps> = ({
   leftContent,
   rightContent,
   className = 'prompt-diff-monaco',
+  readOnly = true,
+  onRightContentChange,
 }) => {
   const diffRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<any>(null);
+  const leftModelRef = useRef<any>(null);
+  const rightModelRef = useRef<any>(null);
+  const leftContentRef = useRef(leftContent);
+  const rightContentRef = useRef(rightContent);
+  const onRightContentChangeRef = useRef(onRightContentChange);
+  const isSyncingRef = useRef(false);
   const [fallback, setFallback] = useState(false);
 
   useEffect(() => {
-    if (!diffRef.current || fallback) {
+    leftContentRef.current = leftContent;
+  }, [leftContent]);
+
+  useEffect(() => {
+    rightContentRef.current = rightContent;
+  }, [rightContent]);
+
+  useEffect(() => {
+    onRightContentChangeRef.current = onRightContentChange;
+  }, [onRightContentChange]);
+
+  useEffect(() => {
+    if (!diffRef.current || fallback || editorRef.current) {
       return;
     }
 
@@ -31,11 +53,13 @@ export const PromptDiffViewer: React.FC<PromptDiffViewerProps> = ({
         return;
       }
 
-      const originalModel = monaco.editor.createModel(leftContent || '', 'markdown');
-      const modifiedModel = monaco.editor.createModel(rightContent || '', 'markdown');
+      const originalModel = monaco.editor.createModel(leftContentRef.current || '', 'markdown');
+      const modifiedModel = monaco.editor.createModel(rightContentRef.current || '', 'markdown');
+      leftModelRef.current = originalModel;
+      rightModelRef.current = modifiedModel;
 
       editorRef.current = monaco.editor.createDiffEditor(diffRef.current, {
-        readOnly: true,
+        readOnly,
         automaticLayout: true,
         renderSideBySide: true,
         ignoreTrimWhitespace: false,
@@ -64,27 +88,42 @@ export const PromptDiffViewer: React.FC<PromptDiffViewerProps> = ({
           vertical: 'hidden',
           horizontal: 'auto',
         },
+        readOnly,
       });
 
-      let syncing = false;
-      const syncScroll = (source: any, target: any) => source?.onDidScrollChange?.((event: any) => {
-        if (!event?.scrollTopChanged || syncing || !target) {
-          return;
-        }
-        syncing = true;
-        target.setScrollTop?.(source.getScrollTop?.() || 0);
-        syncing = false;
-      });
+      const changeDisposable = !readOnly && onRightContentChangeRef.current
+        ? modifiedEditor?.onDidChangeModelContent?.(() => {
+            if (isSyncingRef.current) {
+              return;
+            }
+            onRightContentChangeRef.current?.(modifiedEditor.getValue?.() || '');
+          })
+        : null;
 
-      const disposeOriginalSync = syncScroll(originalEditor, modifiedEditor);
-      const disposeModifiedSync = syncScroll(modifiedEditor, originalEditor);
+      let disposeOriginalSync: any = null;
+      let disposeModifiedSync: any = null;
+      if (readOnly) {
+        let syncing = false;
+        const syncScroll = (source: any, target: any) => source?.onDidScrollChange?.((event: any) => {
+          if (!event?.scrollTopChanged || syncing || !target) {
+            return;
+          }
+          syncing = true;
+          target.setScrollTop?.(source.getScrollTop?.() || 0);
+          syncing = false;
+        });
+
+        disposeOriginalSync = syncScroll(originalEditor, modifiedEditor);
+        disposeModifiedSync = syncScroll(modifiedEditor, originalEditor);
+      }
+
       originalEditor?.setScrollTop?.(0);
       modifiedEditor?.setScrollTop?.(0);
       originalEditor?.revealLine?.(1);
       modifiedEditor?.revealLine?.(1);
       editorRef.current.layout?.();
 
-      (editorRef.current as any).__promptSyncDisposables = [disposeOriginalSync, disposeModifiedSync];
+      (editorRef.current as any).__promptSyncDisposables = [disposeOriginalSync, disposeModifiedSync, changeDisposable];
     };
 
     try {
@@ -112,7 +151,33 @@ export const PromptDiffViewer: React.FC<PromptDiffViewerProps> = ({
         editorRef.current = null;
       }
     };
-  }, [fallback, leftContent, rightContent]);
+  }, [fallback, readOnly]);
+
+  useEffect(() => {
+    const leftModel = leftModelRef.current;
+    if (!leftModel) return;
+
+    const incoming = leftContent || '';
+    const current = leftModel.getValue?.() || '';
+    if (incoming !== current) {
+      isSyncingRef.current = true;
+      leftModel.setValue(incoming);
+      isSyncingRef.current = false;
+    }
+  }, [leftContent]);
+
+  useEffect(() => {
+    const rightModel = rightModelRef.current;
+    if (!rightModel) return;
+
+    const incoming = rightContent || '';
+    const current = rightModel.getValue?.() || '';
+    if (incoming !== current) {
+      isSyncingRef.current = true;
+      rightModel.setValue(incoming);
+      isSyncingRef.current = false;
+    }
+  }, [rightContent]);
 
   if (fallback) {
     return (
@@ -121,7 +186,16 @@ export const PromptDiffViewer: React.FC<PromptDiffViewerProps> = ({
           <pre className="prompt-diff-fallback border rounded p-2 bg-light mb-0">{leftContent || ''}</pre>
         </div>
         <div className="col-md-6">
-          <pre className="prompt-diff-fallback border rounded p-2 bg-light mb-0">{rightContent || ''}</pre>
+          {readOnly ? (
+            <pre className="prompt-diff-fallback border rounded p-2 bg-light mb-0">{rightContent || ''}</pre>
+          ) : (
+            <textarea
+              className="form-control prompt-diff-fallback-editor"
+              value={rightContent || ''}
+              onChange={(event) => onRightContentChange?.(event.target.value)}
+              rows={12}
+            />
+          )}
         </div>
       </div>
     );

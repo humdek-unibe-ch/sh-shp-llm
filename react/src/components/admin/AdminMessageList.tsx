@@ -18,6 +18,7 @@ import {
   buildFormDefinitionsMap,
   findPreviousAssistantFormDefinition
 } from '../shared/MessageContentRenderer';
+import { JsonInspector } from '../shared/JsonInspector';
 import type { Message } from '../../types';
 
 interface AdminMessageListProps {
@@ -57,6 +58,26 @@ function isValidated(message: Message): boolean {
   return true;
 }
 
+function tryParseMessageJson(content: unknown): unknown | null {
+  if (typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  if (!(withoutFence.startsWith('{') || withoutFence.startsWith('['))) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(withoutFence);
+  } catch {
+    return null;
+  }
+}
+
 export const AdminMessageList: React.FC<AdminMessageListProps> = ({
   messages,
   formatDate,
@@ -73,6 +94,7 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
         const isLastMessage = index === messages.length - 1;
         const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
         const validated = isValidated(message);
+        const parsedJsonContent = tryParseMessageJson(message.content);
         
         const previousAssistantFormDef = isUser
           ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)
@@ -146,13 +168,19 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
               
               {/* Message Content */}
               <div className="message-content">
-                <MessageContentRenderer
-                  message={message}
-                  isLastMessage={isLastMessage}
-                  readOnly={true}
-                  nextMessage={nextMessage}
-                  previousAssistantFormDefinition={previousAssistantFormDef}
-                />
+                {parsedJsonContent ? (
+                  <div className="admin-json-message">
+                    <JsonInspector value={parsedJsonContent} />
+                  </div>
+                ) : (
+                  <MessageContentRenderer
+                    message={message}
+                    isLastMessage={isLastMessage}
+                    readOnly={true}
+                    nextMessage={nextMessage}
+                    previousAssistantFormDefinition={previousAssistantFormDef}
+                  />
+                )}
               </div>
               
               {/* Attachments (non-form only) */}
