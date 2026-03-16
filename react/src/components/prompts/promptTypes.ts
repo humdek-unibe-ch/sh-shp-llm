@@ -1,6 +1,8 @@
 export type {
   PromptDataset,
   PromptDatasetCase,
+  PromptAiImportCaseDraft,
+  PromptAiImportParseResponse,
   PromptImportCandidate,
   PromptImportSourceType,
 } from '../datasets/datasetTypes';

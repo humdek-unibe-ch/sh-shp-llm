@@ -78,6 +78,23 @@ function tryParseMessageJson(content: unknown): unknown | null {
   }
 }
 
+function shouldRenderAsJsonInspector(content: unknown): boolean {
+  if (typeof content !== 'string') return false;
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"') || trimmed.startsWith('```')) {
+    return true;
+  }
+
+  // Handle parser/debug outputs that prefix object-like payloads with labels.
+  if (/^\s*(mapping|cases|payload|context)\s*:/i.test(trimmed) && /[{[]/.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
 export const AdminMessageList: React.FC<AdminMessageListProps> = ({
   messages,
   formatDate,
@@ -95,6 +112,7 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
         const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
         const validated = isValidated(message);
         const parsedJsonContent = tryParseMessageJson(message.content);
+        const preferJsonInspector = parsedJsonContent !== null || shouldRenderAsJsonInspector(message.content);
         
         const previousAssistantFormDef = isUser
           ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)
@@ -168,9 +186,9 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
               
               {/* Message Content */}
               <div className="message-content">
-                {parsedJsonContent ? (
+                {preferJsonInspector ? (
                   <div className="admin-json-message">
-                    <JsonInspector value={parsedJsonContent} />
+                    <JsonInspector value={parsedJsonContent ?? message.content} />
                   </div>
                 ) : (
                   <MessageContentRenderer

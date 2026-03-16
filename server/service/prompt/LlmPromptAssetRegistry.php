@@ -22,6 +22,8 @@ class LlmPromptAssetRegistry
             'core.prompt_execution.default_chat_prompt' => 'core/playground/default-chat-prompt.txt',
             'core.chat.media_rendering_instructions' => 'core/chat/media-rendering-instructions.md',
             'core.response_schema.system_instructions' => 'core/response/schema-system-instructions.md',
+            'core.dataset_import.system' => 'core/dataset-import/system.md',
+            'core.dataset_import.repair_json' => 'core/dataset-import/repair-json.md',
         );
     }
 }

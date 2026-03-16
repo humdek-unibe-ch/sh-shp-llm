@@ -2,28 +2,13 @@ import React from 'react';
 import { Alert, Badge } from 'react-bootstrap';
 import { StructuredResponseRenderer } from '../styles/shared/StructuredResponseRenderer';
 import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
+import { JsonInspector } from '../shared/JsonInspector';
 import { isStructuredResponse, parseStructuredResponse } from '../../utils/llmResponseUtils';
 import type { PromptPlaygroundRun } from './promptTypes';
 
 interface PromptResultPanelProps {
   run: PromptPlaygroundRun;
   colorIndex?: number;
-}
-
-function safeStringify(value: unknown): string {
-  if (typeof value === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch {
-      return value;
-    }
-  }
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 function colorFromIndex(index: number): string {
@@ -100,14 +85,14 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, color
           <button
             type="button"
             className="btn btn-sm btn-outline-secondary prompt-copy-btn"
-            onClick={() => navigator.clipboard.writeText(safeStringify(run.raw_content))}
+            onClick={() => navigator.clipboard.writeText(typeof run.raw_content === 'string' ? run.raw_content : JSON.stringify(run.raw_content ?? {}, null, 2))}
           >
             <i className="fas fa-copy mr-1"></i>
             Copy
           </button>
-          <pre className="small bg-light border rounded p-3 mb-0 prompt-pre">
-            {safeStringify(run.raw_content)}
-          </pre>
+          <div className="small bg-light border rounded p-3 mb-0 prompt-pre">
+            <JsonInspector value={run.raw_content} />
+          </div>
         </div>
       </details>
 
@@ -117,14 +102,14 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, color
           <button
             type="button"
             className="btn btn-sm btn-outline-secondary prompt-copy-btn"
-            onClick={() => navigator.clipboard.writeText(safeStringify(run.request_payload || {}))}
+            onClick={() => navigator.clipboard.writeText(JSON.stringify(run.request_payload || {}, null, 2))}
           >
             <i className="fas fa-copy mr-1"></i>
             Copy
           </button>
-          <pre className="small bg-light border rounded p-3 mb-0 prompt-pre">
-            {safeStringify(run.request_payload || {})}
-          </pre>
+          <div className="small bg-light border rounded p-3 mb-0 prompt-pre">
+            <JsonInspector value={run.request_payload || {}} />
+          </div>
         </div>
       </details>
     </div>

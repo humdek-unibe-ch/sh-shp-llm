@@ -1,6 +1,8 @@
 import type { createPromptLabApi } from '../prompts/promptApi';
 import type { PromptDescriptor, PromptExecutionProfile } from '../prompts/promptTypes';
 import type {
+  PromptAiImportCaseDraft,
+  PromptAiImportParseResponse,
   PromptDataset,
   PromptDatasetCase,
   PromptImportCandidate,
@@ -52,6 +54,36 @@ export function createDatasetApi(api: PromptLabApi) {
       return api.getImportCandidates(descriptor, sourceType, limit);
     },
     addCasesFromSource: api.addCasesFromSource,
+    parseCasesFromText(
+      descriptor: PromptDescriptor,
+      executionProfile: PromptExecutionProfile,
+      rawText: string,
+      selectedModel?: string | null,
+      runtimeOverrides?: Record<string, unknown>,
+    ): Promise<PromptAiImportParseResponse> {
+      return api.parseCasesFromText({
+        descriptor,
+        executionProfile,
+        rawText,
+        selectedModel,
+        runtimeOverrides,
+      });
+    },
+    importParsedCases(
+      descriptor: PromptDescriptor,
+      datasetId: number,
+      executionProfile: PromptExecutionProfile,
+      cases: PromptAiImportCaseDraft[],
+      runtimeOverrides?: Record<string, unknown>,
+    ): Promise<PromptDatasetCase[]> {
+      return api.importParsedCases({
+        descriptor,
+        datasetId,
+        executionProfile,
+        cases,
+        runtimeOverrides,
+      });
+    },
     deleteDatasetCase(descriptor: PromptDescriptor, datasetCaseId: number): Promise<{ deleted: boolean }> {
       return api.deleteDatasetCase(descriptor, datasetCaseId);
     },

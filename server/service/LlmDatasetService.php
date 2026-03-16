@@ -5,15 +5,27 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmDatasetIngestionService.php';
+require_once __DIR__ . '/LlmDatasetAiImportMapperService.php';
+require_once __DIR__ . '/LlmDatasetAiImportParserService.php';
+require_once __DIR__ . '/LlmDatasetBatchImportService.php';
+require_once __DIR__ . '/LlmPromptRegistryService.php';
 
 class LlmDatasetService extends BaseLlmService
 {
     private $ingestion_service;
+    private $mapper_service;
+    private $parser_service;
+    private $batch_import_service;
+    private $registry_service;
 
     public function __construct($services)
     {
         parent::__construct($services);
         $this->ingestion_service = new LlmDatasetIngestionService($services, $this);
+        $this->mapper_service = new LlmDatasetAiImportMapperService($this);
+        $this->parser_service = new LlmDatasetAiImportParserService($services, $this->mapper_service);
+        $this->batch_import_service = new LlmDatasetBatchImportService($services, $this, $this->mapper_service);
+        $this->registry_service = new LlmPromptRegistryService($services);
     }
 
     public function listDatasets($filters = array())
@@ -230,9 +242,34 @@ class LlmDatasetService extends BaseLlmService
     public function addCaseFromPlaygroundRun($dataset_id, $payload) { return $this->ingestion_service->addCaseFromPlaygroundRun($dataset_id, $payload); }
     public function getImportCandidates($source_type, $limit = 50, $context = array()) { return $this->ingestion_service->getImportCandidates($source_type, $limit, $context); }
     public function addCasesFromSource($dataset_id, $source_type, $source_ids, $context = array()) { return $this->ingestion_service->addCasesFromSource($dataset_id, $source_type, $source_ids, $context); }
+    public function parseCasesFromText($descriptor, $execution_profile, $raw_text, $selected_model = null, $runtime_overrides = array()) { return $this->parser_service->parseCasesFromText($descriptor, $execution_profile, $raw_text, $selected_model, $runtime_overrides); }
+    public function importParsedCases($dataset_id, $descriptor, $execution_profile, $cases, $runtime_overrides = array()) { return $this->batch_import_service->importParsedCases($dataset_id, $descriptor, $execution_profile, $cases, $runtime_overrides); }
     public function toCaseType($execution_profile) { if ($execution_profile === 'chat_runtime') return 'chat_case'; if ($execution_profile === 'form_runtime') return 'form_case'; if ($execution_profile === 'script_runtime') return 'script_case'; $extended = (string)$this->mapExecutionProfileToCaseTypeExtension($execution_profile); return $extended !== '' ? $extended : 'text_only_case'; }
     public function mapExecutionProfileToCaseTypeExtension($execution_profile) { return ''; }
     public function buildOwnerDescriptor($descriptor) { return array('owner_type' => (string)($descriptor['owner_type'] ?? ''), 'owner_id' => (int)($descriptor['owner_id'] ?? 0), 'prompt_slot' => (string)($descriptor['prompt_slot'] ?? ''), 'id_languages' => isset($descriptor['id_languages']) ? (int)$descriptor['id_languages'] : null); }
+    public function resolvePromptTemplate($descriptor)
+    {
+        if (!is_array($descriptor) || empty($descriptor['owner_type']) || empty($descriptor['owner_id'])) {
+            return '';
+        }
+        try {
+            $bootstrap = $this->registry_service->bootstrapOwner($descriptor);
+            return trim((string)($bootstrap['active_version']['template_raw'] ?? ''));
+        } catch (Exception $e) {
+            return '';
+        }
+    }
+    public function extractPromptPlaceholders($template)
+    {
+        $template = (string)$template;
+        if ($template === '') {
+            return array();
+        }
+        if (!preg_match_all('/\{\{(\w+)\}\}/', $template, $matches)) {
+            return array();
+        }
+        return array_values(array_unique(array_map(function ($key) { return trim((string)$key); }, $matches[1] ?? array())));
+    }
     public function decodeJsonColumn($value, $fallback) { if (!is_string($value) || trim($value) === '') return $fallback; $decoded = $this->jsonDecode($value); return $decoded !== null ? $decoded : $fallback; }
     public function parseFieldLines($text) { $parsed = array(); foreach (preg_split('/\r\n|\r|\n/', (string)$text) as $line) { $line = trim((string)$line); if ($line === '' || strpos($line, ':') === false) continue; list($raw_key, $raw_value) = explode(':', $line, 2); $key = trim((string)preg_replace('/[^a-z0-9]+/', '_', strtolower(trim((string)$raw_key))), '_'); $value = trim((string)$raw_value); if ($key !== '' && $value !== '') $parsed[$key] = $value; } return $parsed; }
     public function normalizeMessages($messages) { $normalized = array(); foreach ((array)$messages as $message) { if (!is_array($message)) continue; $role = (string)($message['role'] ?? ''); $content = trim((string)($message['content'] ?? '')); if (!in_array($role, array('system', 'user', 'assistant'), true) || $content === '') continue; $normalized[] = array('role' => $role, 'content' => $content); } return $normalized; }

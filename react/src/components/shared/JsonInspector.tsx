@@ -16,6 +16,51 @@ interface ParsedValue {
   textValue: string;
 }
 
+function extractLikelyJsonFragment(value: string): string | null {
+  const input = value.trim();
+  if (!input) return null;
+
+  const startBrace = input.indexOf('{');
+  const startBracket = input.indexOf('[');
+  const candidates = [startBrace, startBracket].filter((v) => v >= 0);
+  if (candidates.length === 0) return null;
+
+  const start = Math.min(...candidates);
+  const openChar = input[start];
+  const closeChar = openChar === '{' ? '}' : ']';
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < input.length; i += 1) {
+    const ch = input[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === openChar) depth += 1;
+    if (ch === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return input.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 function parseJsonCandidate(value: unknown, maxDepth: number): ParsedValue {
   if (value == null) {
     return { kind: 'empty', jsonValue: null, textValue: '' };
@@ -51,6 +96,15 @@ function parseJsonCandidate(value: unknown, maxDepth: number): ParsedValue {
     try {
       current = JSON.parse(next);
     } catch {
+      const extracted = extractLikelyJsonFragment(next);
+      if (extracted) {
+        try {
+          current = JSON.parse(extracted);
+          continue;
+        } catch {
+          return { kind: 'text', jsonValue: null, textValue: normalizeEscapedText(next) };
+        }
+      }
       return { kind: 'text', jsonValue: null, textValue: normalizeEscapedText(next) };
     }
   }
@@ -75,6 +129,26 @@ function JsonValueNode({
   const isObject = !!value && typeof value === 'object' && !isArray;
 
   if (!isArray && !isObject) {
+    const maybeNested =
+      typeof value === 'string'
+        ? parseJsonCandidate(value, 2)
+        : { kind: 'text' as const, jsonValue: null, textValue: '' };
+    const hasNestedJson = maybeNested.kind === 'json' && maybeNested.jsonValue && typeof maybeNested.jsonValue === 'object';
+
+    if (hasNestedJson) {
+      return (
+        <details className="json-node json-node-branch" open={depth <= 1}>
+          <summary className="json-summary">
+            {label ? <span className="json-key">{label}: </span> : null}
+            <span className="json-branch-type">JSON string</span>
+          </summary>
+          <div className="json-children">
+            <JsonValueNode value={maybeNested.jsonValue} depth={depth + 1} />
+          </div>
+        </details>
+      );
+    }
+
     return (
       <div className="json-node json-node-leaf">
         {label ? <span className="json-key">{label}: </span> : null}

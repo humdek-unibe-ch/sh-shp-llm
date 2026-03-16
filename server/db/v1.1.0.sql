@@ -424,7 +424,8 @@ VALUES
 ('llm_eval_source_types', 'playground_run', 'playground_run', 'Case imported from prompt playground run'),
 ('llm_eval_source_types', 'conversation_message', 'conversation_message', 'Case imported from conversation message history'),
 ('llm_eval_source_types', 'form_submission', 'form_submission', 'Case imported from form submission'),
-('llm_eval_source_types', 'script_run', 'script_run', 'Case imported from script context');
+('llm_eval_source_types', 'script_run', 'script_run', 'Case imported from script context'),
+('llm_eval_source_types', 'ai_text_import', 'ai_text_import', 'Case imported from AI-assisted pasted text parsing');
 
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES

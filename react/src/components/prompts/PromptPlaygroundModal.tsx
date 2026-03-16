@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
-import { PromptEditor } from './PromptEditor';
+import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import { PromptEffectiveContextPanel } from './PromptEffectiveContextPanel';
 import { PromptResultPanel } from './PromptResultPanel';
 import { PromptVariableInputs } from './PromptVariableInputs';
@@ -432,12 +432,11 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
                 </Alert>
               )}
               {useRawJson ? (
-                <PromptEditor
+                <JsonMonacoEditor
                   value={rawJson}
                   onChange={setRawJson}
-                  editorMode="monaco"
-                  language="json"
                   minHeight={260}
+                  expectObject
                 />
               ) : (
                 <PromptVariableInputs

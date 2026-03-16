@@ -49,3 +49,26 @@ export interface PromptImportCandidate {
   name?: string | null;
   model?: string | null;
 }
+
+export interface PromptAiImportCaseDraft {
+  title: string;
+  case_type?: string;
+  source_type?: string;
+  input_payload: Record<string, unknown>;
+  expected_output?: Record<string, unknown> | null;
+  expected_labels?: Record<string, unknown> | null;
+  source_ref?: Record<string, unknown> | null;
+  tags?: string[];
+  notes?: string;
+}
+
+export interface PromptAiImportParseResponse {
+  mapping: Record<string, unknown>;
+  cases: PromptAiImportCaseDraft[];
+  warnings?: string[];
+  model?: string | null;
+  request_payload?: unknown;
+  id_llmConversations?: number | null;
+  id_llmMessages_request?: number | null;
+  id_llmMessages_response?: number | null;
+}

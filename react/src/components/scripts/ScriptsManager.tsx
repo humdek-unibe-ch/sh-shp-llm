@@ -23,6 +23,8 @@ import {
 } from './scriptsApi';
 import { formatDateTime } from '../../utils/formatters';
 import { createPromptLabApi } from '../prompts/promptApi';
+import { JsonInspector } from '../shared/JsonInspector';
+import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import { PromptBuilderModal } from '../prompts/PromptBuilderModal';
 import { PromptDatasetsModal } from '../prompts/PromptDatasetsModal';
 import { PromptDiffModal } from '../prompts/PromptDiffModal';
@@ -949,15 +951,9 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                 {getDataConfigLabel()}
               </Button>
               {form.data_config && (
-                <pre className="mt-2 mb-0 small p-2 bg-light border rounded prompt-pre" style={{ maxHeight: '120px', overflow: 'auto', fontSize: '0.7rem' }}>
-                  {(() => {
-                    try {
-                      return JSON.stringify(JSON.parse(form.data_config), null, 2);
-                    } catch {
-                      return form.data_config;
-                    }
-                  })()}
-                </pre>
+                <div className="mt-2 mb-0 small p-2 bg-light border rounded prompt-pre" style={{ maxHeight: '200px', overflow: 'auto', fontSize: '0.7rem' }}>
+                  <JsonInspector value={form.data_config} />
+                </div>
               )}
             </Card.Body>
           </Card>
@@ -970,11 +966,10 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
               </span>
             </Card.Header>
             <Card.Body className="p-0">
-              <PromptEditor
+              <JsonMonacoEditor
                 value={form.test_variables || '{\n  \n}'}
                 onChange={(value) => setForm((prev) => ({ ...prev, test_variables: value }))}
-                editorMode="monaco"
-                language="json"
+                expectObject
                 minHeight={220}
               />
             </Card.Body>

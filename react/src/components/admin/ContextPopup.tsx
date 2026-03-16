@@ -151,12 +151,7 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
     const trimmed = content.trim();
     const maybeJson = trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"');
     if (maybeJson) {
-      try {
-        JSON.parse(trimmed);
-        return <JsonInspector value={content} />;
-      } catch {
-        // fall back to markdown/html render
-      }
+      return <JsonInspector value={content} />;
     }
 
     const hasHtml = /<[^>]+>/.test(content);
@@ -199,7 +194,7 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
           <span className="font-weight-bold small">{item.label}</span>
         </div>
         <div className="card-body py-3">
-          <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.85rem' }}>{item.value}</pre>
+          <JsonInspector value={item.value} className="small" />
         </div>
       </div>
     ));
@@ -226,9 +221,7 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
                 <span className="font-weight-bold text-uppercase small">Context Metadata</span>
               </div>
               <div className="card-body py-3">
-                <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.85rem' }}>
-                  {JSON.stringify(normalized.metadata, null, 2)}
-                </pre>
+                <JsonInspector value={normalized.metadata} className="small" />
               </div>
             </div>
           );

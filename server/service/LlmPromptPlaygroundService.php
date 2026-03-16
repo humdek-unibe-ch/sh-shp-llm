@@ -244,6 +244,16 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $filtered_form_data = $this->filterInterpolationValues($context_clean, $variables);
         $interpolated_context = $this->interpolateTemplate($context_clean, $filtered_form_data);
         $user_prompt = $this->buildFormUserPrompt($filtered_form_data);
+        if ($user_prompt === '') {
+            // Guard: AI-imported datasets can carry canonical variable names that do
+            // not exactly match prompt placeholders. Use full variable payload as
+            // fallback so replay does not degrade to "Form submission".
+            $fallback_form_data = $this->normalizeReplayFallbackVariables($variables);
+            $user_prompt = $this->buildFormUserPrompt($fallback_form_data);
+            if (!empty($fallback_form_data)) {
+                $filtered_form_data = $fallback_form_data;
+            }
+        }
         $language_code = $this->getSessionLanguageCode();
         $system_prompt = $interpolated_context;
 
@@ -471,6 +481,26 @@ class LlmPromptPlaygroundService extends BaseLlmService
         }
 
         return implode("\n", $parts);
+    }
+
+    private function normalizeReplayFallbackVariables($variables)
+    {
+        $normalized = array();
+        foreach ((array)$variables as $key => $value) {
+            if (is_array($value)) {
+                $scalar = json_encode($value);
+            } elseif ($value === null) {
+                $scalar = '';
+            } else {
+                $scalar = (string)$value;
+            }
+            $scalar = trim((string)$scalar);
+            if ($scalar === '') {
+                continue;
+            }
+            $normalized[(string)$key] = $scalar;
+        }
+        return $normalized;
     }
 
     private function getSessionLanguageCode()
