@@ -99,7 +99,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
 
     private function runSingleModel($profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
-        if (in_array($profile, array('chat_runtime', 'therapy_chat_runtime', 'therapy_draft_runtime', 'therapy_summary_runtime'), true)) {
+        if ($this->profile_service->isChatLikeExecutionProfile($profile)) {
             return $this->runChatRuntime(
                 $profile,
                 $descriptor,
@@ -161,7 +161,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $history = $this->normalizeMessageHistory($message_history);
         if (empty($history)) {
             $history = array(
-                array('role' => 'user', 'content' => $this->getDefaultChatPromptForProfile($execution_profile))
+                array('role' => 'user', 'content' => $this->profile_service->resolveDefaultChatPromptForProfile($execution_profile))
             );
         }
 
@@ -229,17 +229,6 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $result['id_llm_prompt_playground_runs'] = $this->logRun($descriptor, $config_snapshot, array(), $result, $comparison_group_id, $options);
 
         return $result;
-    }
-
-    private function getDefaultChatPromptForProfile($profile)
-    {
-        if ($profile === 'therapy_draft_runtime') {
-            return 'Create a therapist-facing reply draft for the latest patient message.';
-        }
-        if ($profile === 'therapy_summary_runtime') {
-            return 'Summarize this therapy conversation with key themes, risks, and next steps.';
-        }
-        return 'Test this prompt in playground mode.';
     }
 
     private function runFormRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)

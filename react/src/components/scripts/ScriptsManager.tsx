@@ -1009,6 +1009,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         api={promptApi}
         descriptor={promptDescriptor}
         executionProfile={promptBootstrap?.execution_profile || 'script_runtime'}
+        playgroundRuntimeType={promptBootstrap?.playground_runtime_type || 'script'}
         models={promptBootstrap?.models || models}
         variablesSchema={effectiveVariablesSchema}
         promptValue={form.script}

@@ -7,8 +7,6 @@ Prompt Lab introduces a shared prompt registry/versioning/playground layer for:
 - style-backed CMS prompt fields (`conversation_context`, `llm_context`)
 - script-backed prompts (`llm_scripts.script`)
 
-The architecture is designed to be reused later by `sh-shp-llm_therapy_chat`.
-
 ## Core design rules
 
 - Field translation ownership remains in core CMS (`sections_fields_translation`).
@@ -293,16 +291,6 @@ Related existing bundles updated:
 
 - `js/ext/llm-scripts.umd.js`
 - `css/ext/llm-scripts.css`
-
-## Extension path for therapy plugin
-
-The shared registry/services/components are intentionally plugin-agnostic at owner/profile level.
-
-To onboard therapy owners later:
-
-1. Add execution-profile mappings for therapy slots.
-2. Implement owner-specific runtime composition and response extraction.
-3. Reuse the same prompt-lab endpoint and React components.
 
 ## Related documents
 

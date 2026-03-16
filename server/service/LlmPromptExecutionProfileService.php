@@ -17,40 +17,26 @@ class LlmPromptExecutionProfileService extends BaseLlmService
     {
         $owner_type = $descriptor['owner_type'] ?? '';
         $prompt_slot = $descriptor['prompt_slot'] ?? '';
-        $owner_id = (int)($descriptor['owner_id'] ?? 0);
 
         if ($owner_type === LLM_PROMPT_OWNER_SCRIPT || $prompt_slot === 'script') {
             return 'script_runtime';
         }
 
-        if ($prompt_slot === 'therapy_draft_context') {
-            return 'therapy_draft_runtime';
-        }
-
-        if ($prompt_slot === 'therapy_summary_context') {
-            return 'therapy_summary_runtime';
-        }
-
-        if ($prompt_slot === 'therapy_auto_start_context') {
-            return 'therapy_chat_runtime';
+        $slot_profile = $this->resolveExecutionProfileByPromptSlot($descriptor);
+        if (is_string($slot_profile) && $slot_profile !== '') {
+            return $slot_profile;
         }
 
         if ($prompt_slot === 'conversation_context') {
-            $style_name = $this->resolveSectionStyleName($owner_id);
-            if ($style_name === 'therapychat') {
-                return 'therapy_chat_runtime';
-            }
-            if ($style_name === 'therapistdashboard') {
-                return 'therapy_draft_runtime';
-            }
-            return 'chat_runtime';
+            $style_name = $this->resolveSectionStyleName((int)($descriptor['owner_id'] ?? 0));
+            return $this->resolveConversationContextExecutionProfile($descriptor, $style_name);
         }
 
         if ($prompt_slot === 'llm_context') {
             return 'form_runtime';
         }
 
-        return 'text_only';
+        return $this->resolveExecutionProfileFallback($descriptor);
     }
 
     /**
@@ -60,6 +46,116 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      * @return array
      */
     public function getCompanionFieldNames($profile)
+    {
+        $core = $this->getCoreCompanionFieldNames($profile);
+        if (!empty($core)) {
+            return $core;
+        }
+
+        return $this->getExtendedCompanionFieldNames($profile);
+    }
+
+    /**
+     * Classify the playground runtime mode for a profile.
+     *
+     * @param string $profile
+     * @return string One of chat|form|script|none
+     */
+    public function getPlaygroundRuntimeType($profile)
+    {
+        if ($profile === 'chat_runtime') {
+            return 'chat';
+        }
+        if ($profile === 'form_runtime') {
+            return 'form';
+        }
+        if ($profile === 'script_runtime') {
+            return 'script';
+        }
+
+        $extended = (string)$this->getExtendedPlaygroundRuntimeType($profile);
+        if (in_array($extended, array('chat', 'form', 'script'), true)) {
+            return $extended;
+        }
+
+        return 'none';
+    }
+
+    /**
+     * Return whether this profile should run through chat playground flow.
+     *
+     * @param string $profile
+     * @return bool
+     */
+    public function isChatLikeExecutionProfile($profile)
+    {
+        if ($this->getPlaygroundRuntimeType($profile) === 'chat') {
+            return true;
+        }
+
+        return (bool)$this->isExtendedChatLikeExecutionProfile($profile);
+    }
+
+    /**
+     * Resolve the default user message for a chat-like playground profile.
+     *
+     * @param string $profile
+     * @return string
+     */
+    public function resolveDefaultChatPromptForProfile($profile)
+    {
+        if ($profile === 'chat_runtime') {
+            return 'Test this prompt in playground mode.';
+        }
+
+        $extended = trim((string)$this->resolveExtendedDefaultChatPromptForProfile($profile));
+        if ($extended !== '') {
+            return $extended;
+        }
+
+        return 'Test this prompt in playground mode.';
+    }
+
+    /**
+     * Resolve execution profile from prompt-slot specific extension mappings.
+     *
+     * @param array $descriptor
+     * @return string
+     */
+    public function resolveExecutionProfileByPromptSlot($descriptor)
+    {
+        return '';
+    }
+
+    /**
+     * Resolve profile for conversation_context owners.
+     *
+     * @param array $descriptor
+     * @return string
+     */
+    public function resolveConversationContextExecutionProfile($descriptor, $style_name = '')
+    {
+        return 'chat_runtime';
+    }
+
+    /**
+     * Resolve fallback profile when no core mapping applies.
+     *
+     * @param array $descriptor
+     * @return string
+     */
+    public function resolveExecutionProfileFallback($descriptor)
+    {
+        return 'text_only';
+    }
+
+    /**
+     * Return core companion fields for known base profiles.
+     *
+     * @param string $profile
+     * @return array
+     */
+    public function getCoreCompanionFieldNames($profile)
     {
         if ($profile === 'chat_runtime') {
             return array(
@@ -79,42 +175,6 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'enable_floating_button',
                 'enable_media_rendering',
                 'allowed_media_domains'
-            );
-        }
-
-        if ($profile === 'therapy_chat_runtime') {
-            return array(
-                'llm_model',
-                'llm_temperature',
-                'llm_max_tokens',
-                'therapy_enable_ai',
-                'therapy_chat_default_mode',
-                'enable_danger_detection',
-                'danger_keywords',
-                'danger_notification_emails',
-                'danger_blocked_message',
-                'enable_speech_to_text',
-                'speech_to_text_model',
-                'speech_to_text_language'
-            );
-        }
-
-        if ($profile === 'therapy_draft_runtime') {
-            return array(
-                'llm_model',
-                'llm_temperature',
-                'llm_max_tokens',
-                'conversation_context',
-                'therapy_draft_context'
-            );
-        }
-
-        if ($profile === 'therapy_summary_runtime') {
-            return array(
-                'llm_model',
-                'llm_temperature',
-                'llm_max_tokens',
-                'therapy_summary_context'
             );
         }
 
@@ -138,6 +198,50 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         }
 
         return array();
+    }
+
+    /**
+     * Return companion fields for plugin-extended profiles.
+     *
+     * @param string $profile
+     * @return array
+     */
+    public function getExtendedCompanionFieldNames($profile)
+    {
+        return array();
+    }
+
+    /**
+     * Return runtime-type classification for plugin-extended profiles.
+     *
+     * @param string $profile
+     * @return string
+     */
+    public function getExtendedPlaygroundRuntimeType($profile)
+    {
+        return 'none';
+    }
+
+    /**
+     * Return chat-like hint for plugin-extended profiles.
+     *
+     * @param string $profile
+     * @return bool
+     */
+    public function isExtendedChatLikeExecutionProfile($profile)
+    {
+        return false;
+    }
+
+    /**
+     * Return profile-specific default chat prompt for extensions.
+     *
+     * @param string $profile
+     * @return string
+     */
+    public function resolveExtendedDefaultChatPromptForProfile($profile)
+    {
+        return '';
     }
 
     /**
@@ -245,7 +349,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             'max_tokens' => $this->normalizeInt($runtime_values['llm_max_tokens'] ?? null)
         );
 
-        if ($profile === 'chat_runtime' || $profile === 'therapy_chat_runtime') {
+        if ($profile === 'chat_runtime') {
             $snapshot['strict_conversation_mode'] = $this->toBoolString($runtime_values['strict_conversation_mode'] ?? null);
             $snapshot['enable_form_mode'] = $this->toBoolString($runtime_values['enable_form_mode'] ?? null);
             $snapshot['enable_progress_tracking'] = $this->toBoolString($runtime_values['enable_progress_tracking'] ?? null);
@@ -255,10 +359,27 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             $snapshot['enable_media_rendering'] = $this->toBoolString($runtime_values['enable_media_rendering'] ?? null);
         }
 
+        $extended = $this->getExtendedConfigSnapshotFields($profile, $runtime_values);
+        if (is_array($extended) && !empty($extended)) {
+            $snapshot = array_merge($snapshot, $extended);
+        }
+
         return $snapshot;
     }
 
-    private function resolveSectionStyleName($section_id)
+    /**
+     * Return additional config snapshot fields for plugin-extended profiles.
+     *
+     * @param string $profile
+     * @param array $runtime_values
+     * @return array
+     */
+    public function getExtendedConfigSnapshotFields($profile, $runtime_values)
+    {
+        return array();
+    }
+
+    public function resolveSectionStyleName($section_id)
     {
         if ($section_id <= 0) {
             return '';

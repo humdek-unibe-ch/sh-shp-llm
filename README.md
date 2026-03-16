@@ -20,6 +20,8 @@ LLM integration plugin for [SelfHelp CMS](https://github.com/humdek-unibe-ch/sh-
 
 This plugin provides a general-purpose LLM integration layer for SelfHelp. It is designed as a **base plugin** that other plugins can extend (e.g., `sh-shp-llm_therapy_chat` builds therapy-specific features on top of it).
 
+`sh-shp-llm` has no runtime dependency on `sh-shp-llm_therapy_chat`.
+
 **Key capabilities:**
 
 - Chat interface with conversation history and structured JSON responses

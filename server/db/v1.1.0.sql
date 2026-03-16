@@ -409,9 +409,6 @@ VALUES
 ('llm_eval_execution_profiles', 'chat_runtime', 'chat_runtime', 'Chat runtime profile'),
 ('llm_eval_execution_profiles', 'form_runtime', 'form_runtime', 'Form runtime profile'),
 ('llm_eval_execution_profiles', 'script_runtime', 'script_runtime', 'Script runtime profile'),
-('llm_eval_execution_profiles', 'therapy_chat_runtime', 'therapy_chat_runtime', 'Therapy chat runtime profile'),
-('llm_eval_execution_profiles', 'therapy_draft_runtime', 'therapy_draft_runtime', 'Therapy draft runtime profile'),
-('llm_eval_execution_profiles', 'therapy_summary_runtime', 'therapy_summary_runtime', 'Therapy summary runtime profile'),
 ('llm_eval_execution_profiles', 'text_only', 'text_only', 'Text-only non-executable profile');
 
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)

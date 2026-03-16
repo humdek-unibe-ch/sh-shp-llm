@@ -81,6 +81,7 @@ class LlmPromptRegistryService extends BaseLlmService
             'active_version' => $active_version,
             'versions' => $versions,
             'execution_profile' => $profile,
+            'playground_runtime_type' => $this->profile_service->getPlaygroundRuntimeType($profile),
             'companion_field_names' => $this->profile_service->getCompanionFieldNames($profile),
             'variables_schema' => $variables_schema,
             'models' => $this->getAvailableModels(),

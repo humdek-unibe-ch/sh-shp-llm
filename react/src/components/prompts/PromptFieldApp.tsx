@@ -350,10 +350,11 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         api={api}
         descriptor={descriptor}
         executionProfile={bootstrap?.execution_profile || 'text_only'}
+        playgroundRuntimeType={bootstrap?.playground_runtime_type || 'none'}
         models={bootstrap?.models || []}
         variablesSchema={effectiveVariablesSchema}
         promptValue={promptValue}
-        disabled={disabled || (bootstrap?.execution_profile || 'text_only') === 'text_only'}
+        disabled={disabled || (bootstrap?.playground_runtime_type || 'none') === 'none'}
         defaultModel={defaultPromptModel}
         resolveRuntimeOverrides={() => currentRuntimeOverrides}
         onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {

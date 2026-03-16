@@ -384,7 +384,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         $is_script_owner = $this->isScriptOwner($descriptor);
         $runtime_profile = $is_script_owner
             ? 'script_runtime'
-            : (in_array($execution_profile, array('chat_runtime', 'therapy_chat_runtime'), true) ? $execution_profile : 'chat_runtime');
+            : $this->resolveConversationImportRuntimeProfile($execution_profile, $descriptor, $message);
         $history = $this->loadConversationWindow((int)$message['id_llmConversations'], (int)$message['id'], 12);
         $assistant_reply = $this->loadNextAssistantMessage((int)$message['id_llmConversations'], (int)$message['id']);
         $trigger_message = (string)$message['content'];
@@ -598,6 +598,21 @@ class LlmDatasetIngestionService extends BaseLlmService
             $base[$key] = $value;
         }
         return $base;
+    }
+
+    public function resolveConversationImportRuntimeProfile($execution_profile, $descriptor, $message)
+    {
+        $extended = $this->resolveConversationImportRuntimeProfileExtension($execution_profile, $descriptor, $message);
+        if (is_string($extended) && trim($extended) !== '') {
+            return trim($extended);
+        }
+
+        return $execution_profile === 'chat_runtime' ? 'chat_runtime' : 'chat_runtime';
+    }
+
+    public function resolveConversationImportRuntimeProfileExtension($execution_profile, $descriptor, $message)
+    {
+        return '';
     }
 }
 ?>

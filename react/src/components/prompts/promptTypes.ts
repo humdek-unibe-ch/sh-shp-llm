@@ -13,14 +13,15 @@ export type {
 
 export type PromptOwnerType = 'style_field' | 'llm_script';
 
-export type PromptExecutionProfile =
+export type KnownPromptExecutionProfile =
   | 'chat_runtime'
   | 'form_runtime'
   | 'script_runtime'
-  | 'therapy_chat_runtime'
-  | 'therapy_draft_runtime'
-  | 'therapy_summary_runtime'
   | 'text_only';
+
+export type PromptExecutionProfile = KnownPromptExecutionProfile | (string & {});
+
+export type PromptPlaygroundRuntimeType = 'chat' | 'form' | 'script' | 'none';
 
 export interface PromptDescriptor {
   ownerType: PromptOwnerType;
@@ -79,6 +80,7 @@ export interface PromptBootstrapData {
   active_version?: PromptVersion | null;
   versions: PromptVersion[];
   execution_profile: PromptExecutionProfile;
+  playground_runtime_type?: PromptPlaygroundRuntimeType;
   companion_field_names: string[];
   variables_schema: PromptVariableDefinition[];
   models: PromptModel[];

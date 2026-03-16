@@ -12,6 +12,7 @@ import type {
   PromptMessage,
   PromptModel,
   PromptPlaygroundResponse,
+  PromptPlaygroundRuntimeType,
   PromptVariableDefinition,
 } from './promptTypes';
 
@@ -21,6 +22,7 @@ interface PromptPlaygroundModalProps {
   api: ReturnType<typeof createPromptLabApi>;
   descriptor: PromptDescriptor;
   executionProfile: PromptExecutionProfile;
+  playgroundRuntimeType?: PromptPlaygroundRuntimeType;
   models: PromptModel[];
   variablesSchema: PromptVariableDefinition[];
   promptValue: string;
@@ -109,6 +111,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   api,
   descriptor,
   executionProfile,
+  playgroundRuntimeType = 'none',
   models,
   variablesSchema,
   promptValue,
@@ -181,10 +184,8 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }
   }, [effectiveSchema, rawJson, show, useRawJson, variables]);
 
-  const isChatRuntime = executionProfile === 'chat_runtime'
-    || executionProfile === 'therapy_chat_runtime'
-    || executionProfile === 'therapy_draft_runtime'
-    || executionProfile === 'therapy_summary_runtime';
+  const isChatRuntime = playgroundRuntimeType === 'chat'
+    || (playgroundRuntimeType === 'none' && executionProfile === 'chat_runtime');
   const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
 
   const updateMessage = (index: number, field: keyof PromptMessage, value: string) => {
