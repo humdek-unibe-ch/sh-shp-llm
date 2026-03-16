@@ -23,7 +23,9 @@ function caseStatusLabel(status?: string): string {
 export const EvaluationCaseTable: React.FC<{
   cases: PromptEvalRunCase[];
   onInspect: (runCase: PromptEvalRunCase) => void;
-}> = ({ cases, onInspect }) => (
+  onDeleteEvaluation?: (runCase: PromptEvalRunCase) => void;
+  deletingRunId?: number | null;
+}> = ({ cases, onInspect, onDeleteEvaluation, deletingRunId = null }) => (
   <div className="table-responsive mt-3">
     <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
@@ -81,6 +83,16 @@ export const EvaluationCaseTable: React.FC<{
               <td>
                 <div className="prompt-row-actions">
                   <Button size="sm" variant="outline-secondary" onClick={() => onInspect(item)}>Inspect</Button>
+                  {onDeleteEvaluation && (
+                    <Button
+                      size="sm"
+                      variant="outline-danger"
+                      disabled={deletingRunId != null && deletingRunId === Number(item.id_llm_eval_runs || 0)}
+                      onClick={() => onDeleteEvaluation(item)}
+                    >
+                      {deletingRunId != null && deletingRunId === Number(item.id_llm_eval_runs || 0) ? 'Deleting...' : 'Delete'}
+                    </Button>
+                  )}
                 </div>
               </td>
             </tr>

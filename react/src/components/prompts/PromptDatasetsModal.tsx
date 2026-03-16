@@ -82,14 +82,14 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const [casePreview, setCasePreview] = useState<PromptDatasetCase | null>(null);
   const [evalDefs, setEvalDefs] = useState<PromptEvalDefinition[]>([]);
   const [evalResult, setEvalResult] = useState<PromptEvalRunResult | null>(null);
-  const [evalRuns, setEvalRuns] = useState<Array<Record<string, unknown>>>([]);
   const [evalRunCases, setEvalRunCases] = useState<PromptEvalRunCase[]>([]);
   const [baselineSummary, setBaselineSummary] = useState<{ baselinePassRate: number | null; baselineAvgScore: number | null; passRateDelta: number | null; avgScoreDelta: number | null; combinedExecutionCount?: number | null } | null>(null);
   const [evalRunSources, setEvalRunSources] = useState<Array<{ runId: number; label: 'Target' | 'Baseline' }>>([]);
   const [selectedEvalCase, setSelectedEvalCase] = useState<PromptEvalRunCase | null>(null);
   const [savingHumanKey, setSavingHumanKey] = useState<string | null>(null);
-  const [deletingRunId, setDeletingRunId] = useState<number | null>(null);
-  const [deletingAllRuns, setDeletingAllRuns] = useState(false);
+  const [deletingEvalRunId, setDeletingEvalRunId] = useState<number | null>(null);
+  const [deletingAllEvals, setDeletingAllEvals] = useState(false);
+  const [hasAnyEvaluations, setHasAnyEvaluations] = useState(false);
   const [humanDrafts, setHumanDrafts] = useState<Record<string, { numeric: string; label: string; passed: string; reason: string }>>({});
   const selectedDataset = useMemo(() => datasets.find((item) => item.id === selectedDatasetId) || null, [datasets, selectedDatasetId]);
   const isSelectedDatasetLocked = !!selectedDataset?.is_locked;
@@ -113,11 +113,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
   };
 
-  const loadEvalRuns = async (datasetId: number, limit = 20) => {
-    const runs = await evaluationApi.listEvalRuns(descriptor, datasetId, limit);
-    setEvalRuns(runs || []);
-    return runs || [];
-  };
+  const loadEvalRuns = async (datasetId: number, limit = 20) => (await evaluationApi.listEvalRuns(descriptor, datasetId, limit)) || [];
 
   useEffect(() => {
     if (!show) return;
@@ -135,49 +131,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     if (!show || !selectedDatasetId) {
       return;
     }
-
-    const loadLatestEvaluation = async () => {
-      try {
-        const runs = await loadEvalRuns(selectedDatasetId, 30);
-        const latest = (runs || []).find((row: any) => String((row as any).status_code || '') === 'completed') as any;
-        if (!latest?.id) {
-          setEvalResult(null);
-          setEvalRunCases([]);
-          setEvalRunSources([]);
-          setBaselineSummary(null);
-          return;
-        }
-
-        const targetRunId = Number(latest.id);
-        const targetRef = latest.target_ref && typeof latest.target_ref === 'object' ? latest.target_ref : {};
-        const summary = latest.summary && typeof latest.summary === 'object' ? latest.summary : {};
-        const baselineRunId = Number((targetRef as any).baseline_run_id || summary.baseline_run_id || 0);
-        const sources: Array<{ runId: number; label: 'Target' | 'Baseline' }> = [{ runId: targetRunId, label: 'Target' }];
-        if (baselineRunId > 0) {
-          sources.push({ runId: baselineRunId, label: 'Baseline' });
-        }
-
-        setEvalResult({ run: latest, cases: [] });
-        setEvalRunSources(sources);
-        await refreshEvalRunCases(sources);
-
-        if (baselineRunId > 0) {
-          setBaselineSummary({
-            baselinePassRate: typeof summary.baseline_pass_rate === 'number' ? summary.baseline_pass_rate : null,
-            baselineAvgScore: typeof summary.baseline_avg_score === 'number' ? summary.baseline_avg_score : null,
-            passRateDelta: typeof summary.pass_rate_delta === 'number' ? summary.pass_rate_delta : null,
-            avgScoreDelta: typeof summary.avg_score_delta === 'number' ? summary.avg_score_delta : null,
-            combinedExecutionCount: typeof summary.combined_execution_count === 'number' ? summary.combined_execution_count : null,
-          });
-        } else {
-          setBaselineSummary(null);
-        }
-      } catch {
-        // Non-blocking: keep UI usable even if run history cannot be loaded.
-      }
-    };
-
-    loadLatestEvaluation().catch(() => undefined);
+    refreshLatestEvaluation().catch(() => undefined);
   }, [show, selectedDatasetId, descriptor.ownerId, descriptor.ownerType]);
 
   const handleCreateDataset = async (): Promise<boolean> => {
@@ -282,9 +236,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
       try {
         await datasetApi.deleteDatasetCase(descriptor, datasetCase.id);
         await refreshSelectedDataset();
-        if (selectedDatasetId) {
-          await loadEvalRuns(selectedDatasetId, 30);
-        }
+        await refreshLatestEvaluation();
         setSuccess(`Removed case "${datasetCase.title || datasetCase.case_key}". Related evaluation records for this case were cleaned up by cascade.`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete dataset case');
@@ -390,19 +342,21 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
     setEvalRunSources(sources);
     await refreshEvalRunCases(sources);
-    await loadEvalRuns(selectedDatasetId, 30);
     setSuccess('Dataset evaluation completed.');
   };
 
-  const refreshRunHistoryAndSelection = async () => {
+  const refreshLatestEvaluation = async () => {
     if (!selectedDatasetId) {
-      setEvalRuns([]);
       setEvalResult(null);
       setEvalRunCases([]);
       setEvalRunSources([]);
+      setBaselineSummary(null);
+      setHasAnyEvaluations(false);
       return;
     }
+
     const runs = await loadEvalRuns(selectedDatasetId, 30);
+    setHasAnyEvaluations((runs || []).length > 0);
     const latest = (runs || []).find((row: any) => String((row as any).status_code || '') === 'completed') as any;
     if (!latest?.id) {
       setEvalResult(null);
@@ -411,6 +365,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
       setBaselineSummary(null);
       return;
     }
+
     const targetRunId = Number(latest.id);
     const targetRef = latest.target_ref && typeof latest.target_ref === 'object' ? latest.target_ref : {};
     const summary = latest.summary && typeof latest.summary === 'object' ? latest.summary : {};
@@ -422,21 +377,33 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     setEvalResult({ run: latest, cases: [] });
     setEvalRunSources(sources);
     await refreshEvalRunCases(sources);
+
+    if (baselineRunId > 0) {
+      setBaselineSummary({
+        baselinePassRate: typeof summary.baseline_pass_rate === 'number' ? summary.baseline_pass_rate : null,
+        baselineAvgScore: typeof summary.baseline_avg_score === 'number' ? summary.baseline_avg_score : null,
+        passRateDelta: typeof summary.pass_rate_delta === 'number' ? summary.pass_rate_delta : null,
+        avgScoreDelta: typeof summary.avg_score_delta === 'number' ? summary.avg_score_delta : null,
+        combinedExecutionCount: typeof summary.combined_execution_count === 'number' ? summary.combined_execution_count : null,
+      });
+    } else {
+      setBaselineSummary(null);
+    }
   };
 
-  const handleDeleteEvalRun = async (runId: number) => {
-    if (!selectedDatasetId) return;
+  const handleDeleteEvaluationRun = async (runId: number) => {
+    if (!selectedDatasetId || runId <= 0) return;
     const performDelete = async () => {
-      setDeletingRunId(runId);
+      setDeletingEvalRunId(runId);
       setError(null);
       try {
         await evaluationApi.deleteEvalRun(descriptor, selectedDatasetId, runId);
-        await refreshRunHistoryAndSelection();
+        await refreshLatestEvaluation();
         setSuccess(`Deleted evaluation run #${runId}.`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete evaluation run');
       } finally {
-        setDeletingRunId(null);
+        setDeletingEvalRunId(null);
       }
     };
 
@@ -459,19 +426,19 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
   };
 
-  const handleDeleteAllEvalRuns = async () => {
+  const handleDeleteAllEvaluations = async () => {
     if (!selectedDatasetId) return;
     const performDeleteAll = async () => {
-      setDeletingAllRuns(true);
+      setDeletingAllEvals(true);
       setError(null);
       try {
         const response = await evaluationApi.deleteEvalRunsBulk(descriptor, selectedDatasetId);
-        await refreshRunHistoryAndSelection();
+        await refreshLatestEvaluation();
         setSuccess(`Deleted ${Number(response?.deleted_count || 0)} evaluation run(s) for this dataset.`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete evaluation runs');
       } finally {
-        setDeletingAllRuns(false);
+        setDeletingAllEvals(false);
       }
     };
 
@@ -483,7 +450,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
         content: message,
         type: 'red',
         buttons: {
-          confirm: { text: 'Delete All', btnClass: 'btn-danger', action: () => { void performDeleteAll(); } },
+          confirm: { text: 'Delete All Evaluations', btnClass: 'btn-danger', action: () => { void performDeleteAll(); } },
           cancel: { text: 'Cancel', action: () => {} },
         },
       });
@@ -559,62 +526,33 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                   </div>
                 )}
                 <DatasetCaseTable cases={cases} loading={loadingCases} canDelete={!selectedDataset?.is_locked} onPreview={setCasePreview} onDelete={handleDeleteCase} />
-                <EvaluationResultsView result={evalResult} cases={evaluationCases} baselineSummary={baselineSummary} onInspectCase={setSelectedEvalCase} />
-
-                <div className="mt-3 border rounded p-3 bg-light">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <div className="small font-weight-bold">Run History</div>
-                    <Button
-                      size="sm"
-                      variant="outline-danger"
-                      disabled={disabled || !selectedDatasetId || deletingAllRuns || evalRuns.length === 0}
-                      onClick={() => { void handleDeleteAllEvalRuns(); }}
-                    >
-                      {deletingAllRuns ? 'Deleting...' : 'Delete All Runs'}
-                    </Button>
-                  </div>
-                  <div className="table-responsive">
-                    <Table size="sm" className="prompt-lab-table mb-0">
-                      <thead>
-                        <tr>
-                          <th style={{ width: 90 }}>Run</th>
-                          <th style={{ width: 120 }}>Status</th>
-                          <th style={{ width: 200 }}>Created</th>
-                          <th>Summary</th>
-                          <th style={{ width: 120 }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {evalRuns.length === 0 ? (
-                          <tr><td colSpan={5} className="small text-muted">No evaluation runs yet.</td></tr>
-                        ) : evalRuns.map((run) => {
-                          const runId = Number((run as any).id || 0);
-                          const statusCode = String((run as any).status_code || '');
-                          const summary = ((run as any).summary && typeof (run as any).summary === 'object') ? (run as any).summary : {};
-                          const runSummary = `Pass ${(summary.pass_rate ?? 0)}% | Cases ${(summary.total_cases ?? summary.execution_count ?? 0)}`;
-                          return (
-                            <tr key={runId}>
-                              <td className="small">#{runId}</td>
-                              <td className="small">{statusCode || '-'}</td>
-                              <td className="small">{String((run as any).created_at || '')}</td>
-                              <td className="small">{runSummary}</td>
-                              <td>
-                                <Button
-                                  size="sm"
-                                  variant="outline-danger"
-                                  disabled={disabled || deletingRunId === runId || runId <= 0}
-                                  onClick={() => { void handleDeleteEvalRun(runId); }}
-                                >
-                                  {deletingRunId === runId ? 'Deleting...' : 'Delete'}
-                                </Button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </Table>
-                  </div>
-                </div>
+                <EvaluationResultsView
+                  result={evalResult}
+                  cases={evaluationCases}
+                  baselineSummary={baselineSummary}
+                  onInspectCase={setSelectedEvalCase}
+                  onDeleteCaseEvaluation={(runCase) => {
+                    const runId = Number(runCase.id_llm_eval_runs || evalResult?.run?.id || 0);
+                    if (runId > 0) {
+                      void handleDeleteEvaluationRun(runId);
+                    }
+                  }}
+                  deletingRunId={deletingEvalRunId}
+                  headerActions={
+                    <>
+                      {hasAnyEvaluations && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={disabled || !selectedDatasetId || deletingAllEvals}
+                          onClick={() => { void handleDeleteAllEvaluations(); }}
+                        >
+                          {deletingAllEvals ? 'Deleting...' : 'Delete All Evaluations'}
+                        </Button>
+                      )}
+                    </>
+                  }
+                />
               </div>
             </Col>
           </Row>
