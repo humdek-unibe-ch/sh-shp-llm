@@ -233,6 +233,59 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $rows;
     }
 
+    public function deleteEvalRun($run_id, $dataset_id = 0)
+    {
+        $run_id = (int)$run_id;
+        $dataset_id = (int)$dataset_id;
+        if ($run_id <= 0) {
+            throw new Exception('run_id is required');
+        }
+
+        $run = $this->getEvalRun($run_id);
+        if (!$run) {
+            return array('deleted' => true, 'deleted_count' => 0);
+        }
+
+        if ($dataset_id > 0 && (int)($run['id_llm_eval_datasets'] ?? 0) !== $dataset_id) {
+            throw new Exception('Evaluation run does not belong to selected dataset');
+        }
+
+        $this->db->remove_by_ids('llm_eval_runs', array('id' => $run_id));
+        $this->addPluginTransaction('delete', 'llm_eval_runs', $run_id, 'LLM evaluation run deleted');
+
+        return array('deleted' => true, 'deleted_count' => 1, 'dataset_id' => (int)($run['id_llm_eval_datasets'] ?? 0));
+    }
+
+    public function deleteEvalRunsForDataset($dataset_id)
+    {
+        $dataset_id = (int)$dataset_id;
+        if ($dataset_id <= 0) {
+            throw new Exception('dataset_id is required');
+        }
+
+        $rows = $this->db->query_db(
+            "SELECT id FROM llm_eval_runs WHERE id_llm_eval_datasets = :dataset_id",
+            array(':dataset_id' => $dataset_id)
+        );
+
+        $deleted_count = 0;
+        foreach ((array)$rows as $row) {
+            $run_id = (int)($row['id'] ?? 0);
+            if ($run_id <= 0) {
+                continue;
+            }
+            $this->db->remove_by_ids('llm_eval_runs', array('id' => $run_id));
+            $this->addPluginTransaction('delete', 'llm_eval_runs', $run_id, 'LLM evaluation run deleted via dataset bulk cleanup');
+            $deleted_count++;
+        }
+
+        return array(
+            'deleted' => true,
+            'deleted_count' => $deleted_count,
+            'dataset_id' => $dataset_id
+        );
+    }
+
     public function linkBaselineRun($run_id, $baseline_run_id, $baseline_summary = array())
     {
         $run = $this->getEvalRun($run_id);

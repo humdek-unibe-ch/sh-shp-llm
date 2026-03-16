@@ -112,6 +112,16 @@ class AjaxLlmPromptLab extends BaseAjax
                     $this->assertCsrf($post);
                     return $this->handleAddCasesFromSource($post, $descriptor);
 
+                case 'parse_cases_from_text':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleParseCasesFromText($post, $descriptor);
+
+                case 'import_parsed_cases':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleImportParsedCases($post, $descriptor);
+
                 case 'delete_dataset_case':
                     $this->assertAccess($descriptor, 'update');
                     $this->assertCsrf($post);
@@ -137,6 +147,16 @@ class AjaxLlmPromptLab extends BaseAjax
                 case 'list_eval_runs':
                     $this->assertAccess($descriptor, 'select');
                     return $this->handleListEvalRuns($post);
+
+                case 'delete_eval_run':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleDeleteEvalRun($post);
+
+                case 'delete_eval_runs_bulk':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleDeleteEvalRunsBulk($post);
 
                 case 'link_eval_run_baseline':
                     $this->assertAccess($descriptor, 'update');
@@ -414,10 +434,61 @@ class AjaxLlmPromptLab extends BaseAjax
         return array('deleted' => $this->dataset_service->deleteDatasetCase($case_id));
     }
 
+    private function handleParseCasesFromText($post, $descriptor)
+    {
+        $raw_text = (string)($post['raw_text'] ?? '');
+        $execution_profile = (string)($post['execution_profile'] ?? 'text_only');
+        $selected_model = !empty($post['selected_model']) ? (string)$post['selected_model'] : null;
+        $runtime_overrides = $this->decodeJson($post['runtime_overrides_json'] ?? '{}');
+        if (!is_array($runtime_overrides)) {
+            $runtime_overrides = array();
+        }
+
+        return $this->dataset_service->parseCasesFromText(
+            $descriptor,
+            $execution_profile,
+            $raw_text,
+            $selected_model,
+            $runtime_overrides
+        );
+    }
+
+    private function handleImportParsedCases($post, $descriptor)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+
+        $execution_profile = (string)($post['execution_profile'] ?? 'text_only');
+        $cases = $this->decodeJson($post['cases_json'] ?? '[]');
+        if (!is_array($cases)) {
+            $cases = array();
+        }
+        $runtime_overrides = $this->decodeJson($post['runtime_overrides_json'] ?? '{}');
+        if (!is_array($runtime_overrides)) {
+            $runtime_overrides = array();
+        }
+
+        return $this->dataset_service->importParsedCases(
+            $dataset_id,
+            $descriptor,
+            $execution_profile,
+            $cases,
+            $runtime_overrides
+        );
+    }
+
     private function handleRunDatasetEval($post, $descriptor)
     {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $descriptor);
+
         $payload = array(
-            'dataset_id' => isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0,
+            'dataset_id' => $dataset_id,
             'descriptor' => $descriptor,
             'target_type' => (string)($post['target_type'] ?? 'draft'),
             'target_version_id' => isset($post['target_version_id']) ? (int)$post['target_version_id'] : null,
@@ -457,8 +528,53 @@ class AjaxLlmPromptLab extends BaseAjax
         if ($dataset_id <= 0) {
             throw new Exception('Missing dataset_id');
         }
+        $this->assertDatasetDescriptorScope($dataset_id, $this->readDescriptor($post));
         $limit = isset($post['limit']) ? (int)$post['limit'] : 20;
         return $this->evaluation_service->listEvalRuns($dataset_id, $limit);
+    }
+
+    private function handleDeleteEvalRun($post)
+    {
+        $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
+        if ($run_id <= 0) {
+            throw new Exception('Missing run_id');
+        }
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $this->readDescriptor($post));
+        return $this->evaluation_service->deleteEvalRun($run_id, $dataset_id);
+    }
+
+    private function handleDeleteEvalRunsBulk($post)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $this->readDescriptor($post));
+        return $this->evaluation_service->deleteEvalRunsForDataset($dataset_id);
+    }
+
+    private function assertDatasetDescriptorScope($dataset_id, $descriptor)
+    {
+        $dataset = $this->dataset_service->getDataset((int)$dataset_id);
+        if (!$dataset) {
+            throw new Exception('Dataset not found');
+        }
+
+        $descriptor_owner_type = (string)($descriptor['owner_type'] ?? '');
+        $descriptor_owner_id = (int)($descriptor['owner_id'] ?? 0);
+        $dataset_owner_type = (string)($dataset['owner_type_scope'] ?? '');
+        $dataset_owner_id = (int)($dataset['owner_id_scope'] ?? 0);
+
+        if ($dataset_owner_type !== '' && $descriptor_owner_type !== '' && $dataset_owner_type !== $descriptor_owner_type) {
+            throw new Exception('Dataset is outside current descriptor scope');
+        }
+        if ($dataset_owner_id > 0 && $descriptor_owner_id > 0 && $dataset_owner_id !== $descriptor_owner_id) {
+            throw new Exception('Dataset is outside current descriptor scope');
+        }
     }
 
     private function handleLinkEvalRunBaseline($post)

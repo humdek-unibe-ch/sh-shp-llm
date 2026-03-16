@@ -4,6 +4,8 @@ import type {
   PromptDataset,
   PromptDatasetCase,
   PromptDescriptor,
+  PromptAiImportCaseDraft,
+  PromptAiImportParseResponse,
   PromptEvalDefinition,
   PromptEvalRunCase,
   PromptEvalRunResult,
@@ -69,6 +71,22 @@ interface AddCasesFromSourceRequest {
   sourceType: PromptImportSourceType;
   sourceIds: number[];
   executionProfile: string;
+  runtimeOverrides?: Record<string, unknown>;
+}
+
+interface ParseCasesFromTextRequest {
+  descriptor: PromptDescriptor;
+  executionProfile: string;
+  rawText: string;
+  selectedModel?: string | null;
+  runtimeOverrides?: Record<string, unknown>;
+}
+
+interface ImportParsedCasesRequest {
+  descriptor: PromptDescriptor;
+  datasetId: number;
+  executionProfile: string;
+  cases: PromptAiImportCaseDraft[];
   runtimeOverrides?: Record<string, unknown>;
 }
 
@@ -455,6 +473,44 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       return post<{ deleted: boolean }>(formData);
     },
 
+    async parseCasesFromText({
+      descriptor,
+      executionProfile,
+      rawText,
+      selectedModel,
+      runtimeOverrides,
+    }: ParseCasesFromTextRequest): Promise<PromptAiImportParseResponse> {
+      const formData = new FormData();
+      formData.append('action', 'parse_cases_from_text');
+      appendDescriptor(formData, descriptor);
+      formData.append('execution_profile', executionProfile);
+      formData.append('raw_text', rawText);
+      if (selectedModel) {
+        formData.append('selected_model', selectedModel);
+      }
+      formData.append('runtime_overrides_json', JSON.stringify(runtimeOverrides || {}));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<PromptAiImportParseResponse>(formData);
+    },
+
+    async importParsedCases({
+      descriptor,
+      datasetId,
+      executionProfile,
+      cases,
+      runtimeOverrides,
+    }: ImportParsedCasesRequest): Promise<PromptDatasetCase[]> {
+      const formData = new FormData();
+      formData.append('action', 'import_parsed_cases');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('execution_profile', executionProfile);
+      formData.append('cases_json', JSON.stringify(cases || []));
+      formData.append('runtime_overrides_json', JSON.stringify(runtimeOverrides || {}));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<PromptDatasetCase[]>(formData);
+    },
+
     async listEvalDefinitions(descriptor: PromptDescriptor): Promise<PromptEvalDefinition[]> {
       const formData = new FormData();
       formData.append('action', 'list_eval_definitions');
@@ -511,6 +567,25 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       formData.append('dataset_id', String(datasetId));
       formData.append('limit', String(limit));
       return post<Array<Record<string, unknown>>>(formData);
+    },
+
+    async deleteEvalRun(descriptor: PromptDescriptor, datasetId: number, runId: number): Promise<{ deleted: boolean; deleted_count: number }> {
+      const formData = new FormData();
+      formData.append('action', 'delete_eval_run');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('run_id', String(runId));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<{ deleted: boolean; deleted_count: number }>(formData);
+    },
+
+    async deleteEvalRunsBulk(descriptor: PromptDescriptor, datasetId: number): Promise<{ deleted: boolean; deleted_count: number }> {
+      const formData = new FormData();
+      formData.append('action', 'delete_eval_runs_bulk');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<{ deleted: boolean; deleted_count: number }>(formData);
     },
 
     async linkEvalRunBaseline({

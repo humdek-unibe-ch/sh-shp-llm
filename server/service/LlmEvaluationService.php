@@ -27,6 +27,8 @@ class LlmEvaluationService extends BaseLlmService
     public function getEvalRun($run_id) { return $this->runner_service->getEvalRun($run_id); }
     public function listEvalRunCases($run_id) { return $this->runner_service->listEvalRunCases($run_id); }
     public function listEvalRuns($dataset_id, $limit = 20) { return $this->runner_service->listEvalRuns($dataset_id, $limit); }
+    public function deleteEvalRun($run_id, $dataset_id = 0) { return $this->runner_service->deleteEvalRun($run_id, $dataset_id); }
+    public function deleteEvalRunsForDataset($dataset_id) { return $this->runner_service->deleteEvalRunsForDataset($dataset_id); }
     public function linkBaselineRun($run_id, $baseline_run_id, $baseline_summary = array()) { return $this->runner_service->linkBaselineRun($run_id, $baseline_run_id, $baseline_summary); }
 
     public function saveHumanScore($payload)

@@ -366,11 +366,31 @@
   max-width: 100%;
 }
 
+.prompt-ai-import-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.prompt-ai-import-steps span {
+  white-space: nowrap;
+}
+
 .prompt-human-review-grid {
   display: grid;
   grid-template-columns: 110px 1fr 120px 1fr auto;
   gap: 6px;
   align-items: center;
+}
+
+.json-monaco-editor {
+  width: 100%;
+}
+
+.json-monaco-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
 }
 
 @media (max-width: 991.98px) {
