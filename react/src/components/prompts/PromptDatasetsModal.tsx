@@ -591,12 +591,26 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
               <div className="small border rounded bg-light p-2 mb-3 prompt-json-preview">
                 <JsonInspector value={selectedEvalCase.input_preview || selectedEvalCase.input_payload || parseJsonSafe(selectedEvalCase.input_payload_json, {})} />
               </div>
+              <div className="small text-muted mb-1">LLM Result (display_content)</div>
+              <div className="small border rounded bg-light p-2 mb-3 prompt-wrap-text">
+                {String(
+                  selectedEvalCase.display_content
+                    || ((selectedEvalCase.normalized_output || parseJsonSafe(selectedEvalCase.normalized_output_json, {})) as any)?.display_content
+                    || '-',
+                )}
+              </div>
               <div className="small text-muted mb-1">Normalized Output</div>
               <div className="small border rounded bg-light p-2 mb-3 prompt-json-preview">
                 <JsonInspector value={selectedEvalCase.normalized_output || parseJsonSafe(selectedEvalCase.normalized_output_json, {})} />
               </div>
               <div className="small text-muted mb-1">Scores</div>
               <Table size="sm" className="prompt-lab-table">
+                <colgroup>
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '56%' }} />
+                </colgroup>
                 <thead><tr><th>Evaluator</th><th>Score</th><th>Status</th><th>Details</th></tr></thead>
                 <tbody>
                   {(selectedEvalCase.scores || []).map((score, index) => {

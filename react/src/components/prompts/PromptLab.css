@@ -339,8 +339,8 @@
 }
 
 .prompt-eval-detail-modal .prompt-json-preview {
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   word-break: break-word;
   overflow-wrap: anywhere;
 }
@@ -364,6 +364,11 @@
   overflow-wrap: anywhere;
   overflow-x: hidden;
   max-width: 100%;
+}
+
+.prompt-eval-detail-modal .prompt-human-review-grid {
+  grid-template-columns: 120px minmax(180px, 1.4fr) 180px minmax(260px, 2fr) auto;
+  width: 100%;
 }
 
 .prompt-ai-import-steps {
