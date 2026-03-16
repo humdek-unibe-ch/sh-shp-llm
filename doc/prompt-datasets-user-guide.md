@@ -25,6 +25,19 @@ Use datasets when you want to:
 6. Repeat until the dataset covers your important scenarios.
 7. Click `Run Evaluation` to replay the dataset against the current draft, the active version, or a saved version.
 
+## Fast bulk import with AI
+
+Use `Import With AI` when you have many examples at once (for example, pasted from Excel/Sheets).
+
+Flow:
+
+1. Paste tabular or free text examples.
+2. Pick parser model (default is the style/prompt model).
+3. Review inferred mapping and parsed rows.
+4. Edit rows if needed, select valid rows, and import.
+
+This is usually faster than importing one case at a time from playground runs.
+
 ## Dataset types
 
 Prompt Lab supports one dataset system with multiple dataset types. The current UI is optimized for:
@@ -71,6 +84,27 @@ The results screen shows:
 - per-case output
 - evaluator details
 - human review inputs for `human_review` evaluators
+
+## Run history cleanup
+
+Each dataset includes a `Run History` section:
+
+- delete one run (`Delete`) when you want to remove a bad/obsolete run
+- delete all runs (`Delete All Runs`) when you want to reset benchmark history for that dataset
+
+These are hard deletes in v1.1.0 (no soft-delete/archive).
+
+## What happens when deleting a case
+
+Deleting a dataset case also removes related historical evaluation rows for that case (run-case and score rows) via database cascade cleanup.
+
+Prompt Lab now warns about this in the delete confirmation so the impact is explicit before you confirm.
+
+## AI-imported form cases and replay
+
+For `form_runtime` datasets imported with `Import With AI`, Prompt Lab now auto-maps imported variable keys to the prompt placeholders used by the active template (for example `{{student_support}}`).
+
+This avoids the generic fallback user message (`Form submission`) during replay/evaluation and ensures model runs use the real imported student input.
 
 ## Locking and editing
 

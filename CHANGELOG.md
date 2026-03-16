@@ -31,6 +31,10 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - Added immutable prompt versions, version comments, version restore, diffing, runtime-aware playground runs, and build-with-AI suggestions.
 - Connected `llm_scripts.script` to the same prompt registry through `llm_scripts.id_llm_prompt_entries`.
 - Added `AjaxLlmPromptLab` as the shared endpoint for prompt bootstrap, versions, compare, playground, builder, datasets, and evaluations.
+- Unified JSON UX in plugin UIs:
+  - standardized non-editable JSON rendering on shared `JsonInspector` tree/raw viewer
+  - standardized editable JSON fields on shared Monaco-based JSON editor wrapper
+  - removed remaining ad-hoc JSON `<pre>`/textarea surfaces in prompt-lab/admin JSON views
 
 ### Datasets and evaluations
 
@@ -57,6 +61,33 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - Added prompt-lab UI flows for dataset browsing, case preview, source import, evaluation runs, result inspection, and manual review.
 - Exposed the same datasets/evaluations workflow in both CMS prompt fields and the scripts manager.
 - Added consistent CMS-style delete confirmation for dataset deletion (`$.confirm` with safe browser fallback).
+- Added AI-assisted dataset case import (`Import With AI`) for bulk paste of tabular/free-text examples.
+- Added new Prompt Lab actions:
+  - `parse_cases_from_text`
+  - `import_parsed_cases`
+- Added parser/import backend services:
+  - `LlmDatasetAiImportParserService`
+  - `LlmDatasetAiImportMapperService`
+  - `LlmDatasetBatchImportService`
+- Added evaluation run history cleanup controls in Prompt Lab datasets:
+  - single-run delete (`delete_eval_run`)
+  - bulk delete per dataset (`delete_eval_runs_bulk`)
+- Documented and surfaced cascade behavior:
+  - deleting a dataset case removes related eval run-case/score rows by FK cascade
+  - deleting eval runs removes dependent run-cases/scores by FK cascade
+- Added parser prompt assets under `assets/prompts/core/dataset-import/` and registry keys:
+  - `core.dataset_import.system`
+  - `core.dataset_import.repair_json`
+- Added dataset source provenance type `ai_text_import` in `llm_eval_source_types`.
+- Fixed form-runtime replay reliability for AI-imported cases:
+  - mapper now auto-aligns imported variable keys to active prompt placeholders (`{{...}}`) using alias/similarity matching
+  - replay path now falls back to normalized variable payload when placeholder filtering would otherwise produce empty user input (`Form submission`)
+- Kept full `input_payload_json` case shape for replay compatibility and debugging.
+- Improved parser robustness for large/malformed model output:
+  - parser token budget floor increased for multi-row imports
+  - tolerant JSON candidate extraction (fences + embedded fragments)
+  - automatic JSON repair pass when first parse fails
+- Improved admin JSON inspection for nested/embedded JSON-like content and parser payload diagnostics.
 ### LLM forms
 
 - Added the new `llmFormRecord` and `llmFormLog` styles.

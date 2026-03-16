@@ -167,6 +167,9 @@ Supported actions:
 - `run_dataset_eval`
 - `get_eval_run`
 - `list_eval_run_cases`
+- `list_eval_runs`
+- `delete_eval_run`
+- `delete_eval_runs_bulk`
 - `save_human_score`
 
 Access/security:
@@ -176,6 +179,7 @@ Access/security:
   - style-field owners use page ACL (`page_id`)
   - script owners use `moduleLlmScript` ACL
 - mutating actions validate CSRF token
+- dataset-scoped eval actions enforce descriptor scope checks before mutation/listing
 
 Frontend request path is normalized with `BASE_PATH` in `promptApi.ts` to avoid `/request` vs `/selfhelp/request` mismatches.
 
@@ -219,6 +223,16 @@ Prompt components under `react/src/components/prompts/`:
 
 Key UI behavior:
 
+## JSON UI contract (v1.1.0)
+
+For plugin-maintained prompt/admin screens:
+
+- Read-only JSON must use `JsonInspector` (tree/raw toggle + copy).
+- Editable JSON must use the shared Monaco JSON editor wrapper.
+- Do not add new ad-hoc JSON `<pre>` blocks or plain textareas for JSON editing.
+
+This keeps parsing/formatting behavior consistent across prompt-lab and admin tooling.
+
 - modals use consistent `90vw/90vh` layout (`PromptLab.css`)
 - modal header/footer fixed, body scrollable
 - buttons use Bootstrap small size (`btn-sm`)
@@ -240,6 +254,19 @@ Examples:
 - chat uses context/message construction path (`LlmContextService` composition)
 - form uses interpolation + language-aware system prompt generation
 - scripts use script execution flow with `data_config` and test variables
+
+## Dataset evaluation deletion policy
+
+Deletion in v1.1.0 is hard-delete:
+
+- deleting one run removes the `llm_eval_runs` row and cascades to related run-cases/scores
+- bulk delete removes all runs for the selected dataset and cascades dependent rows
+
+Case deletion behavior remains cascade-based:
+
+- deleting `llm_eval_dataset_cases` rows removes related eval run-cases/scores for that case
+
+This is the official policy in this version (no soft-delete/audit shadow table for eval runs/cases).
 
 ## Scripts module integration
 

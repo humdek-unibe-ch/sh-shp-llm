@@ -270,7 +270,7 @@ sh-shp-llm/
 ├── schemas/llm-response.schema.json       # Response JSON schema
 ├── examples/                              # 17 conversation context templates
 ├── templates/                             # Categorized prompt templates
-├── doc/                                   # Detailed documentation (19 guides)
+├── doc/                                   # Detailed documentation (21 guides)
 ├── gulp/                                  # Build system
 ├── css/ext/                               # Built CSS
 └── js/ext/                                # Built JavaScript bundles
@@ -386,10 +386,12 @@ Detailed guides are available in the `doc/` folder:
 | [message-validation-tracking.md](doc/message-validation-tracking.md) | Validation status and payload debugging |
 | [prompt-lab-user-guide.md](doc/prompt-lab-user-guide.md) | Prompt versions, playground, datasets, and evaluations for editors |
 | [prompt-datasets-user-guide.md](doc/prompt-datasets-user-guide.md) | How to build reusable benchmark datasets |
+| [prompt-dataset-ai-import-user-guide.md](doc/prompt-dataset-ai-import-user-guide.md) | How to bulk import dataset cases from pasted text using AI |
 | [prompt-replay-import-guide.md](doc/prompt-replay-import-guide.md) | How to turn real submitted data into replay datasets |
 | [prompt-lab-payload-shapes.md](doc/prompt-lab-payload-shapes.md) | Normalized dataset case payload formats |
 | [prompt-evaluator-authoring-guide.md](doc/prompt-evaluator-authoring-guide.md) | How to add or extend evaluators |
 | [prompt-lab-developer-guide.md](doc/prompt-lab-developer-guide.md) | Prompt registry, replay, and evaluation architecture |
+| [prompt-dataset-ai-import-developer-guide.md](doc/prompt-dataset-ai-import-developer-guide.md) | Backend/frontend architecture for AI-assisted dataset import |
 | [prompt-lab-migration-notes-v1.1.0.md](doc/prompt-lab-migration-notes-v1.1.0.md) | Migration details for prompt-lab and dataset/eval schema |
 | [form-data-saving.md](doc/form-data-saving.md) | How form responses are saved to dataTables |
 | [progress-tracking-system.md](doc/progress-tracking-system.md) | Topic coverage and progress tracking |
