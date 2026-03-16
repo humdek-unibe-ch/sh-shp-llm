@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../../component/style/StyleModel.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
  * The model class for the LLM chat component.
@@ -14,6 +15,7 @@ require_once __DIR__ . "/../../../service/LlmService.php";
 class LlmChatModel extends StyleModel
 {
     private $llm_service;
+    private $prompt_assets;
     private $user_id;
     private $conversation_id;
 
@@ -158,6 +160,7 @@ class LlmChatModel extends StyleModel
     {
         parent::__construct($services, $id, $params, $id_page, $entry_record);
         $this->llm_service = new LlmService($services);
+        $this->prompt_assets = new LlmPromptAssetLoader();
         $this->user_id = $_SESSION['id_user'] ?? null;
         $this->conversation_id = $_GET['conversation'] ?? null;
 
@@ -803,26 +806,7 @@ class LlmChatModel extends StyleModel
      */
     private function getMediaRenderingInstructions()
     {
-        return <<<EOT
-MEDIA RENDERING INSTRUCTIONS:
-When including images or videos in your responses, use these exact formats for proper rendering:
-
-FOR IMAGES - Use Markdown syntax:
-![Description of image](image_url)
-
-Example:
-![Beautiful sunset over mountains](https://example.com/sunset.jpg)
-
-FOR VIDEOS - Place the video URL on its own line (must end in .mp4, .webm, or .ogg):
-https://example.com/video.mp4
-
-IMPORTANT RULES:
-1. Never use HTML tags like <img>, <video>, <p>, <div>, etc.
-2. Always use Markdown syntax for formatting (bold: **text**, italic: *text*, headers: # text)
-3. For images, always include descriptive alt text in the brackets
-4. For videos, the URL must be on its own line and end with a video extension
-5. Images and videos will be rendered inline in the chat interface
-EOT;
+        return $this->prompt_assets->load('core.chat.media_rendering_instructions');
     }
 
     /**

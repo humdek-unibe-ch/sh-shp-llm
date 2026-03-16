@@ -5,16 +5,20 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmService.php';
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 class LlmPromptBuilderService extends BaseLlmService
 {
     /** @var LlmService */
     private $llm_service;
+    /** @var LlmPromptAssetLoader */
+    private $prompt_assets;
 
     public function __construct($services)
     {
         parent::__construct($services);
         $this->llm_service = new LlmService($services);
+        $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
     /**
@@ -33,24 +37,7 @@ class LlmPromptBuilderService extends BaseLlmService
         $temperature = 0.3;
         $max_tokens = $config['llm_max_tokens'];
 
-        $system_prompt = <<<PROMPT
-You are a prompt engineering assistant for a CMS prompt playground.
-
-Return ONE valid JSON object and nothing else.
-The object must have exactly these top-level keys:
-- prompt_template
-- variables
-- notes
-- change_summary
-
-Rules:
-- Improve the existing prompt instead of starting from scratch.
-- Keep the output clean. Do not append explanations into prompt_template.
-- notes must stay outside the prompt body.
-- variables must be an array of objects with keys: name, type, required, description.
-- change_summary must be short.
-- If the current prompt is already strong, refine it minimally.
-PROMPT;
+        $system_prompt = $this->prompt_assets->load('core.prompt_builder.system');
 
         $user_prompt = json_encode(array(
             'owner' => $descriptor,

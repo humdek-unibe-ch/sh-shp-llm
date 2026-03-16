@@ -4,6 +4,15 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ## [1.1.0] - 2026-03-10
 
+### Prompt asset externalization
+
+- Moved hardcoded LLM-facing runtime prompts/instructions into file assets under `assets/prompts/`.
+- Added key-based prompt loading via:
+  - `server/service/prompt/LlmPromptAssetRegistry.php`
+  - `server/service/prompt/LlmPromptAssetLoader.php`
+- Updated core runtime services to load prompts from assets (fail-closed on missing key/file).
+- Added `doc/prompt-assets.md` to document prompt ownership, naming, and troubleshooting.
+
 ### Multi-server model configuration
 
 - Replaced the single `llm_base_url` / `llm_api_key` setup with the new `llm_api_keys` JSON field.

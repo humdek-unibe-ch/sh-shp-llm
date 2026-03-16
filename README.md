@@ -11,6 +11,7 @@ LLM integration plugin for [SelfHelp CMS](https://github.com/humdek-unibe-ch/sh-
 - [Usage](#usage)
 - [Components](#components)
 - [LLM Scripts](#llm-scripts)
+- [Prompt Assets](#prompt-assets)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -156,6 +157,12 @@ For advanced use, you can provide a JSON array of message objects:
 ```
 
 See `examples/` for 17 ready-to-use context templates covering education, health, assessment, and research scenarios.
+
+## Prompt Assets
+
+Static LLM-facing prompt text is externalized to `assets/prompts/` (one file per prompt) and loaded by key through the prompt asset registry/loader layer.
+
+See [doc/prompt-assets.md](doc/prompt-assets.md) for naming, loading, and fail-closed behavior details.
 
 ## Usage
 

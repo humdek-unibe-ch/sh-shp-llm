@@ -5,15 +5,18 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmService.php';
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 class LlmEvaluationScoringService extends BaseLlmService
 {
     private $llm_service;
+    private $prompt_assets;
 
     public function __construct($services)
     {
         parent::__construct($services);
         $this->llm_service = new LlmService($services);
+        $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
     public function scoreCase($definition, $run_output, $dataset_case)
@@ -98,7 +101,7 @@ class LlmEvaluationScoringService extends BaseLlmService
         try {
             $conversation_id = $this->llm_service->getOrCreateConversationForModel((int)($this->getCurrentUserId() ?: 0), $judge_model, 0.0, 400, null);
             $messages = array(
-                array('role' => 'system', 'content' => 'You are a strict evaluation judge. Return only JSON with keys score, passed, label, reason.'),
+                array('role' => 'system', 'content' => $this->prompt_assets->load('core.evaluation.judge.system')),
                 array('role' => 'user', 'content' => $judge_prompt)
             );
             $response = $this->llm_service->callLlmApi($messages, $judge_model, 0.0, 400, array('conversation_id' => $conversation_id, 'sent_context' => $messages, 'is_validated' => true));

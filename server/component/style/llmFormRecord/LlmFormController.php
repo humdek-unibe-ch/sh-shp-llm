@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../../component/style/formUserInput/FormUserInputController.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
  * Controller for LLM form styles (llmFormRecord and llmFormLog).
@@ -18,10 +19,14 @@ require_once __DIR__ . "/../../../service/LlmService.php";
  */
 class LlmFormController extends FormUserInputController
 {
+    /** @var LlmPromptAssetLoader */
+    private $prompt_assets;
     /* Constructors ***********************************************************/
 
     public function __construct($model)
     {
+        $this->prompt_assets = new LlmPromptAssetLoader();
+
         if (isset($_POST['__llm_action']) && in_array($_POST['__llm_action'], ['regenerate', 'retry', 'generate_feedback'])) {
             $this->model = $model;
             $this->success = false;
@@ -388,7 +393,8 @@ class LlmFormController extends FormUserInputController
 
         $system_prompt = $interpolated_context;
         if (!empty($user_language)) {
-            $system_prompt .= "\n\nPlease respond in the following language: {$user_language}.";
+            $suffix = $this->prompt_assets->load('core.playground.language_suffix');
+            $system_prompt .= "\n\n" . strtr($suffix, array('{{language_code}}' => $user_language));
         }
 
         $llm_service = new LlmService($model->get_services());

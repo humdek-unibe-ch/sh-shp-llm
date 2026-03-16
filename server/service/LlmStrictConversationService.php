@@ -18,13 +18,17 @@
  * - This approach is more efficient, maintains conversation flow, and leverages
  *   the LLM's understanding of context.
  */
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+
 class LlmStrictConversationService
 {
     private $llm_service;
+    private $prompt_assets;
 
     public function __construct($llm_service)
     {
         $this->llm_service = $llm_service;
+        $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
     /**
@@ -69,27 +73,11 @@ class LlmStrictConversationService
      */
     private function buildEnforcementPrompt(string $context, string $topicList): string
     {
-        return <<<PROMPT
-## STRICT CONVERSATION MODE ENABLED
-
-You are operating in **strict conversation mode**. You must ONLY discuss topics directly related to the following context:
-
----
-{$context}
----
-
-### Key Topics: {$topicList}
-
-### Rules:
-1. **Stay On Topic**: Only answer questions and provide information related to the topics above.
-2. **Polite Redirection**: If a user asks about ANY unrelated topic, respond with a brief, friendly message like:
-   - "I'm here to help you with {$topicList}. Is there something specific about these topics I can assist you with?"
-   - "That's outside my focus area for this conversation. I'm specialized in discussing {$topicList}. What would you like to know about that?"
-3. **No Exceptions**: Do not provide information about unrelated subjects, even if the request seems harmless.
-4. **Natural Flow**: When redirecting, be warm and helpful, not robotic or dismissive.
-
-Remember: Your purpose in this conversation is specifically defined by the context above. Stay focused and helpful within that scope.
-PROMPT;
+        $template = $this->prompt_assets->load('core.strict_conversation.enforcement');
+        return strtr($template, array(
+            '{{context}}' => $context,
+            '{{topic_list}}' => $topicList,
+        ));
     }
 
     /**

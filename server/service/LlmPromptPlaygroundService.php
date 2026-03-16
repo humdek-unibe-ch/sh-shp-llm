@@ -14,6 +14,7 @@ require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 require_once __DIR__ . '/LlmPromptResponseRenderService.php';
 require_once __DIR__ . '/LlmPromptRegistryService.php';
 require_once __DIR__ . '/LlmScriptService.php';
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 class LlmPromptPlaygroundService extends BaseLlmService
 {
@@ -31,6 +32,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
 
     /** @var LlmScriptService */
     private $script_service;
+    /** @var LlmPromptAssetLoader */
+    private $prompt_assets;
 
     public function __construct($services)
     {
@@ -40,6 +43,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $this->render_service = new LlmPromptResponseRenderService();
         $this->registry_service = new LlmPromptRegistryService($services);
         $this->script_service = new LlmScriptService($services);
+        $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
     /**
@@ -244,7 +248,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $system_prompt = $interpolated_context;
 
         if ($language_code !== '') {
-            $system_prompt .= "\n\nPlease respond in the following language: {$language_code}.";
+            $suffix = $this->prompt_assets->load('core.playground.language_suffix');
+            $system_prompt .= "\n\n" . strtr($suffix, array('{{language_code}}' => $language_code));
         }
 
         $messages = array(

@@ -4,9 +4,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . '/base/BaseLlmService.php';
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 class LlmPromptExecutionProfileService extends BaseLlmService
 {
+    /** @var LlmPromptAssetLoader */
+    private $prompt_assets;
+
+    public function __construct($services)
+    {
+        parent::__construct($services);
+        $this->prompt_assets = new LlmPromptAssetLoader();
+    }
+
     /**
      * Resolve the runtime execution profile for a prompt owner.
      *
@@ -105,7 +115,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
     public function resolveDefaultChatPromptForProfile($profile)
     {
         if ($profile === 'chat_runtime') {
-            return 'Test this prompt in playground mode.';
+            return $this->prompt_assets->load('core.prompt_execution.default_chat_prompt');
         }
 
         $extended = trim((string)$this->resolveExtendedDefaultChatPromptForProfile($profile));
@@ -113,7 +123,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             return $extended;
         }
 
-        return 'Test this prompt in playground mode.';
+        return $this->prompt_assets->load('core.prompt_execution.default_chat_prompt');
     }
 
     /**
