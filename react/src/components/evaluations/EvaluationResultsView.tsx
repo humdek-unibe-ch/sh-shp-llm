@@ -30,15 +30,20 @@ export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
   deletingRunId = null,
 }) => {
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'passed' | 'failed'>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   const normalizedSearch = search.trim().toLowerCase();
   const filteredCases = useMemo(() => {
-    if (!normalizedSearch) {
-      return cases;
-    }
     return cases.filter((item) => {
+      const itemStatus = item.status || (item.passed === false ? 'failed' : 'passed');
+      if (statusFilter !== 'all' && itemStatus !== statusFilter) {
+        return false;
+      }
+      if (!normalizedSearch) {
+        return true;
+      }
       const haystack = [
         item.title,
         item.dataset_case_title,
@@ -53,7 +58,7 @@ export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
         .toLowerCase();
       return haystack.includes(normalizedSearch);
     });
-  }, [cases, normalizedSearch]);
+  }, [cases, normalizedSearch, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCases.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -62,7 +67,7 @@ export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
 
   useEffect(() => {
     setPage(1);
-  }, [normalizedSearch, pageSize, cases.length]);
+  }, [normalizedSearch, pageSize, cases.length, statusFilter]);
 
   if (!result?.run?.summary) {
     return null;
@@ -76,14 +81,28 @@ export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
       </div>
       <EvaluationSummaryCards summary={result.run.summary} baselineSummary={baselineSummary} />
       <div className="d-flex justify-content-between align-items-center flex-wrap mt-2" style={{ gap: 8 }}>
-        <Form.Control
-          size="sm"
-          type="text"
-          placeholder="Search evaluations..."
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          style={{ maxWidth: 320 }}
-        />
+        <div className="d-flex align-items-center flex-wrap" style={{ gap: 8 }}>
+          <Form.Control
+            size="sm"
+            type="text"
+            placeholder="Search evaluations..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            style={{ maxWidth: 320 }}
+          />
+          <Form.Control
+            as="select"
+            size="sm"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as 'all' | 'pending_review' | 'passed' | 'failed')}
+            style={{ width: 180 }}
+          >
+            <option value="all">All statuses</option>
+            <option value="pending_review">Pending manual review</option>
+            <option value="passed">Passed</option>
+            <option value="failed">Failed</option>
+          </Form.Control>
+        </div>
         <div className="small text-muted">
           Showing {filteredCases.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + pageSize, filteredCases.length)} of {filteredCases.length}
         </div>

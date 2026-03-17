@@ -127,6 +127,29 @@ export interface PromptBuilderSuggestion {
   change_summary: string;
 }
 
+export interface PromptBuilderExample {
+  score_id?: number;
+  run_case_id?: number;
+  run_id?: number;
+  case_id: number;
+  case_key?: string;
+  title?: string | null;
+  input_payload_json?: string | null;
+  expected_output_json?: string | null;
+  expected_labels_json?: string | null;
+  notes?: string | null;
+  tags_json?: string | null;
+  dataset_id?: number | null;
+  dataset_name?: string | null;
+  execution_profile_code?: string | null;
+  score_value_numeric?: number | null;
+  score_value_label?: string | null;
+  approved_at?: string | null;
+  approved_by_name?: string | null;
+  normalized_output_json?: string | null;
+  output_payload_json?: string | null;
+}
+
 export interface PromptBuilderResponse {
   suggestion: PromptBuilderSuggestion;
   model: string;

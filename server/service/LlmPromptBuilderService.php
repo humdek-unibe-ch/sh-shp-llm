@@ -30,7 +30,7 @@ class LlmPromptBuilderService extends BaseLlmService
      * @param string|null $model_name
      * @return array
      */
-    public function buildSuggestion($descriptor, $current_prompt, $instructions, $model_name = null)
+    public function buildSuggestion($descriptor, $current_prompt, $instructions, $model_name = null, $examples = array())
     {
         $config = $this->getLlmConfig();
         $model_name = $model_name ?: $config['llm_default_model'];
@@ -38,11 +38,13 @@ class LlmPromptBuilderService extends BaseLlmService
         $max_tokens = $config['llm_max_tokens'];
 
         $system_prompt = $this->prompt_assets->load('core.prompt_builder.system');
+        $normalized_examples = $this->normalizeExamplesForBuilder($examples);
 
         $user_prompt = json_encode(array(
             'owner' => $descriptor,
             'current_prompt' => $current_prompt,
-            'instructions' => $instructions
+            'instructions' => $instructions,
+            'examples' => $normalized_examples
         ), JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         $messages = array(
@@ -102,6 +104,202 @@ class LlmPromptBuilderService extends BaseLlmService
             'id_llmMessages_request' => $request_msg_id,
             'id_llmMessages_response' => $response['logged_message_id'] ?? null
         );
+    }
+
+    private function normalizeExamplesForBuilder($examples)
+    {
+        $normalized = array();
+        foreach ((array)$examples as $example) {
+            if (!is_array($example)) {
+                continue;
+            }
+
+            $normalized[] = array(
+                'case_id' => isset($example['case_id']) ? (int)$example['case_id'] : null,
+                'title' => trim((string)($example['title'] ?? '')),
+                'dataset_name' => trim((string)($example['dataset_name'] ?? '')),
+                'approved_by_name' => trim((string)($example['approved_by_name'] ?? '')),
+                'approved_at' => trim((string)($example['approved_at'] ?? '')),
+                'student_input' => $this->extractExampleStudentInput($example),
+                'approved_response' => $this->extractExampleApprovedResponse($example),
+                'expected_response' => $this->extractExampleExpectedResponse($example),
+                'notes' => trim((string)($example['notes'] ?? '')),
+                'tags' => $this->decodeJsonList($example['tags_json'] ?? null),
+            );
+        }
+
+        return $normalized;
+    }
+
+    private function extractExampleStudentInput($example)
+    {
+        $payload = $this->decodeJsonAssoc($example['input_payload_json'] ?? null);
+        if (!$payload) {
+            return '';
+        }
+
+        $candidate = $this->extractTextFromPayloadValue($payload['variables'] ?? null);
+        if ($candidate !== '') {
+            return $candidate;
+        }
+
+        $candidate = $this->extractTextFromPayloadValue($payload['form_data'] ?? null);
+        if ($candidate !== '') {
+            return $candidate;
+        }
+
+        return $this->extractTextFromPayloadValue($payload);
+    }
+
+    private function extractExampleApprovedResponse($example)
+    {
+        $normalized_output = $this->decodeJsonAssoc($example['normalized_output_json'] ?? null);
+        $candidate = $this->extractTextFromOutputPayload($normalized_output);
+        if ($candidate !== '') {
+            return $candidate;
+        }
+
+        $output_payload = $this->decodeJsonAssoc($example['output_payload_json'] ?? null);
+        $candidate = $this->extractTextFromOutputPayload($output_payload);
+        if ($candidate !== '') {
+            return $candidate;
+        }
+
+        return $this->extractExampleExpectedResponse($example);
+    }
+
+    private function extractExampleExpectedResponse($example)
+    {
+        $expected_output = $this->decodeJsonAssoc($example['expected_output_json'] ?? null);
+        if (!$expected_output) {
+            return '';
+        }
+
+        foreach (array('assistant_text', 'display_content', 'raw_content', 'content', 'text') as $key) {
+            $candidate = $this->cleanExampleText($expected_output[$key] ?? '');
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return $this->extractTextFromPayloadValue($expected_output);
+    }
+
+    private function decodeJsonAssoc($value)
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($value, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded;
+    }
+
+    private function decodeJsonList($value)
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return array();
+        }
+
+        $decoded = json_decode($value, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+            return array();
+        }
+
+        return array_values(array_filter(array_map(function ($item) {
+            return trim((string)$item);
+        }, $decoded), function ($item) {
+            return $item !== '';
+        }));
+    }
+
+    private function extractTextFromOutputPayload($payload)
+    {
+        if (!is_array($payload)) {
+            return '';
+        }
+
+        foreach (array('display_content', 'raw_content', 'assistant_text', 'content', 'text') as $key) {
+            $candidate = $this->cleanExampleText($payload[$key] ?? '');
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        if (!empty($payload['parsed_response']['content']['text_blocks']) && is_array($payload['parsed_response']['content']['text_blocks'])) {
+            foreach ($payload['parsed_response']['content']['text_blocks'] as $block) {
+                if (!is_array($block)) {
+                    continue;
+                }
+                $candidate = $this->cleanExampleText($block['content'] ?? '');
+                if ($candidate !== '') {
+                    return $candidate;
+                }
+            }
+        }
+
+        return $this->extractTextFromPayloadValue($payload);
+    }
+
+    private function extractTextFromPayloadValue($value)
+    {
+        if (is_string($value)) {
+            return $this->cleanExampleText($value);
+        }
+
+        if (!is_array($value)) {
+            return '';
+        }
+
+        $priority_keys = array(
+            'student_support',
+            'student_answer',
+            'student_input',
+            'answer',
+            'input',
+            'prompt',
+            'message',
+            'content',
+            'text',
+            'feedback',
+        );
+
+        foreach ($priority_keys as $key) {
+            if (!array_key_exists($key, $value)) {
+                continue;
+            }
+            $candidate = $this->extractTextFromPayloadValue($value[$key]);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        foreach ($value as $item) {
+            $candidate = $this->extractTextFromPayloadValue($item);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    private function cleanExampleText($value)
+    {
+        $text = trim((string)$value);
+        if ($text === '') {
+            return '';
+        }
+
+        $text = preg_replace("/\r\n|\r/u", "\n", $text);
+        $text = preg_replace("/[ \t]+/u", ' ', $text);
+        $text = preg_replace("/\n{3,}/u", "\n\n", $text);
+
+        return trim((string)$text);
     }
 
     private function decodeBuilderResponse($content)

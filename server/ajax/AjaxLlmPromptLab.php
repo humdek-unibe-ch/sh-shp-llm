@@ -122,10 +122,32 @@ class AjaxLlmPromptLab extends BaseAjax
                     $this->assertCsrf($post);
                     return $this->handleImportParsedCases($post, $descriptor);
 
+                case 'move_dataset_cases':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleMoveDatasetCases($post, $descriptor);
+
+                case 'list_compatible_datasets':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListCompatibleDatasets($post, $descriptor);
+
+                case 'list_case_evaluation_history':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListCaseEvaluationHistory($post);
+
+                case 'list_evaluation_example_candidates':
+                    $this->assertAccess($descriptor, 'select');
+                    return $this->handleListEvaluationExampleCandidates($post, $descriptor);
+
                 case 'delete_dataset_case':
                     $this->assertAccess($descriptor, 'update');
                     $this->assertCsrf($post);
                     return $this->handleDeleteDatasetCase($post);
+
+                case 'update_dataset_case':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleUpdateDatasetCase($post);
 
                 case 'list_eval_definitions':
                     $this->assertAccess($descriptor, 'select');
@@ -235,7 +257,8 @@ class AjaxLlmPromptLab extends BaseAjax
             $descriptor,
             (string)($post['current_prompt'] ?? ''),
             (string)($post['instructions'] ?? ''),
-            !empty($post['selected_model']) ? $post['selected_model'] : null
+            !empty($post['selected_model']) ? $post['selected_model'] : null,
+            $this->decodeJson($post['examples_json'] ?? '[]')
         );
 
         $bootstrap = $this->registry_service->bootstrapOwner($descriptor);
@@ -248,7 +271,8 @@ class AjaxLlmPromptLab extends BaseAjax
             'id_llmMessages_response' => $result['id_llmMessages_response'] ?? null,
             'run_mode' => LLM_PROMPT_RUN_MODE_BUILDER,
             'variables_json' => array(
-                'instructions' => (string)($post['instructions'] ?? '')
+                'instructions' => (string)($post['instructions'] ?? ''),
+                'examples' => $this->decodeJson($post['examples_json'] ?? '[]')
             ),
             'config_snapshot_json' => array(
                 'model' => $result['model'] ?? null
@@ -431,7 +455,23 @@ class AjaxLlmPromptLab extends BaseAjax
         if ($case_id <= 0) {
             throw new Exception('Missing dataset_case_id');
         }
-        return array('deleted' => $this->dataset_service->deleteDatasetCase($case_id));
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        return array('deleted' => $this->dataset_service->deleteDatasetCase($case_id, $dataset_id));
+    }
+
+    private function handleUpdateDatasetCase($post)
+    {
+        $case_id = isset($post['dataset_case_id']) ? (int)$post['dataset_case_id'] : 0;
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($case_id <= 0 || $dataset_id <= 0) {
+            throw new Exception('Missing dataset_case_id or dataset_id');
+        }
+
+        return $this->dataset_service->updateDatasetCase($case_id, $dataset_id, array(
+            'title' => $post['title'] ?? null,
+            'notes' => $post['notes'] ?? null,
+            'tags' => $this->decodeJson($post['tags_json'] ?? '[]')
+        ));
     }
 
     private function handleParseCasesFromText($post, $descriptor)
@@ -477,6 +517,67 @@ class AjaxLlmPromptLab extends BaseAjax
             $cases,
             $runtime_overrides
         );
+    }
+
+    private function handleMoveDatasetCases($post, $descriptor)
+    {
+        $source_dataset_id = isset($post['source_dataset_id']) ? (int)$post['source_dataset_id'] : 0;
+        $target_dataset_id = isset($post['target_dataset_id']) ? (int)$post['target_dataset_id'] : 0;
+        if ($source_dataset_id <= 0 || $target_dataset_id <= 0) {
+            throw new Exception('source_dataset_id and target_dataset_id are required');
+        }
+        $this->assertDatasetDescriptorScope($source_dataset_id, $descriptor);
+        $this->assertDatasetDescriptorScope($target_dataset_id, $descriptor);
+
+        $case_ids = $this->decodeJson($post['case_ids_json'] ?? '[]');
+        if (!is_array($case_ids) || empty($case_ids)) {
+            throw new Exception('At least one case is required');
+        }
+
+        return $this->dataset_service->moveDatasetCases(
+            $source_dataset_id,
+            $target_dataset_id,
+            $case_ids,
+            array(
+                'remove_source' => !empty($post['remove_source']),
+                'promoted_by_run_case_id' => isset($post['promoted_by_run_case_id']) ? (int)$post['promoted_by_run_case_id'] : null,
+            )
+        );
+    }
+
+    private function handleListCompatibleDatasets($post, $descriptor)
+    {
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $descriptor);
+        return $this->dataset_service->listCompatibleDatasets($dataset_id, array(
+            'owner_type_scope' => $descriptor['owner_type'] ?? null,
+            'owner_id_scope' => $descriptor['owner_id'] ?? null,
+        ));
+    }
+
+    private function handleListCaseEvaluationHistory($post)
+    {
+        $case_id = isset($post['case_id']) ? (int)$post['case_id'] : 0;
+        if ($case_id <= 0) {
+            throw new Exception('Missing case_id');
+        }
+        $limit = isset($post['limit']) ? (int)$post['limit'] : 30;
+        return $this->dataset_service->listCaseEvaluationHistory($case_id, $limit);
+    }
+
+    private function handleListEvaluationExampleCandidates($post, $descriptor)
+    {
+        $filters = array(
+            'dataset_id' => isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0,
+            'owner_type_scope' => $descriptor['owner_type'] ?? null,
+            'owner_id_scope' => $descriptor['owner_id'] ?? null,
+            'search' => (string)($post['search'] ?? ''),
+            'limit' => isset($post['limit']) ? (int)$post['limit'] : 100,
+        );
+        return $this->dataset_service->listEvaluationExampleCandidates($filters);
     }
 
     private function handleRunDatasetEval($post, $descriptor)

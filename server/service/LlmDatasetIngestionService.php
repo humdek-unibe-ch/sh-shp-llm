@@ -55,18 +55,18 @@ class LlmDatasetIngestionService extends BaseLlmService
         $allow_script_source = !empty($context['allow_script_source']);
 
         if ($source_type === 'playground_run') {
-            return $this->listPlaygroundRunCandidates($limit, $descriptor, $allowed_page_id);
+            return $this->decorateImportCandidates('playground_run', $this->listPlaygroundRunCandidates($limit, $descriptor, $allowed_page_id));
         }
         if ($source_type === 'form_submission') {
-            return $this->isStyleOwner($descriptor) ? $this->listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id) : array();
+            return $this->isStyleOwner($descriptor) ? $this->decorateImportCandidates('form_submission', $this->listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id)) : array();
         }
         if ($source_type === 'conversation_message') {
             return ($this->isStyleOwner($descriptor) || $this->isScriptOwner($descriptor))
-                ? $this->listConversationCandidates($limit, $descriptor, $allowed_page_id)
+                ? $this->decorateImportCandidates('conversation_message', $this->listConversationCandidates($limit, $descriptor, $allowed_page_id))
                 : array();
         }
         if ($source_type === 'script_run') {
-            return $allow_script_source ? $this->listScriptCandidates($limit, $descriptor) : array();
+            return $allow_script_source ? $this->decorateImportCandidates('script_run', $this->listScriptCandidates($limit, $descriptor)) : array();
         }
 
         throw new Exception('Unsupported source type for import candidates');
@@ -289,7 +289,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         }
 
         return $this->dataset_service->createCase($dataset_id, array(
-            'title' => 'Playground run #' . $row['id'],
+            'title' => $this->buildImportedCaseTitle('Playground run', (string)($row['request_content'] ?? ''), (int)$row['id']),
             'case_type' => $this->dataset_service->toCaseType($execution_profile),
             'source_type' => 'playground_run',
             'input_payload' => array(
@@ -339,7 +339,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         }
 
         return $this->dataset_service->createCase($dataset_id, array(
-            'title' => 'Form submission #' . $message['id'],
+            'title' => $this->buildImportedCaseTitle('Form submission', $this->buildFieldPreview($parsed_form_data), (int)$message['id']),
             'case_type' => 'form_case',
             'source_type' => 'form_submission',
             'input_payload' => array(
@@ -391,7 +391,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         $variables = $is_script_owner ? $this->buildScriptVariablesFromMessage($trigger_message) : array();
 
         return $this->dataset_service->createCase($dataset_id, array(
-            'title' => 'Conversation message #' . $message['id'],
+            'title' => $this->buildImportedCaseTitle('Conversation message', $trigger_message, (int)$message['id']),
             'case_type' => $this->dataset_service->toCaseType($runtime_profile),
             'source_type' => 'conversation_message',
             'input_payload' => array(
@@ -478,7 +478,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
 
         return $this->dataset_service->createCase($dataset_id, array(
-            'title' => 'Script fixture #' . $script['id'] . ' ' . (string)($script['name'] ?? ''),
+            'title' => $this->buildImportedCaseTitle('Script fixture', (string)($script['name'] ?? ''), (int)$script['id']),
             'case_type' => 'script_case',
             'source_type' => 'script_run',
             'input_payload' => array(
@@ -516,6 +516,53 @@ class LlmDatasetIngestionService extends BaseLlmService
             array(':conversation_id' => (int)$conversation_id, ':up_to_message_id' => (int)$up_to_message_id)
         );
         return $this->dataset_service->normalizeMessages(array_reverse($rows));
+    }
+
+    private function decorateImportCandidates($source_type, $rows)
+    {
+        foreach ($rows as &$row) {
+            if ($source_type === 'form_submission') {
+                $parsed = $this->dataset_service->parseFieldLines((string)($row['content'] ?? ''));
+                $row['preview_text'] = $this->buildFieldPreview(!empty($parsed) ? $parsed : array('text' => (string)($row['content'] ?? '')));
+                $row['assistant_preview'] = '';
+            } elseif ($source_type === 'conversation_message') {
+                $row['preview_text'] = trim((string)($row['content'] ?? ''));
+                $row['assistant_preview'] = '';
+            } elseif ($source_type === 'playground_run') {
+                $row['preview_text'] = trim((string)($row['request_content'] ?? ''));
+                $row['assistant_preview'] = trim((string)($row['response_content'] ?? ''));
+            } elseif ($source_type === 'script_run') {
+                $row['preview_text'] = trim((string)($row['name'] ?? ''));
+                $row['assistant_preview'] = '';
+            }
+        }
+        unset($row);
+        return $rows;
+    }
+
+    private function buildImportedCaseTitle($prefix, $preview, $id)
+    {
+        $preview = trim(preg_replace('/\s+/', ' ', (string)$preview));
+        if ($preview === '') {
+            return $prefix . ' #' . (int)$id;
+        }
+        if (mb_strlen($preview) > 72) {
+            $preview = mb_substr($preview, 0, 72) . '...';
+        }
+        return $prefix . ': ' . $preview;
+    }
+
+    private function buildFieldPreview($values)
+    {
+        if (!is_array($values)) {
+            return '';
+        }
+        foreach ($values as $value) {
+            if (is_scalar($value) && trim((string)$value) !== '') {
+                return (string)$value;
+            }
+        }
+        return '';
     }
 
     private function loadNextAssistantMessage($conversation_id, $after_message_id)

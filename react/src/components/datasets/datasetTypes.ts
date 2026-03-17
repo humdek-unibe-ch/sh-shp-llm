@@ -13,16 +13,24 @@ export interface PromptDataset {
 export interface PromptDatasetCase {
   id: number;
   id_llm_eval_datasets: number;
+  link_id?: number | null;
   case_key: string;
   title?: string | null;
   case_type_code?: string | null;
+  execution_profile_code?: string | null;
   source_type_code?: string | null;
   input_payload_json?: string;
   expected_output_json?: string | null;
   expected_labels_json?: string | null;
   source_ref_json?: string | null;
+  provenance_json?: string | null;
   tags_json?: string | null;
   notes?: string | null;
+  promoted_from_dataset_id?: number | null;
+  promoted_by_run_case_id?: number | null;
+  promotion_mode?: string | null;
+  promoted_at?: string | null;
+  evaluation_runs_count?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -48,6 +56,8 @@ export interface PromptImportCandidate {
   role?: string | null;
   name?: string | null;
   model?: string | null;
+  preview_text?: string | null;
+  assistant_preview?: string | null;
 }
 
 export interface PromptAiImportCaseDraft {

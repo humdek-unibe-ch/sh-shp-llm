@@ -14,6 +14,9 @@ function shortText(value: string, max = 140): string {
 }
 
 function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
+  if (candidate.preview_text) {
+    return shortText(candidate.preview_text, 140);
+  }
   if (sourceType === 'script_run') {
     return shortText(`${candidate.name || 'Script'} (${candidate.model || 'default'})`, 110);
   }
@@ -21,6 +24,10 @@ function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptI
     return shortText(candidate.request_content || candidate.response_content || '', 140) || '(no request/response text)';
   }
   return shortText(candidate.content || '', 140) || '(empty message)';
+}
+
+function candidateAssistantPreview(candidate: PromptImportCandidate): string {
+  return shortText(candidate.assistant_preview || candidate.response_content || '', 140);
 }
 
 function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
@@ -189,15 +196,16 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
                 <th style={{ width: 40 }}></th>
                 <th>ID</th>
                 <th>Preview</th>
+                <th>Reply</th>
                 <th>Details</th>
                 <th>Created</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} className="text-muted small">Loading candidates...</td></tr>
+                <tr><td colSpan={6} className="text-muted small">Loading candidates...</td></tr>
               ) : filteredCandidates.length === 0 ? (
-                <tr><td colSpan={5} className="text-muted small">No candidates found.</td></tr>
+                <tr><td colSpan={6} className="text-muted small">No candidates found.</td></tr>
               ) : filteredCandidates.map((candidate) => {
                 const candidateId = Number(candidate.id);
                 const isSelected = selectedIds.includes(candidateId);
@@ -220,6 +228,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
                   </td>
                   <td className="small">{candidate.id}</td>
                   <td className="small">{candidatePreview(sourceType, candidate)}</td>
+                  <td className="small text-muted">{candidateAssistantPreview(candidate) || '-'}</td>
                   <td className="small text-muted">{candidateMeta(sourceType, candidate)}</td>
                   <td className="small">{candidate.created_at || candidate.updated_at || '-'}</td>
                 </tr>

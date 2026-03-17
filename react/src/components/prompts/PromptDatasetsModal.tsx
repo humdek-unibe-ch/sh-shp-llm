@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Col, Modal, Row, Table } from 'react-bootstrap';
 import { createDatasetApi } from '../datasets/datasetApi';
 import { DatasetBrowser } from '../datasets/DatasetBrowser';
+import { DatasetCaseHistoryModal } from '../datasets/DatasetCaseHistoryModal';
+import { DatasetCaseEditModal } from '../datasets/DatasetCaseEditModal';
 import { DatasetCasePreviewModal } from '../datasets/DatasetCasePreviewModal';
 import { DatasetCaseTable } from '../datasets/DatasetCaseTable';
 import { DatasetImportModal } from '../datasets/DatasetImportModal';
 import { DatasetAiImportModal } from '../datasets/DatasetAiImportModal';
+import { DatasetMoveCasesModal } from '../datasets/DatasetMoveCasesModal';
 import { JsonInspector } from '../shared/JsonInspector';
 import type { PromptDataset, PromptDatasetCase } from '../datasets/datasetTypes';
 import { createEvaluationApi } from '../evaluations/evaluationApi';
@@ -72,14 +75,24 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const [datasets, setDatasets] = useState<PromptDataset[]>([]);
   const [datasetSearch, setDatasetSearch] = useState('');
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
-  const [newDatasetName, setNewDatasetName] = useState('');
-  const [newDatasetType, setNewDatasetType] = useState('golden_manual');
+  const [datasetFormMode, setDatasetFormMode] = useState<'create' | 'edit' | null>(null);
+  const [datasetFormName, setDatasetFormName] = useState('');
+  const [datasetFormDescription, setDatasetFormDescription] = useState('');
+  const [datasetFormType, setDatasetFormType] = useState('golden_manual');
   const [cases, setCases] = useState<PromptDatasetCase[]>([]);
+  const [selectedCaseIds, setSelectedCaseIds] = useState<number[]>([]);
   const [loadingCases, setLoadingCases] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAiImportModal, setShowAiImportModal] = useState(false);
   const [showRunnerModal, setShowRunnerModal] = useState(false);
+  const [editingDataset, setEditingDataset] = useState<PromptDataset | null>(null);
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [compatibleDatasets, setCompatibleDatasets] = useState<PromptDataset[]>([]);
+  const [editingCase, setEditingCase] = useState<PromptDatasetCase | null>(null);
   const [casePreview, setCasePreview] = useState<PromptDatasetCase | null>(null);
+  const [caseHistoryCase, setCaseHistoryCase] = useState<PromptDatasetCase | null>(null);
+  const [caseHistoryEntries, setCaseHistoryEntries] = useState<PromptEvalRunCase[]>([]);
+  const [loadingCaseHistory, setLoadingCaseHistory] = useState(false);
   const [evalDefs, setEvalDefs] = useState<PromptEvalDefinition[]>([]);
   const [evalResult, setEvalResult] = useState<PromptEvalRunResult | null>(null);
   const [evalRunCases, setEvalRunCases] = useState<PromptEvalRunCase[]>([]);
@@ -92,6 +105,10 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const [hasAnyEvaluations, setHasAnyEvaluations] = useState(false);
   const [humanDrafts, setHumanDrafts] = useState<Record<string, { numeric: string; label: string; passed: string; reason: string }>>({});
   const selectedDataset = useMemo(() => datasets.find((item) => item.id === selectedDatasetId) || null, [datasets, selectedDatasetId]);
+  const selectedCases = useMemo(
+    () => cases.filter((item) => selectedCaseIds.includes(item.id)),
+    [cases, selectedCaseIds],
+  );
   const isSelectedDatasetLocked = !!selectedDataset?.is_locked;
   const evaluationCases = evalRunCases.length > 0 ? evalRunCases : (evalResult?.cases || []);
 
@@ -128,6 +145,10 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   useEffect(() => { if (show && selectedDatasetId) refreshSelectedDataset().catch(() => undefined); }, [selectedDatasetId, show]);
 
   useEffect(() => {
+    setSelectedCaseIds((current) => current.filter((caseId) => cases.some((item) => item.id === caseId)));
+  }, [cases]);
+
+  useEffect(() => {
     if (!show || !selectedDatasetId) {
       return;
     }
@@ -137,13 +158,49 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const handleCreateDataset = async (): Promise<boolean> => {
     setLoading(true); setError(null); setSuccess(null);
     try {
-      const created = await datasetApi.createDataset(descriptor, newDatasetName.trim(), executionProfile, '', newDatasetType);
-      setSelectedDatasetId(created.id); setNewDatasetName(''); await loadDatasets(); setSuccess(`Dataset "${created.name}" created.`);
+      const created = await datasetApi.createDataset(
+        descriptor,
+        datasetFormName.trim(),
+        executionProfile,
+        datasetFormDescription.trim(),
+        datasetFormType,
+      );
+      setSelectedDatasetId(created.id);
+      setDatasetFormMode(null);
+      setDatasetFormName('');
+      setDatasetFormDescription('');
+      setDatasetFormType('golden_manual');
+      await loadDatasets();
+      setSuccess(`Dataset "${created.name}" created.`);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create dataset');
       return false;
     } finally { setLoading(false); }
+  };
+
+  const handleStartCreateDataset = () => {
+    setEditingDataset(null);
+    setDatasetFormMode('create');
+    setDatasetFormName('');
+    setDatasetFormDescription('');
+    setDatasetFormType('golden_manual');
+  };
+
+  const handleStartEditDataset = (dataset: PromptDataset) => {
+    setEditingDataset(dataset);
+    setDatasetFormMode('edit');
+    setDatasetFormName(dataset.name || '');
+    setDatasetFormDescription(dataset.description || '');
+    setDatasetFormType(dataset.dataset_type_code || 'golden_manual');
+  };
+
+  const handleCancelDatasetForm = () => {
+    setDatasetFormMode(null);
+    setEditingDataset(null);
+    setDatasetFormName('');
+    setDatasetFormDescription('');
+    setDatasetFormType('golden_manual');
   };
 
   const handleToggleLock = async (dataset: PromptDataset) => {
@@ -232,9 +289,13 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   };
 
   const handleDeleteCase = async (datasetCase: PromptDatasetCase) => {
+    if (!selectedDatasetId) {
+      return;
+    }
     const performDelete = async () => {
       try {
-        await datasetApi.deleteDatasetCase(descriptor, datasetCase.id);
+        await datasetApi.deleteDatasetCase(descriptor, selectedDatasetId, datasetCase.id);
+        setSelectedCaseIds((current) => current.filter((caseId) => caseId !== datasetCase.id));
         await refreshSelectedDataset();
         await refreshLatestEvaluation();
         setSuccess(`Removed case "${datasetCase.title || datasetCase.case_key}". Related evaluation records for this case were cleaned up by cascade.`);
@@ -262,6 +323,92 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     if (window.confirm(message)) {
       await performDelete();
     }
+  };
+
+  const handleSaveDatasetMetadata = async (): Promise<boolean> => {
+    if (!editingDataset) {
+      return false;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await datasetApi.updateDataset(descriptor, editingDataset.id, {
+        name: datasetFormName.trim(),
+        description: datasetFormDescription.trim(),
+        datasetType: datasetFormType,
+      });
+      await loadDatasets();
+      if (selectedDatasetId === editingDataset.id) {
+        await refreshSelectedDataset();
+      }
+      setSuccess(`Dataset "${datasetFormName.trim()}" updated.`);
+      handleCancelDatasetForm();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update dataset');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenMoveCases = async () => {
+    if (!selectedDatasetId || selectedCaseIds.length === 0) {
+      setError('Select at least one case to move or promote.');
+      return;
+    }
+    try {
+      const targets = await datasetApi.listCompatibleDatasets(descriptor, selectedDatasetId);
+      setCompatibleDatasets((targets || []).filter((item) => item.id !== selectedDatasetId));
+      setShowMoveModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load compatible datasets');
+    }
+  };
+
+  const handleMoveCases = async (payload: { targetDatasetId: number; removeSource: boolean }) => {
+    if (!selectedDatasetId || selectedCaseIds.length === 0) {
+      return;
+    }
+    const response = await datasetApi.moveDatasetCases({
+      descriptor,
+      sourceDatasetId: selectedDatasetId,
+      targetDatasetId: payload.targetDatasetId,
+      caseIds: selectedCaseIds,
+      removeSource: payload.removeSource,
+    });
+    setSelectedCaseIds([]);
+    setShowMoveModal(false);
+    await refreshSelectedDataset();
+    setSuccess(
+      payload.removeSource
+        ? `Moved ${Number(response?.moved_count || 0)} case(s) to the target dataset.`
+        : `Promoted ${Number(response?.linked_count || response?.moved_count || 0)} case(s) to the target dataset.`,
+    );
+  };
+
+  const handleOpenCaseHistory = async (datasetCase: PromptDatasetCase) => {
+    setCaseHistoryCase(datasetCase);
+    setLoadingCaseHistory(true);
+    try {
+      const rows = await datasetApi.listCaseEvaluationHistory(descriptor, datasetCase.id, 40);
+      setCaseHistoryEntries(rows || []);
+    } catch (err) {
+      setCaseHistoryEntries([]);
+      setError(err instanceof Error ? err.message : 'Failed to load case history');
+    } finally {
+      setLoadingCaseHistory(false);
+    }
+  };
+
+  const handleSaveCaseMetadata = async (payload: { title: string; notes: string; tags: string[] }) => {
+    if (!selectedDatasetId || !editingCase) {
+      return;
+    }
+    await datasetApi.updateDatasetCase(descriptor, selectedDatasetId, editingCase.id, payload);
+    await refreshSelectedDataset();
+    setSuccess(`Case "${payload.title}" updated.`);
+    setEditingCase(null);
   };
 
   const fetchEvalRunCases = async (runId: number, label: 'Target' | 'Baseline') => {
@@ -490,12 +637,20 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                 selectedDatasetId={selectedDatasetId}
                 search={datasetSearch}
                 onSearchChange={(value) => { setDatasetSearch(value); loadDatasets(value).catch(() => undefined); }}
-                newDatasetName={newDatasetName}
-                newDatasetType={newDatasetType}
-                onNewDatasetNameChange={setNewDatasetName}
-                onNewDatasetTypeChange={setNewDatasetType}
+                datasetName={datasetFormName}
+                datasetDescription={datasetFormDescription}
+                datasetType={datasetFormType}
+                executionProfile={executionProfile}
+                formMode={datasetFormMode}
+                editingDataset={editingDataset}
+                onDatasetNameChange={setDatasetFormName}
+                onDatasetDescriptionChange={setDatasetFormDescription}
+                onDatasetTypeChange={setDatasetFormType}
                 onSelect={setSelectedDatasetId}
-                onCreateDataset={handleCreateDataset}
+                onOpenCreateForm={handleStartCreateDataset}
+                onOpenEditForm={handleStartEditDataset}
+                onSaveForm={() => (datasetFormMode === 'edit' ? handleSaveDatasetMetadata() : handleCreateDataset())}
+                onCancelForm={handleCancelDatasetForm}
                 onToggleLock={handleToggleLock}
                 onDeleteDataset={handleDeleteDataset}
                 disabled={disabled}
@@ -519,13 +674,41 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                     <Button size="sm" variant="primary" onClick={() => setShowRunnerModal(true)} disabled={disabled || !selectedDatasetId || promptValue.trim() === ''}>Run Evaluation</Button>
                   </div>
                 </div>
+                {selectedCases.length > 0 && (
+                  <div className="d-flex justify-content-between align-items-center flex-wrap border rounded bg-light p-2 mb-3" style={{ gap: 8 }}>
+                    <div className="small">
+                      <strong>{selectedCases.length}</strong> case(s) selected for move/promotion.
+                    </div>
+                    <div className="d-flex align-items-center" style={{ gap: 8 }}>
+                      <Button size="sm" variant="outline-primary" onClick={() => { void handleOpenMoveCases(); }} disabled={disabled || isSelectedDatasetLocked}>
+                        Move / Promote
+                      </Button>
+                      <Button size="sm" variant="outline-secondary" onClick={() => setSelectedCaseIds([])}>
+                        Clear Selection
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {isSelectedDatasetLocked && (
                   <div className="small text-warning mb-2">
                     <i className="fas fa-lock mr-1"></i>
                     This dataset is locked. Unlock it to add, import, or remove cases.
                   </div>
                 )}
-                <DatasetCaseTable cases={cases} loading={loadingCases} canDelete={!selectedDataset?.is_locked} onPreview={setCasePreview} onDelete={handleDeleteCase} />
+                <DatasetCaseTable
+                  cases={cases}
+                  loading={loadingCases}
+                  canDelete={!selectedDataset?.is_locked}
+                  selectedCaseIds={selectedCaseIds}
+                  onToggleSelection={(caseId, checked) => setSelectedCaseIds((current) => (
+                    checked ? Array.from(new Set([...current, caseId])) : current.filter((item) => item !== caseId)
+                  ))}
+                  onToggleAllSelection={(checked) => setSelectedCaseIds(checked ? cases.map((item) => item.id) : [])}
+                  onPreview={setCasePreview}
+                  onEdit={setEditingCase}
+                  onViewHistory={(datasetCase) => { void handleOpenCaseHistory(datasetCase); }}
+                  onDelete={handleDeleteCase}
+                />
                 <EvaluationResultsView
                   result={evalResult}
                   cases={evaluationCases}
@@ -575,6 +758,32 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
         onImported={(count) => {
           refreshSelectedDataset().catch(() => undefined);
           setSuccess(`Imported ${count} case(s).`);
+        }}
+      />
+      <DatasetMoveCasesModal
+        show={showMoveModal}
+        sourceDataset={selectedDataset}
+        targetDatasets={compatibleDatasets}
+        selectedCases={selectedCases}
+        onHide={() => setShowMoveModal(false)}
+        onSubmit={handleMoveCases}
+        disabled={disabled || isSelectedDatasetLocked}
+      />
+      <DatasetCaseEditModal
+        show={!!editingCase}
+        datasetCase={editingCase}
+        onHide={() => setEditingCase(null)}
+        onSave={handleSaveCaseMetadata}
+      />
+      <DatasetCaseHistoryModal
+        show={!!caseHistoryCase}
+        datasetCase={caseHistoryCase}
+        history={caseHistoryEntries}
+        loading={loadingCaseHistory}
+        onHide={() => setCaseHistoryCase(null)}
+        onInspect={(runCase) => {
+          setSelectedEvalCase(runCase);
+          setCaseHistoryCase(null);
         }}
       />
       <EvaluationRunnerModal show={showRunnerModal} onHide={() => setShowRunnerModal(false)} versions={versions} activeVersionId={activeVersionId} draftPromptPreview={promptValue} models={models} defaultModel={defaultModel} evalDefinitions={evalDefs} disabled={disabled} onRun={handleRunEvaluation} />

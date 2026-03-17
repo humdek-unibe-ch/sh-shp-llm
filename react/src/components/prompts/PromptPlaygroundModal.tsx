@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
+import { PromptBuilderWorkspace } from './PromptBuilderWorkspace';
 import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import { PromptEffectiveContextPanel } from './PromptEffectiveContextPanel';
 import { PromptResultPanel } from './PromptResultPanel';
@@ -30,6 +31,7 @@ interface PromptPlaygroundModalProps {
   defaultModel?: string | null;
   resolveRuntimeOverrides: () => Record<string, unknown>;
   resolveInitialVariables?: () => Record<string, unknown>;
+  onApplyDraft?: (promptTemplate: string, variables: PromptVariableDefinition[], changeSummary: string) => void;
   onRunComplete?: (payload: {
     variables: Record<string, unknown>;
     messageHistory: PromptMessage[];
@@ -176,6 +178,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   defaultModel,
   resolveRuntimeOverrides,
   resolveInitialVariables,
+  onApplyDraft,
   onRunComplete,
 }) => {
   const selectMenuStyles = {
@@ -185,16 +188,15 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }),
   };
   const effectiveModels = useMemo(() => buildEffectiveModels(models, defaultModel), [defaultModel, models]);
-  const detectedVariables = useMemo(() => detectVariablesFromPrompt(promptValue), [promptValue]);
   const initialRuntimeValues = useMemo(() => resolveInitialVariables?.() || {}, [resolveInitialVariables]);
-  const valueDerivedSchema = useMemo(
-    () => deriveVariableSchemaFromValues(initialRuntimeValues),
-    [initialRuntimeValues],
-  );
+  const [localPromptValue, setLocalPromptValue] = useState(promptValue);
+  const [localVariablesSchema, setLocalVariablesSchema] = useState<PromptVariableDefinition[]>(variablesSchema || []);
+  const detectedVariables = useMemo(() => detectVariablesFromPrompt(localPromptValue), [localPromptValue]);
+  const valueDerivedSchema = useMemo(() => deriveVariableSchemaFromValues(initialRuntimeValues), [initialRuntimeValues]);
   const effectiveSchema = useMemo(() => {
-    const merged = mergeVariableSchemas(variablesSchema || [], detectedVariables);
+    const merged = mergeVariableSchemas(localVariablesSchema || [], detectedVariables);
     return mergeVariableSchemas(merged, valueDerivedSchema);
-  }, [detectedVariables, valueDerivedSchema, variablesSchema]);
+  }, [detectedVariables, localVariablesSchema, valueDerivedSchema]);
   const initialVariables = useMemo(() => normalizeInitialValues(effectiveSchema, initialRuntimeValues), [effectiveSchema, initialRuntimeValues]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [variables, setVariables] = useState<Record<string, unknown>>(initialVariables);
@@ -207,7 +209,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jsonSyncError, setJsonSyncError] = useState<string | null>(null);
-  const [showDraft, setShowDraft] = useState(false);
+  const [showBuilderPanel, setShowBuilderPanel] = useState(false);
   const [schemaFromJson, setSchemaFromJson] = useState<PromptVariableDefinition[]>([]);
   const isChatRuntime = playgroundRuntimeType === 'chat'
     || (playgroundRuntimeType === 'none' && executionProfile === 'chat_runtime');
@@ -218,17 +220,26 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }
 
     const initialModel = defaultModel || effectiveModels[0]?.id || '';
+    const promptSchema = mergeVariableSchemas(
+      mergeVariableSchemas(variablesSchema || [], detectVariablesFromPrompt(promptValue)),
+      valueDerivedSchema,
+    );
+    const promptVariables = normalizeInitialValues(promptSchema, initialRuntimeValues);
+    const defaultMessages = [{ role: 'user', content: 'Test this prompt in playground mode.' } as PromptMessage];
+
     setSelectedModels(initialModel ? [initialModel] : []);
-    setVariables(initialVariables);
-    setMessageHistory([{ role: 'user', content: 'Test this prompt in playground mode.' }]);
-    setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, initialVariables, [{ role: 'user', content: 'Test this prompt in playground mode.' }]), null, 2));
+    setLocalPromptValue(promptValue);
+    setLocalVariablesSchema(variablesSchema || []);
+    setVariables(promptVariables);
+    setMessageHistory(defaultMessages);
+    setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, promptVariables, defaultMessages), null, 2));
     setResult(null);
     setError(null);
     setJsonSyncError(null);
     setSchemaFromJson([]);
     setUseRawJson(false);
-    setShowDraft(false);
-  }, [defaultModel, effectiveModels, initialVariables, isChatRuntime, show]);
+    setShowBuilderPanel(false);
+  }, [defaultModel, effectiveModels, initialRuntimeValues, isChatRuntime, promptValue, show, valueDerivedSchema, variablesSchema]);
 
   useEffect(() => {
     if (!show || !useRawJson) {
@@ -261,7 +272,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, variables, messageHistory), null, 2));
   }, [isChatRuntime, messageHistory, show, useRawJson, variables]);
 
-  const canRun = !disabled && promptValue.trim() !== '' && selectedModels.length > 0;
+  const canRun = !disabled && localPromptValue.trim() !== '' && selectedModels.length > 0;
 
   const updateMessage = (index: number, field: keyof PromptMessage, value: string) => {
     setMessageHistory((current) => current.map((item, itemIndex) => (
@@ -345,7 +356,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
       const resolvedRuntimeOverrides = resolveRuntimeOverrides();
       const nextResult = await api.playgroundRun({
         descriptor,
-        draftPrompt: promptValue,
+        draftPrompt: localPromptValue,
         runtimeOverrides: resolvedRuntimeOverrides,
         variables: payloadVariables,
         messageHistory: payloadMessageHistory,
@@ -494,18 +505,63 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
 
           <Col lg={8}>
             <div className="border rounded p-3 mb-3">
-              <div className="d-flex justify-content-between align-items-center">
-                <div className="small font-weight-bold text-muted">Draft Prompt</div>
-                <Button
-                  size="sm"
-                  variant="outline-secondary"
-                  onClick={() => setShowDraft((current) => !current)}
-                >
-                  {showDraft ? 'Collapse' : 'Expand'}
-                </Button>
+              <div className="d-flex justify-content-between align-items-center flex-wrap" style={{ gap: 8 }}>
+                <div>
+                  <div className="small font-weight-bold text-muted">Playground Draft Workspace</div>
+                  <div className="small text-muted">Edit locally here, test it, then apply it back to the saved draft only when you are happy.</div>
+                </div>
+                <div className="d-flex align-items-center flex-wrap" style={{ gap: 8 }}>
+                  <Button size="sm" variant="outline-info" onClick={() => setShowBuilderPanel((current) => !current)} disabled={disabled}>
+                    {showBuilderPanel ? 'Hide Build With AI' : 'Build With AI'}
+                  </Button>
+                  <Button size="sm" variant="outline-secondary" onClick={() => {
+                    setLocalPromptValue(promptValue);
+                    setLocalVariablesSchema(variablesSchema || []);
+                  }} disabled={disabled}>
+                    Reset From Draft
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={() => onApplyDraft?.(localPromptValue, effectiveSchema, 'Applied from playground')}
+                    disabled={disabled || !onApplyDraft}
+                  >
+                    Apply To Draft
+                  </Button>
+                </div>
               </div>
-              {showDraft && (
-                <pre className="bg-light border rounded p-3 mt-2 mb-0 prompt-pre">{promptValue}</pre>
+              <Form.Control
+                as="textarea"
+                rows={10}
+                className="mt-3 prompt-builder-instructions"
+                value={localPromptValue}
+                onChange={(event) => setLocalPromptValue(event.target.value)}
+                disabled={disabled}
+              />
+              {showBuilderPanel && (
+                <div className="border rounded bg-light p-3 mt-3">
+                  <div className="small font-weight-bold text-muted mb-2">Build With AI</div>
+                  <div className="small text-muted mb-3">
+                    Describe what you want to improve, then generate a draft directly against this playground copy.
+                  </div>
+                  <PromptBuilderWorkspace
+                    show={showBuilderPanel}
+                    api={api}
+                    descriptor={descriptor}
+                    currentPrompt={localPromptValue}
+                    models={models}
+                    defaultModel={defaultModel}
+                    onApplySuggestion={(nextPrompt, nextVariables) => {
+                      setLocalPromptValue(nextPrompt);
+                      setLocalVariablesSchema(nextVariables);
+                    }}
+                    onClose={() => setShowBuilderPanel(false)}
+                    disabled={disabled}
+                    showAutoApplyOnClose={false}
+                    showApplySuggestionButton
+                    applySuggestionButtonLabel="Apply To Draft"
+                  />
+                </div>
               )}
             </div>
 
@@ -563,6 +619,7 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
           )}
         </Button>
       </Modal.Footer>
+
     </Modal>
   );
 };

@@ -1,5 +1,6 @@
 import type {
   PromptBootstrapData,
+  PromptBuilderExample,
   PromptBuilderResponse,
   PromptDataset,
   PromptDatasetCase,
@@ -36,6 +37,7 @@ interface BuilderRunRequest {
   currentPrompt: string;
   instructions: string;
   selectedModel?: string | null;
+  examples?: PromptBuilderExample[];
 }
 
 interface AddCaseFromPlaygroundRequest {
@@ -105,6 +107,14 @@ interface LinkEvalRunBaselineRequest {
   runId: number;
   baselineRunId: number;
   baselineSummary?: Record<string, unknown>;
+}
+
+interface MoveDatasetCasesRequest {
+  descriptor: PromptDescriptor;
+  sourceDatasetId: number;
+  targetDatasetId: number;
+  caseIds: number[];
+  removeSource?: boolean;
 }
 
 function appendDescriptor(formData: FormData, descriptor: PromptDescriptor): void {
@@ -297,6 +307,7 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       currentPrompt,
       instructions,
       selectedModel,
+      examples,
     }: BuilderRunRequest): Promise<PromptBuilderResponse> {
       const formData = new FormData();
       formData.append('action', 'builder_run');
@@ -306,6 +317,9 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       formData.append('csrf_token', resolvedCsrfToken);
       if (selectedModel) {
         formData.append('selected_model', selectedModel);
+      }
+      if (examples && examples.length > 0) {
+        formData.append('examples_json', JSON.stringify(examples));
       }
       return post<PromptBuilderResponse>(formData);
     },
@@ -464,13 +478,84 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       return post<PromptDatasetCase[]>(formData);
     },
 
-    async deleteDatasetCase(descriptor: PromptDescriptor, datasetCaseId: number): Promise<{ deleted: boolean }> {
+    async deleteDatasetCase(descriptor: PromptDescriptor, datasetId: number, datasetCaseId: number): Promise<{ deleted: boolean }> {
       const formData = new FormData();
       formData.append('action', 'delete_dataset_case');
       appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
       formData.append('dataset_case_id', String(datasetCaseId));
       formData.append('csrf_token', resolvedCsrfToken);
       return post<{ deleted: boolean }>(formData);
+    },
+
+    async updateDatasetCase(
+      descriptor: PromptDescriptor,
+      datasetId: number,
+      datasetCaseId: number,
+      payload: { title?: string; notes?: string; tags?: string[] },
+    ): Promise<PromptDatasetCase> {
+      const formData = new FormData();
+      formData.append('action', 'update_dataset_case');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('dataset_case_id', String(datasetCaseId));
+      if (payload.title != null) formData.append('title', payload.title);
+      if (payload.notes != null) formData.append('notes', payload.notes);
+      if (payload.tags != null) formData.append('tags_json', JSON.stringify(payload.tags));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<PromptDatasetCase>(formData);
+    },
+
+    async moveDatasetCases({
+      descriptor,
+      sourceDatasetId,
+      targetDatasetId,
+      caseIds,
+      removeSource = false,
+    }: MoveDatasetCasesRequest): Promise<{ moved_count: number; linked_count: number; removed_count: number; cases: PromptDatasetCase[] }> {
+      const formData = new FormData();
+      formData.append('action', 'move_dataset_cases');
+      appendDescriptor(formData, descriptor);
+      formData.append('source_dataset_id', String(sourceDatasetId));
+      formData.append('target_dataset_id', String(targetDatasetId));
+      formData.append('case_ids_json', JSON.stringify(caseIds || []));
+      formData.append('remove_source', removeSource ? '1' : '0');
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<{ moved_count: number; linked_count: number; removed_count: number; cases: PromptDatasetCase[] }>(formData);
+    },
+
+    async listCompatibleDatasets(descriptor: PromptDescriptor, datasetId: number): Promise<PromptDataset[]> {
+      const formData = new FormData();
+      formData.append('action', 'list_compatible_datasets');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      return post<PromptDataset[]>(formData);
+    },
+
+    async listCaseEvaluationHistory(descriptor: PromptDescriptor, caseId: number, limit = 30): Promise<PromptEvalRunCase[]> {
+      const formData = new FormData();
+      formData.append('action', 'list_case_evaluation_history');
+      appendDescriptor(formData, descriptor);
+      formData.append('case_id', String(caseId));
+      formData.append('limit', String(limit));
+      return post<PromptEvalRunCase[]>(formData);
+    },
+
+    async listEvaluationExampleCandidates(
+      descriptor: PromptDescriptor,
+      filters?: { datasetId?: number | null; search?: string; limit?: number },
+    ): Promise<PromptBuilderExample[]> {
+      const formData = new FormData();
+      formData.append('action', 'list_evaluation_example_candidates');
+      appendDescriptor(formData, descriptor);
+      if (filters?.datasetId != null) {
+        formData.append('dataset_id', String(filters.datasetId));
+      }
+      if (filters?.search) {
+        formData.append('search', filters.search);
+      }
+      formData.append('limit', String(filters?.limit ?? 100));
+      return post<PromptBuilderExample[]>(formData);
     },
 
     async parseCasesFromText({

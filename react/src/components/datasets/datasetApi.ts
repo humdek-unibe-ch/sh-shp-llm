@@ -84,8 +84,20 @@ export function createDatasetApi(api: PromptLabApi) {
         runtimeOverrides,
       });
     },
-    deleteDatasetCase(descriptor: PromptDescriptor, datasetCaseId: number): Promise<{ deleted: boolean }> {
-      return api.deleteDatasetCase(descriptor, datasetCaseId);
+    updateDatasetCase(
+      descriptor: PromptDescriptor,
+      datasetId: number,
+      datasetCaseId: number,
+      payload: { title?: string; notes?: string; tags?: string[] },
+    ): Promise<PromptDatasetCase> {
+      return api.updateDatasetCase(descriptor, datasetId, datasetCaseId, payload);
     },
+    deleteDatasetCase(descriptor: PromptDescriptor, datasetId: number, datasetCaseId: number): Promise<{ deleted: boolean }> {
+      return api.deleteDatasetCase(descriptor, datasetId, datasetCaseId);
+    },
+    moveDatasetCases: api.moveDatasetCases,
+    listCompatibleDatasets: api.listCompatibleDatasets,
+    listCaseEvaluationHistory: api.listCaseEvaluationHistory,
+    listEvaluationExampleCandidates: api.listEvaluationExampleCandidates,
   };
 }

@@ -5,6 +5,38 @@
 -- core formUserInput with LLM generation capabilities.
 -- =====================================================
 
+-- =====================================================
+-- TEST RESET HELPERS (KEEP COMMENTED)
+-- Drop prompt-lab tables in FK-safe order when you need
+-- a clean local rebuild during v1.1.0 testing.
+-- Note:
+-- - `llm_prompt_locales` and `llm_prompt_versions` have a cycle through
+--   `fk_llm_prompt_locales_active_version`, so break that FK first.
+-- - `llm_scripts` references `llm_prompt_entries`, so break that FK too.
+-- - Use the shared `drop_foreign_key(...)` helper so the block stays
+--   rerunnable while testing.
+-- =====================================================
+-- CALL drop_foreign_key('llm_prompt_locales', 'fk_llm_prompt_locales_active_version');
+-- CALL drop_foreign_key('llm_scripts', 'fk_llm_scripts_prompt_entry');
+-- CALL drop_foreign_key('llm_eval_run_cases', 'fk_eval_run_cases_case');
+-- CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_dataset');
+-- CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_type');
+-- CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_source');
+-- CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_user_created');
+-- CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_user_updated');
+-- DROP TABLE IF EXISTS `llm_eval_dataset_cases`;
+-- DROP TABLE IF EXISTS `llm_eval_scores`;
+-- DROP TABLE IF EXISTS `llm_eval_run_cases`;
+-- DROP TABLE IF EXISTS `llm_eval_runs`;
+-- DROP TABLE IF EXISTS `llm_eval_dataset_case_links`;
+-- DROP TABLE IF EXISTS `llm_eval_cases`;
+-- DROP TABLE IF EXISTS `llm_eval_definitions`;
+-- DROP TABLE IF EXISTS `llm_eval_datasets`;
+-- DROP TABLE IF EXISTS `llm_prompt_playground_runs`;
+-- DROP TABLE IF EXISTS `llm_prompt_versions`;
+-- DROP TABLE IF EXISTS `llm_prompt_locales`;
+-- DROP TABLE IF EXISTS `llm_prompt_entries`;
+
 -- Update plugin version
 UPDATE plugins SET version = 'v1.1.0' WHERE `name` = 'llm';
 
@@ -395,6 +427,18 @@ VALUES ('0000000001', (SELECT id FROM pages WHERE keyword = 'ajax_llm_prompt_lab
 -- DATASETS AND EVALUATIONS
 -- =====================================================
 
+-- Pre-ship cleanup for the old dataset-owned case table. The refactor now uses
+-- `llm_eval_cases` + `llm_eval_dataset_case_links`, so remove the legacy table
+-- first if it exists to avoid duplicate schema-wide FK names such as
+-- `fk_eval_case_type`.
+CALL drop_foreign_key('llm_eval_run_cases', 'fk_eval_run_cases_case');
+CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_dataset');
+CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_type');
+CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_source');
+CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_user_created');
+CALL drop_foreign_key('llm_eval_dataset_cases', 'fk_eval_case_user_updated');
+DROP TABLE IF EXISTS `llm_eval_dataset_cases`;
+
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES
 ('llm_eval_dataset_types', 'golden_manual', 'golden_manual', 'Manually curated golden dataset'),
@@ -468,10 +512,10 @@ CREATE TABLE IF NOT EXISTS `llm_eval_datasets` (
     CONSTRAINT `fk_eval_datasets_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `llm_eval_dataset_cases` (
+CREATE TABLE IF NOT EXISTS `llm_eval_cases` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
-    `id_llm_eval_datasets` INT(10) UNSIGNED ZEROFILL NOT NULL,
     `case_key` VARCHAR(96) NOT NULL,
+    `id_lookups_execution_profile` INT(10) UNSIGNED ZEROFILL NOT NULL,
     `id_lookups_case_type` INT(10) UNSIGNED ZEROFILL NOT NULL,
     `title` VARCHAR(255) DEFAULT NULL,
     `input_payload_json` LONGTEXT NOT NULL,
@@ -479,6 +523,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_dataset_cases` (
     `expected_labels_json` LONGTEXT DEFAULT NULL,
     `id_lookups_source_type` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
     `source_ref_json` LONGTEXT DEFAULT NULL,
+    `provenance_json` LONGTEXT DEFAULT NULL,
     `tags_json` LONGTEXT DEFAULT NULL,
     `notes` TEXT DEFAULT NULL,
     `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
@@ -486,15 +531,39 @@ CREATE TABLE IF NOT EXISTS `llm_eval_dataset_cases` (
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uniq_eval_case_key_per_dataset` (`id_llm_eval_datasets`, `case_key`),
-    KEY `idx_eval_case_dataset` (`id_llm_eval_datasets`),
+    UNIQUE KEY `uniq_eval_case_key` (`case_key`),
+    KEY `idx_eval_case_execution_profile` (`id_lookups_execution_profile`),
     KEY `idx_eval_case_type` (`id_lookups_case_type`),
     KEY `idx_eval_case_source` (`id_lookups_source_type`),
-    CONSTRAINT `fk_eval_case_dataset` FOREIGN KEY (`id_llm_eval_datasets`) REFERENCES `llm_eval_datasets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_case_execution_profile` FOREIGN KEY (`id_lookups_execution_profile`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_eval_case_type` FOREIGN KEY (`id_lookups_case_type`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_eval_case_source_type` FOREIGN KEY (`id_lookups_source_type`) REFERENCES `lookups` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_case_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_case_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_eval_dataset_case_links` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_eval_datasets` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_llm_eval_cases` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `sort_order` INT(10) DEFAULT NULL,
+    `promoted_from_dataset_id` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `promoted_by_run_case_id` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `promotion_mode` VARCHAR(32) DEFAULT NULL,
+    `promoted_at` TIMESTAMP NULL DEFAULT NULL,
+    `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_eval_dataset_case_link` (`id_llm_eval_datasets`, `id_llm_eval_cases`),
+    KEY `idx_eval_case_link_dataset` (`id_llm_eval_datasets`),
+    KEY `idx_eval_case_link_case` (`id_llm_eval_cases`),
+    CONSTRAINT `fk_eval_case_link_dataset` FOREIGN KEY (`id_llm_eval_datasets`) REFERENCES `llm_eval_datasets` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_case_link_case` FOREIGN KEY (`id_llm_eval_cases`) REFERENCES `llm_eval_cases` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_case_link_promoted_dataset` FOREIGN KEY (`promoted_from_dataset_id`) REFERENCES `llm_eval_datasets` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_case_link_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_eval_case_link_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `llm_eval_definitions` (
@@ -541,7 +610,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_runs` (
 CREATE TABLE IF NOT EXISTS `llm_eval_run_cases` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
     `id_llm_eval_runs` INT(10) UNSIGNED ZEROFILL NOT NULL,
-    `id_llm_eval_dataset_cases` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_llm_eval_cases` INT(10) UNSIGNED ZEROFILL NOT NULL,
     `id_llmConversations` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
     `id_llmMessages_request` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
     `id_llmMessages_response` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
@@ -550,9 +619,9 @@ CREATE TABLE IF NOT EXISTS `llm_eval_run_cases` (
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_eval_run_cases_run` (`id_llm_eval_runs`),
-    KEY `idx_eval_run_cases_case` (`id_llm_eval_dataset_cases`),
+    KEY `idx_eval_run_cases_case` (`id_llm_eval_cases`),
     CONSTRAINT `fk_eval_run_cases_run` FOREIGN KEY (`id_llm_eval_runs`) REFERENCES `llm_eval_runs` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_eval_run_cases_dataset_case` FOREIGN KEY (`id_llm_eval_dataset_cases`) REFERENCES `llm_eval_dataset_cases` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_eval_run_cases_case` FOREIGN KEY (`id_llm_eval_cases`) REFERENCES `llm_eval_cases` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_eval_run_cases_conversation` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_run_cases_request_message` FOREIGN KEY (`id_llmMessages_request`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_run_cases_response_message` FOREIGN KEY (`id_llmMessages_response`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL
@@ -601,10 +670,15 @@ CALL add_index('llm_eval_datasets', 'idx_eval_datasets_type', 'id_lookups_datase
 CALL add_index('llm_eval_datasets', 'idx_eval_datasets_profile', 'id_lookups_execution_profile');
 CALL add_index('llm_eval_datasets', 'idx_eval_datasets_owner', 'owner_type_scope,owner_id_scope');
 
-CALL add_unique_key('llm_eval_dataset_cases', 'uniq_eval_case_key_per_dataset', 'id_llm_eval_datasets,case_key');
-CALL add_index('llm_eval_dataset_cases', 'idx_eval_case_dataset', 'id_llm_eval_datasets');
-CALL add_index('llm_eval_dataset_cases', 'idx_eval_case_type', 'id_lookups_case_type');
-CALL add_index('llm_eval_dataset_cases', 'idx_eval_case_source', 'id_lookups_source_type');
+CALL add_unique_key('llm_eval_cases', 'uniq_eval_case_key_per_profile', 'id_lookups_execution_profile,case_key');
+CALL add_index('llm_eval_cases', 'idx_eval_case_profile', 'id_lookups_execution_profile');
+CALL add_index('llm_eval_cases', 'idx_eval_case_type', 'id_lookups_case_type');
+CALL add_index('llm_eval_cases', 'idx_eval_case_source', 'id_lookups_source_type');
+
+CALL add_unique_key('llm_eval_dataset_case_links', 'uniq_eval_dataset_case_link', 'id_llm_eval_datasets,id_llm_eval_cases');
+CALL add_index('llm_eval_dataset_case_links', 'idx_eval_dataset_link_dataset', 'id_llm_eval_datasets');
+CALL add_index('llm_eval_dataset_case_links', 'idx_eval_dataset_link_case', 'id_llm_eval_cases');
+CALL add_index('llm_eval_dataset_case_links', 'idx_eval_dataset_link_promoted_from', 'promoted_from_dataset_id');
 
 CALL add_unique_key('llm_eval_definitions', 'uniq_eval_definition_name', 'name');
 CALL add_index('llm_eval_definitions', 'idx_eval_definition_type', 'id_lookups_eval_type');
@@ -615,7 +689,7 @@ CALL add_index('llm_eval_runs', 'idx_eval_runs_status', 'id_lookups_status');
 CALL add_index('llm_eval_runs', 'idx_eval_runs_created', 'created_at');
 
 CALL add_index('llm_eval_run_cases', 'idx_eval_run_cases_run', 'id_llm_eval_runs');
-CALL add_index('llm_eval_run_cases', 'idx_eval_run_cases_case', 'id_llm_eval_dataset_cases');
+CALL add_index('llm_eval_run_cases', 'idx_eval_run_cases_case', 'id_llm_eval_cases');
 
 CALL add_index('llm_eval_scores', 'idx_eval_scores_run_case', 'id_llm_eval_run_cases');
 CALL add_index('llm_eval_scores', 'idx_eval_scores_definition', 'id_llm_eval_definitions');

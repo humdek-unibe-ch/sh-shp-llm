@@ -53,6 +53,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         if (empty($definitions)) {
             $definitions = $this->definition_service->loadDefaultDefinitions();
         }
+        $definitions = $this->appendHumanReviewDefinition($definitions);
 
         $target = $this->resolveTargetPrompt($payload, $descriptor);
         $run_mode = count(array_values(array_filter(array_unique($selected_models)))) > 1 ? 'dataset_eval_compare' : 'dataset_eval_single';
@@ -80,7 +81,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
                 foreach ((array)($replay['runs'] ?? array()) as $run_output) {
                     $run_case_id = $this->db->insert('llm_eval_run_cases', array(
                         'id_llm_eval_runs' => $run_id,
-                        'id_llm_eval_dataset_cases' => (int)$case['id'],
+                        'id_llm_eval_cases' => (int)$case['id'],
                         'id_llmConversations' => $run_output['id_llmConversations'] ?? null,
                         'id_llmMessages_request' => $run_output['id_llmMessages_request'] ?? null,
                         'id_llmMessages_response' => $run_output['id_llmMessages_response'] ?? null,
@@ -107,6 +108,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
                     $records[] = array(
                         'run_case_id' => $run_case_id,
                         'dataset_case_id' => (int)$case['id'],
+                        'case_id' => (int)$case['id'],
                         'title' => (string)($case['title'] ?? ''),
                         'model' => (string)($run_output['model'] ?? ''),
                         'display_content' => (string)($run_output['display_content'] ?? ''),
@@ -161,7 +163,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         $cases = $this->db->query_db(
             "SELECT rc.*, dc.title AS dataset_case_title, dc.input_payload_json
              FROM llm_eval_run_cases rc
-             LEFT JOIN llm_eval_dataset_cases dc ON dc.id = rc.id_llm_eval_dataset_cases
+             LEFT JOIN llm_eval_cases dc ON dc.id = rc.id_llm_eval_cases
              WHERE rc.id_llm_eval_runs = :run_id
              ORDER BY rc.id ASC",
             array(':run_id' => (int)$run_id)
@@ -338,6 +340,25 @@ class LlmEvaluationRunnerService extends BaseLlmService
             $grouped[(int)$row['id_llm_eval_run_cases']][] = $row;
         }
         return $grouped;
+    }
+
+    private function appendHumanReviewDefinition($definitions)
+    {
+        $definitions = is_array($definitions) ? array_values($definitions) : array();
+        foreach ($definitions as $definition) {
+            if (($definition['eval_type_code'] ?? '') === LLM_EVAL_TYPE_HUMAN_REVIEW) {
+                return $definitions;
+            }
+        }
+
+        foreach ($this->definition_service->listDefinitions() as $definition) {
+            if (($definition['eval_type_code'] ?? '') === LLM_EVAL_TYPE_HUMAN_REVIEW) {
+                $definitions[] = $definition;
+                break;
+            }
+        }
+
+        return $definitions;
     }
 
     private function decodeJsonValue($value, $fallback)

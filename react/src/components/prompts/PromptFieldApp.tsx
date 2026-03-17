@@ -357,6 +357,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         disabled={disabled || (bootstrap?.playground_runtime_type || 'none') === 'none'}
         defaultModel={defaultPromptModel}
         resolveRuntimeOverrides={() => currentRuntimeOverrides}
+        onApplyDraft={handleBuilderApply}
         onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
           variables: Record<string, unknown>;
           messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;

@@ -22,11 +22,14 @@ export interface PromptEvalRunCase {
   run_case_id?: number;
   id_llm_eval_runs?: number;
   dataset_case_id?: number;
+  case_id?: number;
   title?: string;
   comparison_label?: 'Target' | 'Baseline' | string;
   passed?: boolean;
   status?: 'passed' | 'failed' | 'pending_review';
   model?: string;
+  run_created_at?: string;
+  dataset_name?: string;
   input_preview?: string;
   input_fields?: Array<{ key: string; value: string }>;
   input_payload_json?: string | null;
@@ -34,6 +37,7 @@ export interface PromptEvalRunCase {
   display_content?: string;
   id?: number;
   id_llm_eval_dataset_cases?: number;
+  id_llm_eval_cases?: number;
   dataset_case_title?: string;
   normalized_output?: Record<string, unknown> | null;
   normalized_output_json?: string | null;

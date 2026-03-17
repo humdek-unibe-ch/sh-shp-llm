@@ -1012,6 +1012,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
         resolveRuntimeOverrides={() => promptRuntimeOverrides}
         resolveInitialVariables={() => parseJsonObject(form.test_variables)}
+        onApplyDraft={handleBuilderApply}
         onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
           variables: Record<string, unknown>;
           messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;

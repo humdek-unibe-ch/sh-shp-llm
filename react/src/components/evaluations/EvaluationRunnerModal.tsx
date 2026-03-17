@@ -221,7 +221,9 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
         <Form.Group>
           <Form.Label className="small mb-1">Evaluators</Form.Label>
           <div className="border rounded p-2 prompt-eval-def-list">
-            {evalDefinitions.map((definition) => (
+            {evalDefinitions
+              .filter((definition) => definition.eval_type_code !== 'human_review')
+              .map((definition) => (
               <Form.Check
                 key={definition.id}
                 id={`eval-def-${definition.id}`}
@@ -234,11 +236,22 @@ export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
                     event.target.checked
                       ? [...current, definition.id]
                       : current.filter((id) => id !== definition.id)
-                  ));
+                    ));
                 }}
               />
             ))}
+            <Form.Check
+              id="eval-def-human-review"
+              type="checkbox"
+              className="small mb-0 mt-2"
+              label="human_review_quality (human_review, always included)"
+              checked
+              disabled
+            />
           </div>
+          <Form.Text className="text-muted">
+            Manual review is automatically attached to every evaluation run so approved cases can be promoted into golden datasets and prompt examples later.
+          </Form.Text>
         </Form.Group>
 
         <div className="border rounded bg-light p-2">
