@@ -63,6 +63,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   const [selectedConversation, setSelectedConversation] = useState<AdminConversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -180,17 +181,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         const conversation = conversations.find(c => c.id.toString() === conversationId);
         if (conversation) {
           // Don't update URL again since we're responding to URL change
-          setSelectedConversation(conversation);
-          setLoading(true);
-          adminApi.getMessages(conversationId)
-            .then(response => {
-              setMessages(response.messages || []);
-            })
+          selectConversation(conversation, { updateUrl: false })
             .catch(err => {
               setError((err as Error).message);
-            })
-            .finally(() => {
-              setLoading(false);
             });
         }
       } else {
@@ -213,8 +206,11 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     }
   };
 
-  const loadConversations = async (page: number = currentPage) => {
-    setLoading(true);
+  const loadConversations = async (page: number = currentPage, options?: { showLoading?: boolean }) => {
+    const shouldShowLoading = options?.showLoading !== false;
+    if (shouldShowLoading) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -236,19 +232,33 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (shouldShowLoading) {
+        setLoading(false);
+      }
     }
   };
 
-  const selectConversation = async (conversation: AdminConversation) => {
-    setSelectedConversation(conversation);
+  const selectConversation = async (
+    conversation: AdminConversation,
+    options?: { showLoading?: boolean; updateUrl?: boolean; updateSelection?: boolean }
+  ) => {
+    const shouldShowLoading = options?.showLoading !== false;
+    const shouldUpdateUrl = options?.updateUrl !== false;
+    const shouldUpdateSelection = options?.updateSelection !== false;
 
-    // Update URL with conversation ID (without full page reload)
-    const url = new URL(window.location.href);
-    url.searchParams.set('conversation', conversation.id.toString());
-    window.history.pushState({ conversationId: conversation.id }, '', url.toString());
+    if (shouldUpdateSelection) {
+      setSelectedConversation(conversation);
+    }
 
-    setLoading(true);
+    if (shouldUpdateUrl) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('conversation', conversation.id.toString());
+      window.history.pushState({ conversationId: conversation.id }, '', url.toString());
+    }
+
+    if (shouldShowLoading) {
+      setLoading(true);
+    }
 
     try {
       const response = await adminApi.getMessages(conversation.id.toString());
@@ -256,7 +266,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (shouldShowLoading) {
+        setLoading(false);
+      }
     }
   };
 
@@ -283,13 +295,20 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
 
   const handleRefresh = async () => {
     const scrollTop = window.scrollY || window.pageYOffset || 0;
-
-    await loadConversations(currentPage);
-    if (selectedConversation) {
-      await selectConversation(selectedConversation);
+    setRefreshing(true);
+    try {
+      await loadConversations(currentPage, { showLoading: false });
+      if (selectedConversation) {
+        await selectConversation(selectedConversation, {
+          showLoading: false,
+          updateUrl: false,
+          updateSelection: false,
+        });
+      }
+      restorePageScroll(scrollTop);
+    } finally {
+      setRefreshing(false);
     }
-
-    restorePageScroll(scrollTop);
   };
 
   // ========== Admin Action Handlers ==========
@@ -493,9 +512,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 size="sm"
                 variant="primary"
                 onClick={handleRefresh}
-                disabled={loading}
+                disabled={loading || refreshing}
               >
-                  <i className={`fas fa-sync-alt ${loading ? 'fa-spin' : ''}`}></i>
+                  <i className={`fas fa-sync-alt ${refreshing ? 'fa-spin' : ''}`}></i>
                   <span className="d-none d-sm-inline">Refresh</span>
                 </Button>
                 <Button
