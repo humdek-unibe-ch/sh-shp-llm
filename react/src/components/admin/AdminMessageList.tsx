@@ -24,6 +24,8 @@ import {
   shouldRenderAsJsonInspector,
   tryParseLabeledJsonContent,
 } from '../../utils/jsonInspector';
+import { parseStructuredResponse } from '../../utils/llmResponseUtils';
+import { parseFormDefinition } from '../../utils/formUtils';
 
 interface AdminMessageListProps {
   messages: Message[];
@@ -79,7 +81,12 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
         const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
         const validated = isValidated(message);
         const parsedJsonContent = tryParseLabeledJsonContent(message.content);
-        const preferJsonInspector = parsedJsonContent !== null || shouldRenderAsJsonInspector(message.content);
+        const canRenderStructured = !isUser && (
+          parseStructuredResponse(message.content) !== null ||
+          parseFormDefinition(message.content) !== null
+        );
+        const preferJsonInspector = !canRenderStructured &&
+          (parsedJsonContent !== null || shouldRenderAsJsonInspector(message.content));
         
         const previousAssistantFormDef = isUser
           ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)

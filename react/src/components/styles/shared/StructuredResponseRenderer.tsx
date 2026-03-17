@@ -16,6 +16,7 @@
 import React from 'react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer } from './FormRenderer';
+import { FormDisplay } from './FormDisplay';
 import type {
   StructuredResponse,
   TextBlock,
@@ -39,6 +40,8 @@ interface StructuredResponseRendererProps {
   isFormSubmitting?: boolean;
   /** Callback when a suggestion is clicked */
   onSuggestionClick?: (suggestion: string) => void;
+  /** User-submitted form values (for historical forms in admin view) */
+  submittedFormValues?: Record<string, string | string[]>;
 }
 
 /**
@@ -134,19 +137,29 @@ const NextStepRenderer: React.FC<{
       {suggestions && suggestions.length > 0 && (
         <div className="suggestion-buttons d-flex flex-wrap gap-2">
           {suggestions.map((suggestion, index) => {
-            // Guard against undefined/null suggestions
             if (!suggestion || typeof suggestion !== 'string') {
               return null;
             }
+            if (onSuggestionClick) {
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  className="btn btn-outline-primary btn-sm suggestion-btn"
+                  onClick={() => onSuggestionClick(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              );
+            }
             return (
-              <button
+              <span
                 key={index}
-                type="button"
-                className="btn btn-outline-primary btn-sm suggestion-btn"
-                onClick={() => onSuggestionClick?.(suggestion)}
+                className="badge badge-light border px-2 py-1"
+                style={{ fontSize: '0.8rem' }}
               >
                 {suggestion}
-              </button>
+              </span>
             );
           })}
         </div>
@@ -184,7 +197,8 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
   isLastMessage = false,
   onFormSubmit,
   isFormSubmitting = false,
-  onSuggestionClick
+  onSuggestionClick,
+  submittedFormValues
 }) => {
   const { content, meta } = response;
   const { text_blocks, forms, media, next_step } = content;
@@ -267,32 +281,25 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
               );
             }
             
-            // Historical form - read-only display
+            // Historical form - read-only display with submitted values
             return (
-              <div key={form.id || index} className="structured-form-historical card mb-4">
-                <div className="card-header">
-                  {form.title || 'Form'}
-                </div>
-                <div className="card-body">
-                  {form.description && (
-                    <p className="text-muted">{form.description}</p>
-                  )}
-                  <p className="text-muted small">
-                    <i className="fas fa-history mr-1"></i>
-                    Form was presented here
-                  </p>
-                </div>
+              <div key={form.id || index} className="structured-form-historical mb-4">
+                <FormDisplay
+                  formDefinition={formDefinition}
+                  submittedValues={submittedFormValues}
+                  compact={false}
+                />
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Next step suggestions */}
-      {next_step && isLastMessage && (
+      {/* Next step suggestions - show on last message (interactive) or historical (read-only) */}
+      {next_step && (
         <NextStepRenderer
           nextStep={next_step}
-          onSuggestionClick={onSuggestionClick}
+          onSuggestionClick={isLastMessage ? onSuggestionClick : undefined}
         />
       )}
 

@@ -89,9 +89,17 @@ function analyzeMessageContent(
   // Assistant message - check for structured response first (new format)
   const structuredResponse = parseStructuredResponse(message.content);
   if (structuredResponse) {
+    let userSubmittedValues: Record<string, string | string[]> | undefined;
+    if (!isLastMessage && nextMessage && nextMessage.role === 'user') {
+      const submissionMeta = parseFormSubmissionMetadata(nextMessage.attachments);
+      if (submissionMeta) {
+        userSubmittedValues = submissionMeta.values;
+      }
+    }
     return {
       type: 'structured-response',
-      structuredResponse
+      structuredResponse,
+      userSubmittedValues
     };
   }
 
@@ -189,6 +197,7 @@ export const MessageContentRenderer: React.FC<MessageContentRendererProps> = ({
             onFormSubmit={readOnly ? undefined : onFormSubmit}
             isFormSubmitting={isFormSubmitting}
             onSuggestionClick={readOnly ? undefined : onSuggestionClick}
+            submittedFormValues={renderResult.userSubmittedValues}
           />
         );
       }
