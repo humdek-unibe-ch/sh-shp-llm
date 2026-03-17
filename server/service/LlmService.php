@@ -803,19 +803,27 @@ class LlmService extends BaseLlmService
     /**
      * Filter model list by usage type.
      *
+     * For 'llm': excludes audio, embedding, and reranker models so users
+     * only see chat-capable models.
+     * For 'audio': includes only whisper/speech models.
+     *
      * @param array $models
      * @param string $modelType Supported: llm, audio
      * @return array
      */
     private function filterModelsByType($models, $modelType)
     {
-        if ($modelType !== 'audio') {
-            return $models;
+        if ($modelType === 'audio') {
+            return array_values(array_filter($models, function ($model) {
+                $id = strtolower($model['id'] ?? '');
+                return $this->isAudioModelId($id);
+            }));
         }
 
+        // For 'llm' type: exclude non-chat models (audio, embedding, reranker)
         return array_values(array_filter($models, function ($model) {
-            $id = strtolower($model['id'] ?? '');
-            return $this->isAudioModelId($id);
+            $id = $model['id'] ?? '';
+            return !llm_is_non_chat_model($id) && !$this->isAudioModelId(strtolower($id));
         }));
     }
 

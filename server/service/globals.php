@@ -109,6 +109,32 @@ define('LLM_AUDIO_MODELS', [
     'whisper-small'
 ]);
 
+// Embedding model name patterns (case-insensitive substring match)
+// These models generate vector embeddings, not chat completions
+define('LLM_EMBEDDING_MODEL_PATTERNS', [
+    'embed',
+    'embedding',
+    'bge-',
+    'e5-',
+    'gte-',
+    'nomic-embed',
+    'jina-embed',
+    'sentence-transformer',
+    'instructor-',
+    'text-embedding',
+    'paraphrase-',
+]);
+
+// Reranker model name patterns (case-insensitive substring match)
+// These models rerank search results, not generate text
+define('LLM_RERANKER_MODEL_PATTERNS', [
+    'rerank',
+    'reranker',
+    'cross-encoder',
+    'jina-reranker',
+    'bge-reranker',
+]);
+
 // Maximum audio file size (25MB - OpenAI API limit)
 define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
 
@@ -163,6 +189,50 @@ function llm_get_file_type_category($extension) {
  */
 function llm_is_vision_model($model) {
     return in_array($model, LLM_VISION_MODELS);
+}
+
+/**
+ * Check if a model is an embedding model (not suitable for chat)
+ *
+ * @param string $model Model identifier
+ * @return bool True if model is an embedding model
+ */
+function llm_is_embedding_model($model) {
+    $lower = strtolower($model);
+    foreach (LLM_EMBEDDING_MODEL_PATTERNS as $pattern) {
+        if (strpos($lower, $pattern) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Check if a model is a reranker model (not suitable for chat)
+ *
+ * @param string $model Model identifier
+ * @return bool True if model is a reranker model
+ */
+function llm_is_reranker_model($model) {
+    $lower = strtolower($model);
+    foreach (LLM_RERANKER_MODEL_PATTERNS as $pattern) {
+        if (strpos($lower, $pattern) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Check if a model is a non-chat model (audio, embedding, or reranker)
+ *
+ * @param string $model Model identifier
+ * @return bool True if model should be excluded from chat model lists
+ */
+function llm_is_non_chat_model($model) {
+    return llm_is_embedding_model($model)
+        || llm_is_reranker_model($model)
+        || in_array($model, LLM_AUDIO_MODELS);
 }
 
 /**
