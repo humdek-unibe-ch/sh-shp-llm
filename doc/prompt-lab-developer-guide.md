@@ -27,7 +27,8 @@ New/relevant schema in `server/db/v1.1.0.sql`:
 - `llm_prompt_versions`
 - `llm_prompt_playground_runs`
 - `llm_eval_datasets`
-- `llm_eval_dataset_cases`
+- `llm_eval_cases`
+- `llm_eval_dataset_case_links`
 - `llm_eval_definitions`
 - `llm_eval_runs`
 - `llm_eval_run_cases`
@@ -98,8 +99,11 @@ Prompt-lab services:
 ### `LlmDatasetService`
 
 - dataset CRUD/listing
-- dataset case CRUD/listing
+- canonical case CRUD/listing plus dataset membership linking
 - lock-state enforcement
+- compatible-dataset lookup for promotion
+- case move/promotion workflows
+- case evaluation history and evaluation-example lookup helpers
 - shared normalization helpers used by ingestion/replay flows
 
 ### `LlmDatasetIngestionService`
@@ -124,11 +128,13 @@ Prompt-lab services:
 - baseline programmatic evaluators (`json_validity`, `required_fields_present`, `no_empty_output`, `safety_label_match`)
 - `llm_judge` execution with structured JSON scoring output
 - human-review score save endpoint
+- manual review automatically attached to every evaluation run
 - run status lifecycle handling (`running` -> `completed` / `failed`)
 
 ### `LlmPromptBuilderService`
 
 - improves current prompt draft (not blank-first workflow)
+- accepts curated evaluation examples as structured builder context
 - expects strict JSON output shape:
   - `prompt_template`
   - `variables`
@@ -163,6 +169,10 @@ Supported actions:
 - `get_import_candidates`
 - `add_cases_from_source`
 - `delete_dataset_case`
+- `move_dataset_cases`
+- `list_compatible_datasets`
+- `list_case_evaluation_history`
+- `list_evaluation_example_candidates`
 - `list_eval_definitions`
 - `run_dataset_eval`
 - `get_eval_run`
@@ -213,6 +223,7 @@ Prompt components under `react/src/components/prompts/`:
 - `PromptDiffModal.tsx`
 - `PromptPlaygroundModal.tsx`
 - `PromptBuilderModal.tsx`
+- `PromptBuilderWorkspace.tsx`
 - `PromptDatasetsModal.tsx`
 - `PromptResultPanel.tsx`
 - `PromptEffectiveContextPanel.tsx`
@@ -238,6 +249,8 @@ This keeps parsing/formatting behavior consistent across prompt-lab and admin to
 - buttons use Bootstrap small size (`btn-sm`)
 - toolbar contains explicit version-comment hint/tooltip
 - toolbar now includes `Datasets` entry point for replay/evaluation workflows
+- the builder workspace is shared between the main draft surface and playground-local draft editing
+- playground draft edits stay local until explicit apply
 
 ## Runtime-awareness details
 
@@ -264,7 +277,7 @@ Deletion in v1.1.0 is hard-delete:
 
 Case deletion behavior remains cascade-based:
 
-- deleting `llm_eval_dataset_cases` rows removes related eval run-cases/scores for that case
+- deleting the final dataset link for a canonical case removes related eval run-cases/scores for that case
 
 This is the official policy in this version (no soft-delete/audit shadow table for eval runs/cases).
 

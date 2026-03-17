@@ -40,35 +40,47 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 - Added first-class dataset storage with:
   - `llm_eval_datasets`
-  - `llm_eval_dataset_cases`
+  - `llm_eval_cases`
+  - `llm_eval_dataset_case_links`
 - Added first-class evaluation storage with:
   - `llm_eval_definitions`
   - `llm_eval_runs`
   - `llm_eval_run_cases`
   - `llm_eval_scores`
+- Refactored prompt-lab case storage to use canonical reusable cases plus explicit dataset membership links, so cases can be promoted or moved between datasets without losing their identity/history.
 - Implemented dataset ingestion from:
   - latest playground runs
   - saved form submissions
   - conversation history
   - script runs
 - Implemented shared dataset replay through the existing runtime-aware prompt execution path.
+- Added dataset metadata editing for rename, description, type changes, and guarded execution-profile changes.
+- Updated the dataset browser to surface both dataset `Type` and runtime `Profile`.
+- Added bulk case selection plus move/promotion flows between compatible datasets.
+- Added case-level evaluation history so promoted cases keep their prior run and review trail.
 - Added programmatic evaluators:
   - `json_validity`
   - `required_fields_present`
   - `no_empty_output`
   - `safety_label_match`
-- Added `llm_judge` scoring support and saved human-review scores in the same score table.
-- Added prompt-lab UI flows for dataset browsing, case preview, source import, evaluation runs, result inspection, and manual review.
+- Added `llm_judge` scoring support and made manual review part of every evaluation run by default.
+- Added prompt-lab UI flows for dataset browsing, metadata editing, case preview, source import, case promotion, evaluation runs, result inspection, pending-review filtering, and manual review.
 - Exposed the same datasets/evaluations workflow in both CMS prompt fields and the scripts manager.
 - Added consistent CMS-style delete confirmation for dataset deletion (`$.confirm` with safe browser fallback).
 - Added AI-assisted dataset case import (`Import With AI`) for bulk paste of tabular/free-text examples.
 - Added new Prompt Lab actions:
   - `parse_cases_from_text`
   - `import_parsed_cases`
+  - `move_dataset_cases`
+  - `list_compatible_datasets`
+  - `list_case_evaluation_history`
+  - `list_evaluation_example_candidates`
 - Added parser/import backend services:
   - `LlmDatasetAiImportParserService`
   - `LlmDatasetAiImportMapperService`
   - `LlmDatasetBatchImportService`
+- Extended Build With AI so curated, manually approved evaluation examples can be imported directly into prompt-building context.
+- Added editable playground-local drafts with explicit `Apply To Draft`, `Reset From Draft`, and shared Build With AI reuse inside playground.
 - Added evaluation run history cleanup controls in Prompt Lab datasets:
   - single-run delete (`delete_eval_run`)
   - bulk delete per dataset (`delete_eval_runs_bulk`)

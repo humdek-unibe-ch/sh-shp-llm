@@ -22,7 +22,8 @@ Version `1.1.0` expands the plugin in four major areas:
 ### Datasets and evaluations
 
 - `llm_eval_datasets`
-- `llm_eval_dataset_cases`
+- `llm_eval_cases`
+- `llm_eval_dataset_case_links`
 - `llm_eval_definitions`
 - `llm_eval_runs`
 - `llm_eval_run_cases`
@@ -55,6 +56,10 @@ It uses:
 - Prompt-lab requests continue to log canonically in `llmConversations` and `llmMessages`.
 - Dataset replay adds prompt-lab summary rows but does not replace canonical LLM logs.
 - Evaluation runs can spend tokens and should be treated like update-level actions.
+- Dataset cases are canonical in v`1.1.0`, while dataset membership lives in a dedicated link table.
+- `llm_eval_run_cases` now references canonical case IDs (`id_llm_eval_cases`).
+- Manual review is included in every evaluation run.
+- Dataset profiles represent runtime execution shape and should only be changed before cases are linked.
 
 ## Follow-up
 

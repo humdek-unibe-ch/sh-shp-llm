@@ -51,6 +51,15 @@ Prompt Lab supports one dataset system with multiple dataset types. The current 
 
 Choose the type that best describes why the dataset exists. The replay behavior stays the same.
 
+The UI also shows a dataset `Profile`. This is not cosmetic. It is the runtime execution profile used for replay/evaluation:
+
+- `chat_runtime`
+- `form_runtime`
+- `script_runtime`
+- `text_only`
+
+Datasets can only move/promote cases into other datasets with the same profile.
+
 ## Good dataset habits
 
 - Keep titles short and recognizable.
@@ -84,6 +93,9 @@ The results screen shows:
 - per-case output
 - evaluator details
 - human review inputs for `human_review` evaluators
+- pending-review filters so reviewers can focus on manual grading work first
+
+Manual review is always included in evaluation runs in v`1.1.0`.
 
 ## Run history cleanup
 
@@ -99,6 +111,31 @@ These are hard deletes in v1.1.0 (no soft-delete/archive).
 Deleting a dataset case also removes related historical evaluation rows for that case (run-case and score rows) via database cascade cleanup.
 
 Prompt Lab now warns about this in the delete confirmation so the impact is explicit before you confirm.
+
+## Promotion workflow
+
+Use selection checkboxes in the case table when you want to move or promote cases:
+
+1. Select one or more cases.
+2. Click `Move / Promote`.
+3. Choose a compatible target dataset.
+4. Leave `Remove cases from the current dataset too` unchecked to promote/copy.
+5. Enable that option to fully move the cases out of the current dataset.
+
+Because cases have a stable canonical identity in v`1.1.0`, their evaluation history can follow them across dataset promotion.
+
+## Prompt examples from evaluations
+
+Prompt Lab can now import manually approved passing evaluation cases directly into `Build With AI`.
+
+Recommended flow:
+
+1. Build and tune a draft.
+2. Run evaluations.
+3. Manually approve the strong cases.
+4. Open `Build With AI`.
+5. Use `Import From Evaluations`.
+6. Generate a stronger prompt with curated examples embedded into it.
 
 ## AI-imported form cases and replay
 

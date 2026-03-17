@@ -68,6 +68,9 @@ You can:
 
 - run one model
 - select 2-3 models to compare
+- edit a local playground-only draft before touching the saved draft
+- reset playground changes back to the current draft
+- apply playground changes back into the real draft only when ready
 - inspect effective context/messages
 - inspect parsed output and raw output
 - inspect request payload and token/time metadata
@@ -90,16 +93,27 @@ Builder uses the current prompt draft as input and improves it.
 - only `prompt_template` is inserted into the editor on apply
 - notes/variable suggestions/change summary are shown separately
 - helper model can be selected per run
+- manually approved evaluation examples can be imported directly into the builder as curated examples
 
 ## Datasets and evaluations
 
 The `Datasets` modal lets you:
 
 - create reusable datasets
+- see both dataset `Type` and runtime `Profile`
+- edit dataset name, description, and type
 - add the latest playground run as a dataset case
 - import cases from playground runs, form submissions, conversations, and scripts
+- move or promote selected cases into another compatible dataset
 - run objective evaluators against the current draft, active version, or a saved version
-- inspect per-case failures and add human-review scores
+- inspect per-case failures, filter pending manual reviews, and add human-review scores
+
+`Profile` means the runtime execution profile used for replay/evaluation:
+
+- `chat_runtime`
+- `form_runtime`
+- `script_runtime`
+- `text_only`
 
 Recommended editor workflow:
 
