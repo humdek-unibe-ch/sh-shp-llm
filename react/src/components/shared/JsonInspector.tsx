@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { normalizeEscapedText } from '../../utils/text';
+import { parseJsonCandidate } from '../../utils/jsonInspector';
 import './JsonInspector.css';
 
 interface JsonInspectorProps {
@@ -8,112 +9,6 @@ interface JsonInspectorProps {
   emptyLabel?: string;
   defaultTreeMode?: boolean;
   maxAutoParseDepth?: number;
-}
-
-interface ParsedValue {
-  kind: 'json' | 'text' | 'empty';
-  jsonValue: unknown | null;
-  textValue: string;
-}
-
-function extractLikelyJsonFragment(value: string): string | null {
-  const input = value.trim();
-  if (!input) return null;
-
-  const startBrace = input.indexOf('{');
-  const startBracket = input.indexOf('[');
-  const candidates = [startBrace, startBracket].filter((v) => v >= 0);
-  if (candidates.length === 0) return null;
-
-  const start = Math.min(...candidates);
-  const openChar = input[start];
-  const closeChar = openChar === '{' ? '}' : ']';
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < input.length; i += 1) {
-    const ch = input[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === '\\') {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === openChar) depth += 1;
-    if (ch === closeChar) {
-      depth -= 1;
-      if (depth === 0) {
-        return input.slice(start, i + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
-function parseJsonCandidate(value: unknown, maxDepth: number): ParsedValue {
-  if (value == null) {
-    return { kind: 'empty', jsonValue: null, textValue: '' };
-  }
-
-  if (typeof value !== 'string') {
-    return { kind: 'json', jsonValue: value, textValue: JSON.stringify(value, null, 2) };
-  }
-
-  let candidate = value.trim();
-  if (candidate === '') {
-    return { kind: 'empty', jsonValue: null, textValue: '' };
-  }
-
-  candidate = candidate.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-
-  let current: unknown = candidate;
-  for (let i = 0; i < maxDepth; i += 1) {
-    if (typeof current !== 'string') {
-      break;
-    }
-
-    const next = current.trim();
-    if (next === '') {
-      return { kind: 'empty', jsonValue: null, textValue: '' };
-    }
-
-    const startsLikeJson = next.startsWith('{') || next.startsWith('[') || next.startsWith('"');
-    if (!startsLikeJson) {
-      return { kind: 'text', jsonValue: null, textValue: normalizeEscapedText(next) };
-    }
-
-    try {
-      current = JSON.parse(next);
-    } catch {
-      const extracted = extractLikelyJsonFragment(next);
-      if (extracted) {
-        try {
-          current = JSON.parse(extracted);
-          continue;
-        } catch {
-          return { kind: 'text', jsonValue: null, textValue: normalizeEscapedText(next) };
-        }
-      }
-      return { kind: 'text', jsonValue: null, textValue: normalizeEscapedText(next) };
-    }
-  }
-
-  if (typeof current === 'string') {
-    return { kind: 'text', jsonValue: null, textValue: normalizeEscapedText(current) };
-  }
-
-  return { kind: 'json', jsonValue: current, textValue: JSON.stringify(current, null, 2) };
 }
 
 function JsonValueNode({

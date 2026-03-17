@@ -20,6 +20,10 @@ import {
 } from '../shared/MessageContentRenderer';
 import { JsonInspector } from '../shared/JsonInspector';
 import type { Message } from '../../types';
+import {
+  shouldRenderAsJsonInspector,
+  tryParseLabeledJsonContent,
+} from '../../utils/jsonInspector';
 
 interface AdminMessageListProps {
   messages: Message[];
@@ -58,43 +62,6 @@ function isValidated(message: Message): boolean {
   return true;
 }
 
-function tryParseMessageJson(content: unknown): unknown | null {
-  if (typeof content !== 'string') return null;
-  const trimmed = content.trim();
-  if (!trimmed) return null;
-
-  const withoutFence = trimmed
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-  if (!(withoutFence.startsWith('{') || withoutFence.startsWith('['))) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(withoutFence);
-  } catch {
-    return null;
-  }
-}
-
-function shouldRenderAsJsonInspector(content: unknown): boolean {
-  if (typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-
-  if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"') || trimmed.startsWith('```')) {
-    return true;
-  }
-
-  // Handle parser/debug outputs that prefix object-like payloads with labels.
-  if (/^\s*(mapping|cases|payload|context)\s*:/i.test(trimmed) && /[{[]/.test(trimmed)) {
-    return true;
-  }
-
-  return false;
-}
-
 export const AdminMessageList: React.FC<AdminMessageListProps> = ({
   messages,
   formatDate,
@@ -111,7 +78,7 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
         const isLastMessage = index === messages.length - 1;
         const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
         const validated = isValidated(message);
-        const parsedJsonContent = tryParseMessageJson(message.content);
+        const parsedJsonContent = tryParseLabeledJsonContent(message.content);
         const preferJsonInspector = parsedJsonContent !== null || shouldRenderAsJsonInspector(message.content);
         
         const previousAssistantFormDef = isUser
