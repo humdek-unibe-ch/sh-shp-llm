@@ -9,28 +9,6 @@
  * @module types
  */
 
-// Import utility functions that were moved to separate files
-export {
-  parseFormSubmissionMetadata,
-  parseFormDefinition,
-  formatFormSelectionsAsText,
-  messageHasForm,
-  extractFormFromMessage,
-  extractFormsFromStructuredResponse,
-  structuredFormToFormDefinition
-} from '../utils/formUtils';
-
-export {
-  parseStructuredResponse,
-  isStructuredResponse,
-  structuredResponseToMarkdown,
-  parseLlmResponse,
-  isLlmStructuredResponse,
-  llmResponseToMarkdown,
-  requiresSafetyIntervention,
-  getFormFromLlmResponse
-} from '../utils/llmResponseUtils';
-
 import { formatFileSize } from '../utils/formatters';
 
 // ============================================================================
@@ -59,21 +37,18 @@ export interface FileConfig {
 }
 
 /**
- * Default file configuration values
- * Matches DEFAULT_FILE_CONFIG from vanilla JS
+ * Fallback file configuration used before the backend config loads.
+ * The authoritative values come from PHP globals.php via getChatConfig().fileConfig.
+ * These are intentionally minimal defaults — do NOT duplicate PHP constants here.
  */
 export const DEFAULT_FILE_CONFIG: FileConfig = {
-  maxFileSize: 10 * 1024 * 1024, // 10MB
+  maxFileSize: 10 * 1024 * 1024,
   maxFilesPerMessage: 5,
-  allowedImageExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
-  allowedDocumentExtensions: ['pdf', 'txt', 'md', 'csv', 'json', 'xml'],
-  allowedCodeExtensions: ['py', 'js', 'php', 'html', 'css', 'sql', 'sh', 'yaml', 'yml'],
-  allowedExtensions: [
-    'jpg', 'jpeg', 'png', 'gif', 'webp',
-    'pdf', 'txt', 'md', 'csv', 'json', 'xml',
-    'py', 'js', 'php', 'html', 'css', 'sql', 'sh', 'yaml', 'yml'
-  ],
-  visionModels: ['internvl3-8b-instruct', 'qwen3-vl-8b-instruct']
+  allowedImageExtensions: [],
+  allowedDocumentExtensions: [],
+  allowedCodeExtensions: [],
+  allowedExtensions: [],
+  visionModels: []
 };
 
 // ============================================================================
@@ -134,8 +109,6 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   /** Raw message content (may contain markdown) */
   content: string;
-  /** Pre-formatted HTML content from backend */
-  formatted_content?: string;
   /** Message creation timestamp (ISO format) */
   timestamp: string;
   /** Number of tokens used (for assistant messages) */

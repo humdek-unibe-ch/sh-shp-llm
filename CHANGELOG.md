@@ -2,7 +2,46 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.1.0] - 2026-03-10
+## [1.1.0] - 2026-03-17
+
+### Code quality and architecture refactoring
+
+- **LlmChatModel** (1482 → 489 lines):
+  - Removed 80+ private property declarations; getters now call `get_db_field()` directly, leveraging `StyleModel`'s internal cache.
+  - Lazy-loaded `conversation_id` — resolved on first access instead of in the constructor, eliminating unnecessary DB queries on every page load.
+  - Exposed `getLlmService()` so the controller reuses the model's service instance instead of creating a duplicate.
+  - Inlined 36 UI-label getters into `getChatConfig()` via a local closure, cutting boilerplate while keeping the config array explicit.
+  - Delegated auto-start message generation and topic extraction to new `LlmAutoStartService`.
+  - Removed dead `formatMessageContent()` method (referenced uninitialized `$this->parsedown`; React handles markdown).
+
+- **LlmChatController** (1690 → 1424 lines):
+  - Extracted safety detection + transaction logging into `LlmDangerDetectionService::processSafetyDetection()`.
+  - Extracted progress calculation + persistence into `LlmProgressTrackingService::calculateAndUpdateProgress()`.
+  - Extracted topic confirmation detection and topic inference into `LlmProgressTrackingService::processTopicConfirmation()`.
+  - Extracted repeated rate-limit + conversation resolution into `resolveConversationWithRateLimit()`.
+  - Centralized multilingual topic-confirmation vocabulary into `LlmLanguageUtility` static methods.
+  - Removed redundant `buildChatConfig()` one-line wrapper.
+  - Gated `handleDebugProgress()` behind `DEBUG` constant to prevent system-prompt exposure in production.
+
+- **LlmFormController**:
+  - Adopted `LlmJsonResponseTrait` for consistent JSON response handling; removed duplicate private `sendJsonResponse()`.
+  - Fixed potential SQL injection in `loadRecordData()` — switched to parameterized query for `record_id`.
+  - Removed duplicate `extractInterpolationKeys()`; now delegates to `LlmFormModel::extractContextFieldKeys()`.
+
+- **New services and utilities**:
+  - `LlmAutoStartService` — static service for context-aware auto-start message generation and topic extraction from context.
+  - `LlmLanguageUtility` additions — `getUserLanguageCode()`, `getTopicIdFieldPatterns()`, `getUnderstandingFieldPatterns()`, `getStrongConfirmationValues()` for centralized multilingual vocabulary.
+  - `LlmDangerDetectionService` additions — `processSafetyDetection()` and `logSafetyDetectionToTransaction()` for complete safety lifecycle handling.
+  - `LlmProgressTrackingService` additions — `calculateAndUpdateProgress()`, `processTopicConfirmation()`, `detectTopicConfirmation()`, `inferCurrentTopic()`.
+
+- **React frontend**:
+  - Removed `formatted_content` from `Message` interface (backend no longer sends it; React renders markdown directly).
+  - Removed utility function re-exports from `types/index.ts`; consumers now import directly from `utils/formUtils` and `utils/llmResponseUtils`.
+  - Changed `DEFAULT_FILE_CONFIG` to use empty defaults — backend is authoritative source for allowed extensions and vision models.
+
+- **LlmFormModel**: Language detection now delegates to `LlmLanguageUtility::getUserLanguageCode()`.
+
+### Previous 1.1.0 changes
 
 ### Prompt asset externalization
 

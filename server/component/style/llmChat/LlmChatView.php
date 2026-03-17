@@ -44,77 +44,10 @@ class LlmChatView extends StyleView
             (method_exists($this->model, 'is_cms_page') && $this->model->is_cms_page()) &&
             (method_exists($this->model, 'is_cms_page_editing') && $this->model->is_cms_page_editing())
         ) {
-            // cms - do not load the survey
             return;
         }
         $user_id = $this->model->getUserId();
         $section_id = $this->model->getSectionId();
-        $chat_description = $this->model->getChatDescription();
-
-        // Get conversation and message data
-        $conversation = $this->model->getCurrentConversation();
-        $messages = $this->model->getConversationMessages();
-
-        // Format message content with markdown parsing
-        foreach ($messages as &$message) {
-            $message['formatted_content'] = $this->model->formatMessageContent($message['content']);
-        }
-
-        $conversations = $this->model->getUserConversations();
-        $configured_model = $this->model->getConfiguredModel();
-        $llm_temperature = $this->model->getLlmTemperature();
-        $llm_max_tokens = $this->model->getLlmMaxTokens();
-        $current_conversation_id = $this->model->getConversationId();
-        $conversation_name = $this->model->getConversationName();
-
-        // Get UI labels
-        $conversations_heading = $this->model->getConversationsHeading();
-        $no_conversations_message = $this->model->getNoConversationsMessage();
-        $new_chat_button_label = $this->model->getNewChatButtonLabel();
-        $select_conversation_heading = $this->model->getSelectConversationHeading();
-        $select_conversation_description = $this->model->getSelectConversationDescription();
-        $model_label_prefix = $this->model->getModelLabelPrefix();
-        $no_messages_message = $this->model->getNoMessagesMessage();
-        $tokens_used_suffix = $this->model->getTokensUsedSuffix();
-        $loading_text = $this->model->getLoadingText();
-        $ai_thinking_text = $this->model->getAiThinkingText();
-        $upload_image_label = $this->model->getUploadImageLabel();
-        $upload_help_text = $this->model->getUploadHelpText();
-        $message_placeholder = $this->model->getMessagePlaceholder();
-        $clear_button_label = $this->model->getClearButtonLabel();
-        $new_conversation_title_label = $this->model->getNewConversationTitleLabel();
-        $conversation_title_label = $this->model->getConversationTitleLabel();
-        $cancel_button_label = $this->model->getCancelButtonLabel();
-        $create_button_label = $this->model->getCreateButtonLabel();
-        $delete_confirmation_title = $this->model->getDeleteConfirmationTitle();
-        $delete_confirmation_message = $this->model->getDeleteConfirmationMessage();
-        $confirm_delete_button_label = $this->model->getConfirmDeleteButtonLabel();
-        $cancel_delete_button_label = $this->model->getCancelDeleteButtonLabel();
-        $submit_button_label = $this->model->getSubmitButtonLabel();
-
-        // Error messages
-        $empty_message_error = $this->model->getEmptyMessageError();
-        $default_chat_title = $this->model->getDefaultChatTitle();
-
-        // Additional UI labels
-        $delete_button_title = $this->model->getDeleteButtonTitle();
-        $conversation_title_placeholder = $this->model->getConversationTitlePlaceholder();
-
-        // File attachment labels
-        $single_file_attached = $this->model->getSingleFileAttachedText();
-        $multiple_files_attached = $this->model->getMultipleFilesAttachedText();
-
-        // Empty state labels
-        $empty_state_title = $this->model->getEmptyStateTitle();
-        $empty_state_description = $this->model->getEmptyStateDescription();
-        $loading_messages_text = $this->model->getLoadingMessagesText();
-
-        // Message input labels
-        $attach_files_title = $this->model->getAttachFilesTitle();
-        $no_vision_support_title = $this->model->getNoVisionSupportTitle();
-        $no_vision_support_text = $this->model->getNoVisionSupportText();
-        $send_message_title = $this->model->getSendMessageTitle();
-        $remove_file_title = $this->model->getRemoveFileTitle();
 
         include __DIR__ . '/tpl/llm_chat_main.php';
     }
@@ -156,88 +89,12 @@ class LlmChatView extends StyleView
     }
 
     /**
-     * Get React configuration as JSON
+     * Get React configuration as JSON.
+     * Delegates to the model's getChatConfig() as single source of truth.
      */
     public function getReactConfig()
     {
-        return json_encode([
-            'userId' => $this->model->getUserId(),
-            'sectionId' => $this->model->getSectionId(),
-            'currentConversationId' => $this->model->getConversationId(),
-            'configuredModel' => $this->model->getConfiguredModel(),
-            'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
-            'maxFileSize' => LLM_MAX_FILE_SIZE,
-            'enableConversationsList' => $this->model->isConversationsListEnabled(),
-            'enableFileUploads' => $this->model->isFileUploadsEnabled(),
-            'enableFullPageReload' => $this->model->isFullPageReloadEnabled(),
-            'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->model->getAcceptedFileTypes())),
-            'isVisionModel' => $this->model->isVisionModel(),
-            'hasConversationContext' => $this->model->hasConversationContext(),
-            // Floating button configuration
-            'enableFloatingButton' => $this->model->isFloatingButtonEnabled(),
-            'floatingButtonPosition' => $this->model->getFloatingButtonPosition(),
-            'floatingButtonIcon' => $this->model->getFloatingButtonIcon(),
-            'floatingButtonLabel' => $this->model->getFloatingButtonLabel(),
-            'floatingChatTitle' => $this->model->getFloatingChatTitle(),
-            // UI Labels
-            'messagePlaceholder' => $this->model->getMessagePlaceholder(),
-            'noConversationsMessage' => $this->model->getNoConversationsMessage(),
-            'newConversationTitleLabel' => $this->model->getNewConversationTitleLabel(),
-            'conversationTitleLabel' => $this->model->getConversationTitleLabel(),
-            'cancelButtonLabel' => $this->model->getCancelButtonLabel(),
-            'createButtonLabel' => $this->model->getCreateButtonLabel(),
-            'deleteConfirmationTitle' => $this->model->getDeleteConfirmationTitle(),
-            'deleteConfirmationMessage' => $this->model->getDeleteConfirmationMessage(),
-            'confirmDeleteButtonLabel' => $this->model->getConfirmDeleteButtonLabel(),
-            'cancelDeleteButtonLabel' => $this->model->getCancelDeleteButtonLabel(),
-            'tokensSuffix' => $this->model->getTokensUsedSuffix(),
-            'aiThinkingText' => $this->model->getAiThinkingText(),
-            'conversationsHeading' => $this->model->getConversationsHeading(),
-            'newChatButtonLabel' => $this->model->getNewChatButtonLabel(),
-            'selectConversationHeading' => $this->model->getSelectConversationHeading(),
-            'selectConversationDescription' => $this->model->getSelectConversationDescription(),
-            'modelLabelPrefix' => $this->model->getModelLabelPrefix(),
-            'noMessagesMessage' => $this->model->getNoMessagesMessage(),
-            'loadingText' => $this->model->getLoadingText(),
-            'uploadImageLabel' => $this->model->getUploadImageLabel(),
-            'uploadHelpText' => $this->model->getUploadHelpText(),
-            'clearButtonLabel' => $this->model->getClearButtonLabel(),
-            'submitButtonLabel' => $this->model->getSubmitButtonLabel(),
-            'emptyMessageError' => $this->model->getEmptyMessageError(),
-            'defaultChatTitle' => $this->model->getDefaultChatTitle(),
-            'deleteButtonTitle' => $this->model->getDeleteButtonTitle(),
-            'conversationTitlePlaceholder' => $this->model->getConversationTitlePlaceholder(),
-            'singleFileAttachedText' => $this->model->getSingleFileAttachedText(),
-            'multipleFilesAttachedText' => $this->model->getMultipleFilesAttachedText(),
-            'emptyStateTitle' => $this->model->getEmptyStateTitle(),
-            'emptyStateDescription' => $this->model->getEmptyStateDescription(),
-            'loadingMessagesText' => $this->model->getLoadingMessagesText(),
-            'attachFilesTitle' => $this->model->getAttachFilesTitle(),
-            'noVisionSupportTitle' => $this->model->getNoVisionSupportTitle(),
-            'noVisionSupportText' => $this->model->getNoVisionSupportText(),
-            'sendMessageTitle' => $this->model->getSendMessageTitle(),
-            'removeFileTitle' => $this->model->getRemoveFileTitle(),
-            // File config
-            'fileConfig' => [
-                'maxFileSize' => LLM_MAX_FILE_SIZE,
-                'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
-                'allowedImageExtensions' => LLM_ALLOWED_IMAGE_EXTENSIONS,
-                'allowedDocumentExtensions' => LLM_ALLOWED_DOCUMENT_EXTENSIONS,
-                'allowedCodeExtensions' => LLM_ALLOWED_CODE_EXTENSIONS,
-                'allowedExtensions' => LLM_ALLOWED_EXTENSIONS,
-                'visionModels' => LLM_VISION_MODELS
-            ],
-            // Progress tracking config
-            'enableProgressTracking' => $this->model->isProgressTrackingEnabled(),
-            'progressBarLabel' => $this->model->getProgressBarLabel(),
-            'progressCompleteMessage' => $this->model->getProgressCompleteMessage(),
-            'progressShowTopics' => $this->model->shouldShowProgressTopics(),
-            // Speech-to-text config
-            'enableSpeechToText' => $this->model->isSpeechToTextEnabled(),
-            'speechToTextModel' => $this->model->getSpeechToTextModel(),
-            // Chat colors
-            'chatColors' => $this->model->getChatColors()
-        ]);
+        return json_encode($this->model->getChatConfig());
     }
 
     public function output_content_mobile()
@@ -256,15 +113,10 @@ class LlmChatView extends StyleView
         // Only add minimal additional data needed for mobile functionality
         // The mobile app gets all configuration from DB fields directly
 
-        // Add current conversation data if needed for mobile state
         if ($this->model->getCurrentConversation()) {
             $style['current_conversation'] = $this->model->getCurrentConversation();
             $style['messages'] = $this->model->getConversationMessages();
             $style['conversations'] = $this->model->getUserConversations();
-            // Format message content with markdown parsing
-            foreach ($style['messages'] as &$message) {
-                $message['formatted_content'] = $this->model->formatMessageContent($message['content']);
-            }
         }
 
         // Add user/section context for mobile app

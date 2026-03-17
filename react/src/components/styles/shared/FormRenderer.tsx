@@ -12,7 +12,8 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { Form, Button, Card } from 'react-bootstrap';
 import Select from 'react-select';
 import type { FormDefinition, FormField, FormFieldOption, FormSection, FormContentSection } from '../../../types';
-import { formatFormSelectionsAsText, isFormContentSection, isFormField } from '../../../types';
+import { formatFormSelectionsAsText } from '../../../utils/formUtils';
+import { isFormContentSection, isFormField } from '../../../types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 /**

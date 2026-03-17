@@ -412,15 +412,13 @@ class LlmSpeechToTextService extends BaseLlmService
      */
     public function getUserLanguage()
     {
-        // Get language from session locale (e.g., "de-CH" -> "de", "en-GB" -> "en")
         $locale = $_SESSION['user_language_locale'] ?? 'en-GB';
         $lang = substr($locale, 0, 2);
-        
-        // Validate it's a supported language for Whisper
-        // Whisper supports many languages, but we limit to common ones for consistency
-        $supported = ['en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh', 'ko'];
-        
-        return in_array($lang, $supported) ? $lang : 'auto';
+
+        // Whisper supports more languages than the LLM plugin's standard set
+        $whisper_supported = ['en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh', 'ko'];
+
+        return in_array($lang, $whisper_supported) ? $lang : 'auto';
     }
     
     /**

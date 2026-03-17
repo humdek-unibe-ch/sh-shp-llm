@@ -18,12 +18,8 @@
 
 import React, { useCallback, useMemo } from 'react';
 import type { Message, LlmChatConfig, FormDefinition, StructuredResponse, ChatBubbleColor } from '../../../types';
-import { 
-  parseFormDefinition, 
-  parseFormSubmissionMetadata, 
-  parseStructuredResponse, 
-  messageHasForm
-} from '../../../types';
+import { parseFormDefinition, parseFormSubmissionMetadata, messageHasForm } from '../../../utils/formUtils';
+import { parseStructuredResponse } from '../../../utils/llmResponseUtils';
 import { 
   buildFormDefinitionsMap, 
   findPreviousAssistantFormDefinition 

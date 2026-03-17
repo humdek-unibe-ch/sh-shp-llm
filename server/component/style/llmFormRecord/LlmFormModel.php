@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../../component/style/formUserInput/FormUserInputModel.php";
+require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
 
 /**
  * Model for LLM form styles (llmFormRecord and llmFormLog).
@@ -261,8 +262,7 @@ class LlmFormModel extends FormUserInputModel
      */
     public function getUserLanguage()
     {
-        $locale = $_SESSION['user_language_locale'] ?? 'en-GB';
-        return substr($locale, 0, 2);
+        return LlmLanguageUtility::getUserLanguageCode('en');
     }
 
     /**

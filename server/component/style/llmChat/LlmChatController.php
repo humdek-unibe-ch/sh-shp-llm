@@ -18,7 +18,6 @@ require_once __DIR__ . "/../../../service/LlmProgressTrackingService.php";
 require_once __DIR__ . "/../../../service/LlmResponseService.php";
 require_once __DIR__ . "/../../../service/LlmDangerDetectionService.php";
 require_once __DIR__ . "/../../../service/LlmSpeechToTextService.php";
-
 /**
  * LLM Chat Controller
  * 
@@ -293,6 +292,40 @@ class LlmChatController extends BaseController
     /* Message Handling *******************************************************/
 
     /**
+     * Resolve conversation with rate limiting: checks rate limit, resolves or creates
+     * conversation, updates title for new conversations, and updates rate limit.
+     *
+     * @param int $user_id User ID
+     * @param string|null $conversation_id Existing conversation ID (may be null)
+     * @param string|null $title_hint Text to use for auto-titling new conversations
+     * @return array ['conversation_id' => int, 'is_new' => bool]
+     * @throws Exception on rate limit or DB errors
+     */
+    private function resolveConversationWithRateLimit($user_id, $conversation_id, $title_hint = null)
+    {
+        $section_id = $this->model->getSectionId();
+        $rate_data = $this->llm_service->checkRateLimit($user_id);
+
+        $conv_result = $this->llm_service->resolveConversation(
+            $user_id,
+            $conversation_id,
+            $rate_data,
+            $this->model->getConfiguredModel(),
+            $this->model->getLlmTemperature(),
+            $this->model->getLlmMaxTokens(),
+            $section_id
+        );
+
+        if ($conv_result['is_new'] && $title_hint) {
+            $this->llm_service->updateNewConversationTitle($conv_result['conversation_id'], $user_id, $title_hint);
+        }
+
+        $this->llm_service->updateRateLimit($user_id, $rate_data, $conv_result['conversation_id']);
+
+        return $conv_result;
+    }
+
+    /**
      * Handle send message request
      */
     private function handleSendMessage()
@@ -308,37 +341,16 @@ class LlmChatController extends BaseController
         $conversation_id = $_POST['conversation_id'] ?? null;
         $section_id = $this->model->getSectionId();
 
-        // Check if conversation is blocked before allowing messages
         if ($this->guardConversationBlocked($conversation_id)) {
             return;
         }
 
         try {
-            // Check rate limiting
-            $rate_data = $this->llm_service->checkRateLimit($user_id);
+            $conv = $this->resolveConversationWithRateLimit($user_id, $conversation_id, $message);
+            $conversation_id = $conv['conversation_id'];
 
-            // Get or create conversation
-            $conv_result = $this->llm_service->resolveConversation(
-                $user_id,
-                $conversation_id,
-                $rate_data,
-                $this->model->getConfiguredModel(),
-                $this->model->getLlmTemperature(),
-                $this->model->getLlmMaxTokens(),
-                $section_id
-            );
-            $conversation_id = $conv_result['conversation_id'];
-            $is_new_conversation = $conv_result['is_new'];
-
-            // Update title for new conversations
-            if ($is_new_conversation) {
-                $this->llm_service->updateNewConversationTitle($conversation_id, $user_id, $message);
-            }
-
-            // Handle file uploads
             $uploaded_files = $this->file_upload_service->handleFileUploads($user_id, $section_id, $conversation_id);
 
-            // Save user message
             $message_id = $this->llm_service->addMessage(
                 $conversation_id,
                 'user',
@@ -347,16 +359,11 @@ class LlmChatController extends BaseController
                 $this->model->getConfiguredModel()
             );
 
-            // Update file names with message ID
             if ($uploaded_files && $message_id) {
                 $this->file_upload_service->updateFileNamesWithMessageId($user_id, $section_id, $conversation_id, $message_id, $uploaded_files);
             }
 
-            // Update rate limiting
-            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
-
-            // Send to LLM and get response
-            $this->sendLlmRequestAndRespond($conversation_id, $is_new_conversation);
+            $this->sendLlmRequestAndRespond($conversation_id, $conv['is_new']);
 
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -375,12 +382,10 @@ class LlmChatController extends BaseController
         $conversation_id = $_POST['conversation_id'] ?? null;
         $section_id = $this->model->getSectionId();
 
-        // Check if conversation is blocked before allowing messages
         if ($this->guardConversationBlocked($conversation_id)) {
             return;
         }
 
-        // Parse and validate form values
         $form_values = $this->form_mode_service->parseFormValues($form_values_json);
         if ($form_values === null) {
             $this->sendJsonResponse(['error' => 'Invalid form values'], 400);
@@ -392,7 +397,6 @@ class LlmChatController extends BaseController
             return;
         }
 
-        // Generate readable text if not provided
         if (empty($readable_text)) {
             $readable_text = $this->form_mode_service->generateReadableTextFromFormValues($form_values);
         }
@@ -402,32 +406,10 @@ class LlmChatController extends BaseController
             return;
         }
 
-        // NOTE: Danger detection is now handled by the LLM via structured response schema.
-        // The LLM evaluates message safety and returns it in the safety field.
-
         try {
-            // Check rate limiting
-            $rate_data = $this->llm_service->checkRateLimit($user_id);
+            $conv = $this->resolveConversationWithRateLimit($user_id, $conversation_id, $readable_text);
+            $conversation_id = $conv['conversation_id'];
 
-            // Get or create conversation
-            $conv_result = $this->llm_service->resolveConversation(
-                $user_id,
-                $conversation_id,
-                $rate_data,
-                $this->model->getConfiguredModel(),
-                $this->model->getLlmTemperature(),
-                $this->model->getLlmMaxTokens(),
-                $section_id
-            );
-            $conversation_id = $conv_result['conversation_id'];
-            $is_new_conversation = $conv_result['is_new'];
-
-            // Update title for new conversations
-            if ($is_new_conversation) {
-                $this->llm_service->updateNewConversationTitle($conversation_id, $user_id, $readable_text);
-            }
-
-            // Save user message with form metadata
             $form_metadata = $this->form_mode_service->createFormMetadata($form_values);
             $message_id = $this->llm_service->addMessage(
                 $conversation_id,
@@ -437,23 +419,15 @@ class LlmChatController extends BaseController
                 $this->model->getConfiguredModel()
             );
 
-            // Save form data to SelfHelp UserInput if enabled
             if ($this->model->isDataSavingEnabled()) {
                 $this->saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id);
             }
 
-            // Check if this is a topic confirmation form and handle progress tracking
-            // Topic confirmation forms have a field like "topic_confirmation" or "understanding_check"
-            // with values like "yes_understand", "need_more", "explain_again"
             if ($this->model->isProgressTrackingEnabled()) {
                 $this->handleTopicConfirmationIfApplicable($form_values, $conversation_id, $section_id);
             }
 
-            // Update rate limiting
-            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
-
-            // Send to LLM and get response
-            $this->sendLlmRequestAndRespond($conversation_id, $is_new_conversation);
+            $this->sendLlmRequestAndRespond($conversation_id, $conv['is_new']);
 
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -476,30 +450,24 @@ class LlmChatController extends BaseController
         }
 
         try {
-            // Verify conversation exists
             $conversation = $this->llm_service->getConversation($conversation_id, $user_id, $section_id);
             if (!$conversation) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;
             }
 
-            // Check rate limiting
             $rate_data = $this->llm_service->checkRateLimit($user_id);
 
-            // Add continue message
-            $continue_message = "Please continue with the next step or form.";
-            $message_id = $this->llm_service->addMessage(
+            $this->llm_service->addMessage(
                 $conversation_id,
                 'user',
-                $continue_message,
+                "Please continue with the next step or form.",
                 null,
                 $this->model->getConfiguredModel()
             );
 
-            // Update rate limiting
             $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
-            // Send to LLM and get response
             $this->sendLlmRequestAndRespond($conversation_id, false);
 
         } catch (Exception $e) {
@@ -634,97 +602,17 @@ class LlmChatController extends BaseController
     }
 
     /**
-     * Handle safety detection from LLM response
-     * 
-     * When the LLM detects dangerous content, this method:
-     * 1. Logs the detection to transactions
-     * 2. Sends email notifications if intervention required
-     * 3. Blocks the conversation if emergency level
-     * 
-     * @param array $parsed_response Parsed structured response
-     * @param int $conversation_id Conversation ID
-     * @param int $user_id User ID
+     * Delegate safety detection to the danger detection service
      */
     private function handleSafetyDetection($parsed_response, $conversation_id, $user_id)
     {
-        $safety = $this->response_service->assessSafety($parsed_response);
-
-        // If safe, nothing to do
-        if ($safety['is_safe'] && $safety['danger_level'] === null) {
-            return;
-        }
-
-        $section_id = $this->model->getSectionId();
-        $detected_concerns = $safety['detected_concerns'];
-        $is_critical = in_array($safety['danger_level'], ['critical', 'emergency']);
-
-        // ALWAYS log critical and emergency detections to transactions (safety requirement)
-        if (!empty($detected_concerns) && $is_critical) {
-            $this->logSafetyDetection($detected_concerns, $parsed_response, $user_id, $conversation_id, $section_id, $safety);
-        }
-
-        // ALWAYS block conversation for critical/emergency levels (critical safety measure)
-        if ($is_critical) {
-            $reason = strtoupper($safety['danger_level']) . ': LLM detected danger: ' . implode(', ', $detected_concerns);
-            $this->danger_detection_service->blockConversation($conversation_id, $detected_concerns, $reason);
-        }
-
-        // Send notifications when:
-        // 1. Conversation was blocked (critical/emergency) - ALWAYS notify, regardless of requires_intervention
-        // 2. OR when requires_intervention is true (lower danger levels that still need attention)
-        // In both cases, danger detection must be enabled (email recipients configured)
-        $should_notify = ($is_critical || $safety['requires_intervention']) && $this->danger_detection_service->isEnabled();
-        if ($should_notify) {
-            $this->danger_detection_service->sendNotifications(
-                $detected_concerns,
-                $safety['safety_message'] ?? 'Dangerous content detected by AI',
-                $user_id,
-                $conversation_id,
-                $section_id
-            );
-        }
-    }
-
-    /**
-     * Log safety detection to transactions table
-     * This ALWAYS happens for critical/emergency detections regardless of CMS settings
-     */
-    private function logSafetyDetection($detected_concerns, $parsed_response, $user_id, $conversation_id, $section_id, $safety)
-    {
-        try {
-            $services = $this->model->get_services();
-            $transaction = $services->get_transaction();
-
-            // Prepare verbal log with detection details (JSON format for searchability)
-            $log_data = json_encode([
-                'event' => 'llm_safety_detection',
-                'detected_concerns' => $detected_concerns,
-                'danger_level' => $safety['danger_level'],
-                'safety_message' => $safety['safety_message'],
-                'conversation_id' => $conversation_id,
-                'section_id' => $section_id,
-                'ai_detection' => true, // Indicates this came from AI, not keyword matching
-                'timestamp' => date('Y-m-d H:i:s')
-            ], JSON_UNESCAPED_UNICODE);
-
-            // Log to transactions table
-            $transaction->add_transaction(
-                transactionTypes_insert,
-                TRANSACTION_BY_LLM_PLUGIN,
-                $user_id,
-                'llm_safety_detection', // Virtual table name for easy filtering
-                $section_id, // Use section_id as entry_id for reference
-                false,
-                $log_data
-            );
-
-            if (defined('DEBUG') && DEBUG) {
-                error_log('LLM Controller: Safety detection logged to transactions for user ' . $user_id);
-            }
-        } catch (Exception $e) {
-            // Log error but don't fail the detection
-            error_log('LLM Controller: Failed to log safety detection transaction: ' . $e->getMessage());
-        }
+        $this->danger_detection_service->processSafetyDetection(
+            $this->response_service,
+            $parsed_response,
+            $conversation_id,
+            $user_id,
+            $this->model->getSectionId()
+        );
     }
 
     /* Conversation Management ************************************************/
@@ -851,7 +739,7 @@ class LlmChatController extends BaseController
         $user_id = $this->validateUserOrFail();
 
         try {
-            $config = $this->buildChatConfig();
+            $config = $this->model->getChatConfig();
             $this->sendJsonResponse(['config' => $config]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -881,9 +769,6 @@ class LlmChatController extends BaseController
             }
 
             $messages = $this->llm_service->getConversationMessages($conversation_id) ?: [];
-
-            // Send raw markdown content - React will handle markdown rendering
-            // Keep formatted_content for backward compatibility with vanilla JS implementation
 
             $response = [
                 'conversation' => $conversation,
@@ -943,44 +828,41 @@ class LlmChatController extends BaseController
     }
 
     /**
-     * Handle debug progress request - for troubleshooting topic extraction
-     * This endpoint doesn't require authentication for debugging purposes
+     * Handle debug progress request - for troubleshooting topic extraction.
+     * Only available when DEBUG mode is enabled (security: prevents system prompt exposure).
      */
     private function handleDebugProgress()
     {
+        if (!defined('DEBUG') || !DEBUG) {
+            $this->sendJsonResponse(['error' => 'Debug endpoint is only available in DEBUG mode'], 403);
+            return;
+        }
+
+        $user_id = $this->validateUserOrFail();
         $conversation_id = $_GET['conversation_id'] ?? null;
         $section_id = $this->model->getSectionId();
 
         try {
             $context = $this->model->getConversationContext();
-
-            // Get debug info from service
             $debug = $this->progress_tracking_service->debugTopicExtraction($context);
 
-            // Add additional info
             $debug['progress_tracking_enabled'] = $this->model->isProgressTrackingEnabled();
             $debug['section_id'] = $section_id;
             $debug['conversation_id'] = $conversation_id;
-            $debug['raw_context_full'] = $context; // Show full context for debugging
+            $debug['raw_context_full'] = $context;
 
-            // If we have a conversation and user is logged in, get messages
             if ($conversation_id) {
-                try {
-                    $user_id = $this->validateUserOrFail();
-                    $conversation = $this->llm_service->getConversation($conversation_id, $user_id, $section_id);
-                    if ($conversation) {
-                        $messages = $this->llm_service->getConversationMessages($conversation_id) ?: [];
-                        $userMessages = array_filter($messages, function ($m) {
-                            return isset($m['role']) && $m['role'] === 'user';
-                        });
-                        $debug['total_messages'] = count($messages);
-                        $debug['user_messages'] = count($userMessages);
-                        $debug['user_message_contents'] = array_map(function ($m) {
-                            return substr($m['content'], 0, 200);
-                        }, array_values($userMessages));
-                    }
-                } catch (Exception $e) {
-                    $debug['message_error'] = $e->getMessage();
+                $conversation = $this->llm_service->getConversation($conversation_id, $user_id, $section_id);
+                if ($conversation) {
+                    $messages = $this->llm_service->getConversationMessages($conversation_id) ?: [];
+                    $userMessages = array_filter($messages, function ($m) {
+                        return isset($m['role']) && $m['role'] === 'user';
+                    });
+                    $debug['total_messages'] = count($messages);
+                    $debug['user_messages'] = count($userMessages);
+                    $debug['user_message_contents'] = array_map(function ($m) {
+                        return substr($m['content'], 0, 200);
+                    }, array_values($userMessages));
                 }
             }
 
@@ -1098,62 +980,16 @@ class LlmChatController extends BaseController
      */
     private function calculateConversationProgress($conversation_id, $messages, $include_debug = false)
     {
-        $section_id = $this->model->getSectionId();
-        $context = $this->model->getConversationContext();
+        $config = $this->model->getProgressTrackingConfig();
+        $config['section_id'] = $this->model->getSectionId();
 
-        // Extract topics from context
-        $topics = $this->progress_tracking_service->extractTopicsFromContext($context);
-
-        // Get previous progress to ensure monotonic increase
-        $existing_progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
-        $previous_percentage = $existing_progress ? (float) $existing_progress['progress_percentage'] : 0;
-
-        // Calculate current progress (confirmation-based - uses section_id to look up confirmed topics)
-        $progress = $this->progress_tracking_service->calculateProgress(
+        return $this->progress_tracking_service->calculateAndUpdateProgress(
             $conversation_id,
-            $topics,
             $messages,
-            $previous_percentage,
-            $section_id  // Pass section_id for confirmation-based progress lookup
+            $this->model->getConversationContext(),
+            $config,
+            $include_debug
         );
-
-        // Update progress in database (only if topics exist)
-        if (!empty($topics)) {
-            $this->progress_tracking_service->updateConversationProgress(
-                $conversation_id,
-                $section_id,
-                $progress['percentage'],
-                $progress['topic_coverage']
-            );
-        }
-
-        // Add configuration to response
-        $progress['config'] = $this->model->getProgressTrackingConfig();
-
-        // Add debug info if requested or if no topics found
-        if ($include_debug || empty($topics)) {
-            // Check for both markdown and HTML format
-            $hasMarkdownSection = (bool) preg_match('/#{1,3}\s*TRACKABLE_TOPICS/i', $context);
-            $hasHtmlSection = (bool) preg_match('/<h[1-3][^>]*>\s*TRACKABLE_TOPICS\s*<\/h[1-3]>/i', $context);
-
-            $progress['debug'] = [
-                'context_length' => strlen($context),
-                'context_preview' => substr($context, 0, 500),
-                'topics_found' => count($topics),
-                'has_trackable_topics_section' => $hasMarkdownSection || $hasHtmlSection,
-                'has_trackable_topics_section_markdown' => $hasMarkdownSection,
-                'has_trackable_topics_section_html' => $hasHtmlSection,
-                'has_topic_markers' => (bool) preg_match('/\[TOPIC:/i', $context),
-                'user_messages_count' => count(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'user')),
-                'is_html_content' => strpos($context, '<h') !== false || strpos($context, '<p') !== false,
-            ];
-
-            if (empty($topics)) {
-                $progress['debug']['error'] = 'No topics found in context. Use ## TRACKABLE_TOPICS section or [TOPIC: Name | keywords] markers.';
-            }
-        }
-
-        return $progress;
     }
 
     /**
@@ -1440,17 +1276,6 @@ class LlmChatController extends BaseController
     }
 
     /**
-     * Build chat configuration for React component
-     *
-     * @return array Configuration array
-     */
-    private function buildChatConfig()
-    {
-        return $this->model->getChatConfig();
-    }
-
-
-    /**
      * Save form data to SelfHelp UserInput system
      */
     private function saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id)
@@ -1483,145 +1308,16 @@ class LlmChatController extends BaseController
     }
 
     /**
-     * Handle topic confirmation if the form submission is a topic confirmation form
-     *
-     * @param array $form_values Form values
-     * @param int $conversation_id Conversation ID
-     * @param int $section_id Section ID
+     * Delegate topic confirmation processing to the progress tracking service
      */
     private function handleTopicConfirmationIfApplicable($form_values, $conversation_id, $section_id)
     {
-        $detected = $this->detectTopicConfirmation($form_values);
-        $topic_id = $detected['topic_id'];
-        $is_confirmed = $detected['is_confirmed'];
-        $understanding_level = $detected['understanding_level'];
-
-        if (!$topic_id && $is_confirmed) {
-            $topic_id = $this->inferCurrentTopicFromContext($conversation_id, $section_id);
-        }
-
-        if ($topic_id && $is_confirmed) {
-            $context = $this->model->getConversationContext();
-            $all_topics = $this->progress_tracking_service->extractTopicsFromContext($context);
-
-            $this->progress_tracking_service->confirmTopic($conversation_id, $section_id, $topic_id, $all_topics);
-            if (defined('DEBUG') && DEBUG) {
-                error_log("LLM: Topic {$topic_id} confirmed for conversation {$conversation_id} (level: {$understanding_level})");
-            }
-        }
-    }
-
-    /**
-     * Detect topic confirmation from form values
-     *
-     * Examines form values for topic_id fields and understanding/confirmation indicators.
-     *
-     * @param array $form_values Form values
-     * @return array ['topic_id' => string|null, 'is_confirmed' => bool, 'understanding_level' => string|null]
-     */
-    private function detectTopicConfirmation($form_values)
-    {
-        $topic_id = null;
-        $is_confirmed = false;
-        $understanding_level = null;
-
-        foreach ($form_values as $field_id => $value) {
-            $field_id_lower = strtolower($field_id);
-            $value_lower = is_string($value) ? strtolower($value) : '';
-
-            if (
-                strpos($field_id_lower, 'topic_id') !== false ||
-                strpos($field_id_lower, 'topic_confirmation_id') !== false ||
-                strpos($field_id_lower, 'thema_id') !== false
-            ) {
-                $topic_id = $value;
-                continue;
-            }
-
-            $is_understanding_field = (
-                strpos($field_id_lower, 'confirmation') !== false ||
-                strpos($field_id_lower, 'understanding') !== false ||
-                strpos($field_id_lower, 'verstanden') !== false ||
-                strpos($field_id_lower, 'verstehe') !== false ||
-                strpos($field_id_lower, 'verständnis') !== false ||
-                strpos($field_id_lower, 'comprehension') !== false ||
-                strpos($field_id_lower, 'knowledge') !== false ||
-                strpos($field_id_lower, 'wissen') !== false
-            );
-
-            if ($is_understanding_field) {
-                $strong_confirmation_values = [
-                    'yes', 'ja', 'oui', 'sí', 'si', 'yes_understand', 'ja_verstehe',
-                    'understand', 'verstehe', 'verstanden', 'very_well', 'sehr_gut',
-                    'excellent', 'ausgezeichnet', 'gut', 'good', 'well', 'completely',
-                    'vollständig', 'completely_understand', 'i_understand', 'ich_verstehe',
-                    'clear', 'klar'
-                ];
-
-                foreach ($strong_confirmation_values as $confirm_val) {
-                    if (strpos($value_lower, $confirm_val) !== false) {
-                        $is_confirmed = true;
-                        $understanding_level = 'confirmed';
-                        break;
-                    }
-                }
-
-                if (!$is_confirmed && is_numeric($value)) {
-                    $numeric_value = (int) $value;
-                    if ($numeric_value >= 4 || (strpos($field_id_lower, 'level') !== false && $numeric_value >= 3)) {
-                        $is_confirmed = true;
-                        $understanding_level = 'numeric_high';
-                    }
-                }
-            }
-        }
-
-        return [
-            'topic_id' => $topic_id,
-            'is_confirmed' => $is_confirmed,
-            'understanding_level' => $understanding_level
-        ];
-    }
-
-    /**
-     * Infer the current topic from conversation context
-     * 
-     * When a form doesn't have an explicit topic_id, we try to determine
-     * which topic is currently being discussed by looking at:
-     * 1. The most recent messages
-     * 2. The first uncovered topic in sequence
-     * 
-     * @param int $conversation_id Conversation ID
-     * @param int $section_id Section ID
-     * @return string|null Topic ID or null if cannot be determined
-     */
-    private function inferCurrentTopicFromContext($conversation_id, $section_id)
-    {
-        // Get the current progress to find uncovered topics
-        $progress = $this->progress_tracking_service->getConversationProgress($conversation_id, $section_id);
-
-        if (!$progress || empty($progress['topic_coverage'])) {
-            // No progress data, get topics from context and return the first one
-            $context = $this->model->getConversationContext();
-            $topics = $this->progress_tracking_service->extractTopicsFromContext($context);
-
-            if (!empty($topics)) {
-                return $topics[0]['id'];
-            }
-            return null;
-        }
-
-        $topic_coverage = json_decode($progress['topic_coverage'], true) ?: [];
-
-        // Find the first uncovered topic (in order)
-        foreach ($topic_coverage as $topic_id => $topic_data) {
-            if (empty($topic_data['is_covered'])) {
-                return $topic_id;
-            }
-        }
-
-        // All topics covered, return null
-        return null;
+        $this->progress_tracking_service->processTopicConfirmation(
+            $form_values,
+            $conversation_id,
+            $section_id,
+            $this->model->getConversationContext()
+        );
     }
 
     /**

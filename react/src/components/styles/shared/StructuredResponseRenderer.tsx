@@ -23,7 +23,7 @@ import type {
   NextStep,
   FormDefinition
 } from '../../../types';
-import { structuredFormToFormDefinition } from '../../../types';
+import { structuredFormToFormDefinition } from '../../../utils/formUtils';
 
 /**
  * Props for StructuredResponseRenderer

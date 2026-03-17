@@ -22,12 +22,8 @@ import type {
   FormDefinition, 
   StructuredResponse 
 } from '../../types';
-import { 
-  parseFormDefinition, 
-  parseFormSubmissionMetadata, 
-  parseStructuredResponse,
-  extractFormFromMessage
-} from '../../types';
+import { parseFormDefinition, parseFormSubmissionMetadata, extractFormFromMessage } from '../../utils/formUtils';
+import { parseStructuredResponse } from '../../utils/llmResponseUtils';
 import { MarkdownRenderer } from '../styles/shared/MarkdownRenderer';
 import { FormRenderer } from '../styles/shared/FormRenderer';
 import { FormDisplay } from '../styles/shared/FormDisplay';

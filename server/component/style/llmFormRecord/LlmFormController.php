@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../../component/style/formUserInput/FormUserInputController.php";
+require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
@@ -19,6 +20,8 @@ require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
  */
 class LlmFormController extends FormUserInputController
 {
+    use LlmJsonResponseTrait;
+
     /** @var LlmPromptAssetLoader */
     private $prompt_assets;
     /* Constructors ***********************************************************/
@@ -299,26 +302,6 @@ class LlmFormController extends FormUserInputController
     }
 
     /**
-     * Extract placeholder field names from context template.
-     * Supports {{field_name}} syntax.
-     *
-     * @param string $context
-     * @return array
-     */
-    private function extractInterpolationKeys($context)
-    {
-        if (empty($context)) return [];
-
-        if (!preg_match_all('/\{\{(\w+)\}\}/', $context, $matches)) {
-            return [];
-        }
-
-        $keys = array_map('strval', $matches[1] ?? []);
-        $keys = array_unique($keys);
-        return array_values($keys);
-    }
-
-    /**
      * Keep only form fields that are referenced by context interpolation keys.
      *
      * @param array $form_data
@@ -385,7 +368,7 @@ class LlmFormController extends FormUserInputController
         // Strip HTML tags - the context field is markdown type which gets
         // converted to HTML by Parsedown. We need raw text for the LLM.
         $context_clean = strip_tags($context_template);
-        $interpolation_keys = $this->extractInterpolationKeys($context_clean);
+        $interpolation_keys = $model->extractContextFieldKeys();
         $filtered_form_data = $this->filterFormDataByKeys($form_data, $interpolation_keys);
         $interpolated_context = $this->interpolateContext($context_clean, $filtered_form_data);
         $user_language = $model->getUserLanguage();
@@ -546,18 +529,5 @@ class LlmFormController extends FormUserInputController
         }
     }
 
-    /**
-     * Send a JSON response and exit.
-     */
-    private function sendJsonResponse($data, $status = 200)
-    {
-        http_response_code($status);
-        header('Content-Type: application/json');
-        echo json_encode($data);
-        if (function_exists('uopz_allow_exit')) {
-            uopz_allow_exit(true);
-        }
-        exit(0);
-    }
 }
 ?>

@@ -246,6 +246,90 @@ class LlmDangerDetectionService extends BaseLlmService
         }
     }
 
+    /**
+     * Process safety detection from a parsed LLM response.
+     *
+     * Assesses safety, logs critical detections to the transaction table,
+     * blocks conversations for critical/emergency levels, and sends
+     * email notifications when intervention is required.
+     *
+     * @param LlmResponseService $response_service Response service for safety assessment
+     * @param array $parsed_response Parsed structured response from LLM
+     * @param int $conversation_id Conversation ID
+     * @param int $user_id User ID
+     * @param int $section_id Section ID
+     */
+    public function processSafetyDetection($response_service, $parsed_response, $conversation_id, $user_id, $section_id)
+    {
+        $safety = $response_service->assessSafety($parsed_response);
+
+        if ($safety['is_safe'] && $safety['danger_level'] === null) {
+            return;
+        }
+
+        $detected_concerns = $safety['detected_concerns'];
+        $is_critical = in_array($safety['danger_level'], ['critical', 'emergency']);
+
+        if (!empty($detected_concerns) && $is_critical) {
+            $this->logSafetyDetectionToTransaction($detected_concerns, $user_id, $conversation_id, $section_id, $safety);
+        }
+
+        if ($is_critical) {
+            $reason = strtoupper($safety['danger_level']) . ': LLM detected danger: ' . implode(', ', $detected_concerns);
+            $this->blockConversation($conversation_id, $detected_concerns, $reason);
+        }
+
+        $should_notify = ($is_critical || $safety['requires_intervention']) && $this->isEnabled();
+        if ($should_notify) {
+            $this->sendNotifications(
+                $detected_concerns,
+                $safety['safety_message'] ?? 'Dangerous content detected by AI',
+                $user_id,
+                $conversation_id,
+                $section_id
+            );
+        }
+    }
+
+    /**
+     * Log an LLM-detected safety concern to the transactions table.
+     *
+     * @param array $detected_concerns Concern categories detected by LLM
+     * @param int $user_id User ID
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @param array $safety Full safety assessment result
+     */
+    private function logSafetyDetectionToTransaction($detected_concerns, $user_id, $conversation_id, $section_id, $safety)
+    {
+        try {
+            $transaction = $this->services->get_transaction();
+
+            $log_data = json_encode([
+                'event' => 'llm_safety_detection',
+                'detected_concerns' => $detected_concerns,
+                'danger_level' => $safety['danger_level'],
+                'safety_message' => $safety['safety_message'],
+                'conversation_id' => $conversation_id,
+                'section_id' => $section_id,
+                'ai_detection' => true,
+                'timestamp' => date('Y-m-d H:i:s')
+            ], JSON_UNESCAPED_UNICODE);
+
+            $transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_PLUGIN,
+                $user_id,
+                'llm_safety_detection',
+                $section_id,
+                false,
+                $log_data
+            );
+        } catch (Exception $e) {
+            $this->logError('Failed to log safety detection transaction', $e);
+        }
+    }
+
     /* Private Methods ********************************************************/
 
     /**

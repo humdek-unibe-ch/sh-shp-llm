@@ -91,6 +91,72 @@ class LlmLanguageUtility
     }
 
     /**
+     * Extract user language code from session locale.
+     * 
+     * Reads $_SESSION['user_language_locale'] (e.g., "de-CH", "en-GB")
+     * and returns the 2-letter language code if supported.
+     *
+     * @param string $fallback Fallback language code (default: 'en')
+     * @return string 2-letter language code
+     */
+    public static function getUserLanguageCode($fallback = 'en')
+    {
+        $locale = $_SESSION['user_language_locale'] ?? ($fallback . '-XX');
+        $lang = substr($locale, 0, 2);
+        return self::isLanguageSupported($lang) ? $lang : $fallback;
+    }
+
+    /**
+     * Field name patterns that indicate a topic ID field.
+     */
+    private static $topicIdFieldPatterns = [
+        'topic_id', 'topic_confirmation_id', 'thema_id'
+    ];
+
+    /**
+     * Field name patterns that indicate an understanding/confirmation field.
+     */
+    private static $understandingFieldPatterns = [
+        'confirmation', 'understanding', 'verstanden', 'verstehe',
+        'verständnis', 'comprehension', 'knowledge', 'wissen'
+    ];
+
+    /**
+     * Values that indicate strong confirmation of understanding (multilingual).
+     */
+    private static $strongConfirmationValues = [
+        'yes', 'ja', 'oui', 'sí', 'si', 'yes_understand', 'ja_verstehe',
+        'understand', 'verstehe', 'verstanden', 'very_well', 'sehr_gut',
+        'excellent', 'ausgezeichnet', 'gut', 'good', 'well', 'completely',
+        'vollständig', 'completely_understand', 'i_understand', 'ich_verstehe',
+        'clear', 'klar'
+    ];
+
+    /**
+     * @return string[]
+     */
+    public static function getTopicIdFieldPatterns()
+    {
+        return self::$topicIdFieldPatterns;
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function getUnderstandingFieldPatterns()
+    {
+        return self::$understandingFieldPatterns;
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function getStrongConfirmationValues()
+    {
+        return self::$strongConfirmationValues;
+    }
+
+    /**
      * Get language-specific confirmation prompts
      *
      * @param string $language Language code (en, de, fr, es, it, etc.)

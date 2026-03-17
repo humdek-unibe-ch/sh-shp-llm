@@ -753,6 +753,207 @@ class LlmProgressTrackingService extends BaseLlmService
     }
 
     /**
+     * Calculate conversation progress and persist to the database.
+     *
+     * Combines topic extraction, progress calculation, database update, and
+     * optional debug information into a single entry point.
+     *
+     * @param int $conversation_id Conversation ID
+     * @param array $messages Conversation message history
+     * @param string $context Raw conversation context string
+     * @param array $progress_config Progress tracking UI configuration
+     * @param bool $include_debug Whether to include debug info in the result
+     * @return array Progress data with percentage, topic coverage, config, and optional debug
+     */
+    public function calculateAndUpdateProgress($conversation_id, $messages, $context, $progress_config, $include_debug = false)
+    {
+        $topics = $this->extractTopicsFromContext($context);
+
+        $section_id = null;
+        if (!empty($progress_config['section_id'])) {
+            $section_id = $progress_config['section_id'];
+        }
+
+        $existing_progress = $section_id
+            ? $this->getConversationProgress($conversation_id, $section_id)
+            : null;
+        $previous_percentage = $existing_progress ? (float) $existing_progress['progress_percentage'] : 0;
+
+        $progress = $this->calculateProgress(
+            $conversation_id,
+            $topics,
+            $messages,
+            $previous_percentage,
+            $section_id
+        );
+
+        if (!empty($topics) && $section_id) {
+            $this->updateConversationProgress(
+                $conversation_id,
+                $section_id,
+                $progress['percentage'],
+                $progress['topic_coverage']
+            );
+        }
+
+        $progress['config'] = $progress_config;
+
+        if ($include_debug || empty($topics)) {
+            $hasMarkdownSection = (bool) preg_match('/#{1,3}\s*TRACKABLE_TOPICS/i', $context);
+            $hasHtmlSection = (bool) preg_match('/<h[1-3][^>]*>\s*TRACKABLE_TOPICS\s*<\/h[1-3]>/i', $context);
+
+            $progress['debug'] = [
+                'context_length' => strlen($context),
+                'context_preview' => substr($context, 0, 500),
+                'topics_found' => count($topics),
+                'has_trackable_topics_section' => $hasMarkdownSection || $hasHtmlSection,
+                'has_trackable_topics_section_markdown' => $hasMarkdownSection,
+                'has_trackable_topics_section_html' => $hasHtmlSection,
+                'has_topic_markers' => (bool) preg_match('/\[TOPIC:/i', $context),
+                'user_messages_count' => count(array_filter($messages, fn($m) => ($m['role'] ?? '') === 'user')),
+                'is_html_content' => strpos($context, '<h') !== false || strpos($context, '<p') !== false,
+            ];
+
+            if (empty($topics)) {
+                $progress['debug']['error'] = 'No topics found in context. Use ## TRACKABLE_TOPICS section or [TOPIC: Name | keywords] markers.';
+            }
+        }
+
+        return $progress;
+    }
+
+    /**
+     * Process topic confirmation from form submission values.
+     *
+     * Detects whether a form represents a topic confirmation (via field-name
+     * pattern matching and confirmation-value detection), infers the current
+     * topic when not explicit, and marks it as confirmed in the database.
+     *
+     * @param array $form_values Form field values
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @param string $context Raw conversation context
+     */
+    public function processTopicConfirmation($form_values, $conversation_id, $section_id, $context)
+    {
+        $detected = $this->detectTopicConfirmation($form_values);
+        $topic_id = $detected['topic_id'];
+        $is_confirmed = $detected['is_confirmed'];
+
+        if (!$topic_id && $is_confirmed) {
+            $topic_id = $this->inferCurrentTopic($conversation_id, $section_id, $context);
+        }
+
+        if ($topic_id && $is_confirmed) {
+            $all_topics = $this->extractTopicsFromContext($context);
+            $this->confirmTopic($conversation_id, $section_id, $topic_id, $all_topics);
+            if (defined('DEBUG') && DEBUG) {
+                error_log("LLM: Topic {$topic_id} confirmed for conversation {$conversation_id} (level: {$detected['understanding_level']})");
+            }
+        }
+    }
+
+    /**
+     * Detect topic confirmation signals from form field values.
+     *
+     * Uses LlmLanguageUtility for multilingual field patterns and confirmation
+     * values to match topic-id fields and understanding/confirmation fields.
+     *
+     * @param array $form_values Form field values keyed by field ID
+     * @return array ['topic_id' => string|null, 'is_confirmed' => bool, 'understanding_level' => string|null]
+     */
+    public function detectTopicConfirmation($form_values)
+    {
+        $topic_id = null;
+        $is_confirmed = false;
+        $understanding_level = null;
+
+        $topic_patterns = LlmLanguageUtility::getTopicIdFieldPatterns();
+        $understanding_patterns = LlmLanguageUtility::getUnderstandingFieldPatterns();
+        $confirmation_values = LlmLanguageUtility::getStrongConfirmationValues();
+
+        foreach ($form_values as $field_id => $value) {
+            $field_id_lower = strtolower($field_id);
+            $value_lower = is_string($value) ? strtolower($value) : '';
+
+            $is_topic_field = false;
+            foreach ($topic_patterns as $pattern) {
+                if (strpos($field_id_lower, $pattern) !== false) {
+                    $is_topic_field = true;
+                    break;
+                }
+            }
+            if ($is_topic_field) {
+                $topic_id = $value;
+                continue;
+            }
+
+            $is_understanding_field = false;
+            foreach ($understanding_patterns as $pattern) {
+                if (strpos($field_id_lower, $pattern) !== false) {
+                    $is_understanding_field = true;
+                    break;
+                }
+            }
+
+            if ($is_understanding_field) {
+                foreach ($confirmation_values as $confirm_val) {
+                    if (strpos($value_lower, $confirm_val) !== false) {
+                        $is_confirmed = true;
+                        $understanding_level = 'confirmed';
+                        break;
+                    }
+                }
+
+                if (!$is_confirmed && is_numeric($value)) {
+                    $numeric_value = (int) $value;
+                    if ($numeric_value >= 4 || (strpos($field_id_lower, 'level') !== false && $numeric_value >= 3)) {
+                        $is_confirmed = true;
+                        $understanding_level = 'numeric_high';
+                    }
+                }
+            }
+        }
+
+        return [
+            'topic_id' => $topic_id,
+            'is_confirmed' => $is_confirmed,
+            'understanding_level' => $understanding_level
+        ];
+    }
+
+    /**
+     * Infer the current topic from conversation progress.
+     *
+     * Returns the first uncovered topic in sequence when no explicit topic_id
+     * is provided by the form.
+     *
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     * @param string $context Raw conversation context
+     * @return string|null Topic ID or null
+     */
+    public function inferCurrentTopic($conversation_id, $section_id, $context)
+    {
+        $progress = $this->getConversationProgress($conversation_id, $section_id);
+
+        if (!$progress || empty($progress['topic_coverage'])) {
+            $topics = $this->extractTopicsFromContext($context);
+            return !empty($topics) ? $topics[0]['id'] : null;
+        }
+
+        $topic_coverage = json_decode($progress['topic_coverage'], true) ?: [];
+
+        foreach ($topic_coverage as $topic_id => $topic_data) {
+            if (empty($topic_data['is_covered'])) {
+                return $topic_id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Debug method to help troubleshoot topic extraction
      * 
      * @param string $context The context to analyze
