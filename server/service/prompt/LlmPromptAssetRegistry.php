@@ -9,6 +9,7 @@ class LlmPromptAssetRegistry
     {
         return array(
             'core.prompt_builder.system' => 'core/prompt-builder/system.md',
+            'core.prompt_scaffold.standard' => 'core/prompt-scaffold/standard.md',
             'core.evaluation.judge.system' => 'core/evaluation/judge-system.txt',
             'core.form_mode.system' => 'core/form-mode/system.md',
             'core.floating_mode.system' => 'core/floating-mode/system.md',

@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmService.php';
+require_once __DIR__ . '/LlmPromptStandardService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 class LlmPromptBuilderService extends BaseLlmService
@@ -13,12 +14,15 @@ class LlmPromptBuilderService extends BaseLlmService
     private $llm_service;
     /** @var LlmPromptAssetLoader */
     private $prompt_assets;
+    /** @var LlmPromptStandardService */
+    private $standard_service;
 
     public function __construct($services)
     {
         parent::__construct($services);
         $this->llm_service = new LlmService($services);
         $this->prompt_assets = new LlmPromptAssetLoader();
+        $this->standard_service = new LlmPromptStandardService($services);
     }
 
     /**
@@ -37,11 +41,13 @@ class LlmPromptBuilderService extends BaseLlmService
         $temperature = 0.3;
         $max_tokens = $config['llm_max_tokens'];
 
-        $system_prompt = $this->prompt_assets->load('core.prompt_builder.system');
+        $prompt_contract = $this->standard_service->buildPromptContractPayload($descriptor);
+        $system_prompt = $this->prompt_assets->load('core.prompt_builder.system') . "\n\n" . ($prompt_contract['guidance'] ?? '');
         $normalized_examples = $this->normalizeExamplesForBuilder($examples);
 
         $user_prompt = json_encode(array(
             'owner' => $descriptor,
+            'prompt_contract' => $prompt_contract,
             'current_prompt' => $current_prompt,
             'instructions' => $instructions,
             'examples' => $normalized_examples
@@ -98,6 +104,7 @@ class LlmPromptBuilderService extends BaseLlmService
         return array(
             'suggestion' => $suggestion,
             'model' => $model_name,
+            'prompt_contract' => $prompt_contract,
             'request_payload' => $response['request_payload'] ?? null,
             'logged_message_id' => $response['logged_message_id'] ?? null,
             'id_llmConversations' => $conversation_id,

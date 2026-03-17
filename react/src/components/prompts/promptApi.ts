@@ -4,6 +4,7 @@ import type {
   PromptBuilderResponse,
   PromptDataset,
   PromptDatasetCase,
+  PromptExpectedLabels,
   PromptDescriptor,
   PromptAiImportCaseDraft,
   PromptAiImportParseResponse,
@@ -492,7 +493,7 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       descriptor: PromptDescriptor,
       datasetId: number,
       datasetCaseId: number,
-      payload: { title?: string; notes?: string; tags?: string[] },
+      payload: { title?: string; notes?: string; tags?: string[]; expectedLabels?: PromptExpectedLabels | null },
     ): Promise<PromptDatasetCase> {
       const formData = new FormData();
       formData.append('action', 'update_dataset_case');
@@ -502,6 +503,7 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       if (payload.title != null) formData.append('title', payload.title);
       if (payload.notes != null) formData.append('notes', payload.notes);
       if (payload.tags != null) formData.append('tags_json', JSON.stringify(payload.tags));
+      if (payload.expectedLabels !== undefined) formData.append('expected_labels_json', JSON.stringify(payload.expectedLabels || {}));
       formData.append('csrf_token', resolvedCsrfToken);
       return post<PromptDatasetCase>(formData);
     },

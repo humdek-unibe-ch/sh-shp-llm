@@ -470,7 +470,8 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->updateDatasetCase($case_id, $dataset_id, array(
             'title' => $post['title'] ?? null,
             'notes' => $post['notes'] ?? null,
-            'tags' => $this->decodeJson($post['tags_json'] ?? '[]')
+            'tags' => $this->decodeJson($post['tags_json'] ?? '[]'),
+            'expected_labels' => $this->decodeJson($post['expected_labels_json'] ?? '{}')
         ));
     }
 

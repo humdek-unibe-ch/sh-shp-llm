@@ -5,6 +5,7 @@ import type {
   PromptAiImportParseResponse,
   PromptDataset,
   PromptDatasetCase,
+  PromptExpectedLabels,
   PromptImportCandidate,
   PromptImportSourceType,
 } from './datasetTypes';
@@ -88,7 +89,7 @@ export function createDatasetApi(api: PromptLabApi) {
       descriptor: PromptDescriptor,
       datasetId: number,
       datasetCaseId: number,
-      payload: { title?: string; notes?: string; tags?: string[] },
+      payload: { title?: string; notes?: string; tags?: string[]; expectedLabels?: PromptExpectedLabels | null },
     ): Promise<PromptDatasetCase> {
       return api.updateDatasetCase(descriptor, datasetId, datasetCaseId, payload);
     },

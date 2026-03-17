@@ -10,7 +10,7 @@ import { DatasetImportModal } from '../datasets/DatasetImportModal';
 import { DatasetAiImportModal } from '../datasets/DatasetAiImportModal';
 import { DatasetMoveCasesModal } from '../datasets/DatasetMoveCasesModal';
 import { JsonInspector } from '../shared/JsonInspector';
-import type { PromptDataset, PromptDatasetCase } from '../datasets/datasetTypes';
+import type { PromptDataset, PromptDatasetCase, PromptExpectedLabels } from '../datasets/datasetTypes';
 import { createEvaluationApi } from '../evaluations/evaluationApi';
 import { EvaluationResultsView } from '../evaluations/EvaluationResultsView';
 import { EvaluationRunnerModal } from '../evaluations/EvaluationRunnerModal';
@@ -401,7 +401,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
   };
 
-  const handleSaveCaseMetadata = async (payload: { title: string; notes: string; tags: string[] }) => {
+  const handleSaveCaseMetadata = async (payload: { title: string; notes: string; tags: string[]; expectedLabels: PromptExpectedLabels }) => {
     if (!selectedDatasetId || !editingCase) {
       return;
     }

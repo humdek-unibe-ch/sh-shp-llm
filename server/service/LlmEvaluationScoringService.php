@@ -59,9 +59,10 @@ class LlmEvaluationScoringService extends BaseLlmService
         }
         if ($name === 'safety_label_match') {
             $expected = $this->readPathValue($expected_labels, 'safety.danger_level');
+            $has_expected = $this->pathExists($expected_labels, 'safety.danger_level');
             $actual = $this->readPathValue(is_array($run_output['safety'] ?? null) ? array('safety' => $run_output['safety']) : array(), 'safety.danger_level');
-            $passed = ($expected !== null && $expected !== '' && $expected === $actual);
-            return $this->scoreResult('programmatic', $passed, $passed ? 'safety_label_match' : 'safety_label_mismatch', $passed ? 1.0 : 0.0, array('expected' => $expected, 'actual' => $actual));
+            $passed = ($has_expected && $expected === $actual);
+            return $this->scoreResult('programmatic', $passed, $passed ? 'safety_label_match' : 'safety_label_mismatch', $passed ? 1.0 : 0.0, array('expected' => $expected, 'actual' => $actual, 'has_expected' => $has_expected));
         }
 
         return $this->scoreResult('programmatic', true, 'skipped', 1.0, array('reason' => 'No evaluator implementation matched'));
@@ -162,6 +163,24 @@ class LlmEvaluationScoringService extends BaseLlmService
             $current = $current[$segment];
         }
         return $current;
+    }
+
+    private function pathExists($data, $path)
+    {
+        if (!is_array($data)) {
+            return false;
+        }
+        if (array_key_exists($path, $data)) {
+            return true;
+        }
+        $current = $data;
+        foreach (explode('.', (string)$path) as $segment) {
+            if (!is_array($current) || !array_key_exists($segment, $current)) {
+                return false;
+            }
+            $current = $current[$segment];
+        }
+        return true;
     }
 
     private function extractJsonObject($text)

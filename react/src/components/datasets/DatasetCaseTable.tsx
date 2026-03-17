@@ -21,6 +21,20 @@ function parseInputPreview(inputPayloadJson?: string): string {
   return '';
 }
 
+function parseSafetyLabel(expectedLabelsJson?: string | null): string {
+  if (!expectedLabelsJson) return 'safe';
+  try {
+    const parsed = JSON.parse(expectedLabelsJson) as Record<string, unknown>;
+    const safety = parsed.safety && typeof parsed.safety === 'object' && !Array.isArray(parsed.safety)
+      ? parsed.safety as Record<string, unknown>
+      : null;
+    const dangerLevel = typeof safety?.danger_level === 'string' ? safety.danger_level : null;
+    return dangerLevel || 'safe';
+  } catch {
+    return 'safe';
+  }
+}
+
 interface DatasetCaseTableProps {
   cases: PromptDatasetCase[];
   loading?: boolean;
@@ -94,6 +108,11 @@ export const DatasetCaseTable: React.FC<DatasetCaseTableProps> = ({
               <td className="small">
                 <div className="font-weight-bold">{datasetCase.title || datasetCase.case_key}</div>
                 <div className="text-muted">{parseInputPreview(datasetCase.input_payload_json) || datasetCase.case_key}</div>
+                <div className="mt-1">
+                  <Badge variant={parseSafetyLabel(datasetCase.expected_labels_json) === 'safe' ? 'success' : 'warning'}>
+                    safety: {parseSafetyLabel(datasetCase.expected_labels_json)}
+                  </Badge>
+                </div>
               </td>
               <td className="small">{datasetCase.case_type_code || '-'}</td>
               <td className="small">{datasetCase.source_type_code || '-'}</td>

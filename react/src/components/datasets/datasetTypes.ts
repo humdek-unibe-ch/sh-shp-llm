@@ -35,6 +35,12 @@ export interface PromptDatasetCase {
   updated_at?: string;
 }
 
+export interface PromptExpectedLabels {
+  safety?: {
+    danger_level?: null | 'warning' | 'critical' | 'emergency';
+  };
+}
+
 export type PromptImportSourceType =
   | 'playground_run'
   | 'form_submission'

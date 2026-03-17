@@ -8,6 +8,7 @@ require_once __DIR__ . '/LlmDatasetIngestionService.php';
 require_once __DIR__ . '/LlmDatasetAiImportMapperService.php';
 require_once __DIR__ . '/LlmDatasetAiImportParserService.php';
 require_once __DIR__ . '/LlmDatasetBatchImportService.php';
+require_once __DIR__ . '/LlmPromptStandardService.php';
 require_once __DIR__ . '/LlmPromptRegistryService.php';
 
 class LlmDatasetService extends BaseLlmService
@@ -17,6 +18,7 @@ class LlmDatasetService extends BaseLlmService
     private $parser_service;
     private $batch_import_service;
     private $registry_service;
+    private $standard_service;
 
     public function __construct($services)
     {
@@ -26,6 +28,7 @@ class LlmDatasetService extends BaseLlmService
         $this->parser_service = new LlmDatasetAiImportParserService($services, $this->mapper_service);
         $this->batch_import_service = new LlmDatasetBatchImportService($services, $this, $this->mapper_service);
         $this->registry_service = new LlmPromptRegistryService($services);
+        $this->standard_service = new LlmPromptStandardService($services);
     }
 
     public function listDatasets($filters = array())
@@ -250,7 +253,7 @@ class LlmDatasetService extends BaseLlmService
             'title' => $title,
             'input_payload_json' => $this->jsonEncode($input_payload),
             'expected_output_json' => $this->encodeOptionalJson($payload, 'expected_output'),
-            'expected_labels_json' => $this->encodeOptionalJson($payload, 'expected_labels'),
+            'expected_labels_json' => $this->jsonEncode($this->normalizeExpectedLabels($payload['expected_labels'] ?? null)),
             'id_lookups_source_type' => $this->lookupId('llm_eval_source_types', (string)($payload['source_type'] ?? 'manual_entry'), 'source type'),
             'source_ref_json' => $this->encodeOptionalJson($payload, 'source_ref'),
             'provenance_json' => $this->encodeOptionalJson($payload, 'provenance'),
@@ -301,10 +304,23 @@ class LlmDatasetService extends BaseLlmService
             })) : array();
             $update['tags_json'] = $this->jsonEncode($tags);
         }
+        if (array_key_exists('expected_labels', $payload) && $payload['expected_labels'] !== null) {
+            $update['expected_labels_json'] = $this->jsonEncode($this->normalizeExpectedLabels($payload['expected_labels']));
+        }
 
         $this->db->update_by_ids('llm_eval_cases', $update, array('id' => (int)$case_id));
         $this->addPluginTransaction('update', 'llm_eval_cases', $case_id, 'LLM dataset case updated');
         return $this->getDatasetCase($case_id, $dataset_id);
+    }
+
+    public function getDefaultExpectedLabels()
+    {
+        return $this->standard_service->getDefaultExpectedLabels();
+    }
+
+    public function normalizeExpectedLabels($expected_labels = null)
+    {
+        return $this->standard_service->normalizeExpectedLabels($expected_labels);
     }
 
     public function deleteDatasetCase($case_id, $dataset_id = 0)

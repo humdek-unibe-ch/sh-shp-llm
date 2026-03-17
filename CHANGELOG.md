@@ -64,6 +64,10 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   - `no_empty_output`
   - `safety_label_match`
 - Added `llm_judge` scoring support and made manual review part of every evaluation run by default.
+- Added a shared prompt standard layer in the parent plugin for:
+  - reusable authored prompt scaffold order (`task/role`, `style`, `domain safety`, `examples`, `output behavior`)
+  - centralized dataset safety expectation defaults (`expected_labels_json.safety.danger_level`)
+  - scaffold-aware Build With AI guidance across prompt fields and scripts
 - Added prompt-lab UI flows for dataset browsing, metadata editing, case preview, source import, case promotion, evaluation runs, result inspection, pending-review filtering, and manual review.
 - Exposed the same datasets/evaluations workflow in both CMS prompt fields and the scripts manager.
 - Added consistent CMS-style delete confirmation for dataset deletion (`$.confirm` with safe browser fallback).

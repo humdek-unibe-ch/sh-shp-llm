@@ -8,6 +8,7 @@ import type { createPromptLabApi } from './promptApi';
 import type {
   PromptBuilderExample,
   PromptBuilderResponse,
+  PromptContract,
   PromptDescriptor,
   PromptModel,
   PromptVariableDefinition,
@@ -181,6 +182,7 @@ export const PromptBuilderWorkspace: React.FC<PromptBuilderWorkspaceProps> = ({
   }, [result]);
 
   const suggestion = result?.suggestion;
+  const promptContract = result?.prompt_contract as PromptContract | null | undefined;
 
   const handleBuild = async () => {
     if (disabled) {
@@ -245,6 +247,13 @@ export const PromptBuilderWorkspace: React.FC<PromptBuilderWorkspaceProps> = ({
           <pre className="bg-light border rounded p-3 prompt-pre small mt-2 mb-0">{currentPrompt || 'No prompt yet.'}</pre>
         </details>
       </Form.Group>
+
+      {promptContract?.section_order?.length ? (
+        <Alert variant="secondary" className="py-2 small">
+          <div className="font-weight-bold mb-1">Shared Prompt Scaffold</div>
+          <div>{promptContract.section_order.join(' -> ')}</div>
+        </Alert>
+      ) : null}
 
       <Form.Group>
         <div className="d-flex justify-content-between align-items-center mb-1">

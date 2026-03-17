@@ -1,6 +1,7 @@
 export type {
   PromptDataset,
   PromptDatasetCase,
+  PromptExpectedLabels,
   PromptAiImportCaseDraft,
   PromptAiImportParseResponse,
   PromptImportCandidate,
@@ -127,6 +128,13 @@ export interface PromptBuilderSuggestion {
   change_summary: string;
 }
 
+export interface PromptContract {
+  owner_type?: string;
+  execution_profile?: string;
+  section_order?: string[];
+  guidance?: string;
+}
+
 export interface PromptBuilderExample {
   score_id?: number;
   run_case_id?: number;
@@ -153,6 +161,7 @@ export interface PromptBuilderExample {
 export interface PromptBuilderResponse {
   suggestion: PromptBuilderSuggestion;
   model: string;
+  prompt_contract?: PromptContract | null;
   request_payload?: unknown;
   logged_message_id?: number | null;
   id_llmConversations?: number | null;
