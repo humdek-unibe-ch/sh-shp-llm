@@ -161,131 +161,54 @@ define('TRANSACTION_BY_LLM_FORM', 'by_llm_form');
 define('LLM_FORM_DEFAULT_RESULT_FIELD', 'llm_result');
 define('LLM_FORM_DEFAULT_META_FIELD', 'llm_result_meta');
 
-/**
- * Get the file type category based on extension
+/* =========================================================================
+ * BACKWARD-COMPATIBLE WRAPPERS
  *
- * @param string $extension File extension (without dot)
- * @return string File type category constant
- */
+ * Real logic lives in LlmModelCapabilities (static utility class).
+ * These thin global functions exist only for backward compatibility;
+ * new code should call LlmModelCapabilities::method() directly.
+ * ========================================================================= */
+
+require_once __DIR__ . '/LlmModelCapabilities.php';
+
+/** @deprecated Use LlmModelCapabilities::getFileTypeCategory() */
 function llm_get_file_type_category($extension) {
-    $extension = strtolower($extension);
-    if (in_array($extension, LLM_ALLOWED_IMAGE_EXTENSIONS)) {
-        return LLM_FILE_TYPE_IMAGE;
-    }
-    if (in_array($extension, LLM_ALLOWED_DOCUMENT_EXTENSIONS)) {
-        return LLM_FILE_TYPE_DOCUMENT;
-    }
-    if (in_array($extension, LLM_ALLOWED_CODE_EXTENSIONS)) {
-        return LLM_FILE_TYPE_CODE;
-    }
-    return LLM_FILE_TYPE_DOCUMENT; // Default fallback
+    return LlmModelCapabilities::getFileTypeCategory($extension);
 }
 
-/**
- * Check if a model supports vision/image processing
- *
- * @param string $model Model identifier
- * @return bool True if model supports vision
- */
+/** @deprecated Use LlmModelCapabilities::isVisionModel() */
 function llm_is_vision_model($model) {
-    return in_array($model, LLM_VISION_MODELS);
+    return LlmModelCapabilities::isVisionModel($model);
 }
 
-/**
- * Check if a model is an embedding model (not suitable for chat)
- *
- * @param string $model Model identifier
- * @return bool True if model is an embedding model
- */
+/** @deprecated Use LlmModelCapabilities::isEmbeddingModel() */
 function llm_is_embedding_model($model) {
-    $lower = strtolower($model);
-    foreach (LLM_EMBEDDING_MODEL_PATTERNS as $pattern) {
-        if (strpos($lower, $pattern) !== false) {
-            return true;
-        }
-    }
-    return false;
+    return LlmModelCapabilities::isEmbeddingModel($model);
 }
 
-/**
- * Check if a model is a reranker model (not suitable for chat)
- *
- * @param string $model Model identifier
- * @return bool True if model is a reranker model
- */
+/** @deprecated Use LlmModelCapabilities::isRerankerModel() */
 function llm_is_reranker_model($model) {
-    $lower = strtolower($model);
-    foreach (LLM_RERANKER_MODEL_PATTERNS as $pattern) {
-        if (strpos($lower, $pattern) !== false) {
-            return true;
-        }
-    }
-    return false;
+    return LlmModelCapabilities::isRerankerModel($model);
 }
 
-/**
- * Check if a model is a non-chat model (audio, embedding, or reranker)
- *
- * @param string $model Model identifier
- * @return bool True if model should be excluded from chat model lists
- */
+/** @deprecated Use LlmModelCapabilities::isNonChatModel() */
 function llm_is_non_chat_model($model) {
-    return llm_is_embedding_model($model)
-        || llm_is_reranker_model($model)
-        || in_array($model, LLM_AUDIO_MODELS);
+    return LlmModelCapabilities::isNonChatModel($model);
 }
 
-/**
- * Get model capabilities based on model identifier
- *
- * @param string $model Model identifier
- * @return array Array of capability constants
- */
+/** @deprecated Use LlmModelCapabilities::getModelCapabilities() */
 function llm_get_model_capabilities($model) {
-    $capabilities = [LLM_CAPABILITY_TEXT]; // All models can handle text
-
-    if (llm_is_vision_model($model)) {
-        $capabilities[] = LLM_CAPABILITY_VISION;
-    }
-
-    // Add code capability for coding models
-    if (strpos($model, 'coder') !== false || strpos($model, 'code') !== false) {
-        $capabilities[] = LLM_CAPABILITY_CODE;
-    }
-
-    // Add reasoning capability for advanced models
-    if (strpos($model, 'deepseek-r1') !== false || strpos($model, 'reasoning') !== false) {
-        $capabilities[] = LLM_CAPABILITY_REASONING;
-    }
-
-    return $capabilities;
+    return LlmModelCapabilities::getModelCapabilities($model);
 }
 
-/**
- * Check if a model has a specific capability
- *
- * @param string $model Model identifier
- * @param string $capability Capability constant
- * @return bool True if model has the capability
- */
+/** @deprecated Use LlmModelCapabilities::modelHasCapability() */
 function llm_model_has_capability($model, $capability) {
-    $capabilities = llm_get_model_capabilities($model);
-    return in_array($capability, $capabilities);
+    return LlmModelCapabilities::modelHasCapability($model, $capability);
 }
 
-/**
- * Validate MIME type against allowed types for extension
- *
- * @param string $extension File extension (without dot)
- * @param string $mimeType Detected MIME type
- * @return bool True if MIME type is valid for extension
- */
+/** @deprecated Use LlmModelCapabilities::validateMimeType() */
 function llm_validate_mime_type($extension, $mimeType) {
-    $extension = strtolower($extension);
-    if (!isset(LLM_ALLOWED_MIME_TYPES[$extension])) {
-        return false;
-    }
-    return in_array($mimeType, LLM_ALLOWED_MIME_TYPES[$extension]);
+    return LlmModelCapabilities::validateMimeType($extension, $mimeType);
 }
 
 ?>

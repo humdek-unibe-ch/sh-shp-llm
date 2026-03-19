@@ -228,7 +228,12 @@ class LlmService extends BaseLlmService
                 throw new Exception('Conversation not found');
             }
 
-            if ($existing['model'] !== $normalizedModel) {
+            $existingModel = $existing['model'];
+            $parsed = $this->parseScopedModelId($normalizedModel);
+            $rawModel = $parsed['model'] ?? $normalizedModel;
+            $modelMatches = ($existingModel === $normalizedModel || $existingModel === $rawModel);
+
+            if (!$modelMatches) {
                 $this->validateConcurrentConversationLimit($rate_data);
                 $conversation_id = $this->getOrCreateConversationForModel(
                     $user_id,
@@ -349,6 +354,11 @@ class LlmService extends BaseLlmService
      */
     public function getUserConversations($user_id, $limit = LLM_DEFAULT_CONVERSATION_LIMIT, $model = null, $section_id = null)
     {
+        // Normalize the model so lookups match what createConversation stored
+        if ($model) {
+            $model = $this->normalizeModelIdentifierForStorage($model);
+        }
+
         $cache_params = ['limit' => $limit];
         if ($model) {
             $cache_params['model'] = $model;
@@ -369,8 +379,16 @@ class LlmService extends BaseLlmService
         $params = [':id_user' => $user_id];
 
         if ($model) {
-            $sql .= " AND model = :model";
-            $params[':model'] = $model;
+            $parsed = $this->parseScopedModelId($model);
+            $rawModel = $parsed['model'] ?? $model;
+            if ($rawModel !== $model) {
+                $sql .= " AND (model = :model OR model = :raw_model)";
+                $params[':model'] = $model;
+                $params[':raw_model'] = $rawModel;
+            } else {
+                $sql .= " AND model = :model";
+                $params[':model'] = $model;
+            }
         }
 
         if ($section_id) {

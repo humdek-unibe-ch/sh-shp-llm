@@ -181,8 +181,6 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     ...config,
     // Override floating button setting to prevent recursion
     enableFloatingButton: false,
-    // Disable conversations list in floating mode for cleaner UI
-    enableConversationsList: false,
     // Indicate that we're in floating mode
     isFloatingMode: true,
     // Force scroll to bottom when panel opens

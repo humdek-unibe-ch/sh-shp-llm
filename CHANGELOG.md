@@ -2,7 +2,18 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.1.0] - 2026-03-17
+## [1.1.0] - 2026-03-19
+
+### Floating mode conversation switcher
+
+- **Fixed**: Floating chat panel now shows a conversation switcher dropdown when `enable_conversations_list` is enabled. Previously the dropdown was rendered inside the `.llm-chat-header` which is hidden by CSS in floating mode (`display: none !important`), making it invisible. The conversation switcher is now rendered as a separate `llm-floating-conv-switcher` bar outside the Card component, above the messages area but below the panel header.
+- **Fixed**: `FloatingChat.tsx` no longer adds the `llm-float-has-conversations` class (approach abandoned in favor of React conditional rendering).
+- Users can now create new conversations and switch between existing ones directly from the floating chat panel via a compact dropdown.
+
+### Model normalization for conversation retrieval
+
+- **Fixed**: `LlmService::getUserConversations()` now normalizes the `$model` parameter at the start of the function before constructing the cache key and SQL query. This ensures conversations stored with scoped model names (`ServerName :: model-id`) are correctly retrieved when the CMS provides a raw model name.
+- **Fixed**: `LlmService::resolveConversation()` now checks both scoped and raw model formats when determining if an existing conversation matches, preventing unnecessary new conversation creation after multi-server migration.
 
 ### Code quality and architecture refactoring
 

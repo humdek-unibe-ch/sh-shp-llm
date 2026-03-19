@@ -614,7 +614,7 @@ abstract class BaseLlmService
         $this->services->get_transaction()->add_transaction(
             $type,
             TRANSACTION_BY_LLM_PLUGIN,
-            $_SESSION['id_user'] ?? null,
+            $this->getCurrentUserId(),
             $table,
             $ref_id,
             false,

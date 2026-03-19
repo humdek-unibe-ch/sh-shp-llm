@@ -44,6 +44,16 @@ UPDATE plugins SET version = 'v1.1.0' WHERE `name` = 'llm';
 -- LOOKUP ENUMS
 -- =====================================================
 
+-- Floating button positions (shared with therapy chat plugin)
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES
+('floatingButtonPositions', 'bottom-right', 'Bottom Right', 'Display floating button in bottom right corner'),
+('floatingButtonPositions', 'bottom-left', 'Bottom Left', 'Display floating button in bottom left corner'),
+('floatingButtonPositions', 'top-right', 'Top Right', 'Display floating button in top right corner'),
+('floatingButtonPositions', 'top-left', 'Top Left', 'Display floating button in top left corner'),
+('floatingButtonPositions', 'bottom-center', 'Bottom Center', 'Display floating button in bottom center'),
+('floatingButtonPositions', 'top-center', 'Top Center', 'Display floating button in top center');
+
 -- LLM result placement options
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES

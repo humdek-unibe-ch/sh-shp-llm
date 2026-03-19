@@ -124,15 +124,7 @@ class LlmHooks extends BaseHooks
      */
     private function outputSelectFloatingPositionField($value, $name, $disabled)
     {
-        // Define available positions for the floating button
-        $positions = array(
-            array('value' => 'bottom-right', 'text' => 'Bottom Right'),
-            array('value' => 'bottom-left', 'text' => 'Bottom Left'),
-            array('value' => 'top-right', 'text' => 'Top Right'),
-            array('value' => 'top-left', 'text' => 'Top Left'),
-            array('value' => 'bottom-center', 'text' => 'Bottom Center'),
-            array('value' => 'top-center', 'text' => 'Top Center')
-        );
+        $positions = $this->getFloatingButtonPositionsFromLookups();
 
         return new BaseStyleComponent("select", array(
             "value" => $value ?: 'bottom-right',
@@ -143,6 +135,40 @@ class LlmHooks extends BaseHooks
             "disabled" => $disabled,
             "items" => $positions
         ));
+    }
+
+    /**
+     * Load floating button positions from the shared lookups table.
+     * Falls back to a static default set if the DB lookup fails.
+     *
+     * @return array Array of ['value' => ..., 'text' => ...] items
+     */
+    private function getFloatingButtonPositionsFromLookups()
+    {
+        try {
+            $lookups = $this->db->query_db(
+                "SELECT lookup_code, lookup_value FROM lookups WHERE type_code = ? ORDER BY lookup_value",
+                array('floatingButtonPositions')
+            );
+            if (!empty($lookups)) {
+                $positions = array();
+                foreach ($lookups as $row) {
+                    $positions[] = array('value' => $row['lookup_code'], 'text' => $row['lookup_value']);
+                }
+                return $positions;
+            }
+        } catch (Exception $e) {
+            // fall through to defaults
+        }
+
+        return array(
+            array('value' => 'bottom-right', 'text' => 'Bottom Right'),
+            array('value' => 'bottom-left', 'text' => 'Bottom Left'),
+            array('value' => 'top-right', 'text' => 'Top Right'),
+            array('value' => 'top-left', 'text' => 'Top Left'),
+            array('value' => 'bottom-center', 'text' => 'Bottom Center'),
+            array('value' => 'top-center', 'text' => 'Top Center')
+        );
     }
 
     /**
@@ -705,7 +731,7 @@ class LlmHooks extends BaseHooks
                 "description" => $description,
                 ACTION_JOB_TYPE_LLM_SCRIPT => $job[ACTION_JOB_TYPE_LLM_SCRIPT],
                 "form_data" => $args['form_data'],
-                "id_users" => $_SESSION['id_user']
+                "id_users" => $_SESSION['id_user'] ?? null
             );
         } else {
             return $this->execute_private_method($args);

@@ -12,7 +12,7 @@
  */
 
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
-import { Container, Row, Col, Alert, Card } from 'react-bootstrap';
+import { Container, Row, Col, Alert, Card, Dropdown, Button } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
@@ -20,7 +20,7 @@ import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { ProgressIndicator } from '../shared/ProgressIndicator';
 import { useChatState } from '../../../hooks/useChatState';
 import { createFormApi, createContinueApi, progressApi } from '../../../utils/api';
-import type { LlmChatConfig, SelectedFile, Message, ProgressData } from '../../../types';
+import type { LlmChatConfig, SelectedFile, Message, ProgressData, Conversation } from '../../../types';
 import './LlmChat.css';
 
 /**
@@ -560,6 +560,10 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   // Determine if conversation is blocked
   const isConversationBlocked = currentConversation?.blocked === true || currentConversation?.blocked === 1;
 
+  // In floating mode, use a compact conversation dropdown instead of the full sidebar
+  const showFullSidebar = config.enableConversationsList && !config.isFloatingMode;
+  const showFloatingConversationSwitcher = config.enableConversationsList && config.isFloatingMode;
+
   return (
     <Container fluid className={`llm-chat-container llm-chat-shell ${config.isFloatingMode ? 'p-0' : 'p-3'}`}>
       {/* Error Alert */}
@@ -571,8 +575,8 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
       )}
 
       <Row className="no-gutters h-100 llm-chat-grid">
-        {/* Conversations Sidebar */}
-        {config.enableConversationsList && (
+        {/* Conversations Sidebar — full mode only (non-floating) */}
+        {showFullSidebar && (
           <Col md={4} lg={3}>
             <ConversationSidebar
               conversations={conversations}
@@ -587,17 +591,55 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
         )}
 
         {/* Main Chat Area */}
-        <Col className={config.enableConversationsList ? "" : "col-12"}>
+        <Col className={showFullSidebar ? "" : "col-12"}>
+          {/* Floating conversation switcher — rendered OUTSIDE the Card so CSS
+              display:none on .llm-chat-header doesn't affect it */}
+          {showFloatingConversationSwitcher && (
+            <div className="llm-floating-conv-switcher d-flex align-items-center bg-light border-bottom px-2 py-1" style={{ position: 'relative', zIndex: 20 }}>
+              <Dropdown className="flex-grow-1" style={{ minWidth: 0 }}>
+                <Dropdown.Toggle variant="link" className="text-dark p-0 text-left d-flex align-items-center text-decoration-none w-100" style={{ minWidth: 0 }} id={`conv-dropdown-${config.sectionId}`}>
+                  <i className="fas fa-comments text-muted mr-2 small"></i>
+                  <span className="text-truncate font-weight-bold" style={{ maxWidth: '200px', fontSize: '0.85rem' }}>{currentConversation?.title || config.defaultChatTitle}</span>
+                  <i className="fas fa-chevron-down ml-1 small text-muted"></i>
+                </Dropdown.Toggle>
+                <Dropdown.Menu style={{ maxHeight: '300px', overflowY: 'auto', minWidth: '250px' }}>
+                  <Dropdown.Item onClick={() => handleCreateConversation()} className="text-primary font-weight-bold">
+                    <i className="fas fa-plus mr-2"></i>{config.newChatButtonLabel || 'New Chat'}
+                  </Dropdown.Item>
+                  {conversations.length > 0 && <Dropdown.Divider />}
+                  {conversations.map((conv: Conversation) => {
+                    const isBlocked = conv.blocked === true || conv.blocked === 1;
+                    return (
+                      <Dropdown.Item
+                        key={conv.id}
+                        active={currentConversation ? String(currentConversation.id) === String(conv.id) : false}
+                        disabled={isBlocked}
+                        onClick={() => !isBlocked && selectConversation(conv)}
+                        className="d-flex align-items-center justify-content-between"
+                      >
+                        <span className="text-truncate mr-2" style={{ fontSize: '0.85rem' }}>
+                          {isBlocked && <i className="fas fa-ban text-warning mr-1 small"></i>}
+                          {conv.title}
+                        </span>
+                      </Dropdown.Item>
+                    );
+                  })}
+                </Dropdown.Menu>
+              </Dropdown>
+            </div>
+          )}
           <Card className="h-100 border-0 shadow-sm llm-chat-panel d-flex flex-column">
-            {/* Chat Header */}
+            {/* Chat Header — hidden in floating mode by CSS */}
             <Card.Header className="llm-chat-header bg-white border-0 d-flex justify-content-between align-items-center">
-              <div className="d-flex align-items-center">
-                <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3" style={{width: '40px', height: '40px'}}>
-                  <i className="fas fa-robot text-white"></i>
-                </div>
+              <div className="d-flex align-items-center" style={{ minWidth: 0, flex: 1 }}>
+                {!config.isFloatingMode && (
+                  <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3 flex-shrink-0" style={{width: '40px', height: '40px'}}>
+                    <i className="fas fa-robot text-white"></i>
+                  </div>
+                )}
                 <h5 className="mb-0">{currentConversation?.title || config.defaultChatTitle}</h5>
               </div>
-              <div className="d-flex align-items-center">
+              <div className="d-flex align-items-center flex-shrink-0 ml-2">
                 <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'} llm-model-badge`}>
                   <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'} mr-1`}></i>
                   {activeModel}

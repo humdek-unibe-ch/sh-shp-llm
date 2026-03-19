@@ -286,7 +286,23 @@
 }
 
 .llm-float-panel-body .llm-chat-header {
-  display: none !important; /* Hide header - already in panel header */
+  display: none !important;
+}
+
+/* Floating conversation switcher bar (rendered outside the Card) */
+.llm-float-panel-body .llm-floating-conv-switcher {
+  flex-shrink: 0 !important;
+  overflow: visible !important;
+  border-bottom: 1px solid #dee2e6 !important;
+}
+
+.llm-float-panel-body .llm-floating-conv-switcher .dropdown-menu {
+  z-index: 1060 !important;
+  max-width: 340px !important;
+}
+
+.llm-float-panel-body .llm-floating-conv-switcher .dropdown-toggle::after {
+  display: none !important;
 }
 
 /* Card body - flex container for messages and input */
