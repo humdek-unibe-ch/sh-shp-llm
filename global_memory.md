@@ -77,7 +77,9 @@ Relevant existing methods:
 
 Important consequence:
 
-- these need hook-based integration using the existing hook system
+- these need explicit post-success integration points outside `UserInput::save_data()`
+- in current core behavior, `hook_on_function_execute` does not expose method arguments, so it is not reliable for profile old/new value payloads
+- login/profile integration in v1.2.0 should therefore use return-overwrite hooks or explicit post-success calls where payload is available
 
 ### 2.5 LLM async execution
 
@@ -91,6 +93,12 @@ Important consequence:
 
 - memory generation should reuse this async pattern
 - source actions must not wait for the LLM response
+
+### 2.6 Additional Runtime Constraints to Respect
+
+- prompt-lab support is not automatically available for a new owner type; memory-rule owner support must be wired end-to-end (registry, runtime profile, playground/runtime values, React prompt typing)
+- strict LLM logging currently expects a `conversation_id`; memory LLM calls must use an explicit memory conversation strategy
+- `LlmChatModel::getOwnEntriesOnly()` currently depends on an undefined property in this plugin version and should be fixed before relying on `llmChat` data-saving behavior for memory rollout
 
 ---
 
@@ -181,6 +189,8 @@ Recommended columns:
 - `last_trigger_type`
 - `last_payload_json`
 - `last_updated_at`
+- `last_event_at`
+- `last_dedupe_key`
 - dynamic flattened columns from `flat_fields`
 
 Expected write mode:
@@ -213,6 +223,9 @@ Recommended columns:
 - `change_summary`
 - `worker_status`
 - `created_at`
+- `event_at`
+- `dedupe_key`
+- `update_status`
 - dynamic flattened columns from `flat_fields`
 
 Expected write mode:
@@ -371,6 +384,13 @@ Recommended binding shape:
 - owner points to the LLM module configuration scope
 - `prompt_slot` is derived from the rule key, for example `memory_rule:sleep_form_finished`
 
+Hard requirement for v1.2.0:
+
+- treat memory-rule prompt-lab support as a full prerequisite, not an optional follow-up
+- register and resolve `llm_memory_rule` across owner registry, execution profile resolution, runtime-value resolution, and playground execution paths
+- extend the React/API prompt owner typing to include `llm_memory_rule` so prompt lab UI can open and save correctly for memory rules
+- if any of these are missing, memory-rule prompt editing may appear to work but playground/dataset/replay execution will fail at runtime
+
 This gives us:
 
 - versioning of memory prompts without extra custom history code
@@ -518,26 +538,37 @@ This direct path should still use the same memory rule model and the same async 
 
 ## 7.3 Login Trigger
 
-Use hook integration on:
+Use return-overwrite hook integration on:
 
 - `Login::update_timestamp()`
 
 Behavior:
 
-- run original logic first
+- run original logic through overwrite-return hook
 - if login succeeded, enqueue matching memory rules asynchronously
+- include user id plus current login metadata in the payload
+
+Reason:
+
+- this path preserves original behavior and gives access to success outcome and method arguments without depending on `hook_on_function_execute` argument propagation
 
 ## 7.4 Profile Name Trigger
 
-Use hook integration on:
+Use explicit post-success trigger in:
 
 - `ProfileModel::change_user_name()`
 
 Behavior:
 
+- capture old user name before update
 - run original logic first
 - if name change succeeded, enqueue matching memory rules asynchronously
 - include both old and new values in payload
+
+Fallback option:
+
+- if core refactor later enables reliable argument capture with overwrite-return hooks for this method, we can move this trigger to that hook pattern
+- for v1.2.0, direct post-success trigger in method flow is the safer implementation
 
 ---
 
@@ -669,17 +700,20 @@ Each memory update should do this:
 
 1. resolve the memory rule
 2. resolve effective `memory_key`
-3. load current effective memory for the user
-4. normalize source payload
-5. resolve optional `data_config`
-6. build the interpolation variables
-7. resolve the rule prompt from prompt lab using the rule's active prompt binding
-8. interpolate the resolved prompt with runtime variables
-9. call the LLM asynchronously
-10. validate result structure
-11. persist according to storage mode
-12. write refresh events if needed
-13. log worker result for audit/debug
+3. build a deterministic dedupe key for the event/rule/user combination
+4. reject duplicates early if the same dedupe key was already processed successfully
+5. load current effective memory for the user (including version/event metadata)
+6. normalize source payload
+7. resolve optional `data_config`
+8. build the interpolation variables
+9. resolve the rule prompt from prompt lab using the rule's active prompt binding
+10. interpolate the resolved prompt with runtime variables
+11. resolve or create the memory conversation id for this user/memory_key scope
+12. call the LLM asynchronously using that conversation id
+13. validate result structure
+14. persist according to storage mode with ordering guard checks
+15. write refresh events if needed
+16. log worker result for audit/debug
 
 ### 9.3 Validation
 
@@ -697,6 +731,19 @@ If validation fails:
 - do not overwrite effective memory
 - do not append history row
 - store worker failure logs
+
+### 9.4 Ordering and Idempotency Rules
+
+- every memory update should carry:
+  - `event_at` (source event time)
+  - `dedupe_key` (deterministic hash over user, memory_key, rule, source_type, source_ref, trigger_type, payload fingerprint)
+- current table writes should use optimistic ordering guard:
+  - only overwrite if incoming event/version is newer than stored state
+- history table should always capture outcome state:
+  - `applied`
+  - `ignored_duplicate`
+  - `ignored_stale`
+- stale or duplicate updates must never overwrite effective memory
 
 ---
 
@@ -1023,9 +1070,16 @@ The implementation should explicitly create or update these files and constants 
 - `server/component/LlmHooks.php`
 - `server/service/globals.php`
 - `server/component/style/llmChat/LlmChatController.php`
+- `server/component/style/llmChat/LlmChatModel.php`
 - `server/component/moduleLlmAdminConsole/ModuleLlmAdminConsoleController.php`
 - prompt-lab registry/profile services to recognize memory-rule prompt owners
+- `server/service/LlmPromptExecutionProfileService.php`
+- `server/service/LlmPromptRuntimeValueService.php`
+- `server/service/LlmPromptPlaygroundService.php`
+- `server/ajax/AjaxLlmPromptLab.php`
 - LLM admin console React files and related endpoints for the new memory UI
+- `react/src/components/prompts/promptTypes.ts`
+- `react/src/utils/api.ts`
 - CMS field rendering/edit hooks for the memory-rules editor
 
 ### Constants and lookup additions
@@ -1063,10 +1117,10 @@ Add LLM plugin hook support for:
 
 ### Login/profile hooks
 
-Register hooks for:
+Register integration as:
 
-- `Login::update_timestamp`
-- `ProfileModel::change_user_name`
+- overwrite-return hook for `Login::update_timestamp`
+- direct post-success trigger call in `ProfileModel::change_user_name` (for reliable old/new payload capture)
 
 The async execution path should explicitly follow the established `llm_async_worker.php` pattern for CLI bootstrap, temp payload handoff, and non-blocking execution.
 
@@ -1178,10 +1232,13 @@ This keeps the solution close to how SelfHelp already works.
 - `llmChat` form submit with data saving disabled updates memory via direct path
 - login queues memory update only after successful login
 - profile name change queues memory update only after successful update
+- memory-rule prompts are fully executable in prompt lab (versions, playground, datasets/replay) via `llm_memory_rule` owner type
+- worker creates/resolves dedicated memory conversation ids before LLM calls
 - `record`, `log`, and `both` storage modes all behave correctly
 - flattened fields are available via `data_config`
 - `llmChat` can use memory only when admins explicitly load it through `data_config`
 - prompts can combine memory data with extra explanatory text in a predictable way
+- `LlmChatModel::getOwnEntriesOnly()` behavior is correct after property fix/regression test
 
 ## 17.2 Failure
 
@@ -1190,6 +1247,9 @@ This keeps the solution close to how SelfHelp already works.
 - missing rule key fails safely
 - non-matching rules do nothing
 - async worker failure does not break source action
+- duplicate events are marked `ignored_duplicate` and do not mutate effective memory
+- stale out-of-order events are marked `ignored_stale` and do not mutate effective memory
+- login/profile triggers do not enqueue memory updates on failed original operation
 
 ## 17.3 Admin UI
 
@@ -1252,22 +1312,28 @@ Unless changed during review, the implementation should assume:
 - forms use new form-action job type `llm_memory_update`
 - `llmChat` direct binding exists only as fallback for non-saved dynamic forms
 - memory is loaded for prompts only through explicit `data_config` interpolation
+- memory LLM calls use dedicated memory conversation ids
+- memory writes enforce dedupe and stale-update guards by default
 
 ---
 
 ## 20. Implementation Order
 
-1. Create `server/db/v1.2.0.sql` with module fields, lookup additions, job type registration, and version bump.
+1. Create `server/db/v1.2.0.sql` with module fields, lookup additions, job type registration, owner type additions, and version bump.
 2. Add new globals/constants such as `ACTION_JOB_TYPE_LLM_MEMORY_UPDATE` and `TRANSACTION_BY_LLM_MEMORY`.
-3. Add prompt-lab owner type support for memory rules and wire registry/bootstrap support.
-4. Add new job type `llm_memory_update` and hook integration in `LlmHooks`.
-5. Build memory config, trigger, storage, update, and admin services.
-6. Implement `llm_memory_worker.php` using the same async pattern as `llm_async_worker.php`.
-7. Integrate core form-action execution path.
-8. Integrate direct `llmChat` fallback path.
-9. Add login and profile hooks.
-10. Add memory endpoints to `ModuleLlmAdminConsoleController`.
-11. Add memory tab to the LLM admin console.
-12. Add the structured rules-editor UI for `json-llm-memory-rules`, including prompt-lab launchers per rule.
-13. Add documentation examples for rule JSON, execution modes, and recommended admin setup.
-14. Add the changes to the changelog. This is version 1.2.0. Pre-release version
+3. Fix `LlmChatModel::getOwnEntriesOnly()` property/regression risk before memory rollout.
+4. Add full prompt-lab owner support for memory rules (`llm_memory_rule`) across registry, execution profile, runtime-value, playground, Ajax, and React typing.
+5. Add new job type `llm_memory_update` and hook integration in `LlmHooks`.
+6. Build memory config, trigger, storage, update, and admin services.
+7. Implement `llm_memory_worker.php` using the same async pattern as `llm_async_worker.php`.
+8. Implement memory conversation id strategy for worker LLM calls.
+9. Add idempotency and ordering guards (`dedupe_key`, `event_at`, stale-write prevention).
+10. Integrate core form-action execution path.
+11. Integrate direct `llmChat` fallback path.
+12. Add login integration via overwrite-return hook on `Login::update_timestamp`.
+13. Add profile integration via direct post-success trigger in `ProfileModel::change_user_name`.
+14. Add memory endpoints to `ModuleLlmAdminConsoleController`.
+15. Add memory tab to the LLM admin console.
+16. Add the structured rules-editor UI for `json-llm-memory-rules`, including prompt-lab launchers per rule.
+17. Add documentation examples for rule JSON, execution modes, ordering/dedupe behavior, and recommended admin setup.
+18. Add the changes to the changelog. This is version 1.2.0. Pre-release version
