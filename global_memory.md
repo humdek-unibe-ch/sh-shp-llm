@@ -162,7 +162,7 @@ There are two logical tables:
 Purpose:
 
 - store the current effective memory per user
-- used for interpolation and LLM context loading
+- used for interpolation and explicit prompt/context loading through `data_config`
 
 Default name:
 
@@ -246,7 +246,7 @@ Default the system to:
 
 Reason:
 
-- best UX for interpolation and LLM context loading
+- best UX for interpolation and explicit prompt/context loading
 - preserves history for inspection
 - matches your need to see memory over time
 
@@ -314,12 +314,92 @@ Recommended module fields:
   - default: `llm_memory_history`
 - `llm_memory_rules`
   - JSON registry of reusable rules
+  - recommended as a custom CMS field type such as `json-llm-memory-rules`, not a plain textarea
 - `llm_memory_admin_enabled`
   - enable memory admin tab/page
 
 ### 6.2 Rule Registry
 
 `llm_memory_rules` is the central configuration registry.
+
+For good admin usability, this should not stay a raw JSON text field in the long term.
+
+Recommended UX:
+
+- create a dedicated CMS field type for memory rules
+- provide a structured React editor for:
+  - adding/removing rules
+  - choosing source type
+  - setting source matches
+  - choosing storage mode override
+  - defining `data_config`
+  - linking each rule to a prompt-lab-backed prompt asset
+  - validating required rule fields before save
+
+This will reduce config mistakes and make the feature much easier to maintain.
+
+### 6.2.1 Reuse Prompt Lab for Rule Prompts
+
+Each memory rule is effectively a specialized context/prompt definition.
+
+Because the plugin already has a shared prompt-lab system with:
+
+- immutable prompt versions
+- compare/history
+- playground runs
+- datasets and replay-based evaluation
+- prompt-builder support
+
+the memory system should reuse that foundation instead of creating a second standalone prompt editor for rule prompts.
+
+This should also apply at the React component level:
+
+- reuse existing prompt-lab React components, dialogs, state flows, and API contracts where possible
+- do not duplicate separate versioning, compare, playground, dataset, or builder UIs just for memory rules
+- memory-specific UI should only add the rule metadata layer and launch/embed the shared prompt-lab pieces
+- shared prompt-lab behavior should stay in the common components so improvements benefit all prompt owners
+
+Recommended model:
+
+- `llm_memory_rules` stores rule metadata and bindings
+- the actual editable prompt content for a rule is owned by prompt lab
+- each rule resolves its active prompt version through the prompt registry
+
+Recommended binding shape:
+
+- one new prompt owner type for memory rules, for example `llm_memory_rule`
+- owner points to the LLM module configuration scope
+- `prompt_slot` is derived from the rule key, for example `memory_rule:sleep_form_finished`
+
+This gives us:
+
+- versioning of memory prompts without extra custom history code
+- playground testing of memory prompts with realistic payloads
+- future dataset/evaluation support for memory extraction quality
+- the same authoring model editors already learn for other LLM prompts
+
+Recommended UX in the rules editor:
+
+- keep rule metadata inline in the memory-rules editor
+- add an `Edit Prompt` action per rule
+- that action opens or embeds the existing prompt-lab UI for that rule prompt owner
+- the editor shows the currently active version, last change note, and quick access to playground/datasets
+
+Recommended implementation principle:
+
+- memory-rule prompt editing should be composition over duplication
+- wrap or mount the common prompt-lab components with a memory-rule owner descriptor
+- only build new React code for memory-specific concerns such as:
+  - rule list management
+  - source matching
+  - storage mode selection
+  - trigger configuration
+
+Important design consequence:
+
+- `prompt_template` should not be treated as a long-term raw JSON string property in the rule registry
+- the registry should instead store a prompt binding/reference, while runtime resolves the active prompt content from prompt lab
+- if needed for transition, a temporary inline `prompt_template` fallback can exist, but the target design should be prompt-lab-backed
 
 Each rule should define:
 
@@ -334,7 +414,8 @@ Each rule should define:
 - `storage_mode_override`
   - optional `record | log | both`
 - `data_config`
-- `prompt_template`
+- `prompt_binding`
+  - reference to the prompt-lab-owned prompt for this rule
 - `llm_model`
 - `llm_temperature`
 - `llm_max_tokens`
@@ -534,7 +615,7 @@ Behavior:
 Recommended config additions:
 
 - `execution_mode = llm_summarize`
-- optional `prompt_template_override`
+- optional `prompt_version_override`
 
 Example:
 
@@ -592,12 +673,13 @@ Each memory update should do this:
 4. normalize source payload
 5. resolve optional `data_config`
 6. build the interpolation variables
-7. interpolate `prompt_template`
-8. call the LLM asynchronously
-9. validate result structure
-10. persist according to storage mode
-11. write refresh events if needed
-12. log worker result for audit/debug
+7. resolve the rule prompt from prompt lab using the rule's active prompt binding
+8. interpolate the resolved prompt with runtime variables
+9. call the LLM asynchronously
+10. validate result structure
+11. persist according to storage mode
+12. write refresh events if needed
+13. log worker result for audit/debug
 
 ### 9.3 Validation
 
@@ -623,6 +705,8 @@ If validation fails:
 Each memory rule needs its own prompt because login, surveys, and forms all have different payload semantics.
 
 This is required for good memory quality.
+
+That prompt should be authored through the shared prompt-lab system, not through a separate memory-only prompt editor.
 
 ### 10.1 Standard Variables Available to the Prompt
 
@@ -698,7 +782,7 @@ Instead, memory should be loaded only through explicit `data_config` interpolati
 
 Recommended behavior:
 
-- admins add memory into the prompt/context field through `data_config`
+- admins add memory into the prompt or `conversation_context` field through `data_config`
 - admins decide exactly which memory fields are loaded
 - admins can add explanatory wrapper text around the memory
 - admins can describe to the LLM what the memory means and how it should be used
@@ -843,21 +927,23 @@ Recommended review and setup flow for admins:
 
 1. Open the LLM module configuration and enable global memory.
 2. Define or edit one reusable memory rule in `llm_memory_rules`.
-3. Choose whether the rule should behave as:
+3. Open the rule prompt through the prompt-lab integration and edit/test the prompt with versions, playground, and datasets when needed.
+4. Choose whether the rule should behave as:
    - direct mapping
    - LLM summarization
-4. For a core form or survey:
+5. For a core form or survey:
    - open the existing form action configuration
    - select job type `llm_memory_update`
    - select the rule key
-5. For `llmChat` with data saving enabled:
+6. For `llmChat` with data saving enabled:
    - configure the form action on the generated data table
-6. For `llmChat` without data saving:
+7. For `llmChat` without data saving:
    - use the section-level fallback `memory_rule_keys`
-7. To use memory later in prompts or content:
+8. To use memory later in prompts or content:
    - load it explicitly through `data_config`
+   - for `llmChat`, use the prompt or `conversation_context` field
    - add your own wrapper text around `{{memory_text}}`, `{{memory_json}}`, or flattened fields
-8. To inspect results:
+9. To inspect results:
    - open the memory tab in the LLM admin console
    - review current memory and history for a user
 
@@ -875,6 +961,7 @@ Responsibilities:
 - parse rule registry
 - resolve rules by key/source
 - apply defaults
+- resolve prompt-lab bindings for memory rules
 
 ### `LlmMemoryStorageService`
 
@@ -902,6 +989,7 @@ Responsibilities:
 
 - orchestrate one memory update
 - build interpolation variables
+- resolve active rule prompt from prompt lab
 - build prompt
 - call worker/LLM
 - validate result
@@ -914,6 +1002,7 @@ Responsibilities:
 - provide memory list queries
 - provide per-user detail and history queries
 - provide diff-friendly payloads
+- provide rebuild and manual-edit support for the admin UI
 
 ## 14.2 Concrete Implementation Artifacts
 
@@ -934,7 +1023,10 @@ The implementation should explicitly create or update these files and constants 
 - `server/component/LlmHooks.php`
 - `server/service/globals.php`
 - `server/component/style/llmChat/LlmChatController.php`
+- `server/component/moduleLlmAdminConsole/ModuleLlmAdminConsoleController.php`
+- prompt-lab registry/profile services to recognize memory-rule prompt owners
 - LLM admin console React files and related endpoints for the new memory UI
+- CMS field rendering/edit hooks for the memory-rules editor
 
 ### Constants and lookup additions
 
@@ -953,6 +1045,8 @@ The migration should cover at least:
 - module-level memory fields on `sh_module_llm`
 - any fallback style field additions needed by `llmChat`
 - lookup additions for memory storage mode selection if not already available
+- custom field type registration for `json-llm-memory-rules`
+- prompt-lab owner type registration for memory rules
 - job type registration for `llm_memory_update`
 - transaction-by registration for memory updates
 - any hook-related lookup/config records needed for execution and admin UI integration
@@ -964,6 +1058,8 @@ The migration should cover at least:
 Add LLM plugin hook support for:
 
 - `llm_memory_update` job type
+- CMS field hooks for the structured memory-rules editor
+- prompt-lab owner/bootstrap hooks for memory-rule prompts
 
 ### Login/profile hooks
 
@@ -984,6 +1080,32 @@ Add:
 - memory detail endpoint
 - memory history endpoint
 - optional memory rebuild/re-run endpoint
+- optional manual-edit endpoint
+
+Recommended backend placement:
+
+- extend `ModuleLlmAdminConsoleController`
+
+Recommended controller actions:
+
+- `memory_list`
+- `memory_detail`
+- `memory_history`
+- `memory_rebuild`
+- optional `memory_manual_edit`
+
+Recommended frontend additions:
+
+- React memory tab in the existing LLM admin bundle
+- React rules-editor component for the `json-llm-memory-rules` CMS field
+- prompt-lab launcher/integration inside the rules editor so each rule can open versions, playground, and datasets
+- reuse the same design approach as other structured LLM admin editors where possible
+
+Important frontend constraint:
+
+- reuse existing prompt-lab React modules for versions, compare, playground, datasets, and builder flows wherever technically possible
+- avoid copying those components into a memory-specific implementation
+- if a shared component needs extension for memory rules, extend the shared component rather than forking it
 
 ---
 
@@ -1015,7 +1137,10 @@ Example rule:
         ]
       }
     ],
-    "prompt_template": "You update the global user memory. Current memory text: {{memory_text}}. Current memory json: {{memory_json}}. Trigger type: {{trigger_type}}. Submitted payload: {{event_payload_json}}. Return strict JSON with memory_text, memory_object, flat_fields, change_summary.",
+    "prompt_binding": {
+      "owner_type": "llm_memory_rule",
+      "prompt_slot": "memory_rule:sleep_form_finished"
+    },
     "llm_model": "",
     "llm_temperature": 0.2,
     "llm_max_tokens": 1200,
@@ -1123,6 +1248,7 @@ Unless changed during review, the implementation should assume:
 - default current table = `llm_memory`
 - default history table = `llm_memory_history`
 - memory rules live in module config
+- memory rule prompts are owned by prompt lab, not stored as long inline templates in the rule registry
 - forms use new form-action job type `llm_memory_update`
 - `llmChat` direct binding exists only as fallback for non-saved dynamic forms
 - memory is loaded for prompts only through explicit `data_config` interpolation
@@ -1133,12 +1259,15 @@ Unless changed during review, the implementation should assume:
 
 1. Create `server/db/v1.2.0.sql` with module fields, lookup additions, job type registration, and version bump.
 2. Add new globals/constants such as `ACTION_JOB_TYPE_LLM_MEMORY_UPDATE` and `TRANSACTION_BY_LLM_MEMORY`.
-3. Add new job type `llm_memory_update` and hook integration in `LlmHooks`.
-4. Build memory config, trigger, storage, update, and admin services.
-5. Implement `llm_memory_worker.php` using the same async pattern as `llm_async_worker.php`.
-6. Integrate core form-action execution path.
-7. Integrate direct `llmChat` fallback path.
-8. Add login and profile hooks.
-9. Add memory tab to the LLM admin console.
-10. Add documentation examples for rule JSON, execution modes, and recommended admin setup.
-11. Add the changes to the changelog. This is version 1.2.0. Pre-release version
+3. Add prompt-lab owner type support for memory rules and wire registry/bootstrap support.
+4. Add new job type `llm_memory_update` and hook integration in `LlmHooks`.
+5. Build memory config, trigger, storage, update, and admin services.
+6. Implement `llm_memory_worker.php` using the same async pattern as `llm_async_worker.php`.
+7. Integrate core form-action execution path.
+8. Integrate direct `llmChat` fallback path.
+9. Add login and profile hooks.
+10. Add memory endpoints to `ModuleLlmAdminConsoleController`.
+11. Add memory tab to the LLM admin console.
+12. Add the structured rules-editor UI for `json-llm-memory-rules`, including prompt-lab launchers per rule.
+13. Add documentation examples for rule JSON, execution modes, and recommended admin setup.
+14. Add the changes to the changelog. This is version 1.2.0. Pre-release version

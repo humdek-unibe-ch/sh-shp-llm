@@ -1,45 +1,65 @@
 ---
 name: LLM User Memory System
-overview: Design and implement a per-user "memory" system in the LLM plugin that stores structured user data (using SelfHelp's dataTables/dataRows/dataCells), is updatable via configurable triggers (form submissions, survey completions, LLM conversations, login, etc.), and is loadable into LLM context and component interpolation via data_config.
+overview: "Implement a global per-user memory system in the LLM plugin: module-level config with reusable rules registry, two-table storage (record + history), async worker for LLM summarization, form-action job type integration, login/profile hooks, React admin UI tab, and explicit data_config-based memory consumption."
 todos:
-  - id: memory-service
-    content: Create LlmMemoryService.php with CRUD operations (updateMemory, getMemory, clearMemory, getMemoryForContext) + async updateMemoryWithLlm() using background PHP worker
-    status: pending
-  - id: async-worker
-    content: Create llm_memory_worker.php CLI worker (same pattern as llm_async_worker.php) for background LLM-based memory updates
-    status: pending
   - id: globals-constants
-    content: Add memory constants to globals.php (ACTION_JOB_TYPE_LLM_MEMORY_UPDATE, TRANSACTION_BY_LLM_MEMORY)
+    content: "Add memory constants to globals.php: ACTION_JOB_TYPE_LLM_MEMORY_UPDATE, TRANSACTION_BY_LLM_MEMORY"
     status: pending
   - id: db-migration
-    content: "Create v1.2.0.sql migration: global config fields on sh_module_llm page, per-style fields on llmChat, job type lookup, hooks registration"
+    content: "Create v1.2.0.sql: module-level memory fields on sh_module_llm (including llm_memory_rules JSON registry), llmChat fallback field, lookups for storage mode, job type, transaction type, hooks, custom field type for rules editor"
+    status: pending
+  - id: memory-config-service
+    content: "Create LlmMemoryConfigService.php: load module config, parse rule registry, resolve rules by key/source/trigger, apply defaults"
+    status: pending
+  - id: memory-storage-service
+    content: "Create LlmMemoryStorageService.php: initialize current+history tables, save record, append history, resolve effective memory, flatten fields"
+    status: pending
+  - id: memory-trigger-service
+    content: "Create LlmMemoryTriggerService.php: normalize payloads from form actions, direct llmChat, login, profile changes"
+    status: pending
+  - id: memory-update-service
+    content: "Create LlmMemoryUpdateService.php: orchestrate updates -- build vars, build prompt, handle direct_mapping vs llm_summarize, call worker, validate, persist"
+    status: pending
+  - id: memory-admin-service
+    content: "Create LlmMemoryAdminService.php: memory list queries, per-user detail, history timeline, diff payloads"
+    status: pending
+  - id: async-worker
+    content: "Create llm_memory_worker.php: CLI background worker following llm_async_worker.php pattern"
     status: pending
   - id: hooks-job
-    content: "Add hook methods to LlmHooks.php: execute_llm_memory_task (async), extend get_json_schema/get_task_config/get_job_type for memory job type"
+    content: "Add to LlmHooks.php: execute_llm_memory_task (async-aware), extend get_json_schema/get_task_config/get_job_type for llm_memory_update"
     status: pending
-  - id: hooks-login
-    content: Add login/profile update hooks to LlmHooks.php that trigger lightweight memory updates on user actions
+  - id: hooks-login-profile
+    content: "Add to LlmHooks.php: hook_on_function_execute for Login::update_timestamp and ProfileModel::change_user_name"
     status: pending
-  - id: context-integration
-    content: Modify LlmContextService.php to inject user memory into LLM system messages when enabled
+  - id: hooks-rules-field
+    content: "Add to LlmHooks.php: CMS field hooks for json-llm-memory-rules custom field type (edit/view, CSS/JS includes)"
     status: pending
-  - id: model-getters
-    content: Add memory config getters to LlmChatModel.php (isMemoryEnabled, isMemoryUpdateEnabled -- reading global config for table name/mode)
+  - id: llmchat-fallback
+    content: "Modify LlmChatController.php: when enable_data_saving=0 but memory_rule_keys set, dispatch memory update directly"
     status: pending
-  - id: controller-update
-    content: Modify LlmChatController.php to trigger async memory update after LLM responses when enabled
+  - id: admin-ui-endpoints
+    content: "Add memory endpoints to ModuleLlmAdminConsoleController: memory_list, memory_detail, memory_history"
+    status: pending
+  - id: admin-ui-react
+    content: "Build React memory tab in llm-admin bundle: user list, detail panel, timeline/history, diff view"
+    status: pending
+  - id: rules-editor-react
+    content: "Build React rules editor for CMS json-llm-memory-rules field (similar to llm-apikeys manager)"
     status: pending
   - id: changelog
-    content: Update CHANGELOG.md with v1.2.0 memory feature documentation
+    content: "Update CHANGELOG.md with v1.2.0 memory feature"
     status: pending
 isProject: false
 ---
 
 # LLM User Memory System
 
+Based on the detailed design document at [global_memory.md](global_memory.md).
+
 ## Concept
 
-The "memory" is a per-user dataTable record that accumulates structured key-value data about the user across their interactions. It serves as a **living user profile** that the LLM can access for personalized context, and that other components can read via `data_config` + `{{interpolation}}`.
+Global per-user memory as a **module-level capability** of `sh_module_llm`, not a property of any one chat style. Memory is one per user, updated by reusable rules triggered from forms, surveys, chats, login, and profile changes. Memory is consumed only through explicit `data_config` interpolation -- no hidden injection.
 
 ## Architecture
 
@@ -48,311 +68,286 @@ flowchart TD
     subgraph triggers [Update Triggers]
         FormSubmit["Form Submission\n(formUserInput)"]
         SurveySubmit["Survey Completion\n(surveyJS)"]
-        LlmChat["LLM Chat Message\n(llmChat)"]
+        LlmChat["LLM Chat\n(llmChat direct path)"]
         Login["User Login\n(hook)"]
-        Custom["Custom Hook\n(extensible)"]
+        ProfileChange["Profile Update\n(hook)"]
     end
 
-    subgraph memoryLayer [Memory Update Layer]
-        MemService["LlmMemoryService"]
-        MemUpdateJob["Memory Update Job\n(formAction job_type)"]
-        AsyncWorker["llm_memory_worker.php\n(background process)"]
+    subgraph ruleEngine [Rule-Based Dispatch]
+        RuleRegistry["llm_memory_rules\n(JSON registry on sh_module_llm)"]
+        ConfigService["LlmMemoryConfigService\n(resolve rules by source/trigger)"]
+        TriggerService["LlmMemoryTriggerService\n(normalize payloads)"]
     end
 
-    subgraph globalConfig [Global Config - sh_module_llm page]
-        MemTableName["llm_memory_table_name\n(default: llm_memory)"]
-        MemMode["llm_memory_mode\n(record / log)"]
-        MemModel["llm_memory_model\n(which LLM for summaries)"]
-        MemPrompt["llm_memory_update_prompt\n(global prompt template)"]
+    subgraph execution [Execution Layer]
+        UpdateService["LlmMemoryUpdateService\n(orchestrate one update)"]
+        DirectMap["direct_mapping\n(sync, no LLM)"]
+        LlmSummarize["llm_summarize\n(async worker)"]
+        AsyncWorker["llm_memory_worker.php\n(background CLI)"]
     end
 
     subgraph storage [Storage - dataTables]
-        MemTable["dataTable: llm_memory\n(single global table)"]
-        DataRows["dataRows (one per user)"]
-        DataCells["dataCells (key-value)"]
+        CurrentTable["llm_memory\n(record mode, fast reads)"]
+        HistoryTable["llm_memory_history\n(log mode, full audit)"]
     end
 
     subgraph consumers [Memory Consumers]
-        LlmContext["LLM Context\n(system message)"]
-        DataConfigInterp["data_config\nInterpolation"]
-        AdminView["Admin View\n(per user)"]
+        DataConfigInterp["data_config + interpolation\n(explicit, admin-controlled)"]
+        AdminUI["Memory Admin Tab\n(React, in admin console)"]
     end
 
-    FormSubmit -->|"formAction job"| MemUpdateJob
-    SurveySubmit -->|"formAction job"| MemUpdateJob
-    LlmChat -->|"after response"| AsyncWorker
-    Login -->|"hook"| MemService
-    Custom -->|"hook"| MemService
+    FormSubmit -->|"formAction: llm_memory_update"| ConfigService
+    SurveySubmit -->|"formAction: llm_memory_update"| ConfigService
+    LlmChat -->|"direct dispatch\n(data_saving=0 fallback)"| ConfigService
+    Login -->|"hook"| TriggerService
+    ProfileChange -->|"hook"| TriggerService
 
-    MemUpdateJob -->|"LLM summarize?"| AsyncWorker
-    MemUpdateJob -->|"direct mapping"| MemService
-    AsyncWorker -->|"calls LLM then saves"| MemService
-    MemService --> MemTable
-    MemTable --> DataRows --> DataCells
+    ConfigService --> RuleRegistry
+    RuleRegistry --> TriggerService
+    TriggerService --> UpdateService
 
-    globalConfig -.->|"read by"| MemService
+    UpdateService -->|"execution_mode"| DirectMap
+    UpdateService -->|"execution_mode"| LlmSummarize
+    LlmSummarize --> AsyncWorker
 
-    DataCells --> LlmContext
-    DataCells --> DataConfigInterp
-    DataCells --> AdminView
+    DirectMap --> CurrentTable
+    DirectMap --> HistoryTable
+    AsyncWorker --> CurrentTable
+    AsyncWorker --> HistoryTable
+
+    CurrentTable --> DataConfigInterp
+    CurrentTable --> AdminUI
+    HistoryTable --> AdminUI
 ```
 
+## Key Design Decisions (from [global_memory.md](global_memory.md))
 
-
-## Two-Level Configuration
-
-### Global Level: `sh_module_llm` page type (plugin-wide settings)
-
-These fields are added to the existing LLM configuration page (`/admin/module_llm`), alongside `llm_base_url`, `llm_api_key`, etc. They are read by `BaseLlmService::getLlmConfig()` which already loads all `llm_*` fields from this page.
-
-- `**llm_memory_table_name**` (text, default `llm_memory`): The single global dataTable name for user memory. All llmChat instances and all triggers write to this same table.
-- `**llm_memory_mode**` (text, default `record`): `record` = one row per user (overwrite), `log` = append new row per update.
-- `**llm_memory_model**` (select-llm-model): Which LLM model to use when generating memory summaries. Can differ from the chat model (e.g., a faster/cheaper model).
-- `**llm_memory_update_prompt**` (llm_prompt): The global prompt template that instructs the LLM on how to summarize/extract data for memory updates. Used by both chat-triggered and form-action-triggered LLM summarizations.
-- `**llm_memory_enabled**` (checkbox, default 0): Master switch to enable/disable the memory system globally.
-
-### Per-Style Level: `llmChat` style fields
-
-Each llmChat instance controls whether it participates in memory:
-
-- `**enable_memory**` (checkbox): Load user memory into this chat's LLM context as a system message.
-- `**enable_memory_update**` (checkbox): After each assistant response in this chat, trigger an async memory update.
-- `**memory_update_prompt**` (llm_prompt, optional): Override the global `llm_memory_update_prompt` for this specific chat. If empty, falls back to global prompt.
-
-No `memory_table_name` or `memory_mode` per style -- those are global. This ensures all chats write to the same memory.
+1. **Module-level, not style-level**: Memory config lives on `sh_module_llm` page, not per llmChat. Multiple chats share one global memory.
+2. **Explicit consumption via `data_config` only**: No hidden memory injection into LLM context. Admins load memory fields into prompts through standard `data_config` interpolation in the `conversation_context` field (e.g., `current user memory: {{memory_text}}`). This keeps usage visible, controllable, consistent.
+3. **Two tables -- current + history**: `llm_memory` (record mode, one row per user) for fast reads/interpolation. `llm_memory_history` (log mode, append-only) for full audit. Default storage mode is `both`.
+4. **Reusable rule registry**: `llm_memory_rules` JSON field on the module config page. Each rule defines source matching, trigger types, prompt template, execution mode, model overrides. Rules are referenced by key from form actions and direct bindings.
+5. **Async all LLM calls**: `llm_summarize` execution mode always spawns `llm_memory_worker.php` in background. Source actions (form submit, chat, login) never wait for LLM.
+6. **`direct_mapping` for lightweight updates**: Login, profile changes, and simple form fields use synchronous direct writes -- no LLM call needed.
 
 ## Storage Design
 
-Uses SelfHelp's existing **dataTables/dataRows/dataCells** architecture:
+### Two Tables (dataTables-backed)
 
-- Per-user records via `dataRows.id_users`
-- Flexible key-value columns via `dataCols`/`dataCells` (auto-created on first write)
-- Full interpolation support (`{{field_name}}` from `data_config`)
-- Admin visibility via existing dataTable views
-- Audit trail via `transactions` table
+**`llm_memory`** (record mode -- current effective state):
+- `id_users`, `memory_key`, `memory_text`, `memory_json`, `memory_version`
+- `last_rule_key`, `last_source_type`, `last_source_ref`, `last_trigger_type`
+- `last_payload_json`, `last_updated_at`
+- Dynamic flattened columns from `flat_fields`
 
-### Single Global Table
+**`llm_memory_history`** (log mode -- every update event):
+- `id_users`, `memory_key`, `memory_text`, `memory_json`, `prev_memory_json`
+- `rule_key`, `source_type`, `source_ref`, `trigger_type`, `payload_json`
+- `change_summary`, `worker_status`, `created_at`
+- Dynamic flattened columns from `flat_fields`
 
-Default table name: `llm_memory`. One table for the entire project. Multiple llmChat instances, form triggers, survey triggers, and login hooks all write to this same table.
+### Storage Modes (configurable via lookup)
+- `record`: write only to current table
+- `log`: append only to history table
+- `both` (default): update current + append history
 
-### Record vs Log Mode
+### Worker Output Contract
 
-- **Record mode** (default): One row per user, continuously updated (overwrite). Best for current state: preferences, last activity, accumulated profile.
-- **Log mode**: Append a new row per update. Best for tracking changes over time. Each memory snapshot is preserved.
-
-## Core Service: `LlmMemoryService`
-
-New file: [server/service/LlmMemoryService.php](server/service/LlmMemoryService.php)
-
-Extends `BaseLlmService`. Reads global config via `$this->getLlmConfig()`.
-
-```php
-class LlmMemoryService extends BaseLlmService {
-    // --- Sync operations (lightweight, no LLM call) ---
-    public function updateMemory($user_id, $data);
-    public function getMemory($user_id);
-    public function clearMemory($user_id);
-    public function getMemoryForContext($user_id); // formatted string for LLM system prompt
-
-    // --- Async operation (spawns background process) ---
-    public function updateMemoryWithLlmAsync($user_id, $input_data, $prompt_override = null);
-
-    // --- Config helpers (from global getLlmConfig) ---
-    public function getMemoryTableName();  // from llm_memory_table_name
-    public function getMemoryMode();       // from llm_memory_mode
-    public function isMemoryEnabled();     // from llm_memory_enabled
+The LLM must return strict JSON:
+```json
+{
+  "memory_text": "user prefers short motivational guidance...",
+  "memory_object": { "preferred_tone": "short_motivational", "main_goal": "sleep regularity" },
+  "flat_fields": { "preferred_tone": "short_motivational", "main_goal": "sleep regularity" },
+  "change_summary": "updated main goal from stress reduction to sleep regularity."
 }
 ```
+`flat_fields` are written as normal columns in the dataTable for direct `data_config` access.
 
-- `updateMemory()`: Direct key-value write via `UserInput::save_data()`. Used by form action direct-mapping, login hooks.
-- `updateMemoryWithLlmAsync()`: Spawns `llm_memory_worker.php` in background. The worker loads current memory + input data, calls LLM with the memory prompt, parses structured output, saves to dataTable. Used by chat-triggered updates and form actions with `llm_summarize: true`.
-- `getMemoryForContext()`: Loads the user's memory row and formats it as a readable string for injection into LLM system messages.
+## Module-Level Configuration (`sh_module_llm`)
 
-## Async Memory Worker
+Fields added to the global LLM config page (all prefixed `llm_` for `getLlmConfig()` compatibility):
 
-New file: [server/service/llm_memory_worker.php](server/service/llm_memory_worker.php)
+- `llm_memory_enabled` (checkbox) -- master switch
+- `llm_memory_key` (text, default `global`) -- memory namespace
+- `llm_memory_storage_mode` (select via lookup, default `both`) -- `record`/`log`/`both`
+- `llm_memory_table_name` (text, default `llm_memory`)
+- `llm_memory_history_table_name` (text, default `llm_memory_history`)
+- `llm_memory_rules` (json-llm-memory-rules custom field) -- the central rule registry
+- `llm_memory_admin_enabled` (checkbox) -- enable admin tab
 
-Follows the exact pattern of existing [server/service/llm_async_worker.php](server/service/llm_async_worker.php):
+## Rule Registry
 
-1. CLI-only entry point
-2. Reads args from temp JSON file (user_id, input_data, prompt_override, http_host)
-3. Bootstraps SelfHelp services
-4. Loads current user memory from dataTable
-5. Calls LLM API with: current memory + new input data + memory update prompt
-6. Parses structured JSON response (field names + values)
-7. Saves updated memory via `LlmMemoryService::updateMemory()`
-8. Logs transaction
-
-The spawn mechanism reuses `LlmHooks::find_php_cli_binary()` and the `popen()` pattern from `execute_llm_script_async()`.
-
-## Update Triggers
-
-### 1. Form Action Job Type: `llm_memory_update`
-
-Leverages existing `formActions` system. Admin configures on any form/survey.
-
-Two sub-modes in the job config:
-
-**Direct mapping** (no LLM call, synchronous):
+`llm_memory_rules` is a JSON array on the module config page. Each rule:
 
 ```json
 {
-  "job_type": "llm_memory_update",
-  "field_mapping": {
-    "mood_score": "{{mood}}",
-    "last_survey_date": "{{@now}}",
-    "preferred_topics": "{{interests}}"
-  }
+  "key": "sleep_form_finished",
+  "label": "Sleep Form Finished",
+  "enabled": true,
+  "memory_key": "global",
+  "source_type": "form_action_submit",
+  "source_match": { "table_name": "0000001234" },
+  "trigger_types": ["finished"],
+  "execution_mode": "llm_summarize",
+  "storage_mode_override": null,
+  "data_config": [...],
+  "prompt_template": "...",
+  "llm_model": "",
+  "llm_temperature": 0.2,
+  "llm_max_tokens": 1200,
+  "refresh_sections": []
 }
 ```
 
-Resolved fields are passed directly to `LlmMemoryService::updateMemory()`.
+Supported `source_type` values for v1:
+- `form_action_submit` -- canonical for all forms/surveys via `UserInput::save_data()`
+- `llm_chat_form_submit` -- fallback when llmChat data saving is disabled
+- `login` -- hook on `Login::update_timestamp()`
+- `profile_name_change` -- hook on `ProfileModel::change_user_name()`
 
-**LLM summarize** (async, spawns background worker):
+Supported `execution_mode`:
+- `direct_mapping` -- sync, field-to-field write, no LLM
+- `llm_summarize` -- async background worker with LLM call
 
-```json
-{
-  "job_type": "llm_memory_update",
-  "llm_summarize": true,
-  "llm_summarize_prompt": "optional override prompt"
-}
-```
+## Per-Style Config (`llmChat`)
 
-All form fields are passed to `LlmMemoryService::updateMemoryWithLlmAsync()`. The background worker calls the LLM to decide what to extract and save.
+Minimal -- only controls participation, not memory identity:
 
-### 2. LLM Chat Integration (async, after each response)
+- `memory_rule_keys` (text, comma-separated) -- which rules to dispatch directly when `enable_data_saving=0`. When data saving is on, form actions handle it instead.
 
-When `enable_memory_update` is on for an llmChat instance:
+No `enable_memory` injection toggle. Memory enters the prompt **only** through `data_config` interpolation in `conversation_context`.
 
-- After `LlmChatController` processes an assistant response, it calls `LlmMemoryService::updateMemoryWithLlmAsync()`
-- Input data = latest user message + assistant response + conversation summary
-- The background worker processes the memory update without blocking the chat response
-- The user sees no delay
+## Service Architecture (5 services)
 
-### 3. Hook-Based Triggers (Login, Profile Update)
+### `LlmMemoryConfigService`
+- Load module memory fields from `getLlmConfig()`
+- Parse `llm_memory_rules` JSON
+- Resolve rules by key, by source_type + source_match + trigger_type
+- Apply defaults (storage mode, model, etc.)
 
-Lightweight synchronous hooks (no LLM call):
+### `LlmMemoryStorageService`
+- Initialize current + history dataTables (auto-create on first use via `UserInput`)
+- `saveCurrentMemory($user_id, $data)` -- record mode write
+- `appendHistory($user_id, $data)` -- log mode append
+- `getEffectiveMemory($user_id)` -- load current row
+- `clearMemory($user_id)`
+- Flatten `flat_fields` into proper columns
 
-- `hook_on_function_execute` on `Login::login_user`: writes `last_login = now()` to memory
-- `hook_on_function_execute` on relevant profile update methods: writes changed profile fields
+### `LlmMemoryTriggerService`
+- `normalizeFormActionPayload($form_data)` -- from `queue_job_from_actions()`
+- `normalizeLlmChatPayload($conversation_id, $message, $form_values)`
+- `normalizeLoginPayload($user_id)`
+- `normalizeProfilePayload($user_id, $old_name, $new_name)`
 
-These use `LlmMemoryService::updateMemory()` directly (fast, just a DB write).
+### `LlmMemoryUpdateService`
+- Orchestrate a single memory update:
+  1. Resolve rule via config service
+  2. Normalize payload via trigger service
+  3. Load current effective memory
+  4. If `direct_mapping`: resolve field mapping, write via storage service
+  5. If `llm_summarize`: build interpolation vars, interpolate prompt, spawn async worker
+  6. Validate worker output against required schema
+  7. Persist via storage service (respecting storage mode)
+  8. Write refresh events if configured
 
-### 4. LLM Script Integration
+### `LlmMemoryAdminService`
+- `getMemoryList($filters, $pagination)` -- all users with current memory summary
+- `getUserMemoryDetail($user_id)` -- full current state
+- `getUserMemoryHistory($user_id, $pagination)` -- timeline of updates
+- `rebuildMemory($user_id)` -- re-derive current from history
+- `manualEdit($user_id, $data)` -- admin override
 
-Existing `llm_script` jobs can target the memory table as their output table by setting `generated_id = llm_memory` in the script config. No new code needed.
+## Async Worker: `llm_memory_worker.php`
 
-## Memory in LLM Context
+Same pattern as existing [server/service/llm_async_worker.php](server/service/llm_async_worker.php):
 
-In [server/service/LlmContextService.php](server/service/LlmContextService.php), add a new step in `buildContextMessages()`:
+1. CLI-only, reads args from temp JSON file
+2. Bootstraps SelfHelp services
+3. Resolves rule, loads current memory
+4. Resolves `data_config` if rule has one
+5. Builds interpolation variables (memory vars + event vars + data_config vars)
+6. Interpolates `prompt_template`
+7. Calls LLM API (synchronous within worker, but worker itself runs in background)
+8. Validates output (`memory_text`, `memory_object`, `flat_fields`, `change_summary` required)
+9. On validation failure: logs error, does NOT overwrite effective memory
+10. On success: persists via storage service, writes refresh events, logs transaction
 
-```php
-// After language context, before response schema
-if ($this->model->isMemoryEnabled()) {
-    $context_messages = $this->applyMemoryContext($context_messages);
-}
-```
+Spawn uses `LlmHooks::find_php_cli_binary()` + `popen()`.
 
-The `applyMemoryContext()` method:
+## Trigger Integration
 
-1. Loads user memory via `LlmMemoryService::getMemoryForContext()`
-2. Formats as system message: `"USER MEMORY (persistent profile data about this user):\n{key: value, ...}\n\nUse this information to personalize responses."`
-3. Inserts after language context but before other system messages
+### Form Actions (canonical path for forms/surveys)
+- Admin adds `formAction` on any dataTable with `job_type = llm_memory_update`
+- Job config references a `memory_rule_key`
+- `LlmHooks::execute_llm_memory_task()` processes the job
+- Reuses existing hook pattern from `llm_script` (extends `get_json_schema`, `get_task_config`, `get_job_type`)
 
-## Memory in Component Interpolation
+### llmChat Direct Path (fallback when data_saving=0)
+- `LlmChatController::handleFormSubmission()` checks `memory_rule_keys`
+- Dispatches to `LlmMemoryUpdateService` directly
+- When `enable_data_saving=1`, form actions handle it instead
 
-Since memory is stored in standard dataTables, it works automatically with SelfHelp's existing `data_config`:
+### Login Hook
+- `hook_on_function_execute` on `Login::update_timestamp()`
+- After original method succeeds, enqueues matching memory rules asynchronously
+- Payload: `{ user_id, last_login, user_name }`
 
-```json
-{
-  "table": "llm_memory",
-  "retrieve": "last",
-  "filter": "own"
-}
-```
+### Profile Hook
+- `hook_on_function_execute` on `ProfileModel::change_user_name()`
+- After original method succeeds, enqueues matching memory rules
+- Payload: `{ user_id, old_name, new_name }`
 
-Then in any component's text field: `Hello {{preferred_name}}, your last mood score was {{mood_score}}.`
+## Admin UI
 
-No new code needed for this -- it's a native SelfHelp capability.
+New "Memory" tab in existing `moduleLlmAdminConsole` (React):
+
+- **User list**: user name/email, memory key, summary preview, last updated, last rule, storage mode
+- **Detail panel**: full `memory_text`, pretty-printed `memory_json`, flattened fields, source metadata
+- **Timeline/history**: chronological updates with rule key, source type, change summary, before/after
+- **Manual tools**: re-run rule for user, rebuild from history, manual edit, mark broken rows
+
+Backend endpoints added to `ModuleLlmAdminConsoleController`: `memory_list`, `memory_detail`, `memory_history`, `memory_rebuild`.
 
 ## Database Migration: `v1.2.0.sql`
 
-New file: [server/db/v1.2.0.sql](server/db/v1.2.0.sql)
+1. Plugin version bump to v1.2.0
+2. Lookup: `memoryStorageMode` type with `record`, `log`, `both` values
+3. Lookup: `transactionBy` / `by_llm_memory`
+4. Custom field type: `json-llm-memory-rules`
+5. Module fields on `sh_module_llm`: `llm_memory_enabled`, `llm_memory_key`, `llm_memory_storage_mode`, `llm_memory_table_name`, `llm_memory_history_table_name`, `llm_memory_rules`, `llm_memory_admin_enabled`
+6. Style field on `llmChat`: `memory_rule_keys`
+7. Hook registrations: memory job execution, job schema extension, task config, job type, login hook, profile hook, CMS field hooks for rules editor
+8. Page type field links and default values
 
-### 1. Plugin version bump
+## Files to Create
 
-```sql
-UPDATE plugins SET version = 'v1.2.0' WHERE name = 'llm';
-```
+- `server/service/LlmMemoryConfigService.php`
+- `server/service/LlmMemoryStorageService.php`
+- `server/service/LlmMemoryTriggerService.php`
+- `server/service/LlmMemoryUpdateService.php`
+- `server/service/LlmMemoryAdminService.php`
+- `server/service/llm_memory_worker.php`
+- `server/db/v1.2.0.sql`
 
-### 2. New lookups
+## Files to Modify
 
-- `transactionBy` / `by_llm_memory` / `By LLM Memory`
-- Job type enum value for `llm_memory_update`
+- `server/service/globals.php` -- constants
+- `server/component/LlmHooks.php` -- job hooks, login/profile hooks, CMS field hooks for rules editor
+- `server/component/style/llmChat/LlmChatController.php` -- direct dispatch fallback when data_saving=0
+- `server/component/moduleLlmAdminConsole/ModuleLlmAdminConsoleController.php` -- memory endpoints
+- React: llm-admin bundle (new memory tab), new rules editor component for CMS
 
-### 3. Global config fields on `sh_module_llm` page type
+## Implementation Order (from [global_memory.md](global_memory.md) section 20)
 
-```sql
-INSERT IGNORE INTO fields (name, id_type, display) VALUES
-('llm_memory_enabled', get_field_type_id('checkbox'), '0'),
-('llm_memory_table_name', get_field_type_id('text'), '0'),
-('llm_memory_mode', get_field_type_id('text'), '0'),
-('llm_memory_model', get_field_type_id('select-llm-model'), '0'),
-('llm_memory_update_prompt', get_field_type_id('llm_prompt'), '0');
-
--- Link to sh_module_llm page type with defaults
-INSERT IGNORE INTO pageType_fields (...) VALUES
-(..., 'llm_memory_enabled', '0', 'Master switch for user memory system'),
-(..., 'llm_memory_table_name', 'llm_memory', 'Global dataTable name for user memory'),
-(..., 'llm_memory_mode', 'record', 'record = one row per user (overwrite), log = append'),
-(..., 'llm_memory_model', '', 'LLM model for memory summarization (empty = use default)'),
-(..., 'llm_memory_update_prompt', '', 'Prompt template for LLM memory updates');
-```
-
-### 4. Per-style fields on `llmChat`
-
-```sql
-INSERT IGNORE INTO fields (name, id_type, display) VALUES
-('enable_memory', get_field_type_id('checkbox'), '0'),
-('enable_memory_update', get_field_type_id('checkbox'), '0'),
-('memory_update_prompt', get_field_type_id('llm_prompt'), '0');
-
--- Link to llmChat style
-INSERT IGNORE INTO styles_fields (...) VALUES
-(..., 'enable_memory', '0', 'Load user memory into LLM context'),
-(..., 'enable_memory_update', '0', 'Trigger async memory update after each response'),
-(..., 'memory_update_prompt', '', 'Override global memory prompt for this chat (optional)');
-```
-
-### 5. Hook registrations
-
-- Memory job execution hook (like `llm_script` pattern)
-- Job schema extension hook
-- Task config hook
-- Job type hook
-- Login hook (lightweight)
-
-## Files to Create/Modify
-
-### New Files
-
-- `server/service/LlmMemoryService.php` -- Core memory CRUD + async spawn
-- `server/service/llm_memory_worker.php` -- CLI background worker for LLM-based memory updates
-- `server/db/v1.2.0.sql` -- Database migration
-
-### Modified Files
-
-- `server/service/globals.php` -- Add constants (`ACTION_JOB_TYPE_LLM_MEMORY_UPDATE`, `TRANSACTION_BY_LLM_MEMORY`)
-- `server/component/LlmHooks.php` -- Add hooks: `execute_llm_memory_task` (async-aware), extend `get_json_schema`/`get_task_config`/`get_job_type`, login hook
-- `server/service/LlmContextService.php` -- Add `applyMemoryContext()` method
-- `server/component/style/llmChat/LlmChatModel.php` -- Add `isMemoryEnabled()`, `isMemoryUpdateEnabled()`, `getMemoryUpdatePrompt()` (reads global config via getLlmConfig for table/mode)
-- `server/component/style/llmChat/LlmChatController.php` -- After message processing, spawn async memory update
-
-## Usage Workflow (Admin Perspective)
-
-1. **Global setup** (once): Go to `/admin/module_llm`, enable `llm_memory_enabled`, optionally configure table name, mode, model, and the global update prompt.
-2. **Enable memory on llmChat**: In CMS, set `enable_memory = true` on any llmChat section. The user's memory is now injected into that chat's context.
-3. **Enable auto-updates from chat**: Set `enable_memory_update = true` on the llmChat. After each response, a background worker updates memory -- user sees no delay.
-4. **Configure memory updates from forms/surveys**: On any form's `formActions`, add action with `job_type = llm_memory_update`. Use direct field mapping (fast) or `llm_summarize: true` (async LLM call).
-5. **Use memory in other components**: Reference `llm_memory` in any component's `data_config` for `{{interpolation}}`.
+1. `v1.2.0.sql` -- module fields, lookups, job type, hooks
+2. `globals.php` -- constants
+3. `LlmHooks.php` -- job type + hook integration
+4. Config, Trigger, Storage, Update, Admin services
+5. `llm_memory_worker.php`
+6. Form action execution path integration
+7. llmChat direct fallback path
+8. Login and profile hooks
+9. Admin console React memory tab
+10. Rules editor React component for CMS
+11. CHANGELOG.md
 
