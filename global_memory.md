@@ -609,33 +609,43 @@ Admins need easy control over where memory is used.
 
 ## 11.1 Usage Channels
 
-Memory should be usable in three ways:
+Memory should be usable in two ways:
 
 ### A. `data_config`
 Any style can load memory data through standard `data_config`.
 
-This is the most system-native reuse path.
+This is the only runtime usage path for prompts and content generation.
 
-### B. LLM Context Injection
-Memory can be inserted into LLM context automatically where wanted.
+This is the most system-native reuse path and keeps memory usage explicit.
 
-### C. Admin Inspection UI
+### B. Admin Inspection UI
 Memory can be viewed in a dedicated UI.
 
 ## 11.2 `llmChat` Usage
 
-Add opt-in style fields:
+`llmChat` should not have a hidden or automatic memory injection feature.
 
-- `enable_memory_context`
-- `memory_context_mode`
-  - `summary | json | both`
-- `memory_context_rule_filter`
-  - optional future extension
+Instead, memory should be loaded only through explicit `data_config` interpolation in the same way as other reusable data in the system.
 
-Behavior:
+Recommended behavior:
 
-- when enabled, prepend current effective memory to the system context
-- do not inject automatically into every chat by default
+- admins add memory into the prompt/context field through `data_config`
+- admins decide exactly which memory fields are loaded
+- admins can add explanatory wrapper text around the memory
+- admins can describe to the LLM what the memory means and how it should be used
+
+Example pattern:
+
+- `Current user memory summary: {{memory_text}}`
+- `Structured user memory JSON: {{memory_json}}`
+- `Preferred name: {{preferred_name}}`
+
+This is better because:
+
+- usage stays fully visible in configuration
+- prompt authors control wording and safety
+- there is no confusion about when memory is present
+- memory reuse works consistently with the rest of the SelfHelp interpolation model
 
 ## 11.3 Core Form Usage
 
@@ -804,13 +814,6 @@ Responsibilities:
 - validate result
 - persist data
 
-### `LlmMemoryContextService`
-
-Responsibilities:
-
-- load effective memory for chat injection
-- format as `summary`, `json`, or `both`
-
 ### `LlmMemoryAdminService`
 
 Responsibilities:
@@ -915,7 +918,8 @@ This keeps the solution close to how SelfHelp already works.
 - profile name change queues memory update only after successful update
 - `record`, `log`, and `both` storage modes all behave correctly
 - flattened fields are available via `data_config`
-- `llmChat` memory context injection works only when enabled
+- `llmChat` can use memory only when admins explicitly load it through `data_config`
+- prompts can combine memory data with extra explanatory text in a predictable way
 
 ## 17.2 Failure
 
@@ -984,7 +988,7 @@ Unless changed during review, the implementation should assume:
 - memory rules live in module config
 - forms use new form-action job type `llm_memory_update`
 - `llmChat` direct binding exists only as fallback for non-saved dynamic forms
-- memory usage in chats is opt-in, not automatic everywhere
+- memory is loaded for prompts only through explicit `data_config` interpolation
 
 ---
 
@@ -992,7 +996,7 @@ Unless changed during review, the implementation should assume:
 
 1. Add DB fields for module config and style config.
 2. Add new job type `llm_memory_update` and hook integration.
-3. Build memory config, trigger, storage, update, and context services.
+3. Build memory config, trigger, storage, update, and admin services.
 4. Implement async worker path for memory updates.
 5. Integrate core form-action execution path.
 6. Integrate direct `llmChat` fallback path.
@@ -1000,4 +1004,3 @@ Unless changed during review, the implementation should assume:
 8. Add memory tab to the LLM admin console.
 9. Add documentation examples for rule JSON and recommended setup.
 10. Add the changes to the changelog. This is version 1.2.0. Pre-release version
-
