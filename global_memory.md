@@ -483,7 +483,76 @@ Recommended config fields:
 - optional `run_async`
   - default true
 
-### 8.2 Job Payload Source
+### 8.2 Execution Modes
+
+To make this easy for admins and flexible enough for different form types, the job should support two execution modes.
+
+#### A. Direct Mapping
+
+Use this when the admin already knows exactly which submitted fields should become memory fields.
+
+Behavior:
+
+- no LLM call is needed
+- selected values are written directly into memory storage
+- best for simple stable facts such as:
+  - preferred name
+  - selected category
+  - onboarding flags
+  - last completed step
+
+Recommended config additions:
+
+- `execution_mode = direct_mapping`
+- `field_mapping`
+
+Example:
+
+```json
+{
+  "type": "llm_memory_update",
+  "memory_rule_key": "onboarding_direct_fields",
+  "execution_mode": "direct_mapping",
+  "field_mapping": {
+    "preferred_name": "{{first_name}}",
+    "main_goal": "{{goal}}",
+    "last_onboarding_step": "{{step_name}}"
+  }
+}
+```
+
+#### B. LLM Summarization
+
+Use this when the submitted payload is more complex and the system should decide what is stable and important enough to store as memory.
+
+Behavior:
+
+- payload is sent to the async worker
+- the worker loads current memory and applies the rule prompt
+- best for free text, complex surveys, mixed forms, and conversational submissions
+
+Recommended config additions:
+
+- `execution_mode = llm_summarize`
+- optional `prompt_template_override`
+
+Example:
+
+```json
+{
+  "type": "llm_memory_update",
+  "memory_rule_key": "sleep_form_finished",
+  "execution_mode": "llm_summarize",
+  "run_async": true
+}
+```
+
+Recommendation:
+
+- keep `llm_summarize` as the default for rule-driven memory updates
+- use `direct_mapping` when the admin wants predictable field-to-field writes without LLM interpretation
+
+### 8.3 Job Payload Source
 
 For form action jobs, the job receives standard form payload from `UserInput`.
 
@@ -768,6 +837,30 @@ These are global rules configured only in module config.
 
 No local style config is needed.
 
+## 13.4 Admin Workflow Example
+
+Recommended review and setup flow for admins:
+
+1. Open the LLM module configuration and enable global memory.
+2. Define or edit one reusable memory rule in `llm_memory_rules`.
+3. Choose whether the rule should behave as:
+   - direct mapping
+   - LLM summarization
+4. For a core form or survey:
+   - open the existing form action configuration
+   - select job type `llm_memory_update`
+   - select the rule key
+5. For `llmChat` with data saving enabled:
+   - configure the form action on the generated data table
+6. For `llmChat` without data saving:
+   - use the section-level fallback `memory_rule_keys`
+7. To use memory later in prompts or content:
+   - load it explicitly through `data_config`
+   - add your own wrapper text around `{{memory_text}}`, `{{memory_json}}`, or flattened fields
+8. To inspect results:
+   - open the memory tab in the LLM admin console
+   - review current memory and history for a user
+
 ---
 
 ## 14. Detailed Implementation Pieces
@@ -822,7 +915,49 @@ Responsibilities:
 - provide per-user detail and history queries
 - provide diff-friendly payloads
 
-## 14.2 New Hook/Job Integration
+## 14.2 Concrete Implementation Artifacts
+
+The implementation should explicitly create or update these files and constants so the work is easy to scope and verify.
+
+### New files
+
+- `server/service/LlmMemoryStorageService.php`
+- `server/service/LlmMemoryConfigService.php`
+- `server/service/LlmMemoryTriggerService.php`
+- `server/service/LlmMemoryUpdateService.php`
+- `server/service/LlmMemoryAdminService.php`
+- `server/service/llm_memory_worker.php`
+- `server/db/v1.2.0.sql`
+
+### Existing files expected to change
+
+- `server/component/LlmHooks.php`
+- `server/service/globals.php`
+- `server/component/style/llmChat/LlmChatController.php`
+- LLM admin console React files and related endpoints for the new memory UI
+
+### Constants and lookup additions
+
+Add explicit constants for:
+
+- `ACTION_JOB_TYPE_LLM_MEMORY_UPDATE`
+- `TRANSACTION_BY_LLM_MEMORY`
+
+These should be registered in the same style as the plugin's existing async/action integrations so the memory feature is visible in logs, transactions, and job execution flow.
+
+### Migration scope for `v1.2.0.sql`
+
+The migration should cover at least:
+
+- plugin version bump to `v1.2.0`
+- module-level memory fields on `sh_module_llm`
+- any fallback style field additions needed by `llmChat`
+- lookup additions for memory storage mode selection if not already available
+- job type registration for `llm_memory_update`
+- transaction-by registration for memory updates
+- any hook-related lookup/config records needed for execution and admin UI integration
+
+## 14.3 New Hook/Job Integration
 
 ### New job type support
 
@@ -837,7 +972,9 @@ Register hooks for:
 - `Login::update_timestamp`
 - `ProfileModel::change_user_name`
 
-## 14.3 New UI Pieces
+The async execution path should explicitly follow the established `llm_async_worker.php` pattern for CLI bootstrap, temp payload handoff, and non-blocking execution.
+
+## 14.4 New UI Pieces
 
 ### LLM admin console
 
@@ -994,13 +1131,14 @@ Unless changed during review, the implementation should assume:
 
 ## 20. Implementation Order
 
-1. Add DB fields for module config and style config.
-2. Add new job type `llm_memory_update` and hook integration.
-3. Build memory config, trigger, storage, update, and admin services.
-4. Implement async worker path for memory updates.
-5. Integrate core form-action execution path.
-6. Integrate direct `llmChat` fallback path.
-7. Add login and profile hooks.
-8. Add memory tab to the LLM admin console.
-9. Add documentation examples for rule JSON and recommended setup.
-10. Add the changes to the changelog. This is version 1.2.0. Pre-release version
+1. Create `server/db/v1.2.0.sql` with module fields, lookup additions, job type registration, and version bump.
+2. Add new globals/constants such as `ACTION_JOB_TYPE_LLM_MEMORY_UPDATE` and `TRANSACTION_BY_LLM_MEMORY`.
+3. Add new job type `llm_memory_update` and hook integration in `LlmHooks`.
+4. Build memory config, trigger, storage, update, and admin services.
+5. Implement `llm_memory_worker.php` using the same async pattern as `llm_async_worker.php`.
+6. Integrate core form-action execution path.
+7. Integrate direct `llmChat` fallback path.
+8. Add login and profile hooks.
+9. Add memory tab to the LLM admin console.
+10. Add documentation examples for rule JSON, execution modes, and recommended admin setup.
+11. Add the changes to the changelog. This is version 1.2.0. Pre-release version
