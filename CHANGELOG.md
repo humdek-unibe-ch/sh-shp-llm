@@ -2,6 +2,77 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.2.0] - 2026-03-25 Pre-release
+
+### Global User Memory
+
+- Added a full global user memory feature for the LLM module.
+- Memory is now managed centrally at module level instead of being tied to a single `llmChat` section.
+- Admins can enable memory, choose a default memory key, choose storage mode, and define current/history table names from `sh_module_llm`.
+- Supported storage modes:
+  - `record` for current state only
+  - `log` for history only
+  - `both` for current state plus history
+
+### New Memory Admin Page
+
+- Added a dedicated `LLM Memory` admin page (`moduleLlmMemory`).
+- The page is organized into sharable URL-driven tabs:
+  - `Overview`
+  - `Rules`
+  - `Sources`
+  - `Users`
+- Added overview metrics for memory status, storage mode, rule counts, tables, user counts, and recent activity.
+- Added a user browser for current memory, history, before/after comparison, rebuild, rerun, delete, and manual edits.
+- Added URL state for selected tab, rule, user, memory key, edit mode, and history mode so links can be shared directly.
+
+### Rule Management
+
+- Replaced the old unreleased JSON/CMS-field memory rule editor with a dedicated rule-management UI.
+- Memory rules are now stored in a normalized `llm_memory_rules` table instead of module JSON.
+- Added rule CRUD, duplication, enable/disable handling, source matching, execution mode selection, and structured JSON editing for advanced fields.
+- Added derived source visibility so admins can see where each memory rule is used.
+
+### Prompt Lab For Memory Rules
+
+- Added first-class Prompt Lab support for memory rules through `llm_memory_rule`.
+- Each memory rule now owns its prompt directly, with stable rule-based ownership instead of the earlier temporary module-scoped approach.
+- Memory rule prompts now support:
+  - version history
+  - compare/diff
+  - playground runs
+  - datasets
+  - prompt builder
+- Memory playground execution is now handled explicitly as `memory_runtime`.
+
+### Memory Updates And Usage
+
+- Memory rules still work with the existing SelfHelp architecture:
+  - form actions via `llm_memory_update`
+  - `llmChat` fallback triggers when data saving is off
+  - login triggers
+  - profile name change triggers
+- Memory usage remains explicit through `data_config`; there is no hidden automatic injection into prompts.
+- Added recent activity inspection and better write-source visibility for form actions, chat fallback bindings, and system-triggered rules.
+
+### Admin Editing And Auditability
+
+- Added manual memory editing from the memory admin page.
+- Manual edits are recorded through normal memory history plus transaction attribution, so changes remain traceable.
+- Added clearer history inspection with:
+  - previous memory
+  - new memory
+  - field-level diff view
+  - source reference and payload inspection
+
+### Improvements And Cleanup
+
+- Removed the unreleased CMS memory-rules editor path and its old bundle/template hooks.
+- Simplified the admin console so it now only links to memory instead of carrying extra dead memory UI scaffolding.
+- Consolidated the memory page to use its own API surface instead of depending on admin-console URL context.
+- Removed the remaining cross-repo dependency for profile-name-change memory triggers so the plugin owns the feature end to end.
+- Updated docs and migration scope to match the final dedicated-page memory design.
+
 ## [1.1.0] - 2026-03-19
 
 ### Floating mode conversation switcher
@@ -176,3 +247,4 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - Added reusable LLM scripts with sync/async execution, testing, and scheduler integration.
 - Added the admin console for conversation inspection, payload debugging, and conversation blocking.
 - Added the `llmResponse` rendering component and the initial React build pipeline.
+

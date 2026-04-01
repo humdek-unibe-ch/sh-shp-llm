@@ -1,0 +1,34 @@
+.llm-memory-rules-editor-root .memory-rule-list {
+  max-height: 28rem;
+  overflow-y: auto;
+}
+
+.llm-memory-rules-editor-root .memory-rule-subtitle {
+  font-size: 0.75rem;
+}
+
+.llm-memory-rules-editor-root .card-header .btn,
+.llm-memory-rules-editor-root .prompt-toolbar .btn {
+  white-space: nowrap;
+}
+
+.llm-memory-rules-editor-root .json-monaco-editor,
+.llm-memory-rules-editor-root .prompt-editor {
+  border-radius: 0.25rem;
+}
+
+.llm-memory-rules-editor-root .prompt-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.llm-memory-rules-editor-root .card {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+
+@media (max-width: 991.98px) {
+  .llm-memory-rules-editor-root .prompt-toolbar {
+    position: static;
+  }
+}

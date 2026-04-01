@@ -14,12 +14,13 @@ export type {
   PromptEvalScore,
 } from '../evaluations/evaluationTypes';
 
-export type PromptOwnerType = 'style_field' | 'llm_script';
+export type PromptOwnerType = 'style_field' | 'llm_script' | 'llm_memory_rule';
 
 export type KnownPromptExecutionProfile =
   | 'chat_runtime'
   | 'form_runtime'
   | 'script_runtime'
+  | 'memory_runtime'
   | 'text_only';
 
 export type PromptExecutionProfile = KnownPromptExecutionProfile | (string & {});

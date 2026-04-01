@@ -42,7 +42,8 @@ export function usePromptBootstrap({
   }, [descriptor]);
 
   const reload = useCallback(async () => {
-    if (!enabled || !descriptor.ownerId) {
+    const hasOwnerIdentity = descriptor.ownerId > 0;
+    if (!enabled || !hasOwnerIdentity) {
       setBootstrap(null);
       return null;
     }

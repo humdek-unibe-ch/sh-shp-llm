@@ -10,7 +10,7 @@ interface PromptDiffModalProps {
   onHide: () => void;
   api: ReturnType<typeof createPromptLabApi>;
   descriptor: {
-    ownerType: 'style_field' | 'llm_script';
+    ownerType: 'style_field' | 'llm_script' | 'llm_memory_rule';
     ownerId: number;
     promptSlot: string;
     languageId?: number | null;

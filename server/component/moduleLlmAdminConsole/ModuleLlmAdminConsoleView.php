@@ -72,6 +72,7 @@ class ModuleLlmAdminConsoleView extends BaseView
             'showFilters' => $this->model->getShowFilters(),
             'labels' => $this->model->getLabels(),
             'csrfToken' => $_SESSION['csrf_token'] ?? '',
+            'memoryPageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
         ]);
     }
 }

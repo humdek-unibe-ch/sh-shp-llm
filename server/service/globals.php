@@ -34,6 +34,7 @@ define('TRANSACTION_BY_LLM_SCRIPT', 'by_llm_script');
 define('ACTION_JOB_TYPE_LLM_SCRIPT', 'llm_script');
 define('LLM_TABLE_SCRIPTS', 'llm_scripts');
 define('LLM_SCRIPTS_PAGE_KEYWORD', 'moduleLlmScript');
+define('LLM_MEMORY_PAGE_KEYWORD', 'moduleLlmMemory');
 define('LLM_PROMPT_LAB_PAGE_KEYWORD', 'ajax_llm_prompt_lab');
 define('LLM_PROMPT_OWNER_STYLE_FIELD', 'style_field');
 define('LLM_PROMPT_OWNER_SCRIPT', 'llm_script');
@@ -160,6 +161,25 @@ define('PAGE_LLM_CONFIG', 'sh_module_llm');
 define('TRANSACTION_BY_LLM_FORM', 'by_llm_form');
 define('LLM_FORM_DEFAULT_RESULT_FIELD', 'llm_result');
 define('LLM_FORM_DEFAULT_META_FIELD', 'llm_result_meta');
+
+// LLM Memory constants
+define('ACTION_JOB_TYPE_LLM_MEMORY_UPDATE', 'llm_memory_update');
+define('TRANSACTION_BY_LLM_MEMORY', 'by_llm_memory');
+define('LLM_MEMORY_DEFAULT_KEY', 'global');
+define('LLM_MEMORY_DEFAULT_STORAGE_MODE', 'both');
+define('LLM_MEMORY_DEFAULT_TABLE', 'llm_memory');
+define('LLM_MEMORY_DEFAULT_HISTORY_TABLE', 'llm_memory_history');
+define('LLM_PROMPT_OWNER_MEMORY_RULE', 'llm_memory_rule');
+define('LLM_MEMORY_EXECUTION_DIRECT_MAPPING', 'direct_mapping');
+define('LLM_MEMORY_EXECUTION_LLM_SUMMARIZE', 'llm_summarize');
+define('LLM_MEMORY_SOURCE_FORM_ACTION', 'form_action_submit');
+define('LLM_MEMORY_SOURCE_LLM_CHAT_FORM', 'llm_chat_form_submit');
+define('LLM_MEMORY_SOURCE_LOGIN', 'login');
+define('LLM_MEMORY_SOURCE_PROFILE_NAME', 'profile_name_change');
+define('LLM_MEMORY_STATUS_APPLIED', 'applied');
+define('LLM_MEMORY_STATUS_DUPLICATE', 'ignored_duplicate');
+define('LLM_MEMORY_STATUS_STALE', 'ignored_stale');
+define('LLM_MEMORY_STATUS_FAILED', 'failed');
 
 /* =========================================================================
  * BACKWARD-COMPATIBLE WRAPPERS

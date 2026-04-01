@@ -133,6 +133,19 @@ class LlmPromptPlaygroundService extends BaseLlmService
             );
         }
 
+        if ($profile === 'memory_runtime') {
+            return $this->runMemoryRuntime(
+                $descriptor,
+                $draft_prompt,
+                $runtime_values,
+                $variables,
+                $model_name,
+                $config_snapshot,
+                $comparison_group_id,
+                $options
+            );
+        }
+
         if ($runtime_type === 'script' || $profile === 'script_runtime') {
             return $this->runScriptRuntime(
                 $descriptor,
@@ -147,6 +160,34 @@ class LlmPromptPlaygroundService extends BaseLlmService
         }
 
         throw new Exception('Prompt owner is not playground-executable');
+    }
+
+    private function runMemoryRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
+    {
+        $runtime_values = is_array($runtime_values) ? $runtime_values : array();
+        if (empty($runtime_values['name'])) {
+            $runtime_values['name'] = $descriptor['title'] ?? 'Memory Rule';
+        }
+
+        $memory_config_snapshot = is_array($config_snapshot) ? $config_snapshot : array();
+        $memory_config_snapshot['execution_profile'] = 'memory_runtime';
+        $memory_config_snapshot['playground_runtime_type'] = 'memory_runtime';
+        $memory_config_snapshot['playground_runtime_label'] = 'Memory Rule';
+
+        $result = $this->runScriptRuntime(
+            $descriptor,
+            $draft_prompt,
+            $runtime_values,
+            $variables,
+            $model_name,
+            $memory_config_snapshot,
+            $comparison_group_id,
+            $options
+        );
+
+        $result['execution_profile'] = 'memory_runtime';
+        $result['playground_runtime_type'] = 'memory_runtime';
+        return $result;
     }
 
     private function runChatRuntime($execution_profile, $descriptor, $draft_prompt, $runtime_values, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)

@@ -32,6 +32,10 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             return 'script_runtime';
         }
 
+        if ($owner_type === LLM_PROMPT_OWNER_MEMORY_RULE) {
+            return 'memory_runtime';
+        }
+
         $slot_profile = $this->resolveExecutionProfileByPromptSlot($descriptor);
         if (is_string($slot_profile) && $slot_profile !== '') {
             return $slot_profile;
@@ -80,6 +84,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             return 'form';
         }
         if ($profile === 'script_runtime') {
+            return 'script';
+        }
+        if ($profile === 'memory_runtime') {
             return 'script';
         }
 
@@ -204,6 +211,14 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'max_tokens',
                 'data_config',
                 'test_variables'
+            );
+        }
+
+        if ($profile === 'memory_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens'
             );
         }
 

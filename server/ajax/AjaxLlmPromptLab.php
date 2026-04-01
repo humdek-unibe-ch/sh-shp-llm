@@ -745,6 +745,15 @@ class AjaxLlmPromptLab extends BaseAjax
             return;
         }
 
+        if ($owner_type === LLM_PROMPT_OWNER_MEMORY_RULE) {
+            $page_id = $this->db->fetch_page_id_by_keyword(LLM_MEMORY_PAGE_KEYWORD);
+            $method = 'has_access_' . $mode;
+            if (!$page_id || !$this->acl->$method($_SESSION['id_user'], $page_id)) {
+                throw new Exception('Access denied');
+            }
+            return;
+        }
+
         $page_id = (int)($descriptor['page_id'] ?? 0);
         if ($page_id <= 0 && (int)($descriptor['owner_id'] ?? 0) > 0) {
             $resolved = $this->db->query_db_first(
@@ -767,6 +776,12 @@ class AjaxLlmPromptLab extends BaseAjax
 
     private function resolveDescriptorPageId($descriptor)
     {
+        $owner_type = (string)($descriptor['owner_type'] ?? '');
+        if ($owner_type === LLM_PROMPT_OWNER_MEMORY_RULE) {
+            $page_id = $this->db->fetch_page_id_by_keyword(LLM_MEMORY_PAGE_KEYWORD);
+            return $page_id ? (int)$page_id : 0;
+        }
+
         $page_id = (int)($descriptor['page_id'] ?? 0);
         if ($page_id > 0) {
             return $page_id;

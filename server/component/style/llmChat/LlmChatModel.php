@@ -287,6 +287,19 @@ class LlmChatModel extends StyleModel
     public function isDataSavingEnabled() { return $this->get_db_field('enable_data_saving', '0') === '1'; }
     public function getDataSaveMode() { return $this->get_db_field('is_log', '0') === '1' ? 'log' : 'record'; }
 
+    // ===== Memory =====
+
+    /**
+     * Get the comma-separated list of memory rule keys configured for this chat section.
+     * Empty string means "use auto-matching by source_type".
+     */
+    public function getMemoryRuleKeys()
+    {
+        $raw = $this->get_db_field('memory_rule_keys', '');
+        if (empty($raw)) return [];
+        return array_filter(array_map('trim', explode(',', $raw)));
+    }
+
     // ===== Floating Chat Button =====
 
     public function isFloatingButtonEnabled() { return $this->get_db_field('enable_floating_button', '0') === '1'; }
@@ -482,7 +495,7 @@ class LlmChatModel extends StyleModel
      */
     public function getOwnEntriesOnly()
     {
-        return $this->own_entries_only === '1';
+        return $this->get_db_field('own_entries_only', '0') === '1';
     }
 
 }

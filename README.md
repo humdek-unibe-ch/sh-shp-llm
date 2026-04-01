@@ -62,6 +62,7 @@ server/plugins/sh-shp-llm/
 ```bash
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.0.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.1.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.2.0.sql
 ```
 
 This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations). The v1.1.0 migration is rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
@@ -80,6 +81,7 @@ This installs React dependencies and builds UMD bundles, including:
 - `js/ext/llm-admin.umd.js` — Admin console
 - `js/ext/llm-scripts.umd.js` — Scripts manager
 - `js/ext/llm-apikeys.umd.js` — CMS API key manager
+- `js/ext/llm-memory.umd.js` - Dedicated memory manager page
 
 ### 4. Configure the Module
 
@@ -165,6 +167,203 @@ Static LLM-facing prompt text is externalized to `assets/prompts/` (one file per
 See [doc/prompt-assets.md](doc/prompt-assets.md) for naming, loading, and fail-closed behavior details.
 
 ## Usage
+
+### Global User Memory
+
+Version `1.2.0` adds a module-level global memory system for `sh_module_llm`.
+
+Memory is:
+- global per user, not per `llmChat` section
+- updated from forms, surveys, `llmChat` fallback submissions, login, and profile-name changes
+- stored in standard SelfHelp `dataTables`
+- consumed explicitly through `data_config`
+
+#### Module fields
+
+Configure these defaults on the `sh_module_llm` page:
+- `llm_memory_enabled`
+- `llm_memory_key`
+- `llm_memory_storage_mode`
+- `llm_memory_table_name`
+- `llm_memory_history_table_name`
+
+Manage memory rules, write sources, and user memory operations on the dedicated `moduleLlmMemory` admin page.
+
+#### Storage modes
+
+- `record`: write only the current snapshot table
+- `log`: write only the history table; effective memory resolves from latest applied history row
+- `both`: write current snapshot and history; recommended default
+
+#### Rule example
+
+Memory rules are stored in the normalized `llm_memory_rules` table and edited through the dedicated memory page.
+
+```json
+{
+  "rule_key": "sleep_form_finished",
+  "label": "Sleep Form Finished",
+  "enabled": true,
+  "memory_key": "global",
+  "source_type": "form_action_submit",
+  "source_match_json": {
+    "table_name": "0000001234"
+  },
+  "trigger_types_json": ["finished"],
+  "storage_mode_override": "both",
+  "execution_mode": "llm_summarize",
+  "data_config_json": [
+    {
+      "table": "llm_memory",
+      "retrieve": "last",
+      "current_user": true,
+      "map_fields": [
+        { "field_name": "memory_text", "value": "memory_text" },
+        { "field_name": "memory_json", "value": "memory_json" }
+      ]
+    }
+  ],
+  "llm_model": "",
+  "llm_temperature": 0.2,
+  "llm_max_tokens": 1200,
+  "refresh_sections_json": []
+}
+```
+
+Prompt Lab ownership is derived from the rule row itself:
+- `owner_type = llm_memory_rule`
+- `owner_id = <rule id>`
+- `prompt_slot = memory_rule`
+
+#### Execution modes
+
+- `llm_summarize`: send the event payload to the async memory worker and let the prompt decide what to keep
+- `direct_mapping`: write stable facts directly from submitted fields without calling the LLM
+
+Direct-mapping example:
+
+```json
+{
+  "type": "llm_memory_update",
+  "memory_rule_key": "onboarding_direct_fields",
+  "execution_mode": "direct_mapping",
+  "field_mapping": {
+    "preferred_name": "{{first_name}}",
+    "main_goal": "{{goal}}",
+    "last_onboarding_step": "{{step_name}}"
+  }
+}
+```
+
+#### Ordering and dedupe behavior
+
+Each memory update carries:
+- `event_at`
+- `dedupe_key`
+
+The runtime guarantees:
+- duplicate events are marked `ignored_duplicate`
+- stale out-of-order events are marked `ignored_stale`
+- invalid worker output does not overwrite effective memory
+- invalid worker output does not append a history row
+
+#### Trigger integration
+
+**Core forms and surveys** — use form actions:
+
+1. Open the form or survey configuration
+2. Add a form action
+3. Select job type `llm_memory_update`
+4. Optionally select specific rule keys (blank = auto-match by `source_type`)
+5. Optionally override execution mode, field mapping, storage mode, or prompt version
+
+Form-action job config example:
+
+```json
+{
+  "job_type": "llm_memory_update",
+  "memory_rule_keys": "sleep_form_finished",
+  "run_async": true,
+  "force_storage_mode": "",
+  "execution_mode": "",
+  "field_mapping": "",
+  "prompt_version_override": 0
+}
+```
+
+**llmChat with data saving enabled** — use a form action on the generated `llmChat_*` data table, same as above.
+
+**llmChat with data saving disabled** — configure the section-level `memory_rule_keys` field:
+
+```
+sleep_form_finished, general_chat_update
+```
+
+When `memory_rule_keys` is set, only the listed rules fire. When empty, rules are matched by `source_type = llm_chat_form_submit`.
+
+**Login** — no configuration needed. Rules with `source_type = login` fire automatically after successful login. Example rule:
+
+```json
+{
+  "key": "login_tracker",
+  "label": "Login Activity",
+  "enabled": true,
+  "source_type": "login",
+  "execution_mode": "direct_mapping",
+  "field_mapping": {
+    "last_login_time": "{{login_time}}",
+    "last_known_name": "{{user_name}}"
+  }
+}
+```
+
+**Profile name change** — no configuration needed. Rules with `source_type = profile_name_change` fire automatically. The payload includes `old_name` and `new_name`.
+
+#### Using memory in prompts (data_config)
+
+Memory is never injected automatically. Load it explicitly through `data_config` on any style field:
+
+```json
+[
+  {
+    "table": "llm_memory",
+    "retrieve": "last",
+    "current_user": true,
+    "map_fields": [
+      { "field_name": "memory_text", "value": "memory_text" },
+      { "field_name": "memory_json", "value": "memory_json" },
+      { "field_name": "preferred_tone", "value": "preferred_tone" }
+    ]
+  }
+]
+```
+
+Then reference the mapped values in any prompt or content field:
+
+```
+Current user memory summary: {{memory_text}}
+Preferred tone: {{preferred_tone}}
+```
+
+This works in `conversation_context`, LLM script prompts, `llmResponse` templates, and any other field that supports `data_config` interpolation.
+
+#### Recommended admin setup
+
+1. Enable global memory on `sh_module_llm`.
+2. Open the dedicated `LLM Memory` page.
+3. Create one or more rules in the `Rules` tab.
+4. Edit the rule prompt in Prompt Lab from that page.
+5. Choose the execution mode per rule:
+   - `llm_summarize` for free text, complex surveys, and conversational input
+   - `direct_mapping` for simple field-to-field writes (no LLM call)
+6. For core forms and surveys, add a `llm_memory_update` form action and select the rule key.
+7. For `llmChat` without data saving, configure `memory_rule_keys` on the section.
+8. Load memory explicitly through `data_config` in prompts or content (see above).
+9. Use the dedicated memory page tabs to:
+   - manage rules
+   - inspect derived write sources
+   - browse per-user memory snapshots and history
+   - re-run rules, rebuild from history, or manually edit memory
 
 ### Adding a Chat to a Page
 
@@ -285,6 +484,14 @@ The core `LlmService` handles conversations, messages, rate limiting, and API ca
 - **LlmScriptService** — Script lifecycle and execution
 - **Provider layer** — `LlmProviderRegistry` resolves `BaseProvider` subclasses (`GpuStackProvider`, `BfhProvider`) based on the configured URL
 
+**Memory services** (v1.2.0):
+
+- **LlmMemoryConfigService** — Module-level configuration loader and rule registry
+- **LlmMemoryStorageService** — DataTable initialization, read/write with dedupe and stale ordering guards
+- **LlmMemoryTriggerService** — Source-agnostic payload normalization and rule dispatching
+- **LlmMemoryUpdateService** — Direct mapping and LLM-summarization execution (async via `llm_memory_worker.php`)
+- **LlmMemoryAdminService** — Admin UI data (overview, user list, history, manual actions)
+
 ### Database Schema
 
 Four tables are created:
@@ -327,13 +534,14 @@ cd server/plugins/sh-shp-llm/react
 
 npm install       # Install dependencies
 npm run dev       # Development build with HMR
-npm run build     # Production build (all 3 entry points)
+npm run build     # Production build (all configured entry points)
 ```
 
-The React app has three entry points configured via separate Vite configs:
+The React app has multiple entry points configured via separate Vite configs:
 - `vite.config.ts` — Chat UI (`LLMChat.tsx`)
 - `vite.admin.config.ts` — Admin console (`admin.tsx`)
 - `vite.scripts.config.ts` — Scripts manager (`scripts.tsx`)
+- `vite.memory.config.ts` - Dedicated memory manager (`memory.tsx`)
 
 ### Supported Providers
 
@@ -402,3 +610,4 @@ Detailed guides are available in the `doc/` folder:
 ## License
 
 Mozilla Public License, v. 2.0 — see [LICENSE](https://mozilla.org/MPL/2.0/).
+

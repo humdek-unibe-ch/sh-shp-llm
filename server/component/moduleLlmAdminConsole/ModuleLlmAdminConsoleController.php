@@ -10,34 +10,23 @@ require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
 
 /**
  * Controller for the LLM admin console component.
- * Handles AJAX-style requests for admin filters, conversations and messages.
+ * Handles conversation moderation and inspection requests.
  */
 class ModuleLlmAdminConsoleController extends BaseController
 {
     use LlmJsonResponseTrait;
-    /**
-     * Constructor.
-     *
-     * @param object $model
-     *  The model instance of the component.
-     */
+
     public function __construct($model)
     {
         parent::__construct($model);
-
-        // Handle incoming requests immediately (GET/POST action based)
         $this->handleRequest();
     }
 
-    /**
-     * Route incoming requests based on action parameter.
-     */
     private function handleRequest()
     {
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
-
         if (!$action) {
-            return; // No special handling required; continue with normal rendering
+            return;
         }
 
         switch ($action) {
@@ -65,9 +54,6 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
-    /**
-     * Handle admin filters request (users and sections).
-     */
     private function handleAdminFilters()
     {
         try {
@@ -78,14 +64,11 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
-    /**
-     * Handle admin conversations request with pagination and filters.
-     */
     private function handleAdminConversations()
     {
         $page = (int)($_GET['page'] ?? 1);
         $per_page = (int)($_GET['per_page'] ?? $this->model->getAdminPageSize());
-        $per_page = min($per_page > 0 ? $per_page : 50, 100); // sensible defaults, cap at 100
+        $per_page = min($per_page > 0 ? $per_page : 50, 100);
 
         $filters = [];
         if (!empty($_GET['user_id'])) {
@@ -115,13 +98,9 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
-    /**
-     * Handle admin conversation messages request.
-     */
     private function handleAdminMessages()
     {
         $conversation_id = $_GET['conversation_id'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
@@ -129,37 +108,27 @@ class ModuleLlmAdminConsoleController extends BaseController
 
         try {
             $result = $this->model->getAdminConversationMessages($conversation_id);
-
             if ($result === null) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;
             }
-
             $this->sendJsonResponse($result);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Handle admin delete conversation request.
-     * Soft deletes the conversation (sets deleted flag).
-     */
     private function handleAdminDeleteConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
         }
 
         try {
-            // Get admin user ID if available
             $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            
             $result = $this->model->adminDeleteConversation($conversation_id, $admin_user_id);
-
             if ($result) {
                 $this->sendJsonResponse(['success' => true, 'message' => 'Conversation deleted successfully']);
             } else {
@@ -170,26 +139,18 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
-    /**
-     * Handle admin block conversation request.
-     * Blocks the conversation to prevent further messages.
-     */
     private function handleAdminBlockConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
         $reason = $_POST['reason'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
         }
 
         try {
-            // Get admin user ID if available
             $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            
             $result = $this->model->adminBlockConversation($conversation_id, $reason, $admin_user_id);
-
             if ($result) {
                 $this->sendJsonResponse(['success' => true, 'message' => 'Conversation blocked successfully']);
             } else {
@@ -200,25 +161,17 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
-    /**
-     * Handle admin unblock conversation request.
-     * Unblocks a previously blocked conversation.
-     */
     private function handleAdminUnblockConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
         }
 
         try {
-            // Get admin user ID if available
             $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            
             $result = $this->model->adminUnblockConversation($conversation_id, $admin_user_id);
-
             if ($result) {
                 $this->sendJsonResponse(['success' => true, 'message' => 'Conversation unblocked successfully']);
             } else {
@@ -228,7 +181,5 @@ class ModuleLlmAdminConsoleController extends BaseController
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
     }
-
 }
 ?>
-
