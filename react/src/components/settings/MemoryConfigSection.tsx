@@ -18,6 +18,7 @@ interface Props {
   title?: string;
   iconClass?: string;
   hideDetailsWhenDisabled?: boolean;
+  footer?: React.ReactNode;
 }
 
 export const MemoryConfigSection: React.FC<Props> = ({
@@ -28,6 +29,7 @@ export const MemoryConfigSection: React.FC<Props> = ({
   title = 'Memory Configuration',
   iconClass = 'fa fa-brain',
   hideDetailsWhenDisabled = true,
+  footer,
 }) => {
   const memoryEnabled = getVal('llm_memory_enabled') === '1';
 
@@ -100,10 +102,7 @@ export const MemoryConfigSection: React.FC<Props> = ({
         {renderField('llm_memory_enabled')}
         {(memoryEnabled || !hideDetailsWhenDisabled) && (
           <>
-            {renderField('llm_memory_key')}
             {renderField('llm_memory_storage_mode')}
-            {renderField('llm_memory_table_name')}
-            {renderField('llm_memory_history_table_name')}
           </>
         )}
         {!memoryEnabled && (
@@ -112,6 +111,7 @@ export const MemoryConfigSection: React.FC<Props> = ({
           </p>
         )}
       </div>
+      {footer && <div className="card-footer">{footer}</div>}
     </div>
   );
 };

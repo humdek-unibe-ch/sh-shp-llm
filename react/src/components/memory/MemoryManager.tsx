@@ -10,6 +10,7 @@ export interface MemoryPageConfig {
   promptLabEndpoint: string;
   pageUrl?: string;
   pageId?: number | null;
+  basePath?: string;
 }
 
 type MemoryTab = 'general' | 'keys' | 'rules' | 'sources' | 'users' | 'activity';
@@ -282,10 +283,10 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
             <Tab.Content>
               <Tab.Pane eventKey="general">
                 {(loadingOverview || loadingConfig) ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
-                  <Row>
-                    <Col lg={7} className="mb-3">
-                      {memoryConfig ? (
-                        <>
+                  <>
+                    <Row>
+                      <Col xs={12} className="mb-3">
+                        {memoryConfig ? (
                           <MemoryConfigSection
                             title="Memory System"
                             iconClass="fa fa-database"
@@ -294,56 +295,60 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                             onChange={handleConfigChange}
                             disabled={!canUpdateConfig || savingConfig}
                             hideDetailsWhenDisabled={false}
+                            footer={canUpdateConfig ? (
+                              <div className="d-flex align-items-center">
+                                <Button
+                                  size="sm"
+                                  variant="primary"
+                                  onClick={handleConfigSave}
+                                  disabled={savingConfig || Object.keys(memoryConfigDirty).length === 0}
+                                >
+                                  {savingConfig ? 'Saving...' : 'Save Memory Settings'}
+                                </Button>
+                                {Object.keys(memoryConfigDirty).length > 0 && (
+                                  <span className="ml-3 text-muted small">
+                                    {Object.keys(memoryConfigDirty).length} unsaved change(s)
+                                  </span>
+                                )}
+                              </div>
+                            ) : undefined}
                           />
-                          {canUpdateConfig && (
-                            <div className="d-flex align-items-center mb-3">
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                onClick={handleConfigSave}
-                                disabled={savingConfig || Object.keys(memoryConfigDirty).length === 0}
-                              >
-                                {savingConfig ? 'Saving...' : 'Save Memory Settings'}
-                              </Button>
-                              {Object.keys(memoryConfigDirty).length > 0 && (
-                                <span className="ml-3 text-muted small">
-                                  {Object.keys(memoryConfigDirty).length} unsaved change(s)
-                                </span>
-                              )}
+                        ) : null}
+                      </Col>
+                    </Row>
+                    <Row>
+                      <Col lg={6} className="mb-3">
+                        <Card className="border h-100">
+                          <Card.Header>System Status</Card.Header>
+                          <Card.Body>
+                            <div className="mb-2 d-flex flex-wrap">
+                              <Badge variant={overview?.enabled ? 'success' : 'secondary'} className="mr-2 mb-2">{overview?.enabled ? 'Enabled' : 'Disabled'}</Badge>
+                              <Badge variant={(Number(overview?.rules_count || 0) > 0 && Number(overview?.sources_count || 0) > 0 && overview?.enabled) ? 'success' : 'warning'} className="mr-2 mb-2">
+                                {(Number(overview?.rules_count || 0) > 0 && Number(overview?.sources_count || 0) > 0 && overview?.enabled) ? 'Configured' : 'Needs setup'}
+                              </Badge>
+                              {Number(overview?.rules_count || 0) === 0 ? <Badge variant="warning" className="mr-2 mb-2">No rules yet</Badge> : null}
+                              {Number(overview?.sources_count || 0) === 0 ? <Badge variant="warning" className="mr-2 mb-2">No sources connected</Badge> : null}
                             </div>
-                          )}
-                        </>
-                      ) : null}
-                    </Col>
-                    <Col lg={5} className="mb-3">
-                      <Card className="border mb-3">
-                        <Card.Header>System Status</Card.Header>
-                        <Card.Body>
-                          <div className="mb-2 d-flex flex-wrap">
-                            <Badge variant={overview?.enabled ? 'success' : 'secondary'} className="mr-2 mb-2">{overview?.enabled ? 'Enabled' : 'Disabled'}</Badge>
-                            <Badge variant={(Number(overview?.rules_count || 0) > 0 && Number(overview?.sources_count || 0) > 0 && overview?.enabled) ? 'success' : 'warning'} className="mr-2 mb-2">
-                              {(Number(overview?.rules_count || 0) > 0 && Number(overview?.sources_count || 0) > 0 && overview?.enabled) ? 'Configured' : 'Needs setup'}
-                            </Badge>
-                            {Number(overview?.rules_count || 0) === 0 ? <Badge variant="warning" className="mr-2 mb-2">No rules yet</Badge> : null}
-                            {Number(overview?.sources_count || 0) === 0 ? <Badge variant="warning" className="mr-2 mb-2">No sources connected</Badge> : null}
-                          </div>
-                          <div className="small mb-2"><strong>Storage mode:</strong> {String(overview?.storage_mode || '-')}</div>
-                          <div className="small mb-2"><strong>Rules:</strong> {String(overview?.enabled_rules || 0)}/{String(overview?.rules_count || 0)} enabled</div>
-                          <div className="small mb-2"><strong>Users with memory:</strong> {String(overview?.unique_users || 0)}</div>
-                          <div className="small mb-2"><strong>Write sources:</strong> {String(overview?.sources_count || 0)}</div>
-                          <div className="small mb-0"><strong>Latest activity:</strong> {String(overview?.latest_activity_at || 'No activity yet')}</div>
-                        </Card.Body>
-                      </Card>
-                      <Card className="border">
-                        <Card.Header>How It Works</Card.Header>
-                        <Card.Body>
-                          <div className="small mb-2"><strong>Rules</strong> decide when memory should update and how values are derived.</div>
-                          <div className="small mb-2"><strong>Sources</strong> show where those updates come from, such as forms, chat fallback, or system hooks.</div>
-                          <div className="small mb-0"><strong>Users</strong> lets you inspect current memory, review history, and fix issues manually.</div>
-                        </Card.Body>
-                      </Card>
-                    </Col>
-                  </Row>
+                            <div className="small mb-2"><strong>Storage mode:</strong> {String(overview?.storage_mode || '-')}</div>
+                            <div className="small mb-2"><strong>Rules:</strong> {String(overview?.enabled_rules || 0)}/{String(overview?.rules_count || 0)} enabled</div>
+                            <div className="small mb-2"><strong>Users with memory:</strong> {String(overview?.unique_users || 0)}</div>
+                            <div className="small mb-2"><strong>Write sources:</strong> {String(overview?.sources_count || 0)}</div>
+                            <div className="small mb-0"><strong>Latest activity:</strong> {String(overview?.latest_activity_at || 'No activity yet')}</div>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                      <Col lg={6} className="mb-3">
+                        <Card className="border h-100">
+                          <Card.Header>How It Works</Card.Header>
+                          <Card.Body>
+                            <div className="small mb-2"><strong>Rules</strong> decide when memory should update and how values are derived.</div>
+                            <div className="small mb-2"><strong>Sources</strong> show where those updates come from, such as forms, chat fallback, or system hooks.</div>
+                            <div className="small mb-0"><strong>Users</strong> lets you inspect current memory, review history, and fix issues manually.</div>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                    </Row>
+                  </>
                 )}
               </Tab.Pane>
               <Tab.Pane eventKey="keys">
@@ -406,7 +411,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                             </div>
                             <div>{Array.isArray(source.rule_keys) && (source.rule_keys as string[]).map((key) => <span key={key} className="badge badge-secondary ml-1">{key}</span>)}</div>
                           </div>
-                          {source.target_url ? <div className="mt-2"><a href={String(source.target_url)}>Open source</a></div> : null}
+                          {source.target_url ? <div className="mt-2"><a href={String(source.target_url)} target="_blank" rel="noopener noreferrer">Open source</a></div> : null}
                         </Card.Body>
                       </Card>
                     ))}

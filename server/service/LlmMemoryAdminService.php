@@ -671,7 +671,9 @@ class LlmMemoryAdminService extends BaseLlmService
             return null;
         }
 
-        return '/admin/formsActions/update?aid=' . (int)$action_id;
+        return $this->services->get_router()->generate('moduleFormsAction', array('aid' => (int)$action_id, 'mode' => UPDATE));
+
+
     }
 
     private function normalizeMemoryRow($row)

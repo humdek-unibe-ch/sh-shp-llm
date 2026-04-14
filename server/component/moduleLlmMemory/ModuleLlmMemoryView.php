@@ -77,6 +77,7 @@ class ModuleLlmMemoryView extends BaseView
             'promptLabEndpoint' => $prompt_endpoint,
             'pageId' => $this->model->get_services()->get_db()->fetch_page_id_by_keyword(LLM_MEMORY_PAGE_KEYWORD),
             'pageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
+            'basePath' => defined('BASE_PATH') ? BASE_PATH : '',
         ]);
     }
 
