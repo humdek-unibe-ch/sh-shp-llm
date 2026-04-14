@@ -658,8 +658,8 @@ export const MemoryAdminPanel: React.FC<{
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setEditModal(false)}>Cancel</Button>
-          <Button variant="primary" onClick={handleSaveEdit} disabled={actionLoading}>
+          <Button size="sm" variant="secondary" onClick={() => setEditModal(false)}>Cancel</Button>
+          <Button size="sm" variant="primary" onClick={handleSaveEdit} disabled={actionLoading}>
             {actionLoading ? <Spinner size="sm" animation="border" /> : 'Save'}
           </Button>
         </Modal.Footer>
