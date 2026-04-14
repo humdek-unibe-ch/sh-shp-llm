@@ -193,7 +193,11 @@ class LlmMemoryTriggerService extends BaseLlmService
         $dispatched = [];
         foreach ($rule_keys as $key) {
             $rule = $this->config_service->getRuleByKey(trim($key));
-            if (!$rule || !$rule['enabled']) {
+            if (!$rule) {
+                continue;
+            }
+            if (!$rule['enabled']) {
+                $this->logDisabledRuleSkip($rule, $normalized_payload, 'rule_key_dispatch');
                 continue;
             }
             $rule = $this->applyRuleOverrides($rule, $rule_overrides);
@@ -229,7 +233,11 @@ class LlmMemoryTriggerService extends BaseLlmService
 
         foreach ((array)$rule_ids as $rule_id) {
             $rule = $rule_service->getRuleById((int)$rule_id);
-            if (!$rule || !$rule['enabled']) {
+            if (!$rule) {
+                continue;
+            }
+            if (!$rule['enabled']) {
+                $this->logDisabledRuleSkip($rule, $normalized_payload, 'rule_id_dispatch');
                 continue;
             }
 
@@ -402,6 +410,34 @@ class LlmMemoryTriggerService extends BaseLlmService
         }
 
         return $rule;
+    }
+
+    /**
+     * Write an audit transaction when an explicitly targeted rule is disabled.
+     *
+     * @param array $rule
+     * @param array $normalized_payload
+     * @param string $dispatch_mode
+     * @return void
+     */
+    private function logDisabledRuleSkip($rule, $normalized_payload, $dispatch_mode)
+    {
+        $this->services->get_transaction()->add_transaction(
+            transactionTypes_insert,
+            TRANSACTION_BY_LLM_MEMORY,
+            $_SESSION['id_user'] ?? null,
+            null,
+            null,
+            false,
+            'LLM Memory skipped disabled rule: ' . json_encode([
+                'dispatch_mode' => $dispatch_mode,
+                'rule_id' => (int)($rule['id'] ?? 0),
+                'rule_key' => (string)($rule['key'] ?? ''),
+                'rule_label' => (string)($rule['label'] ?? ''),
+                'user_id' => (int)($normalized_payload['user_id'] ?? 0),
+                'source_type' => (string)($normalized_payload['source_type'] ?? ''),
+            ], JSON_UNESCAPED_SLASHES)
+        );
     }
 }
 ?>
