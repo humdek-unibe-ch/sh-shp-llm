@@ -172,6 +172,8 @@ See [doc/prompt-assets.md](doc/prompt-assets.md) for naming, loading, and fail-c
 
 Version `1.2.0` adds a module-level global memory system for `sh_module_llm`.
 
+For a user-facing setup guide, see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md).
+
 Memory is:
 - global per user, not per `llmChat` section
 - updated from forms, surveys, `llmChat` fallback submissions, login, and profile-name changes
@@ -610,4 +612,3 @@ Detailed guides are available in the `doc/` folder:
 ## License
 
 Mozilla Public License, v. 2.0 — see [LICENSE](https://mozilla.org/MPL/2.0/).
-

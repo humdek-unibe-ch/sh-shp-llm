@@ -28,7 +28,7 @@ class LlmAdminLayoutHelper
         ],
         [
             'keyword' => 'moduleLlmMemory',
-            'icon' => 'fa-brain',
+            'icon' => 'fa-database',
             'fallbackLabel' => 'Memory',
         ],
     ];
