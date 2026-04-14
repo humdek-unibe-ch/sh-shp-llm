@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Col, Nav, Row, Spinner, Tab } from 'react-bootstrap';
-import { MemoryAdminPanel } from '../admin/MemoryAdminPanel';
+import { MemoryAdminPanel } from './MemoryAdminPanel';
 import { MemoryRulesEditorApp } from './MemoryRulesEditorApp';
 import { memoryApi } from '../../utils/api';
 

@@ -493,13 +493,7 @@ class LlmHooks extends BaseHooks
             return $this->execute_llm_script_from_job($args, $script_info);
         }
 
-        // PHP_BINARY returns httpd when running as Apache module;
-        // detect the CLI binary via multiple strategies
-        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
-            $php_bin = PHP_BINARY;
-        } else {
-            $php_bin = $this->find_php_cli_binary();
-        }
+        $php_bin = BaseLlmService::resolvePhpCliBinary();
 
         $is_absolute = ($php_bin[0] === '/' || (strlen($php_bin) > 1 && $php_bin[1] === ':'));
         if ($is_absolute && !file_exists($php_bin)) {
@@ -542,74 +536,6 @@ class LlmHooks extends BaseHooks
         }
 
         return true;
-    }
-
-    /**
-     * Locate the PHP CLI binary when running under a web SAPI (Apache/FPM).
-     * Tries multiple strategies: `which`, common paths, phpinfo-based hints.
-     *
-     * @return string Path to php CLI binary, or 'php' as last-resort fallback
-     */
-    private function find_php_cli_binary()
-    {
-        $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-        $bin_name = $is_win ? 'php.exe' : 'php';
-
-        // Strategy 1: `which php` / `where php` (most reliable on Linux)
-        if (!$is_win) {
-            foreach (['command -v php', 'which php'] as $lookup_cmd) {
-                $which = @shell_exec($lookup_cmd . ' 2>/dev/null');
-                if ($which) {
-                    $which = trim($which);
-                    if ($which !== '' && file_exists($which)) {
-                        return $which;
-                    }
-                }
-            }
-        } else {
-            $where = @shell_exec('where php 2>NUL');
-            if ($where) {
-                $first_line = trim(strtok($where, "\n"));
-                if ($first_line !== '' && file_exists($first_line)) {
-                    return $first_line;
-                }
-            }
-        }
-
-        // Strategy 2: derive from extension_dir (works on Windows / some Linux)
-        $ext_dir = ini_get('extension_dir');
-        if ($ext_dir) {
-            $php_dir = dirname(rtrim($ext_dir, '/\\'));
-            $candidate = $php_dir . DIRECTORY_SEPARATOR . $bin_name;
-            if (file_exists($candidate)) {
-                return $candidate;
-            }
-            // On some Linux, extension_dir is /usr/lib/php/YYYYMMDD;
-            // go one level higher: /usr/lib/php/ -> try /usr/bin/php
-            $candidate2 = dirname($php_dir) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $bin_name;
-            if (file_exists($candidate2)) {
-                return $candidate2;
-            }
-        }
-
-        // Strategy 3: well-known Linux/macOS paths (incl. ondrej/php PPA layout)
-        if (!$is_win) {
-            $ver = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
-            $common_paths = [
-                '/usr/bin/php',
-                '/usr/bin/php' . $ver,
-                '/usr/bin/php' . PHP_MAJOR_VERSION,
-                '/usr/local/bin/php',
-                '/usr/local/bin/php' . $ver,
-            ];
-            foreach ($common_paths as $path) {
-                if (file_exists($path)) {
-                    return $path;
-                }
-            }
-        }
-
-        return $bin_name;
     }
 
     /**
@@ -1704,4 +1630,3 @@ class LlmHooks extends BaseHooks
 
 }
 ?>
-

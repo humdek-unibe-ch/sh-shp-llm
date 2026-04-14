@@ -6,7 +6,6 @@
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmMemoryConfigService.php';
 require_once __DIR__ . '/LlmMemoryStorageService.php';
-require_once __DIR__ . '/LlmMemoryTriggerService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
 require_once __DIR__ . '/LlmService.php';
 
@@ -55,8 +54,7 @@ class LlmMemoryUpdateService extends BaseLlmService
             ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
             : $this->config_service->resolveStorageMode($rule);
 
-        $trigger_service = new LlmMemoryTriggerService($this->services, $this->config_service);
-        $dedupe_key = $trigger_service->buildDedupeKey(
+        $dedupe_key = LlmMemoryConfigService::buildDedupeKey(
             $user_id, $memory_key, $rule['key'],
             $normalized_payload['source_type'],
             $normalized_payload['source_ref'] ?? '',
@@ -120,8 +118,7 @@ class LlmMemoryUpdateService extends BaseLlmService
             ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
             : $this->config_service->resolveStorageMode($rule);
 
-        $trigger_service = new LlmMemoryTriggerService($this->services, $this->config_service);
-        $dedupe_key = $trigger_service->buildDedupeKey(
+        $dedupe_key = LlmMemoryConfigService::buildDedupeKey(
             $user_id, $memory_key, $rule['key'],
             $normalized_payload['source_type'],
             $normalized_payload['source_ref'] ?? '',

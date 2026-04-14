@@ -134,33 +134,6 @@ class LlmMemoryTriggerService extends BaseLlmService
     }
 
     /**
-     * Build a deterministic dedupe key for a memory update.
-     *
-     * @param int    $user_id
-     * @param string $memory_key
-     * @param string $rule_key
-     * @param string $source_type
-     * @param string $source_ref
-     * @param string $trigger_type
-     * @param array  $payload_fields
-     * @return string
-     */
-    public function buildDedupeKey($user_id, $memory_key, $rule_key, $source_type, $source_ref, $trigger_type, $payload_fields)
-    {
-        $fingerprint = json_encode([
-            'u'  => $user_id,
-            'mk' => $memory_key,
-            'rk' => $rule_key,
-            'st' => $source_type,
-            'sr' => $source_ref,
-            'tt' => $trigger_type,
-            'pf' => md5(json_encode($payload_fields, JSON_UNESCAPED_SLASHES)),
-        ], JSON_UNESCAPED_SLASHES);
-
-        return hash('sha256', $fingerprint);
-    }
-
-    /**
      * Dispatch a normalized payload to matching memory rules.
      * Returns the list of rule keys that were dispatched.
      *
