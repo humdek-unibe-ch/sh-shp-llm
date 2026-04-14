@@ -510,7 +510,7 @@ class LlmMemoryAdminService extends BaseLlmService
              LEFT JOIN pages_sections ps ON ps.id_sections = s.id
              LEFT JOIN pages p ON p.id = ps.id_pages
              WHERE st.name = :style_name
-             ORDER BY p.id ASC, s.position ASC, s.id ASC",
+             ORDER BY p.id ASC, ps.position ASC, s.id ASC",
             array(':style_name' => 'llmChat')
         );
 
