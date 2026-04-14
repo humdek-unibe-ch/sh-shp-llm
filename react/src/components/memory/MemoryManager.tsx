@@ -12,11 +12,23 @@ export interface MemoryPageConfig {
   pageId?: number | null;
 }
 
-type MemoryTab = 'general' | 'rules' | 'sources' | 'users';
+type MemoryTab = 'general' | 'keys' | 'rules' | 'sources' | 'users' | 'activity';
 
 interface MemoryConfigGroup {
   label: string;
   fields: FieldDef[];
+}
+
+interface MemoryKeyRecord {
+  code: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+  is_default?: boolean;
+  rules_count?: number;
+  current_rows?: number;
+  history_rows?: number;
+  can_delete?: boolean;
 }
 
 function readUrlState() {
@@ -53,12 +65,17 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   const [overview, setOverview] = useState<Record<string, unknown> | null>(null);
   const [memoryConfig, setMemoryConfig] = useState<MemoryConfigGroup | null>(null);
   const [memoryConfigDirty, setMemoryConfigDirty] = useState<Record<string, string>>({});
+  const [memoryKeys, setMemoryKeys] = useState<MemoryKeyRecord[]>([]);
   const [canUpdateConfig, setCanUpdateConfig] = useState(false);
   const [sources, setSources] = useState<Array<Record<string, unknown>>>([]);
+  const [activityItems, setActivityItems] = useState<Array<Record<string, unknown>>>([]);
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadingKeys, setLoadingKeys] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [loadingSources, setLoadingSources] = useState(false);
+  const [loadingActivity, setLoadingActivity] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -74,6 +91,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   }, [activeTab, selectedRuleId, selectedUserId, selectedMemoryKey, editRequested, historyRequested]);
 
   useEffect(() => {
+    if (activeTab !== 'general') return;
     setLoadingOverview(true);
     memoryApi.getOverview()
       .then((response) => {
@@ -82,9 +100,10 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load overview'))
       .finally(() => setLoadingOverview(false));
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab !== 'general') return;
     setLoadingConfig(true);
     memoryApi.getConfig()
       .then((response) => {
@@ -94,7 +113,19 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load memory config'))
       .finally(() => setLoadingConfig(false));
-  }, []);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'keys') return;
+    setLoadingKeys(true);
+    memoryApi.getMemoryKeys()
+      .then((response) => {
+        if (response.error) throw new Error(response.error);
+        setMemoryKeys(response.keys || []);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load memory keys'))
+      .finally(() => setLoadingKeys(false));
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'sources') return;
@@ -106,6 +137,18 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load sources'))
       .finally(() => setLoadingSources(false));
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'activity') return;
+    setLoadingActivity(true);
+    memoryApi.getMemoryActivity()
+      .then((response) => {
+        if (response.error) throw new Error(response.error);
+        setActivityItems(response.items || []);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load recent activity'))
+      .finally(() => setLoadingActivity(false));
   }, [activeTab]);
 
   const getConfigField = (name: string): FieldDef | undefined =>
@@ -161,6 +204,57 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
     }
   };
 
+  const reloadMemoryKeys = async () => {
+    const response = await memoryApi.getMemoryKeys();
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    setMemoryKeys(response.keys || []);
+  };
+
+  const confirmDeleteMemoryKey = (key: MemoryKeyRecord) => {
+    const message = `Delete memory key "${key.label}" (${key.code})? This is only allowed when it is not attached to rules and has no saved memory data.`;
+    const performDelete = async () => {
+      setDeletingKey(key.code);
+      setError(null);
+      setSuccess(null);
+      try {
+        const response = await memoryApi.deleteMemoryKey(key.code);
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        await reloadMemoryKeys();
+        setSuccess(`Deleted memory key "${key.label}".`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete memory key');
+      } finally {
+        setDeletingKey(null);
+      }
+    };
+
+    const jquery = (window as any).$;
+    if (typeof jquery?.confirm === 'function') {
+      jquery.confirm({
+        title: 'Delete Memory Key',
+        content: message,
+        type: 'red',
+        buttons: {
+          confirm: {
+            text: 'Delete',
+            btnClass: 'btn-danger',
+            action: () => { void performDelete(); },
+          },
+          cancel: () => {},
+        },
+      });
+      return;
+    }
+
+    if (window.confirm(message)) {
+      void performDelete();
+    }
+  };
+
   return (
     <div className="container-fluid py-3">
       {error && <Alert variant="danger" dismissible onClose={() => setError(null)}>{error}</Alert>}
@@ -177,9 +271,11 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
           <Card.Header>
             <Nav variant="tabs" className="card-header-tabs">
               <Nav.Item><Nav.Link eventKey="general">General</Nav.Link></Nav.Item>
+              <Nav.Item><Nav.Link eventKey="keys">Keys</Nav.Link></Nav.Item>
               <Nav.Item><Nav.Link eventKey="rules">Rules</Nav.Link></Nav.Item>
               <Nav.Item><Nav.Link eventKey="sources">Sources</Nav.Link></Nav.Item>
               <Nav.Item><Nav.Link eventKey="users">Users</Nav.Link></Nav.Item>
+              <Nav.Item><Nav.Link eventKey="activity">Activity</Nav.Link></Nav.Item>
             </Nav>
           </Card.Header>
           <Card.Body>
@@ -247,40 +343,50 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                         </Card.Body>
                       </Card>
                     </Col>
-                    <Col lg={12} className="mb-3">
-                      <Card className="border">
-                        <Card.Header>Recent Activity</Card.Header>
-                        <Card.Body>
-                          {Array.isArray(overview?.recent_activity) && overview.recent_activity.length > 0 ? (
-                            <div className="table-responsive">
-                              <table className="table table-sm mb-0">
-                                <thead>
-                                  <tr>
-                                    <th>When</th>
-                                    <th>User</th>
-                                    <th>Rule</th>
-                                    <th>Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(overview.recent_activity as Array<Record<string, unknown>>).map((item, index) => (
-                                    <tr key={`${String(item.record_id || index)}`}>
-                                      <td>{String(item.event_at || item.created_at || '')}</td>
-                                      <td>{String(item.user_name || `User #${String(item.id_users || '')}`)}</td>
-                                      <td>{String(item.rule_key || '-')}</td>
-                                      <td>{String(item.update_status || '-')}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <div className="text-muted small">No recent activity yet.</div>
-                          )}
-                        </Card.Body>
-                      </Card>
-                    </Col>
                   </Row>
+                )}
+              </Tab.Pane>
+              <Tab.Pane eventKey="keys">
+                {loadingKeys ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
+                  <Card className="border">
+                    <Card.Header>Memory Keys</Card.Header>
+                    <Card.Body>
+                      <div className="small text-muted mb-3">
+                        Keys are created directly from the rule editor dropdown. Delete is only available when a key is unused and has no saved memory data.
+                      </div>
+                      {memoryKeys.length === 0 ? (
+                        <div className="text-muted small">No memory keys found.</div>
+                      ) : memoryKeys.map((key) => (
+                        <div key={key.code} className="d-flex justify-content-between align-items-start flex-wrap border rounded p-2 mb-2">
+                          <div className="pr-3">
+                            <div className="font-weight-bold">
+                              {key.label}
+                              {key.is_default ? <Badge variant="secondary" className="ml-2">Default</Badge> : null}
+                            </div>
+                            <div className="small text-muted"><code>{key.code}</code></div>
+                            {key.description ? <div className="small text-muted mt-1">{key.description}</div> : null}
+                            <div className="small text-muted mt-1">
+                              {Number(key.rules_count || 0)} rules, {Number(key.current_rows || 0)} current rows, {Number(key.history_rows || 0)} history rows
+                            </div>
+                          </div>
+                          <div className="mt-1">
+                            {key.can_delete ? (
+                              <Button
+                                size="sm"
+                                variant="outline-danger"
+                                onClick={() => confirmDeleteMemoryKey(key)}
+                                disabled={deletingKey === key.code}
+                              >
+                                {deletingKey === key.code ? 'Deleting...' : 'Delete'}
+                              </Button>
+                            ) : (
+                              <Badge variant="light">Protected / In use</Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </Card.Body>
+                  </Card>
                 )}
               </Tab.Pane>
               <Tab.Pane eventKey="rules">
@@ -320,6 +426,41 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                     setEditRequested(!!edit);
                   }}
                 />
+              </Tab.Pane>
+              <Tab.Pane eventKey="activity">
+                {loadingActivity ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
+                  <Card className="border">
+                    <Card.Header>Recent Activity</Card.Header>
+                    <Card.Body>
+                      {activityItems.length > 0 ? (
+                        <div className="table-responsive">
+                          <table className="table table-sm mb-0">
+                            <thead>
+                              <tr>
+                                <th>When</th>
+                                <th>User</th>
+                                <th>Rule</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activityItems.map((item, index) => (
+                                <tr key={`${String(item.record_id || index)}`}>
+                                  <td>{String(item.event_at || item.created_at || '')}</td>
+                                  <td>{String(item.user_name || `User #${String(item.id_users || '')}`)}</td>
+                                  <td>{String(item.rule_key || '-')}</td>
+                                  <td>{String(item.update_status || '-')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="text-muted small">No recent activity yet.</div>
+                      )}
+                    </Card.Body>
+                  </Card>
+                )}
               </Tab.Pane>
             </Tab.Content>
           </Card.Body>

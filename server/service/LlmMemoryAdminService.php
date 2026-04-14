@@ -196,29 +196,8 @@ class LlmMemoryAdminService extends BaseLlmService
             $total_keys[$mk] = true;
         }
 
-        $recent_activity = $this->storage_service->getRecentHistory(10);
-        $recent_user_ids = array();
-        foreach ($recent_activity as $entry) {
-            if (!empty($entry['id_users'])) {
-                $recent_user_ids[] = (int)$entry['id_users'];
-            }
-        }
-        $recent_users = $this->getUsersInfo(array_values(array_unique($recent_user_ids)));
-        $recent_activity = array_map(function ($entry) use ($recent_users) {
-            $normalized = $this->normalizeMemoryRow($entry);
-            $uid = (int)($normalized['id_users'] ?? 0);
-            $normalized['user_name'] = $recent_users[$uid]['name'] ?? ('User #' . $uid);
-            return $normalized;
-        }, $recent_activity);
-
         $write_sources = $this->getWriteSources();
-        $latest_activity_at = null;
-        foreach ($recent_activity as $entry) {
-            $candidate = $entry['event_at'] ?? $entry['created_at'] ?? null;
-            if ($candidate && (!$latest_activity_at || $candidate > $latest_activity_at)) {
-                $latest_activity_at = $candidate;
-            }
-        }
+        $latest_activity_at = $this->getLatestActivityAt();
 
         return [
             'enabled'           => $this->config_service->isMemoryEnabled(),
@@ -233,8 +212,37 @@ class LlmMemoryAdminService extends BaseLlmService
             'sources_count'     => count($write_sources),
             'latest_activity_at'=> $latest_activity_at,
             'rules'             => $rules,
-            'recent_activity'   => $recent_activity,
         ];
+    }
+
+    public function getRecentActivity($limit = 25)
+    {
+        $recent_activity = $this->storage_service->getRecentHistory((int)$limit);
+        $recent_user_ids = array();
+        foreach ($recent_activity as $entry) {
+            if (!empty($entry['id_users'])) {
+                $recent_user_ids[] = (int)$entry['id_users'];
+            }
+        }
+        $recent_users = $this->getUsersInfo(array_values(array_unique($recent_user_ids)));
+
+        return array_map(function ($entry) use ($recent_users) {
+            $normalized = $this->normalizeMemoryRow($entry);
+            $uid = (int)($normalized['id_users'] ?? 0);
+            $normalized['user_name'] = $recent_users[$uid]['name'] ?? ('User #' . $uid);
+            return $normalized;
+        }, $recent_activity);
+    }
+
+    private function getLatestActivityAt()
+    {
+        $recent_activity = $this->storage_service->getRecentHistory(1);
+        if (empty($recent_activity)) {
+            return null;
+        }
+
+        $entry = $this->normalizeMemoryRow($recent_activity[0]);
+        return $entry['event_at'] ?? $entry['created_at'] ?? null;
     }
 
     /**

@@ -103,9 +103,8 @@ class Sh_module_llmController extends BaseController
             $allowedFields = [
                 'llm_api_keys', 'llm_default_model', 'llm_temperature',
                 'llm_max_tokens', 'llm_timeout',
-                'llm_memory_enabled', 'llm_memory_key',
-                'llm_memory_storage_mode', 'llm_memory_table_name',
-                'llm_memory_history_table_name',
+                'llm_memory_enabled',
+                'llm_memory_storage_mode',
             ];
 
             $saved = [];

@@ -53,10 +53,10 @@ class LlmMemoryConfigService extends BaseLlmService
 
         $this->config = [
             'enabled' => !empty($llm_config['llm_memory_enabled']) && $llm_config['llm_memory_enabled'] !== '0',
-            'memory_key' => !empty($llm_config['llm_memory_key']) ? $llm_config['llm_memory_key'] : LLM_MEMORY_DEFAULT_KEY,
+            'memory_key' => LLM_MEMORY_DEFAULT_KEY,
             'storage_mode' => !empty($llm_config['llm_memory_storage_mode']) ? $llm_config['llm_memory_storage_mode'] : LLM_MEMORY_DEFAULT_STORAGE_MODE,
-            'table_name' => !empty($llm_config['llm_memory_table_name']) ? $llm_config['llm_memory_table_name'] : LLM_MEMORY_DEFAULT_TABLE,
-            'history_table_name' => !empty($llm_config['llm_memory_history_table_name']) ? $llm_config['llm_memory_history_table_name'] : LLM_MEMORY_DEFAULT_HISTORY_TABLE,
+            'table_name' => LLM_MEMORY_DEFAULT_TABLE,
+            'history_table_name' => LLM_MEMORY_DEFAULT_HISTORY_TABLE,
         ];
 
         return $this->config;

@@ -661,6 +661,18 @@ interface MemoryRuleEditorOption {
   label: string;
 }
 
+interface MemoryKeyRecord {
+  code: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+  is_default?: boolean;
+  rules_count?: number;
+  current_rows?: number;
+  history_rows?: number;
+  can_delete?: boolean;
+}
+
 interface MemoryRuleEditorSection {
   id: number;
   name: string;
@@ -683,6 +695,16 @@ interface MemoryRulesBootstrapResponse {
 interface MemoryRuleResponse {
   rule: MemoryRuleRecord;
   prompt_bootstrap?: import('../components/prompts/promptTypes').PromptBootstrapData;
+  error?: string;
+}
+
+interface MemoryKeysResponse {
+  keys: MemoryKeyRecord[];
+  error?: string;
+}
+
+interface MemoryActivityResponse {
+  items: Array<Record<string, unknown>>;
   error?: string;
 }
 
@@ -853,6 +875,21 @@ export const memoryApi = {
 
   async getSources(): Promise<MemorySourcesResponse> {
     return apiGet<MemorySourcesResponse>('sources');
+  },
+
+  async getMemoryKeys(): Promise<MemoryKeysResponse> {
+    return apiGet<MemoryKeysResponse>('memory_keys');
+  },
+
+  async deleteMemoryKey(keyCode: string): Promise<{ deleted?: boolean; error?: string }> {
+    const formData = new FormData();
+    formData.append('action', 'memory_key_delete');
+    formData.append('key_code', keyCode);
+    return apiPost<{ deleted?: boolean; error?: string }>(formData);
+  },
+
+  async getMemoryActivity(limit = 25): Promise<MemoryActivityResponse> {
+    return apiGet<MemoryActivityResponse>('memory_activity', { limit: String(limit) });
   },
 
   async getUsers(params: { page?: number; per_page?: number; q?: string }): Promise<MemoryUsersResponse> {

@@ -184,10 +184,7 @@ Memory is:
 
 Configure these defaults on the `sh_module_llm` page:
 - `llm_memory_enabled`
-- `llm_memory_key`
 - `llm_memory_storage_mode`
-- `llm_memory_table_name`
-- `llm_memory_history_table_name`
 
 Manage memory rules, write sources, and user memory operations on the dedicated `moduleLlmMemory` admin page.
 

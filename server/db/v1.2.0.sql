@@ -56,24 +56,15 @@ INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`) VALUES (NULL, 'select-
 
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_memory_enabled', get_field_type_id('checkbox'), '0'),
-(NULL, 'llm_memory_key', get_field_type_id('text'), '0'),
-(NULL, 'llm_memory_storage_mode', get_field_type_id('select-llm-memory-storage-mode'), '0'),
-(NULL, 'llm_memory_table_name', get_field_type_id('text'), '0'),
-(NULL, 'llm_memory_history_table_name', get_field_type_id('text'), '0');
+(NULL, 'llm_memory_storage_mode', get_field_type_id('select-llm-memory-storage-mode'), '0');
 
 INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
 ((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_memory_enabled'), '0', 'Enable the global user memory system.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_memory_key'), 'global', 'Default memory key.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_memory_storage_mode'), 'memory_storage_both', 'Storage mode for memory updates.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_memory_table_name'), 'llm_memory', 'Name of the current effective memory dataTable.'),
-((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_memory_history_table_name'), 'llm_memory_history', 'Name of the memory history dataTable.');
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('llm_memory_storage_mode'), 'memory_storage_both', 'Storage mode for memory updates.');
 
 INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
 ((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_enabled'), '0', 'Enable global user memory system.'),
-((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_key'), 'global', 'Default memory key.'),
-((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_storage_mode'), 'memory_storage_both', 'Storage mode.'),
-((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_table_name'), 'llm_memory', 'Current memory table name.'),
-((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_history_table_name'), 'llm_memory_history', 'History memory table name.');
+((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_storage_mode'), 'memory_storage_both', 'Storage mode.');
 
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'memory_rule_keys', get_field_type_id('text'), '0');

@@ -467,6 +467,67 @@ class LlmMemoryRuleService extends BaseLlmService
         return $keys;
     }
 
+    public function listMemoryKeysWithUsage()
+    {
+        $keys = $this->listMemoryKeys();
+        $usage = $this->getMemoryKeyUsageMap();
+
+        return array_map(function ($key) use ($usage) {
+            $code = (string)($key['code'] ?? '');
+            $key_usage = $usage[$code] ?? array(
+                'rules_count' => 0,
+                'current_rows' => 0,
+                'history_rows' => 0,
+            );
+            $is_default = $code === LLM_MEMORY_DEFAULT_KEY;
+
+            return array_merge($key, array(
+                'is_default' => $is_default,
+                'rules_count' => (int)($key_usage['rules_count'] ?? 0),
+                'current_rows' => (int)($key_usage['current_rows'] ?? 0),
+                'history_rows' => (int)($key_usage['history_rows'] ?? 0),
+                'can_delete' => !$is_default
+                    && (int)($key_usage['rules_count'] ?? 0) === 0
+                    && (int)($key_usage['current_rows'] ?? 0) === 0
+                    && (int)($key_usage['history_rows'] ?? 0) === 0,
+            ));
+        }, $keys);
+    }
+
+    public function deleteMemoryKey($key_code)
+    {
+        $key_code = $this->normalizeMemoryKeyCode($key_code);
+        if ($key_code === '') {
+            throw new Exception('Invalid memory key');
+        }
+        if ($key_code === LLM_MEMORY_DEFAULT_KEY) {
+            throw new Exception('The default global key cannot be deleted');
+        }
+        if (!$this->hasMemoryKeyRegistry()) {
+            throw new Exception('Memory key registry is not available');
+        }
+
+        $usage = $this->getMemoryKeyUsageMap();
+        $key_usage = $usage[$key_code] ?? array(
+            'rules_count' => 0,
+            'current_rows' => 0,
+            'history_rows' => 0,
+        );
+        if ((int)$key_usage['rules_count'] > 0) {
+            throw new Exception('Cannot delete a memory key that is still attached to rules');
+        }
+        if ((int)$key_usage['current_rows'] > 0 || (int)$key_usage['history_rows'] > 0) {
+            throw new Exception('Cannot delete a memory key that still has saved memory data');
+        }
+
+        $this->db->execute_update_db(
+            "DELETE FROM llm_memory_keys WHERE key_code = :code",
+            array(':code' => $key_code)
+        );
+
+        return true;
+    }
+
     public function getEditorBootstrap($settings_model = null)
     {
         $llm_config = $this->getLlmConfig();
@@ -750,6 +811,78 @@ class LlmMemoryRuleService extends BaseLlmService
         $label = str_replace(array('_', '-'), ' ', (string)$code);
         $label = ucwords(trim($label));
         return $label !== '' ? $label : 'Global';
+    }
+
+    private function getMemoryKeyUsageMap()
+    {
+        $usage = array();
+
+        if ($this->hasMemoryKeyRegistry() && $this->hasRuleKeyBindings()) {
+            try {
+                $rule_rows = $this->db->query_db(
+                    "SELECT mk.key_code, COUNT(*) AS rules_count
+                     FROM llm_memory_rule_keys rk
+                     INNER JOIN llm_memory_keys mk ON mk.id = rk.id_llm_memory_keys
+                     GROUP BY mk.key_code"
+                );
+                foreach ((array)$rule_rows as $row) {
+                    $code = $this->normalizeMemoryKeyCode($row['key_code'] ?? '');
+                    if ($code === '') {
+                        continue;
+                    }
+                    if (!isset($usage[$code])) {
+                        $usage[$code] = array();
+                    }
+                    $usage[$code]['rules_count'] = (int)($row['rules_count'] ?? 0);
+                }
+            } catch (Exception $e) {
+                // keep zero usage fallback
+            }
+        }
+
+        $tables = array(
+            'current_rows' => LLM_MEMORY_DEFAULT_TABLE,
+            'history_rows' => LLM_MEMORY_DEFAULT_HISTORY_TABLE,
+        );
+        foreach ($tables as $field => $table_name) {
+            if (!$this->tableExists($table_name)) {
+                continue;
+            }
+            try {
+                $rows = $this->db->query_db(
+                    "SELECT memory_key, COUNT(*) AS row_count
+                     FROM {$table_name}
+                     GROUP BY memory_key"
+                );
+                foreach ((array)$rows as $row) {
+                    $code = $this->normalizeMemoryKeyCode($row['memory_key'] ?? '');
+                    if ($code === '') {
+                        continue;
+                    }
+                    if (!isset($usage[$code])) {
+                        $usage[$code] = array();
+                    }
+                    $usage[$code][$field] = (int)($row['row_count'] ?? 0);
+                }
+            } catch (Exception $e) {
+                // table might not exist yet on fresh installs
+            }
+        }
+
+        return $usage;
+    }
+
+    private function tableExists($table_name)
+    {
+        try {
+            $row = $this->db->query_db_first(
+                "SHOW TABLES LIKE :table_name",
+                array(':table_name' => $table_name)
+            );
+            return !empty($row);
+        } catch (Exception $e) {
+            return false;
+        }
     }
 
     private function getAvailableModelsForEditor()

@@ -84,6 +84,18 @@ class ModuleLlmMemoryController extends BaseController
                 $this->requireAccess('update');
                 $this->handleMemoryConfigSave();
                 break;
+            case 'memory_keys':
+                $this->requireAccess('select');
+                $this->handleMemoryKeys();
+                break;
+            case 'memory_activity':
+                $this->requireAccess('select');
+                $this->handleMemoryActivity();
+                break;
+            case 'memory_key_delete':
+                $this->requireAccess('delete');
+                $this->handleMemoryKeyDelete();
+                break;
             case 'memory_users':
                 $this->requireAccess('select');
                 $this->handleMemoryUsers();
@@ -339,10 +351,7 @@ class ModuleLlmMemoryController extends BaseController
 
             $allowedFields = [
                 'llm_memory_enabled',
-                'llm_memory_key',
                 'llm_memory_storage_mode',
-                'llm_memory_table_name',
-                'llm_memory_history_table_name',
             ];
 
             $model = $this->getSettingsModel();
@@ -361,6 +370,45 @@ class ModuleLlmMemoryController extends BaseController
                 'success' => true,
                 'saved' => $saved,
             ]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleMemoryKeys()
+    {
+        try {
+            $this->sendJsonResponse([
+                'keys' => $this->getRuleService()->listMemoryKeysWithUsage(),
+            ]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleMemoryActivity()
+    {
+        try {
+            $limit = min((int)($_GET['limit'] ?? 25), 100);
+            $this->sendJsonResponse([
+                'items' => $this->getAdminService()->getRecentActivity($limit),
+            ]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleMemoryKeyDelete()
+    {
+        $key_code = (string)($_POST['key_code'] ?? '');
+        if (trim($key_code) === '') {
+            $this->sendJsonResponse(['error' => 'key_code required'], 400);
+            return;
+        }
+
+        try {
+            $deleted = $this->getRuleService()->deleteMemoryKey($key_code);
+            $this->sendJsonResponse(['deleted' => $deleted]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

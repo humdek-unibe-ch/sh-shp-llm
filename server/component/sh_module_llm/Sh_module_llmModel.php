@@ -94,15 +94,9 @@ class Sh_module_llmModel extends BaseModel
                 'fields' => [
                     $this->buildField('llm_memory_enabled', $fields, 'checkbox', 'Enable Memory System',
                         'Enable the global user memory system for personalized AI responses.'),
-                    $this->buildField('llm_memory_key', $fields, 'text', 'Memory Key',
-                        'Default memory key used to partition user memory data.'),
                     $this->buildField('llm_memory_storage_mode', $fields, 'select', 'Storage Mode',
                         'How memory updates are persisted.',
                         $this->getStorageModeOptions()),
-                    $this->buildField('llm_memory_table_name', $fields, 'text', 'Memory Table Name',
-                        'Name of the dataTable storing current effective memory.'),
-                    $this->buildField('llm_memory_history_table_name', $fields, 'text', 'History Table Name',
-                        'Name of the dataTable storing memory update history.'),
                 ],
             ],
         ];
