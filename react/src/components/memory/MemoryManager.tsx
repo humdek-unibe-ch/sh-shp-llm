@@ -289,7 +289,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
               <Tab.Pane eventKey="sources">
                 {loadingSources ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
                   <div>
-                    {sources.length === 0 ? <Alert variant="info">No write sources found.</Alert> : sources.map((source, index) => (
+                    {sources.length === 0 ? <Alert variant="info">No configured write sources found yet. This tab only shows enabled sources that currently point to memory rules.</Alert> : sources.map((source, index) => (
                       <Card key={`${String(source.source_category || '')}-${String(source.target_id || index)}`} className="mb-3 border">
                         <Card.Body>
                           <div className="d-flex justify-content-between align-items-start flex-wrap">

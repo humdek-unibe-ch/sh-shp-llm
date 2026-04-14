@@ -489,7 +489,7 @@ class LlmMemoryAdminService extends BaseLlmService
             }
 
             foreach ($this->extractMemoryJobsFromConfig($config) as $job) {
-                $rule_keys = $this->normalizeRuleKeys($job['memory_rule_keys'] ?? '');
+                $rule_keys = $this->resolveJobRuleKeys($job);
                 $sources[] = array(
                     'source_category' => 'form_action',
                     'source_type' => LLM_MEMORY_SOURCE_FORM_ACTION,
@@ -620,6 +620,41 @@ class LlmMemoryAdminService extends BaseLlmService
         $keys = array_map('trim', $keys);
         $keys = array_values(array_filter(array_unique($keys)));
         return $keys;
+    }
+
+    private function normalizeRuleIds($raw)
+    {
+        if (is_array($raw)) {
+            $ids = $raw;
+        } else {
+            $ids = explode(',', (string)$raw);
+        }
+
+        $ids = array_map('intval', $ids);
+        return array_values(array_filter(array_unique($ids)));
+    }
+
+    private function resolveJobRuleKeys($job)
+    {
+        $rule_keys = $this->normalizeRuleKeys($job['memory_rule_keys'] ?? '');
+        if (!empty($rule_keys)) {
+            return $rule_keys;
+        }
+
+        $rule_ids = $this->normalizeRuleIds($job['memory_rule_id'] ?? ($job['memory_rule_ids'] ?? ''));
+        if (empty($rule_ids)) {
+            return array();
+        }
+
+        $resolved = array();
+        foreach ($rule_ids as $rule_id) {
+            $rule = $this->rule_service->getRuleById($rule_id);
+            if (!empty($rule['key'])) {
+                $resolved[] = $rule['key'];
+            }
+        }
+
+        return array_values(array_unique($resolved));
     }
 
     private function buildActionUrl($action_id)

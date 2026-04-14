@@ -47,9 +47,7 @@ class LlmMemoryUpdateService extends BaseLlmService
     public function executeDirectMapping($rule, $normalized_payload)
     {
         $user_id = $normalized_payload['user_id'];
-        $memory_key = !empty($normalized_payload['memory_key_override'])
-            ? $normalized_payload['memory_key_override']
-            : $this->config_service->resolveMemoryKey($rule);
+        $memory_key = $this->resolveEffectiveMemoryKey($rule, $normalized_payload);
         $storage_mode = !empty($normalized_payload['force_storage_mode'])
             ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
             : $this->config_service->resolveStorageMode($rule);
@@ -111,9 +109,7 @@ class LlmMemoryUpdateService extends BaseLlmService
     public function executeLlmSummarization($rule, $normalized_payload)
     {
         $user_id = $normalized_payload['user_id'];
-        $memory_key = !empty($normalized_payload['memory_key_override'])
-            ? $normalized_payload['memory_key_override']
-            : $this->config_service->resolveMemoryKey($rule);
+        $memory_key = $this->resolveEffectiveMemoryKey($rule, $normalized_payload);
         $storage_mode = !empty($normalized_payload['force_storage_mode'])
             ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
             : $this->config_service->resolveStorageMode($rule);
@@ -140,7 +136,7 @@ class LlmMemoryUpdateService extends BaseLlmService
         $this->storage_service->initializeMemoryTables();
         $current_memory = $this->storage_service->getEffectiveMemory($user_id, $memory_key);
 
-        $prompt = $this->buildPrompt($rule, $normalized_payload, $current_memory);
+        $prompt = $this->buildPrompt($rule, $normalized_payload, $current_memory, $memory_key);
         $model = !empty($rule['llm_model']) ? $rule['llm_model'] : null;
         $temperature = isset($rule['llm_temperature']) ? (float)$rule['llm_temperature'] : 0.2;
         $max_tokens = isset($rule['llm_max_tokens']) ? (int)$rule['llm_max_tokens'] : 1200;
@@ -216,9 +212,9 @@ class LlmMemoryUpdateService extends BaseLlmService
      * @param array|null $current_memory
      * @return array API messages
      */
-    private function buildPrompt($rule, $normalized_payload, $current_memory)
+    private function buildPrompt($rule, $normalized_payload, $current_memory, $memory_key)
     {
-        $variables = $this->buildInterpolationVariables($rule, $normalized_payload, $current_memory);
+        $variables = $this->buildInterpolationVariables($rule, $normalized_payload, $current_memory, $memory_key);
         $prompt_text = $this->resolvePromptTemplate($rule);
         $interpolated = $this->interpolatePrompt($prompt_text, $variables);
 
@@ -246,10 +242,10 @@ class LlmMemoryUpdateService extends BaseLlmService
     /**
      * Build the full set of interpolation variables available to the prompt.
      */
-    private function buildInterpolationVariables($rule, $normalized_payload, $current_memory)
+    private function buildInterpolationVariables($rule, $normalized_payload, $current_memory, $memory_key)
     {
         $vars = [
-            'memory_key'          => $this->config_service->resolveMemoryKey($rule),
+            'memory_key'          => $memory_key,
             'memory_text'         => $current_memory['memory_text'] ?? '',
             'memory_json'         => $current_memory['memory_json'] ?? '{}',
             'source_type'         => $normalized_payload['source_type'] ?? '',
@@ -559,6 +555,13 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function handleFailedUpdate($user_id, $rule_key, $dedupe_key, $error_detail)
     {
         $this->logFailure($user_id, $rule_key, $dedupe_key, $error_detail);
+    }
+
+    private function resolveEffectiveMemoryKey($rule, $normalized_payload)
+    {
+        return !empty($normalized_payload['memory_key_override'])
+            ? (string)$normalized_payload['memory_key_override']
+            : $this->config_service->resolveMemoryKey($rule);
     }
 }
 ?>

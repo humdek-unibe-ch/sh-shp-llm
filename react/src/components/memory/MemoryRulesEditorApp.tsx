@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Button, Card, Col, Form, ListGroup, Row, Spinner } from 'react-bootstrap';
+import CreatableSelect from 'react-select/creatable';
+import { Alert, Badge, Button, ButtonGroup, Card, Col, Dropdown, Form, Row, Spinner } from 'react-bootstrap';
 import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import { PromptBuilderModal } from '../prompts/PromptBuilderModal';
 import { PromptDatasetsModal } from '../prompts/PromptDatasetsModal';
@@ -20,7 +21,35 @@ import {
   type PromptVersion,
 } from '../prompts/promptTypes';
 import { memoryApi } from '../../utils/api';
+import { SearchableSelect } from '../settings/SearchableSelect';
+import '../prompts/PromptLab.css';
 import './MemoryRulesEditor.css';
+
+declare const $: any;
+
+interface Option {
+  value: string;
+  label: string;
+}
+
+interface MemoryKeyOption {
+  code: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+}
+
+interface EditorDefaults {
+  llm_model: string;
+  llm_temperature: string;
+  llm_max_tokens: string;
+  storage_mode: string;
+}
+
+interface SectionInfo {
+  id: number;
+  name: string;
+}
 
 export interface MemoryRuleDraft {
   id: number;
@@ -28,6 +57,7 @@ export interface MemoryRuleDraft {
   label: string;
   enabled: boolean;
   memory_key: string;
+  memory_keys: string[];
   source_type: string;
   source_match: Record<string, unknown>;
   trigger_types: string[];
@@ -97,6 +127,11 @@ function ensurePromptMeta(meta: PromptMetaState): NonNullable<PromptMetaState['p
   return meta.prompt;
 }
 
+function humanizeKeyLabel(code: string): string {
+  const cleaned = String(code || '').replace(/[_-]+/g, ' ').trim();
+  return cleaned ? cleaned.replace(/\b\w/g, (char) => char.toUpperCase()) : 'Global';
+}
+
 function getDefaultRule(index = 0): MemoryRuleDraft {
   return {
     id: 0,
@@ -104,6 +139,7 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
     label: `Memory Rule ${index + 1}`,
     enabled: true,
     memory_key: 'global',
+    memory_keys: ['global'],
     source_type: 'form_action_submit',
     source_match: {},
     trigger_types: ['finished'],
@@ -112,8 +148,8 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
     field_mapping: {},
     data_config: [],
     llm_model: '',
-    llm_temperature: '0.2',
-    llm_max_tokens: '1200',
+    llm_temperature: '',
+    llm_max_tokens: '',
     refresh_sections: [],
     usage_tags: [],
     prompt_template: '',
@@ -124,12 +160,20 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
 
 function normalizeRule(raw: any, index: number): MemoryRuleDraft {
   const fallback = getDefaultRule(index);
+  const memoryKeys = Array.isArray(raw?.memory_keys)
+    ? raw.memory_keys.map((value: unknown) => String(value).trim()).filter(Boolean)
+    : [];
+  const nextMemoryKeys = memoryKeys.length > 0
+    ? Array.from(new Set(memoryKeys))
+    : [typeof raw?.memory_key === 'string' && raw.memory_key.trim() !== '' ? raw.memory_key : 'global'];
+
   return {
     id: Number(raw?.id || 0),
     key: typeof raw?.key === 'string' ? raw.key : fallback.key,
     label: typeof raw?.label === 'string' ? raw.label : fallback.label,
     enabled: raw?.enabled !== false,
-    memory_key: typeof raw?.memory_key === 'string' && raw.memory_key.trim() !== '' ? raw.memory_key : 'global',
+    memory_key: nextMemoryKeys[0] || 'global',
+    memory_keys: nextMemoryKeys,
     source_type: typeof raw?.source_type === 'string' ? raw.source_type : fallback.source_type,
     source_match: raw?.source_match && typeof raw.source_match === 'object' && !Array.isArray(raw.source_match) ? raw.source_match : {},
     trigger_types: Array.isArray(raw?.trigger_types) ? raw.trigger_types.map((value: unknown) => String(value)) : ['finished'],
@@ -140,8 +184,8 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
       : {},
     data_config: Array.isArray(raw?.data_config) ? raw.data_config : [],
     llm_model: typeof raw?.llm_model === 'string' ? raw.llm_model : '',
-    llm_temperature: raw?.llm_temperature != null ? String(raw.llm_temperature) : '0.2',
-    llm_max_tokens: raw?.llm_max_tokens != null ? String(raw.llm_max_tokens) : '1200',
+    llm_temperature: raw?.llm_temperature != null ? String(raw.llm_temperature) : '',
+    llm_max_tokens: raw?.llm_max_tokens != null ? String(raw.llm_max_tokens) : '',
     refresh_sections: Array.isArray(raw?.refresh_sections) ? raw.refresh_sections : [],
     usage_tags: Array.isArray(raw?.usage_tags) ? raw.usage_tags.map((value: unknown) => String(value)) : [],
     prompt_template: typeof raw?.prompt_template === 'string' ? raw.prompt_template : '',
@@ -156,7 +200,8 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
     key: rule.key.trim(),
     label: rule.label.trim(),
     enabled: !!rule.enabled,
-    memory_key: rule.memory_key.trim() || 'global',
+    memory_key: rule.memory_keys[0] || 'global',
+    memory_keys: rule.memory_keys,
     source_type: rule.source_type.trim(),
     source_match: rule.source_match || {},
     trigger_types: rule.trigger_types.filter(Boolean),
@@ -165,8 +210,8 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
     field_mapping: rule.field_mapping || {},
     data_config: rule.data_config || [],
     llm_model: rule.llm_model || '',
-    llm_temperature: rule.llm_temperature || '0.2',
-    llm_max_tokens: rule.llm_max_tokens || '1200',
+    llm_temperature: rule.llm_temperature || '',
+    llm_max_tokens: rule.llm_max_tokens || '',
     refresh_sections: rule.refresh_sections || [],
     usage_tags: rule.usage_tags || [],
   };
@@ -174,9 +219,10 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
 
 function validateRule(rule: MemoryRuleDraft): string[] {
   const errors: string[] = [];
-  if (!rule.key.trim()) errors.push('Rule key is required.');
-  if (!rule.source_type.trim()) errors.push('source_type is required.');
-  if (!rule.execution_mode.trim()) errors.push('execution_mode is required.');
+  if (!rule.label.trim()) errors.push('Rule label is required.');
+  if (!rule.source_type.trim()) errors.push('Source type is required.');
+  if (!rule.execution_mode.trim()) errors.push('Execution mode is required.');
+  if (!Array.isArray(rule.memory_keys) || rule.memory_keys.length === 0) errors.push('Select at least one memory key.');
   return errors;
 }
 
@@ -191,7 +237,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [sourceMatchJson, setSourceMatchJson] = useState('{}');
   const [fieldMappingJson, setFieldMappingJson] = useState('{}');
   const [dataConfigJson, setDataConfigJson] = useState('[]');
   const [refreshSectionsJson, setRefreshSectionsJson] = useState('[]');
@@ -201,8 +246,32 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   const [showDatasets, setShowDatasets] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [diffState, setDiffState] = useState<DiffState>({ initialLeftKey: 'draft', initialRightKey: 'draft' });
+  const [availableKeys, setAvailableKeys] = useState<MemoryKeyOption[]>([]);
+  const [defaults, setDefaults] = useState<EditorDefaults>({ llm_model: '', llm_temperature: '', llm_max_tokens: '', storage_mode: 'both' });
+  const [models, setModels] = useState<Array<{ id: string; name?: string }>>([]);
+  const [sourceTypeOptions, setSourceTypeOptions] = useState<Option[]>([]);
+  const [executionModeOptions, setExecutionModeOptions] = useState<Option[]>([]);
+  const [storageModeOptions, setStorageModeOptions] = useState<Option[]>([]);
+  const [sections, setSections] = useState<SectionInfo[]>([]);
+  const [sectionSearch, setSectionSearch] = useState('');
 
   const api = useMemo(() => createPromptLabApi(config.promptLabEndpoint, config.csrfToken), [config.csrfToken, config.promptLabEndpoint]);
+
+  const upsertAvailableKeys = (incomingKeys: MemoryKeyOption[]) => {
+    setAvailableKeys((current) => {
+      const merged = new Map<string, MemoryKeyOption>();
+      [...current, ...incomingKeys].forEach((item) => {
+        if (!item?.code) return;
+        merged.set(item.code, {
+          code: item.code,
+          label: item.label || humanizeKeyLabel(item.code),
+          description: item.description || '',
+          enabled: item.enabled !== false,
+        });
+      });
+      return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label));
+    });
+  };
 
   const loadRule = async (ruleId: number, currentRules?: MemoryRuleDraft[]) => {
     const existing = (currentRules || rules).find((rule) => rule.id === ruleId);
@@ -213,10 +282,10 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       const response = await memoryApi.getRule(ruleId);
       if (response.error) throw new Error(response.error);
       const normalized = normalizeRule(response.rule, existing ? (currentRules || rules).indexOf(existing) : 0);
+      upsertAvailableKeys(normalized.memory_keys.map((code) => ({ code, label: humanizeKeyLabel(code), description: '', enabled: true })));
       setDraft(normalized);
       setMetaState(parsePromptMeta(normalized.prompt_meta_json));
       setLastPlaygroundCapture(null);
-      setSourceMatchJson(toPrettyJson(normalized.source_match));
       setFieldMappingJson(toPrettyJson(normalized.field_mapping));
       setDataConfigJson(toPrettyJson(normalized.data_config));
       setRefreshSectionsJson(toPrettyJson(normalized.refresh_sections));
@@ -225,14 +294,23 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     }
   };
 
-  const loadRules = async (nextSelectedId?: number | null) => {
+  const loadRulesBootstrap = async (nextSelectedId?: number | null) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await memoryApi.getRules();
+      const response = await memoryApi.getRulesBootstrap();
       if (response.error) throw new Error(response.error);
+
       const nextRules = (response.rules || []).map((rule, index) => normalizeRule(rule, index));
       setRules(nextRules);
+      setDefaults(response.editor?.defaults || { llm_model: '', llm_temperature: '', llm_max_tokens: '', storage_mode: 'both' });
+      setModels(response.editor?.models || []);
+      setSourceTypeOptions(response.editor?.source_types || []);
+      setExecutionModeOptions(response.editor?.execution_modes || []);
+      setStorageModeOptions(response.editor?.storage_modes || []);
+      setSections(response.editor?.sections || []);
+      upsertAvailableKeys(response.editor?.available_keys || []);
+
       const preferredId = nextSelectedId ?? selectedRuleId ?? config.selectedRuleId ?? nextRules[0]?.id ?? null;
       if (preferredId) {
         await loadRule(preferredId, nextRules);
@@ -249,8 +327,15 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   };
 
   useEffect(() => {
-    loadRules(config.selectedRuleId ?? null).catch(() => undefined);
+    loadRulesBootstrap(config.selectedRuleId ?? null).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const modal = document.querySelector('#data-config-builder-wrapper .data_config_builder_modal_holder');
+    if (modal) {
+      document.body.appendChild(modal);
+    }
   }, []);
 
   useEffect(() => {
@@ -266,8 +351,57 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       rule.key.toLowerCase().includes(query)
       || rule.label.toLowerCase().includes(query)
       || rule.source_type.toLowerCase().includes(query)
+      || rule.memory_keys.some((key) => key.toLowerCase().includes(query))
     );
   }, [filter, rules]);
+
+  const keyLabelMap = useMemo(() => {
+    const map = new Map<string, MemoryKeyOption>();
+    availableKeys.forEach((item) => map.set(item.code, item));
+    return map;
+  }, [availableKeys]);
+
+  const selectedKeyOptions = useMemo(() => {
+    if (!draft) return [];
+    return draft.memory_keys.map((code) => ({
+      value: code,
+      label: keyLabelMap.get(code)?.label || humanizeKeyLabel(code),
+    }));
+  }, [draft, keyLabelMap]);
+
+  const memoryKeyOptions = useMemo(() => availableKeys.map((item) => ({
+    value: item.code,
+    label: item.label,
+  })), [availableKeys]);
+
+  const sourceTypeLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    sourceTypeOptions.forEach((item) => map.set(item.value, item.label));
+    return map;
+  }, [sourceTypeOptions]);
+
+  const executionModeLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    executionModeOptions.forEach((item) => map.set(item.value, item.label));
+    return map;
+  }, [executionModeOptions]);
+
+  const storageModeLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    storageModeOptions.forEach((item) => map.set(item.value, item.label));
+    return map;
+  }, [storageModeOptions]);
+
+  const modelOptions = useMemo(() => [
+    {
+      value: '',
+      label: defaults.llm_model ? `Use module default (${defaults.llm_model})` : 'Use module default',
+    },
+    ...models.map((model) => ({
+      value: model.id,
+      label: model.name || model.id,
+    })),
+  ], [defaults.llm_model, models]);
 
   const promptDescriptor = useMemo<PromptDescriptor | null>(() => {
     if (!draft?.id) {
@@ -283,13 +417,15 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     };
   }, [config.pageId, draft?.id, draft?.key, draft?.label]);
 
+  const effectiveTemperature = draft?.llm_temperature || defaults.llm_temperature || '0.2';
+  const effectiveMaxTokens = draft?.llm_max_tokens || defaults.llm_max_tokens || '1200';
   const promptRuntimeOverrides = useMemo(() => ({
     llm_model: draft?.llm_model || '',
-    llm_temperature: draft?.llm_temperature || '0.2',
-    llm_max_tokens: draft?.llm_max_tokens || '1200',
+    llm_temperature: draft?.llm_temperature || '',
+    llm_max_tokens: draft?.llm_max_tokens || '',
   }), [draft?.llm_max_tokens, draft?.llm_model, draft?.llm_temperature]);
 
-  const { bootstrap: promptBootstrap, loading: promptLoading, error: promptError, reload: reloadPromptBootstrap } = usePromptBootstrap({
+  const { bootstrap: promptBootstrap, loading: promptLoading, error: promptError, reload: reloadPromptBootstrap, setBootstrap: setPromptBootstrap } = usePromptBootstrap({
     api,
     descriptor: promptDescriptor || {
       ownerType: 'llm_memory_rule',
@@ -310,13 +446,92 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   const effectiveVariablesSchema = metaState.prompt?.variablesSchema || promptBootstrap?.variables_schema || [];
   const promptChangeNote = metaState.prompt?.pendingChangeNote || '';
   const isDirty = (draft?.prompt_template || '') !== (activeVersion?.template_raw || '');
-  const defaultPromptModel =
-    String(promptRuntimeOverrides.llm_model || '') ||
-    promptBootstrap?.models?.[0]?.id ||
-    null;
+  const defaultPromptModel = String(draft?.llm_model || defaults.llm_model || '') || promptBootstrap?.models?.[0]?.id || null;
 
   const setDraftPatch = (patch: Partial<MemoryRuleDraft>) => {
     setDraft((current) => current ? { ...current, ...patch } : current);
+  };
+
+  const getSelectedSectionIds = (): number[] => {
+    if (!draft?.refresh_sections) {
+      return [];
+    }
+    return draft.refresh_sections
+      .map((value) => Number(value))
+      .filter((value) => !Number.isNaN(value));
+  };
+
+  const setSelectedSectionIds = (ids: number[]) => {
+    setDraftPatch({ refresh_sections: ids });
+    setRefreshSectionsJson(toPrettyJson(ids));
+  };
+
+  const toggleSection = (sectionId: number) => {
+    const current = getSelectedSectionIds();
+    if (current.includes(sectionId)) {
+      setSelectedSectionIds(current.filter((id) => id !== sectionId));
+      return;
+    }
+    setSelectedSectionIds([...current, sectionId]);
+  };
+
+  const filteredSections = sections.filter((section) => (
+    !sectionSearch || section.name.toLowerCase().includes(sectionSearch.toLowerCase())
+  ));
+
+  const getDataConfigLabel = (): string => {
+    if (!draft?.data_config || draft.data_config.length === 0) {
+      return 'Add Data Config';
+    }
+    return 'Edit Data Config';
+  };
+
+  const openDataConfigModal = () => {
+    if (typeof $ === 'undefined') {
+      return;
+    }
+
+    try {
+      const textarea = document.querySelector('textarea[name="data_config"]') as HTMLTextAreaElement | null;
+      if (textarea) {
+        textarea.value = dataConfigJson || '';
+        textarea.dispatchEvent(new Event('change'));
+      }
+
+      if (typeof (window as any).dataConfigEditor !== 'undefined' && (window as any).dataConfigEditor) {
+        try {
+          const value = dataConfigJson ? JSON.parse(dataConfigJson) : [];
+          (window as any).dataConfigEditor.setValue(value);
+        } catch {
+          // keep current editor state when JSON is invalid
+        }
+      }
+
+      const saveBtn = document.querySelector('.saveDataConfig');
+      if (saveBtn) {
+        saveBtn.setAttribute('data-dismiss', 'modal');
+      }
+
+      $('.saveDataConfig').off('click.llmmemory').on('click.llmmemory', () => {
+        let value = '[]';
+        if (typeof (window as any).dataConfigEditor !== 'undefined' && (window as any).dataConfigEditor) {
+          value = JSON.stringify((window as any).dataConfigEditor.getValue(), null, 3);
+        } else if (textarea) {
+          value = textarea.value || '[]';
+        }
+
+        setDataConfigJson(value);
+        try {
+          setDraftPatch({ data_config: parseJsonArray<Record<string, unknown>>(value) });
+        } catch {
+          // keep JSON text for later validation on save
+        }
+      });
+
+      $('.data_config_builder_modal_holder').modal({ backdrop: false });
+    } catch {
+      // keep silent, same behavior as scripts UI
+    }
   };
 
   const syncPromptTemplate = (nextValue: string) => {
@@ -377,7 +592,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     try {
       const created = await memoryApi.createRule(sanitizeRule(baseRule), baseRule.prompt_template, baseRule.prompt_meta_json, '');
       if (created.error) throw new Error(created.error);
-      await loadRules(created.rule.id);
+      await loadRulesBootstrap(created.rule.id);
       setSuccess('Rule created.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create rule');
@@ -393,7 +608,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     try {
       const duplicated = await memoryApi.duplicateRule(draft.id);
       if (duplicated.error) throw new Error(duplicated.error);
-      await loadRules(duplicated.rule.id);
+      await loadRulesBootstrap(duplicated.rule.id);
       setSuccess('Rule duplicated.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to duplicate rule');
@@ -403,13 +618,13 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   };
 
   const handleDelete = async () => {
-    if (!draft?.id || !window.confirm(`Delete memory rule "${draft.label || draft.key}"?`)) return;
+    if (!draft?.id || !window.confirm(`Delete memory rule "${draft.label || `Rule #${draft.id}`}"?`)) return;
     setSaving(true);
     setError(null);
     try {
       const response = await memoryApi.deleteRule(draft.id);
       if (response.error) throw new Error(response.error);
-      await loadRules(null);
+      await loadRulesBootstrap(null);
       setSuccess('Rule deleted.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete rule');
@@ -424,7 +639,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     try {
       nextDraft = {
         ...draft,
-        source_match: parseJsonObject(sourceMatchJson),
+        source_match: {},
         field_mapping: parseJsonObject(fieldMappingJson) as Record<string, string>,
         data_config: parseJsonArray<Record<string, unknown>>(dataConfigJson),
         refresh_sections: parseJsonArray<number | string>(refreshSectionsJson),
@@ -444,16 +659,32 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     setSaving(true);
     setError(null);
     try {
-      const response = await memoryApi.updateRule(
-        nextDraft.id,
-        sanitizeRule(nextDraft),
-        nextDraft.prompt_template,
-        nextDraft.prompt_meta_json,
-        promptChangeNote,
-      );
+      const response = await memoryApi.updateRule(nextDraft.id, sanitizeRule(nextDraft), nextDraft.prompt_template, nextDraft.prompt_meta_json, promptChangeNote);
       if (response.error) throw new Error(response.error);
-      await loadRules(nextDraft.id);
-      await reloadPromptBootstrap().catch(() => undefined);
+      const savedRule = normalizeRule(response.rule, rules.findIndex((rule) => rule.id === nextDraft.id));
+      await loadRulesBootstrap(nextDraft.id);
+      try {
+        const bootstrap = await api.bootstrapOwner(
+          {
+            ownerType: 'llm_memory_rule',
+            ownerId: savedRule.id,
+            promptSlot: 'memory_rule',
+            languageId: 1,
+            pageId: config.pageId ?? null,
+            title: savedRule.label || `Rule #${savedRule.id}`,
+          },
+          response.rule.prompt_template || savedRule.prompt_template || '',
+          response.rule.prompt_meta_json || savedRule.prompt_meta_json || '{}',
+          {
+            llm_model: savedRule.llm_model || '',
+            llm_temperature: savedRule.llm_temperature || '',
+            llm_max_tokens: savedRule.llm_max_tokens || '',
+          },
+        );
+        setPromptBootstrap(bootstrap);
+      } catch {
+        await reloadPromptBootstrap().catch(() => undefined);
+      }
       setSuccess('Rule saved.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save rule');
@@ -462,6 +693,42 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     }
   };
 
+  const renderRuleCard = (rule: MemoryRuleDraft) => {
+    const firstKey = rule.memory_keys[0];
+    const firstKeyLabel = keyLabelMap.get(firstKey)?.label || humanizeKeyLabel(firstKey || '');
+    const extraKeys = Math.max(0, rule.memory_keys.length - 1);
+    const isActive = rule.id === selectedRuleId;
+
+    return (
+      <button
+        key={rule.id}
+        type="button"
+        className={`memory-rule-card ${isActive ? 'is-active' : ''}`}
+        onClick={() => loadRule(rule.id).catch(() => undefined)}
+      >
+        <div className="memory-rule-card__header">
+          <div>
+            <div className="memory-rule-card__title">{rule.label || `Rule #${rule.id}`}</div>
+            <div className="memory-rule-card__slug">Rule #{rule.id}</div>
+          </div>
+          <Badge variant={rule.enabled ? 'success' : 'secondary'}>{rule.enabled ? 'Enabled' : 'Disabled'}</Badge>
+        </div>
+        <div className="memory-rule-card__badges">
+          <span className="badge badge-light">{sourceTypeLabelMap.get(rule.source_type) || rule.source_type}</span>
+          <span className="badge badge-light">{executionModeLabelMap.get(rule.execution_mode) || rule.execution_mode}</span>
+        </div>
+        <div className="memory-rule-card__meta">
+          <span>{firstKeyLabel}{extraKeys > 0 ? ` +${extraKeys}` : ''}</span>
+          <span>{rule.sources_count || 0} sources</span>
+        </div>
+      </button>
+    );
+  };
+
+  const showAutomaticSourceHint = draft?.source_type === 'login' || draft?.source_type === 'profile_name_change';
+  const isLlmMode = draft?.execution_mode === 'llm_summarize';
+  const isDirectMode = draft?.execution_mode === 'direct_mapping';
+
   return (
     <div className="llm-memory-rules-editor-root">
       {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
@@ -469,57 +736,22 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       {promptError && <Alert variant="warning">Prompt Lab: {promptError}</Alert>}
       <Row>
         <Col lg={4} className="mb-3">
-          <Card>
+          <Card className="memory-rule-sidebar">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <strong>Rules</strong>
               <Button size="sm" onClick={handleCreate} disabled={saving}>New Rule</Button>
             </Card.Header>
             <Card.Body>
-              <Form.Control
-                type="text"
-                size="sm"
-                placeholder="Filter rules..."
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-                className="mb-2"
-              />
-              {loading ? (
-                <div className="text-center py-3"><Spinner animation="border" size="sm" /></div>
-              ) : (
-                <ListGroup className="memory-rule-list">
-                  {filteredRules.map((rule) => (
-                    <ListGroup.Item key={rule.id} action active={rule.id === selectedRuleId} onClick={() => loadRule(rule.id).catch(() => undefined)}>
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div>
-                          <div className="font-weight-bold">{rule.label || rule.key}</div>
-                          <div className="memory-rule-subtitle text-muted">{rule.key}</div>
-                          <div className="memory-rule-subtitle text-muted">{rule.source_type} | {rule.execution_mode}</div>
-                        </div>
-                        <div className="text-right">
-                          <Badge variant={rule.enabled ? 'success' : 'secondary'}>{rule.enabled ? 'ON' : 'OFF'}</Badge>
-                          <div className="memory-rule-subtitle text-muted mt-1">{rule.sources_count || 0} sources</div>
-                        </div>
-                      </div>
-                    </ListGroup.Item>
-                  ))}
-                  {filteredRules.length === 0 && <ListGroup.Item className="text-muted">No rules found.</ListGroup.Item>}
-                </ListGroup>
-              )}
+              <Form.Control type="text" size="sm" placeholder="Filter rules..." value={filter} onChange={(event) => setFilter(event.target.value)} className="mb-3" />
+              {loading ? <div className="text-center py-3"><Spinner animation="border" size="sm" /></div> : <div className="memory-rule-list">{filteredRules.map(renderRuleCard)}{filteredRules.length === 0 && <div className="text-muted small px-1 py-2">No rules found.</div>}</div>}
             </Card.Body>
           </Card>
         </Col>
         <Col lg={8}>
-          {!draft ? (
-            <Card>
-              <Card.Body className="text-muted text-center py-5">Select a memory rule to edit it.</Card.Body>
-            </Card>
-          ) : (
-            <Card>
+          {!draft ? <Card><Card.Body className="text-muted text-center py-5">Select a memory rule to edit it.</Card.Body></Card> : (
+            <Card className="memory-rule-editor">
               <Card.Header className="d-flex justify-content-between align-items-center flex-wrap">
-                <div>
-                  <strong>{draft.label || draft.key}</strong>
-                  <div className="memory-rule-subtitle text-muted">Rule ID {draft.id}</div>
-                </div>
+                <div><strong>{draft.label || `Rule #${draft.id}`}</strong><div className="memory-rule-subtitle text-muted">Rule ID {draft.id}</div></div>
                 <div className="d-flex align-items-center">
                   <Button size="sm" variant="outline-secondary" className="mr-2" onClick={handleDuplicate} disabled={saving}>Duplicate</Button>
                   <Button size="sm" variant="outline-danger" className="mr-2" onClick={handleDelete} disabled={saving}>Delete</Button>
@@ -527,246 +759,49 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                 </div>
               </Card.Header>
               <Card.Body>
-                <Row>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Rule Key</Form.Label>
-                      <Form.Control value={draft.key} onChange={(event) => setDraftPatch({ key: event.target.value })} />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Label</Form.Label>
-                      <Form.Control value={draft.label} onChange={(event) => setDraftPatch({ label: event.target.value })} />
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label>Source Type</Form.Label>
-                      <Form.Control as="select" value={draft.source_type} onChange={(event) => setDraftPatch({ source_type: event.target.value })}>
-                        <option value="form_action_submit">form_action_submit</option>
-                        <option value="llm_chat_form_submit">llm_chat_form_submit</option>
-                        <option value="login">login</option>
-                        <option value="profile_name_change">profile_name_change</option>
-                      </Form.Control>
-                    </Form.Group>
-                  </Col>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label>Execution Mode</Form.Label>
-                      <Form.Control as="select" value={draft.execution_mode} onChange={(event) => setDraftPatch({ execution_mode: event.target.value })}>
-                        <option value="llm_summarize">llm_summarize</option>
-                        <option value="direct_mapping">direct_mapping</option>
-                      </Form.Control>
-                    </Form.Group>
-                  </Col>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label>Storage Override</Form.Label>
-                      <Form.Control as="select" value={draft.storage_mode_override} onChange={(event) => setDraftPatch({ storage_mode_override: event.target.value })}>
-                        <option value="">Use module default</option>
-                        <option value="record">record</option>
-                        <option value="log">log</option>
-                        <option value="both">both</option>
-                      </Form.Control>
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label>Memory Key</Form.Label>
-                      <Form.Control value={draft.memory_key} onChange={(event) => setDraftPatch({ memory_key: event.target.value })} />
-                    </Form.Group>
-                  </Col>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label>Temperature</Form.Label>
-                      <Form.Control value={draft.llm_temperature} onChange={(event) => setDraftPatch({ llm_temperature: event.target.value })} />
-                    </Form.Group>
-                  </Col>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label>Max Tokens</Form.Label>
-                      <Form.Control value={draft.llm_max_tokens} onChange={(event) => setDraftPatch({ llm_max_tokens: event.target.value })} />
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>LLM Model</Form.Label>
-                      <Form.Control value={draft.llm_model} onChange={(event) => setDraftPatch({ llm_model: event.target.value })} placeholder="Use module default when blank" />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Usage Tags</Form.Label>
-                      <Form.Control value={draft.usage_tags.join(', ')} onChange={(event) => setDraftPatch({ usage_tags: parseCsvList(event.target.value) })} placeholder="analytics, onboarding" />
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Enabled</Form.Label>
-                      <Form.Check type="switch" checked={draft.enabled} onChange={(event) => setDraftPatch({ enabled: event.target.checked })} label={draft.enabled ? 'Enabled' : 'Disabled'} />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Trigger Types</Form.Label>
-                      <Form.Control value={draft.trigger_types.join(', ')} onChange={(event) => setDraftPatch({ trigger_types: parseCsvList(event.target.value) })} placeholder="finished, updated" />
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col lg={6} className="mb-3">
-                    <Form.Label>Source Match JSON</Form.Label>
-                    <JsonMonacoEditor value={sourceMatchJson} minHeight={180} expectObject onChange={setSourceMatchJson} />
-                  </Col>
-                  <Col lg={6} className="mb-3">
-                    <Form.Label>Field Mapping JSON</Form.Label>
-                    <JsonMonacoEditor value={fieldMappingJson} minHeight={180} expectObject onChange={setFieldMappingJson} />
-                  </Col>
-                </Row>
-                <Row>
-                  <Col lg={6} className="mb-3">
-                    <Form.Label>Data Config JSON</Form.Label>
-                    <JsonMonacoEditor value={dataConfigJson} minHeight={220} onChange={setDataConfigJson} />
-                  </Col>
-                  <Col lg={6} className="mb-3">
-                    <Form.Label>Refresh Sections JSON</Form.Label>
-                    <JsonMonacoEditor value={refreshSectionsJson} minHeight={220} onChange={setRefreshSectionsJson} />
-                  </Col>
-                </Row>
+                <Card className="memory-rule-section"><Card.Header>Identity</Card.Header><Card.Body>
+                  <Row>
+                    <Col md={12}><Form.Group><Form.Label>Rule Label</Form.Label><Form.Control value={draft.label} onChange={(event) => setDraftPatch({ label: event.target.value })} placeholder="Profile name change memory" /><Form.Text className="text-muted">Use a human-readable name. Internal identifiers are handled automatically.</Form.Text></Form.Group></Col>
+                  </Row>
+                  <Form.Group className="mb-0"><Form.Label className="d-block">Enabled</Form.Label><ButtonGroup size="sm"><Button variant={draft.enabled ? 'success' : 'outline-secondary'} onClick={() => setDraftPatch({ enabled: true })}>Enabled</Button><Button variant={!draft.enabled ? 'secondary' : 'outline-secondary'} onClick={() => setDraftPatch({ enabled: false })}>Disabled</Button></ButtonGroup></Form.Group>
+                </Card.Body></Card>
 
-                <PromptToolbar
-                  activeVersion={activeVersion}
-                  dirty={isDirty}
-                  disabled={!promptDescriptor || promptLoading}
-                  changeNote={promptChangeNote}
-                  onChangeNote={handleChangeNote}
-                  onOpenVersions={() => {
-                    reloadPromptBootstrap().catch(() => undefined);
-                    setShowVersions(true);
-                  }}
-                  onOpenCompare={() => {
-                    const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft';
-                    setDiffState({
-                      initialLeftKey: activeKey,
-                      initialRightKey: 'draft',
-                    });
-                    setShowDiff(true);
-                  }}
-                  onOpenPlayground={() => setShowPlayground(true)}
-                  onOpenDatasets={() => setShowDatasets(true)}
-                  onOpenBuilder={() => setShowBuilder(true)}
-                />
+                <Card className="memory-rule-section"><Card.Header>When This Runs</Card.Header><Card.Body>
+                  <Row>
+                    <Col md={12}><Form.Group className="mb-0"><Form.Label>Source Type</Form.Label><Form.Control as="select" value={draft.source_type} onChange={(event) => setDraftPatch({ source_type: event.target.value })}>{sourceTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Form.Control><Form.Text className="text-muted">This decides whether the rule runs from login, profile updates, form actions, or llmChat fallback.</Form.Text></Form.Group></Col>
+                  </Row>
+                  {showAutomaticSourceHint ? <Alert variant="info" className="mb-0 mt-3">This source runs automatically from the system hook.</Alert> : <Alert variant="light" className="mb-0 mt-3">This rule runs only when it is explicitly attached to a form action, llmChat fallback, or matching source hook.</Alert>}
+                </Card.Body></Card>
 
-                <PromptEditor
-                  value={draft.prompt_template}
-                  language="markdown"
-                  onChange={syncPromptTemplate}
-                  minHeight={260}
-                />
+                <Card className="memory-rule-section"><Card.Header>Where It Writes</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Memory Keys</Form.Label><CreatableSelect isMulti className="memory-rule-select" classNamePrefix="react-select" value={selectedKeyOptions} options={memoryKeyOptions} placeholder="Search or create memory keys..." onCreateOption={(inputValue) => { const code = inputValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, ''); if (!code) return; upsertAvailableKeys([{ code, label: humanizeKeyLabel(code), description: '', enabled: true }]); setDraftPatch({ memory_keys: Array.from(new Set([...(draft.memory_keys || []), code])), memory_key: code }); }} onChange={(values) => { const nextKeys = (values || []).map((item) => item.value); setDraftPatch({ memory_keys: nextKeys, memory_key: nextKeys[0] || '' }); }} /><Form.Text className="text-muted">Selected keys become the memory spaces this rule updates. You can search existing keys or create new ones here.</Form.Text></Form.Group></Card.Body></Card>
+
+                <Card className="memory-rule-section"><Card.Header>How It Works</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Execution Mode</Form.Label><Form.Control as="select" value={draft.execution_mode} onChange={(event) => setDraftPatch({ execution_mode: event.target.value })}>{executionModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Form.Control><Form.Text className="text-muted">{draft.execution_mode === 'direct_mapping' ? 'Direct mapping writes stable fields straight into memory without calling the LLM.' : 'LLM summarize uses the prompt, current memory, and payload data to produce the new memory state.'}</Form.Text></Form.Group></Card.Body></Card>
+
+                <Card className="memory-rule-section"><Card.Header>Runtime Settings</Card.Header><Card.Body>
+                  <Row>
+                    <Col md={6}><Form.Group><Form.Label>Storage Override</Form.Label><Form.Control as="select" value={draft.storage_mode_override} onChange={(event) => setDraftPatch({ storage_mode_override: event.target.value })}>{storageModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Form.Control><Form.Text className="text-muted">Module default: {storageModeLabelMap.get(defaults.storage_mode) || defaults.storage_mode}</Form.Text></Form.Group></Col>
+                    {isLlmMode ? <Col md={6}><Form.Group><Form.Label>LLM Model</Form.Label><SearchableSelect options={modelOptions} value={draft.llm_model} onChange={(value) => setDraftPatch({ llm_model: value })} placeholder="Use module default" /><Form.Text className="text-muted">Default model: {defaults.llm_model || 'Not configured'}</Form.Text></Form.Group></Col> : null}
+                  </Row>
+                  {isLlmMode ? <Row><Col md={6}><Form.Group><Form.Label>Temperature</Form.Label><Form.Control value={draft.llm_temperature} onChange={(event) => setDraftPatch({ llm_temperature: event.target.value })} placeholder={effectiveTemperature} /><Form.Text className="text-muted">Leave blank to inherit the module default ({effectiveTemperature}).</Form.Text></Form.Group></Col><Col md={6}><Form.Group className="mb-0"><Form.Label>Max Tokens</Form.Label><Form.Control value={draft.llm_max_tokens} onChange={(event) => setDraftPatch({ llm_max_tokens: event.target.value })} placeholder={effectiveMaxTokens} /><Form.Text className="text-muted">Leave blank to inherit the module default ({effectiveMaxTokens}).</Form.Text></Form.Group></Col></Row> : null}
+                </Card.Body></Card>
+
+                {isDirectMode ? <Card className="memory-rule-section"><Card.Header>Direct Mapping</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Field Mapping</Form.Label><Form.Text className="text-muted mb-2">Use a JSON object like <code>{"{\"preferred_name\":\"{{first_name}}\",\"city\":\"{{city}}\"}"}</code>. Each key becomes a memory field, and each <code>{'{{value}}'}</code> placeholder is replaced from submitted data. A fuller example is documented in the global memory user guide.</Form.Text><JsonMonacoEditor value={fieldMappingJson} minHeight={220} expectObject onChange={setFieldMappingJson} /></Form.Group></Card.Body></Card> : null}
+                {isLlmMode ? <><Card className="memory-rule-section"><Card.Header>LLM Summarization Inputs</Card.Header><Card.Body><div className="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><div className="font-weight-bold">Data Config</div><div className="text-muted small">Reuse the shared data-config builder to pull extra values into the prompt context.</div></div><Button size="sm" variant={draft.data_config.length > 0 ? 'warning' : 'outline-secondary'} onClick={openDataConfigModal}>{getDataConfigLabel()}</Button></div>{draft.data_config.length > 0 ? <div className="mt-3 small text-muted">{draft.data_config.length} data config item{draft.data_config.length > 1 ? 's' : ''} configured.</div> : <div className="mt-3 small text-muted">No extra data sources configured yet.</div>}</Card.Body></Card><Card className="memory-rule-section"><Card.Header>Prompt</Card.Header><Card.Body><PromptToolbar activeVersion={activeVersion} dirty={isDirty} disabled={!promptDescriptor || promptLoading} changeNote={promptChangeNote} onChangeNote={handleChangeNote} onOpenVersions={() => { reloadPromptBootstrap().catch(() => undefined); setShowVersions(true); }} onOpenCompare={() => { const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft'; setDiffState({ initialLeftKey: activeKey, initialRightKey: 'draft' }); setShowDiff(true); }} onOpenPlayground={() => setShowPlayground(true)} onOpenDatasets={() => setShowDatasets(true)} onOpenBuilder={() => setShowBuilder(true)} /><PromptEditor value={draft.prompt_template} language="markdown" onChange={syncPromptTemplate} minHeight={260} /></Card.Body></Card></> : null}
+
+                <Card className="memory-rule-section"><Card.Header>Advanced</Card.Header><Card.Body><Row><Col md={6}><Form.Group><Form.Label>Usage Tags</Form.Label><Form.Control value={draft.usage_tags.join(', ')} onChange={(event) => setDraftPatch({ usage_tags: parseCsvList(event.target.value) })} placeholder="analytics, onboarding" /></Form.Group></Col><Col md={6}><Form.Group><Form.Label>Refresh Sections</Form.Label><Dropdown><Dropdown.Toggle size="sm" variant="outline-secondary" className="w-100 text-left d-flex justify-content-between align-items-center"><span className="text-truncate">{getSelectedSectionIds().length === 0 ? 'Select sections...' : `${getSelectedSectionIds().length} section${getSelectedSectionIds().length > 1 ? 's' : ''} selected`}</span></Dropdown.Toggle><Dropdown.Menu className="w-100 sections-dropdown-menu" style={{ maxHeight: '250px', overflowY: 'auto' }}><div className="px-2 pb-2"><Form.Control size="sm" type="text" placeholder="Search sections..." value={sectionSearch} onChange={(event) => setSectionSearch(event.target.value)} onClick={(event) => event.stopPropagation()} /></div>{filteredSections.length === 0 ? <Dropdown.ItemText className="text-muted small">No sections found</Dropdown.ItemText> : filteredSections.map((section) => (<Dropdown.Item key={section.id} as="button" className="small py-1" active={getSelectedSectionIds().includes(Number(section.id))} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSection(Number(section.id)); }}><Form.Check type="checkbox" checked={getSelectedSectionIds().includes(Number(section.id))} onChange={() => undefined} label={<span>{section.name} <small className="text-muted">({section.id})</small></span>} className="mb-0" /></Dropdown.Item>))}</Dropdown.Menu></Dropdown>{getSelectedSectionIds().length > 0 ? <div className="mt-2">{getSelectedSectionIds().map((id) => { const section = sections.find((item) => Number(item.id) === id); return <Badge key={id} variant="info" className="mr-1 mb-1 cursor-pointer" onClick={() => toggleSection(id)}>{section?.name || id} <i className="fas fa-times ml-1"></i></Badge>; })}</div> : null}<Form.Text className="text-muted">Sections to refresh after a successful memory update.</Form.Text></Form.Group></Col></Row></Card.Body></Card>
               </Card.Body>
             </Card>
           )}
         </Col>
       </Row>
 
-      {promptDescriptor && draft && (
-        <>
-          <PromptVersionsModal
-            show={showVersions}
-            onHide={() => setShowVersions(false)}
-            versions={versions}
-            activeVersionId={activeVersion?.id || null}
-            disabled={!promptDescriptor}
-            onUseVersion={handleUseVersion}
-            onCompareVersion={openDiffWithVersion}
-          />
-
-          <PromptDiffModal
-            show={showDiff}
-            onHide={() => setShowDiff(false)}
-            api={api}
-            descriptor={promptDescriptor}
-            versions={versions}
-            draftContent={draft.prompt_template}
-            initialLeftKey={diffState.initialLeftKey}
-            initialRightKey={diffState.initialRightKey}
-          />
-
-          <PromptPlaygroundModal
-            show={showPlayground}
-            onHide={() => setShowPlayground(false)}
-            api={api}
-            descriptor={promptDescriptor}
-            executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'}
-            playgroundRuntimeType={promptBootstrap?.playground_runtime_type || 'script'}
-            models={promptBootstrap?.models || []}
-            variablesSchema={effectiveVariablesSchema}
-            promptValue={draft.prompt_template}
-            disabled={!promptDescriptor || (promptBootstrap?.playground_runtime_type || 'script') === 'none'}
-            defaultModel={defaultPromptModel}
-            resolveRuntimeOverrides={() => promptRuntimeOverrides}
-            onApplyDraft={handleBuilderApply}
-            onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
-              variables: Record<string, unknown>;
-              messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
-              runtimeOverrides: Record<string, unknown>;
-              response: PromptPlaygroundResponse;
-            }) => {
-              const firstRun = response.runs?.[0];
-              setLastPlaygroundCapture({
-                variables,
-                messageHistory,
-                runtimeOverrides,
-                runRef: firstRun
-                  ? {
-                    id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null,
-                    id_llmConversations: firstRun.id_llmConversations ?? null,
-                    id_llmMessages_request: firstRun.id_llmMessages_request ?? null,
-                    id_llmMessages_response: firstRun.id_llmMessages_response ?? null,
-                  }
-                  : null,
-              });
-            }}
-          />
-
-          <PromptDatasetsModal
-            show={showDatasets}
-            onHide={() => setShowDatasets(false)}
-            api={api}
-            descriptor={promptDescriptor}
-            versions={versions}
-            activeVersionId={activeVersion?.id || null}
-            models={promptBootstrap?.models || []}
-            executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'}
-            promptValue={draft.prompt_template}
-            disabled={!promptDescriptor}
-            defaultModel={defaultPromptModel}
-            resolveRuntimeOverrides={() => promptRuntimeOverrides}
-            lastPlaygroundCapture={lastPlaygroundCapture}
-          />
-
-          <PromptBuilderModal
-            show={showBuilder}
-            onHide={() => setShowBuilder(false)}
-            api={api}
-            descriptor={promptDescriptor}
-            currentPrompt={draft.prompt_template}
-            models={promptBootstrap?.models || []}
-            defaultModel={defaultPromptModel}
-            disabled={!promptDescriptor}
-            onApplySuggestion={handleBuilderApply}
-          />
-        </>
-      )}
+      {promptDescriptor && draft && isLlmMode ? <>
+        <PromptVersionsModal show={showVersions} onHide={() => setShowVersions(false)} versions={versions} activeVersionId={activeVersion?.id || null} disabled={!promptDescriptor} onUseVersion={handleUseVersion} onCompareVersion={openDiffWithVersion} />
+        <PromptDiffModal show={showDiff} onHide={() => setShowDiff(false)} api={api} descriptor={promptDescriptor} versions={versions} draftContent={draft.prompt_template} initialLeftKey={diffState.initialLeftKey} initialRightKey={diffState.initialRightKey} />
+        <PromptPlaygroundModal show={showPlayground} onHide={() => setShowPlayground(false)} api={api} descriptor={promptDescriptor} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} playgroundRuntimeType={promptBootstrap?.playground_runtime_type || 'script'} models={promptBootstrap?.models || []} variablesSchema={effectiveVariablesSchema} promptValue={draft.prompt_template} disabled={!promptDescriptor || (promptBootstrap?.playground_runtime_type || 'script') === 'none'} defaultModel={defaultPromptModel} resolveRuntimeOverrides={() => promptRuntimeOverrides} onApplyDraft={handleBuilderApply} onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: { variables: Record<string, unknown>; messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; runtimeOverrides: Record<string, unknown>; response: PromptPlaygroundResponse; }) => { const firstRun = response.runs?.[0]; setLastPlaygroundCapture({ variables, messageHistory, runtimeOverrides, runRef: firstRun ? { id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null, id_llmConversations: firstRun.id_llmConversations ?? null, id_llmMessages_request: firstRun.id_llmMessages_request ?? null, id_llmMessages_response: firstRun.id_llmMessages_response ?? null } : null }); }} />
+        <PromptDatasetsModal show={showDatasets} onHide={() => setShowDatasets(false)} api={api} descriptor={promptDescriptor} versions={versions} activeVersionId={activeVersion?.id || null} models={promptBootstrap?.models || []} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} promptValue={draft.prompt_template} disabled={!promptDescriptor} defaultModel={defaultPromptModel} resolveRuntimeOverrides={() => promptRuntimeOverrides} lastPlaygroundCapture={lastPlaygroundCapture} />
+        <PromptBuilderModal show={showBuilder} onHide={() => setShowBuilder(false)} api={api} descriptor={promptDescriptor} currentPrompt={draft.prompt_template} models={promptBootstrap?.models || []} defaultModel={defaultPromptModel} disabled={!promptDescriptor} onApplySuggestion={handleBuilderApply} />
+      </> : null}
     </div>
   );
 };

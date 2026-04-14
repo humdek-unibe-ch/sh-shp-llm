@@ -562,6 +562,7 @@ interface MemoryRule {
   label?: string;
   enabled: boolean;
   memory_key?: string;
+  memory_keys?: string[];
   source_type?: string;
   source_match?: Record<string, unknown>;
   trigger_types?: string[];
@@ -614,13 +615,14 @@ interface MemoryRebuildResponse {
 
 interface MemoryRuleRecord {
   id: number;
-  key: string;
+  key?: string;
   label?: string;
   enabled: boolean;
   source_type: string;
   memory_key: string;
+  memory_keys: string[];
   execution_mode: string;
-  trigger_types: string[];
+  trigger_types?: string[];
   storage_mode_override: string;
   source_match: Record<string, unknown>;
   field_mapping: Record<string, string>;
@@ -637,6 +639,44 @@ interface MemoryRuleRecord {
 
 interface MemoryRulesResponse {
   rules: MemoryRuleRecord[];
+  error?: string;
+}
+
+interface MemoryRuleEditorKey {
+  code: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+}
+
+interface MemoryRuleEditorDefaults {
+  llm_model: string;
+  llm_temperature: string;
+  llm_max_tokens: string;
+  storage_mode: string;
+}
+
+interface MemoryRuleEditorOption {
+  value: string;
+  label: string;
+}
+
+interface MemoryRuleEditorSection {
+  id: number;
+  name: string;
+}
+
+interface MemoryRulesBootstrapResponse {
+  rules: MemoryRuleRecord[];
+  editor: {
+    available_keys: MemoryRuleEditorKey[];
+    defaults: MemoryRuleEditorDefaults;
+    models: Array<{ id: string; name?: string }>;
+    source_types: MemoryRuleEditorOption[];
+    execution_modes: MemoryRuleEditorOption[];
+    storage_modes: MemoryRuleEditorOption[];
+    sections: MemoryRuleEditorSection[];
+  };
   error?: string;
 }
 
@@ -757,6 +797,10 @@ export const memoryApi = {
 
   async getRules(): Promise<MemoryRulesResponse> {
     return apiGet<MemoryRulesResponse>('rules_list');
+  },
+
+  async getRulesBootstrap(): Promise<MemoryRulesBootstrapResponse> {
+    return apiGet<MemoryRulesBootstrapResponse>('rules_bootstrap');
   },
 
   async getRule(ruleId: number): Promise<MemoryRuleResponse> {

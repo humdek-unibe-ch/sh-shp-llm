@@ -53,6 +53,35 @@ Choose the execution mode like this:
 - `llm_summarize`: best for free text, surveys, or richer user input
 - `direct_mapping`: best for stable field-to-field facts without an LLM call
 
+### Direct Mapping Example
+
+`direct_mapping` uses a JSON object.
+
+The format is:
+
+```json
+{
+  "memory_field_name": "{{submitted_field_name}}"
+}
+```
+
+Example:
+
+```json
+{
+  "preferred_name": "{{first_name}}",
+  "city": "{{city}}",
+  "favorite_topic": "{{topic}}"
+}
+```
+
+This means:
+- the memory field `preferred_name` gets the submitted value from `first_name`
+- the memory field `city` gets the submitted value from `city`
+- the memory field `favorite_topic` gets the submitted value from `topic`
+
+Use this mode when you want a simple deterministic mapping without an LLM summary step.
+
 ## Step 3: Connect A Trigger
 
 ### Forms And Surveys

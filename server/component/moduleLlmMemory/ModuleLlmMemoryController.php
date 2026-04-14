@@ -48,6 +48,10 @@ class ModuleLlmMemoryController extends BaseController
                 $this->requireAccess('select');
                 $this->handleRulesList();
                 break;
+            case 'rules_bootstrap':
+                $this->requireAccess('select');
+                $this->handleRulesBootstrap();
+                break;
             case 'rule_get':
                 $this->requireAccess('select');
                 $this->handleRuleGet();
@@ -194,6 +198,26 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    private function handleRulesBootstrap()
+    {
+        try {
+            $rule_service = $this->getRuleService();
+            $rules = $rule_service->listRules();
+            $sources = $this->getAdminService()->getRuleUsageCounts();
+            foreach ($rules as &$rule) {
+                $rule['sources_count'] = (int)($sources[$rule['key']] ?? 0);
+            }
+            unset($rule);
+
+            $this->sendJsonResponse(array(
+                'rules' => $rules,
+                'editor' => $rule_service->getEditorBootstrap($this->getSettingsModel()),
+            ));
+        } catch (Exception $e) {
+            $this->sendJsonResponse(array('error' => $e->getMessage()), 500);
+        }
+    }
+
     private function handleRuleCreate()
     {
         try {
@@ -201,7 +225,10 @@ class ModuleLlmMemoryController extends BaseController
             $prompt_template = (string)($_POST['prompt_template'] ?? '');
             $prompt_meta_json = (string)($_POST['prompt_meta_json'] ?? '{}');
             $prompt_change_note = (string)($_POST['prompt_change_note'] ?? '');
-            $rule = $this->getRuleService()->createRule($payload, $prompt_template, $prompt_meta_json, $prompt_change_note);
+            $service = $this->getRuleService();
+            $rule = $service->createRule($payload, $prompt_template, $prompt_meta_json, $prompt_change_note);
+            $rule['prompt_template'] = $service->getActivePromptTemplate($rule);
+            $rule['prompt_meta_json'] = $service->getActivePromptMetaJson($rule);
             $this->sendJsonResponse(['rule' => $rule]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -221,7 +248,10 @@ class ModuleLlmMemoryController extends BaseController
             $prompt_template = array_key_exists('prompt_template', $_POST) ? (string)$_POST['prompt_template'] : null;
             $prompt_meta_json = array_key_exists('prompt_meta_json', $_POST) ? (string)$_POST['prompt_meta_json'] : null;
             $prompt_change_note = (string)($_POST['prompt_change_note'] ?? '');
-            $rule = $this->getRuleService()->updateRule($rule_id, $payload, $prompt_template, $prompt_meta_json, $prompt_change_note);
+            $service = $this->getRuleService();
+            $rule = $service->updateRule($rule_id, $payload, $prompt_template, $prompt_meta_json, $prompt_change_note);
+            $rule['prompt_template'] = $service->getActivePromptTemplate($rule);
+            $rule['prompt_meta_json'] = $service->getActivePromptMetaJson($rule);
             $this->sendJsonResponse(['rule' => $rule]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -253,7 +283,10 @@ class ModuleLlmMemoryController extends BaseController
         }
 
         try {
-            $rule = $this->getRuleService()->duplicateRule($rule_id);
+            $service = $this->getRuleService();
+            $rule = $service->duplicateRule($rule_id);
+            $rule['prompt_template'] = $service->getActivePromptTemplate($rule);
+            $rule['prompt_meta_json'] = $service->getActivePromptMetaJson($rule);
             $this->sendJsonResponse(['rule' => $rule]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);

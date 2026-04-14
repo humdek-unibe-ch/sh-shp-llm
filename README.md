@@ -65,7 +65,7 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.1.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.2.0.sql
 ```
 
-This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations). The v1.1.0 migration is rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations) plus the v1.2.0 memory-key registry for multi-key memory rules. The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
 It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed.
 
 ### 3. Build Frontend Assets

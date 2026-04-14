@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
+require_once __DIR__ . "/../../../../../component/style/BaseStyleComponent.php";
 require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 class ModuleLlmMemoryView extends BaseView
@@ -22,6 +23,10 @@ class ModuleLlmMemoryView extends BaseView
         );
 
         $config = $this->getReactConfig();
+        $dataConfigBuilder = new BaseStyleComponent("dataConfigBuilder", array(
+            "value" => "",
+            "name" => "data_config"
+        ));
 
         ob_start();
         require __DIR__ . "/tpl/module_llm_memory.php";

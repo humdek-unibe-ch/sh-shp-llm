@@ -166,7 +166,11 @@ class LlmMemoryTriggerService extends BaseLlmService
 
             $rule = $this->applyRuleOverrides($rule, $rule_overrides);
             $dispatched[] = $rule['key'];
-            $this->enqueueMemoryUpdate($rule, $normalized_payload, $async);
+            foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
+                $payload_for_key = $normalized_payload;
+                $payload_for_key['memory_key_override'] = $target_memory_key;
+                $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
+            }
         }
 
         return $dispatched;
@@ -194,7 +198,48 @@ class LlmMemoryTriggerService extends BaseLlmService
             }
             $rule = $this->applyRuleOverrides($rule, $rule_overrides);
             $dispatched[] = $rule['key'];
-            $this->enqueueMemoryUpdate($rule, $normalized_payload, $async);
+            foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
+                $payload_for_key = $normalized_payload;
+                $payload_for_key['memory_key_override'] = $target_memory_key;
+                $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
+            }
+        }
+
+        return $dispatched;
+    }
+
+    /**
+     * Dispatch a single memory update for specific rule ids.
+     *
+     * @param array $rule_ids
+     * @param array $normalized_payload
+     * @param bool $async
+     * @param array $rule_overrides
+     * @return array
+     */
+    public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [])
+    {
+        if (!$this->config_service->isMemoryEnabled()) {
+            return [];
+        }
+
+        require_once __DIR__ . '/LlmMemoryRuleService.php';
+        $rule_service = new LlmMemoryRuleService($this->services);
+        $dispatched = [];
+
+        foreach ((array)$rule_ids as $rule_id) {
+            $rule = $rule_service->getRuleById((int)$rule_id);
+            if (!$rule || !$rule['enabled']) {
+                continue;
+            }
+
+            $rule = $this->applyRuleOverrides($rule, $rule_overrides);
+            $dispatched[] = $rule['key'];
+            foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
+                $payload_for_key = $normalized_payload;
+                $payload_for_key['memory_key_override'] = $target_memory_key;
+                $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
+            }
         }
 
         return $dispatched;
@@ -312,6 +357,11 @@ class LlmMemoryTriggerService extends BaseLlmService
             'memory_key_override' => $worker_args['memory_key_override'] ?? '',
             'force_storage_mode'  => $worker_args['force_storage_mode'] ?? '',
         ];
+
+        if (($rule['execution_mode'] ?? '') === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {
+            $update_service->executeDirectMapping($rule, $normalized);
+            return;
+        }
 
         $update_service->executeLlmSummarization($rule, $normalized);
     }

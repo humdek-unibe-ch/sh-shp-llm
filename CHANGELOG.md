@@ -85,6 +85,16 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - Consolidated the memory page to use its own API surface instead of depending on admin-console URL context.
 - Removed the remaining cross-repo dependency for profile-name-change memory triggers so the plugin owns the feature end to end.
 - Updated docs and migration scope to match the final dedicated-page memory design.
+- Refined the memory rule editor into a simpler guided flow:
+  - removed editable rule keys from the normal UI
+  - removed trigger-type editing from the normal UI
+  - removed source-match editing from the normal UI
+  - added clearer multi-key selection, direct-mapping help text, and shared data-config / refresh-section tooling
+- Reworked memory form-action linking so actions now attach to explicit memory rule IDs instead of free-text rule keys.
+- Limited the form-action memory rule dropdown to `form_action_submit` rules only and removed auto-match behavior from the action UI.
+- Defaulted form-action memory jobs to async execution.
+- Fixed memory prompt save behavior so saving a changed rule prompt refreshes the prompt-lab state correctly and creates the expected new version stream state.
+- Hid the `LLM chat form submit` source from the rule editor for now, with a TODO to re-enable it once its attachment UX is finalized.
 
 ## [1.1.0] - 2026-03-19
 
@@ -260,4 +270,3 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - Added reusable LLM scripts with sync/async execution, testing, and scheduler integration.
 - Added the admin console for conversation inspection, payload debugging, and conversation blocking.
 - Added the `llmResponse` rendering component and the initial React build pipeline.
-

@@ -1287,6 +1287,12 @@ class LlmHooks extends BaseHooks
             return false;
         }
 
+        $rule_ids = $config['memory_rule_id'] ?? $config['memory_rule_ids'] ?? [];
+        if (!is_array($rule_ids)) {
+            $rule_ids = array_filter(array_map('trim', explode(',', (string)$rule_ids)));
+        }
+        $rule_ids = array_values(array_filter(array_map('intval', $rule_ids)));
+
         $rule_keys = $config['memory_rule_keys'] ?? [];
         if (is_string($rule_keys)) {
             $rule_keys = array_filter(array_map('trim', explode(',', $rule_keys)));
@@ -1322,10 +1328,21 @@ class LlmHooks extends BaseHooks
             $rule_overrides['prompt_version_override'] = (int)$config['prompt_version_override'];
         }
 
-        if (!empty($rule_keys)) {
+        if (!empty($rule_ids)) {
+            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, $rule_overrides);
+        } elseif (!empty($rule_keys)) {
             $dispatched = $trigger_service->dispatchForRuleKeys($rule_keys, $normalized, $run_async, $rule_overrides);
         } else {
-            $dispatched = $trigger_service->dispatchMemoryUpdate($normalized, $run_async, $rule_overrides);
+            $this->transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_MEMORY,
+                null,
+                null,
+                null,
+                false,
+                "LLM Memory task skipped: no explicit rule configured; " . json_encode($config)
+            );
+            return true;
         }
 
         if (defined('DEBUG') && DEBUG) {
@@ -1341,92 +1358,54 @@ class LlmHooks extends BaseHooks
      */
     public function get_memory_json_schema($args)
     {
-        $res = (string) $this->execute_private_method($args);
+        $res = (string)$this->execute_private_method($args);
         $res = json_decode($res, true);
 
         $config_service = new LlmMemoryConfigService($this->services);
         $rules = $config_service->getRules();
 
         $rule_titles = array();
-        $rule_keys = array();
+        $rule_ids = array();
         foreach ($rules as $rule) {
-            $rule_titles[] = ($rule['label'] ?? $rule['key']) . ($rule['enabled'] ? '' : ' (disabled)');
-            $rule_keys[] = $rule['key'];
+            if (($rule['source_type'] ?? '') !== LLM_MEMORY_SOURCE_FORM_ACTION) {
+                continue;
+            }
+            $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
+            $rule_titles[] = $label . (!empty($rule['enabled']) ? '' : ' (disabled)');
+            $rule_ids[] = (string)(int)($rule['id'] ?? 0);
         }
+        $default_rule_id = !empty($rule_ids) ? $rule_ids[0] : '';
 
         $dep = array(
             "job_type" => array(ACTION_JOB_TYPE_LLM_MEMORY_UPDATE)
         );
 
-        $memory_rules_field = array(
+        $memory_rule_field = array(
             "type" => "string",
-            "options" => array("grid_columns" => 12, "dependencies" => $dep),
-            "title" => "Memory rule keys (comma-separated, optional — blank = auto-match)",
-            "description" => "If set, only the specified rules run. If empty, rules are matched by source_type criteria. Available: " . implode(', ', $rule_keys)
-        );
-
-        $memory_key_override_field = array(
-            "type" => "string",
-            "options" => array("grid_columns" => 4, "dependencies" => $dep),
-            "title" => "Memory key override",
-            "description" => "Override the memory_key for this job. Leave blank to use rule/global default."
-        );
-
-        $force_storage_mode_field = array(
-            "type" => "string",
-            "enum" => array("", "record", "log", "both"),
+            "enum" => $rule_ids,
             "options" => array(
-                "grid_columns" => 4,
+                "grid_columns" => 12,
                 "dependencies" => $dep,
-                "enum_titles" => array("(use rule/global default)", "record", "log", "both")
+                "enum_titles" => $rule_titles
             ),
-            "title" => "Force storage mode",
-            "description" => "Force a specific storage mode for this job. Leave blank to use rule/global default."
+            "default" => $default_rule_id,
+            "title" => "Memory Rule",
+            "description" => "Choose which memory rule this action should run."
         );
 
         $run_async_field = array(
             "type" => "boolean",
             "format" => "checkbox",
-            "options" => array("grid_columns" => 4, "dependencies" => $dep),
+            "default" => true,
+            "options" => array("grid_columns" => 12, "dependencies" => $dep),
             "title" => "Run async",
             "description" => "When checked, LLM summarization runs in a background worker."
         );
 
-        $execution_mode_field = array(
-            "type" => "string",
-            "enum" => array("", LLM_MEMORY_EXECUTION_LLM_SUMMARIZE, LLM_MEMORY_EXECUTION_DIRECT_MAPPING),
-            "options" => array(
-                "grid_columns" => 4,
-                "dependencies" => $dep,
-                "enum_titles" => array("(use rule default)", "llm_summarize", "direct_mapping")
-            ),
-            "title" => "Execution mode override",
-            "description" => "Optionally override the rule execution mode for this job."
-        );
-
-        $field_mapping_field = array(
-            "type" => "string",
-            "options" => array("grid_columns" => 8, "dependencies" => $dep),
-            "title" => "Field mapping override (JSON object)",
-            "description" => "Optional JSON object for direct_mapping mode, for example {\"preferred_name\":\"{{first_name}}\"}."
-        );
-
-        $prompt_version_override_field = array(
-            "type" => "integer",
-            "options" => array("grid_columns" => 4, "dependencies" => $dep),
-            "title" => "Prompt version override",
-            "description" => "Optional prompt-lab version ID to run instead of the rule's active version."
-        );
-
         $res['definitions']['job_ref']['properties']['job_type']['enum'][] = ACTION_JOB_TYPE_LLM_MEMORY_UPDATE;
         $res['definitions']['job_ref']['properties']['job_type']['options']['enum_titles'][] = "LLM Memory Update";
-        $res['definitions']['job_ref']['properties']['memory_rule_keys'] = $memory_rules_field;
-        $res['definitions']['job_ref']['properties']['memory_key_override'] = $memory_key_override_field;
-        $res['definitions']['job_ref']['properties']['force_storage_mode'] = $force_storage_mode_field;
+        $res['definitions']['job_ref']['properties']['memory_rule_id'] = $memory_rule_field;
         $res['definitions']['job_ref']['properties']['run_async'] = $run_async_field;
-        $res['definitions']['job_ref']['properties']['execution_mode'] = $execution_mode_field;
-        $res['definitions']['job_ref']['properties']['field_mapping'] = $field_mapping_field;
-        $res['definitions']['job_ref']['properties']['prompt_version_override'] = $prompt_version_override_field;
 
         return json_encode($res);
     }
@@ -1457,10 +1436,11 @@ class LlmHooks extends BaseHooks
         return array(
             "type" => $job[ACTION_JOB_TYPE],
             "description" => $description,
+            "memory_rule_id" => (string)($job['memory_rule_id'] ?? ''),
             "memory_rule_keys" => $job['memory_rule_keys'] ?? '',
             "memory_key_override" => $job['memory_key_override'] ?? '',
             "force_storage_mode" => $job['force_storage_mode'] ?? '',
-            "run_async" => !empty($job['run_async']),
+            "run_async" => !array_key_exists('run_async', $job) || !empty($job['run_async']),
             "execution_mode" => $job['execution_mode'] ?? '',
             "field_mapping" => $field_mapping,
             "prompt_version_override" => !empty($job['prompt_version_override']) ? (int)$job['prompt_version_override'] : 0,

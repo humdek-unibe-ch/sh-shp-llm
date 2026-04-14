@@ -242,10 +242,39 @@ class LlmMemoryConfigService extends BaseLlmService
      */
     public function resolveMemoryKey($rule)
     {
+        if (!empty($rule['memory_keys']) && is_array($rule['memory_keys'])) {
+            $first = reset($rule['memory_keys']);
+            if (!empty($first)) {
+                return (string)$first;
+            }
+        }
         if (!empty($rule['memory_key'])) {
             return $rule['memory_key'];
         }
         return $this->getDefaultMemoryKey();
+    }
+
+    /**
+     * @param array $rule
+     * @return array
+     */
+    public function getRuleTargetMemoryKeys($rule)
+    {
+        $keys = array();
+        if (!empty($rule['memory_keys']) && is_array($rule['memory_keys'])) {
+            foreach ($rule['memory_keys'] as $memory_key) {
+                $memory_key = trim((string)$memory_key);
+                if ($memory_key !== '' && !in_array($memory_key, $keys, true)) {
+                    $keys[] = $memory_key;
+                }
+            }
+        }
+
+        if (empty($keys)) {
+            $keys[] = $this->resolveMemoryKey($rule);
+        }
+
+        return $keys;
     }
 
     /**
@@ -260,6 +289,7 @@ class LlmMemoryConfigService extends BaseLlmService
             'label' => '',
             'enabled' => true,
             'memory_key' => LLM_MEMORY_DEFAULT_KEY,
+            'memory_keys' => [LLM_MEMORY_DEFAULT_KEY],
             'source_type' => '',
             'source_match' => [],
             'trigger_types' => ['finished'],
@@ -274,8 +304,8 @@ class LlmMemoryConfigService extends BaseLlmService
             ],
             'prompt_version_override' => 0,
             'llm_model' => '',
-            'llm_temperature' => 0.2,
-            'llm_max_tokens' => 1200,
+            'llm_temperature' => '',
+            'llm_max_tokens' => '',
             'refresh_sections' => [],
             'usage_tags' => [],
         ], $rule);

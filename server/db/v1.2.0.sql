@@ -115,6 +115,42 @@ CREATE TABLE IF NOT EXISTS `llm_memory_rules` (
     CONSTRAINT `fk_llm_memory_rules_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `llm_memory_keys` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `key_code` VARCHAR(128) NOT NULL,
+    `label` VARCHAR(255) DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1,
+    `sort_order` INT NOT NULL DEFAULT 100,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_llm_memory_keys_code` (`key_code`),
+    KEY `idx_llm_memory_keys_enabled` (`enabled`),
+    KEY `idx_llm_memory_keys_sort_order` (`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `llm_memory_rule_keys` (
+    `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+    `id_llm_memory_rules` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    `id_llm_memory_keys` INT(10) UNSIGNED ZEROFILL NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uniq_llm_memory_rule_key_binding` (`id_llm_memory_rules`, `id_llm_memory_keys`),
+    KEY `idx_llm_memory_rule_keys_rule` (`id_llm_memory_rules`),
+    KEY `idx_llm_memory_rule_keys_key` (`id_llm_memory_keys`),
+    CONSTRAINT `fk_llm_memory_rule_keys_rule` FOREIGN KEY (`id_llm_memory_rules`) REFERENCES `llm_memory_rules` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_llm_memory_rule_keys_key` FOREIGN KEY (`id_llm_memory_keys`) REFERENCES `llm_memory_keys` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `llm_memory_keys` (`key_code`, `label`, `description`, `enabled`, `sort_order`)
+VALUES ('global', 'Global', 'Default shared memory space.', 1, 0);
+
+INSERT IGNORE INTO `llm_memory_rule_keys` (`id_llm_memory_rules`, `id_llm_memory_keys`)
+SELECT r.id, k.id
+FROM llm_memory_rules r
+INNER JOIN llm_memory_keys k
+    ON k.key_code = COALESCE(NULLIF(TRIM(r.memory_key), ''), 'global');
+
 -- =====================================================
 -- DEDICATED MEMORY PAGE
 -- =====================================================
