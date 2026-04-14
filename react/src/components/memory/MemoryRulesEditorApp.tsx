@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import CreatableSelect from 'react-select/creatable';
-import { Alert, Badge, Button, ButtonGroup, Card, Col, Dropdown, Form, Row, Spinner } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Col, Dropdown, Form, Row, Spinner } from 'react-bootstrap';
 import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import { PromptBuilderModal } from '../prompts/PromptBuilderModal';
 import { PromptDatasetsModal } from '../prompts/PromptDatasetsModal';
@@ -771,7 +771,24 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                   <Row>
                     <Col md={12}><Form.Group><Form.Label>Rule Label</Form.Label><Form.Control value={draft.label} onChange={(event) => setDraftPatch({ label: event.target.value })} placeholder="Profile name change memory" /><Form.Text className="text-muted">Use a human-readable name. Internal identifiers are handled automatically.</Form.Text></Form.Group></Col>
                   </Row>
-                  <Form.Group className="mb-0"><Form.Label className="d-block">Enabled</Form.Label><ButtonGroup size="sm"><Button variant={draft.enabled ? 'success' : 'outline-secondary'} onClick={() => setDraftPatch({ enabled: true })}>Enabled</Button><Button variant={!draft.enabled ? 'secondary' : 'outline-secondary'} onClick={() => setDraftPatch({ enabled: false })}>Disabled</Button></ButtonGroup></Form.Group>
+                  <Form.Group className="mb-0">
+                    <Form.Label className="d-block">Enabled</Form.Label>
+                    <div className="custom-control custom-switch memory-rule-enabled-switch">
+                      <input
+                        type="checkbox"
+                        className="custom-control-input"
+                        id={`memory-rule-enabled-${draft.id || 'new'}`}
+                        checked={draft.enabled}
+                        onChange={(event) => setDraftPatch({ enabled: event.target.checked })}
+                      />
+                      <label
+                        className="custom-control-label"
+                        htmlFor={`memory-rule-enabled-${draft.id || 'new'}`}
+                      >
+                        {draft.enabled ? 'Enabled' : 'Disabled'}
+                      </label>
+                    </div>
+                  </Form.Group>
                 </Card.Body></Card>
 
                 <Card className="memory-rule-section"><Card.Header>When This Runs</Card.Header><Card.Body>
