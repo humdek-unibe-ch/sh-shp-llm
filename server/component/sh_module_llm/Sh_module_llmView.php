@@ -66,6 +66,7 @@ class Sh_module_llmView extends BaseView
     {
         return json_encode([
             'csrfToken' => $this->resolveCsrfToken(),
+            'memoryPageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
         ]);
     }
 

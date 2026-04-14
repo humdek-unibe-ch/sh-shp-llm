@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Nav, Row, Spinner, Tab } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Col, Nav, Row, Spinner, Tab } from 'react-bootstrap';
 import { MemoryAdminPanel } from './MemoryAdminPanel';
 import { MemoryRulesEditorApp } from './MemoryRulesEditorApp';
 import { memoryApi } from '../../utils/api';
+import { MemoryConfigSection, type FieldDef } from '../settings/MemoryConfigSection';
 
 export interface MemoryPageConfig {
   csrfToken?: string;
@@ -11,12 +12,17 @@ export interface MemoryPageConfig {
   pageId?: number | null;
 }
 
-type MemoryTab = 'overview' | 'rules' | 'sources' | 'users';
+type MemoryTab = 'general' | 'rules' | 'sources' | 'users';
+
+interface MemoryConfigGroup {
+  label: string;
+  fields: FieldDef[];
+}
 
 function readUrlState() {
   const url = new URL(window.location.href);
   return {
-    tab: (url.searchParams.get('tab') as MemoryTab) || 'overview',
+    tab: (url.searchParams.get('tab') as MemoryTab) || 'general',
     ruleId: url.searchParams.get('rule') ? Number(url.searchParams.get('rule')) : null,
     userId: url.searchParams.get('user') ? Number(url.searchParams.get('user')) : null,
     memoryKey: url.searchParams.get('memory_key') || undefined,
@@ -45,10 +51,16 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   const [editRequested, setEditRequested] = useState<boolean>(initialState.edit);
   const [historyRequested, setHistoryRequested] = useState<boolean>(initialState.history);
   const [overview, setOverview] = useState<Record<string, unknown> | null>(null);
+  const [memoryConfig, setMemoryConfig] = useState<MemoryConfigGroup | null>(null);
+  const [memoryConfigDirty, setMemoryConfigDirty] = useState<Record<string, string>>({});
+  const [canUpdateConfig, setCanUpdateConfig] = useState(false);
   const [sources, setSources] = useState<Array<Record<string, unknown>>>([]);
   const [loadingOverview, setLoadingOverview] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [loadingSources, setLoadingSources] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     writeUrlState({
@@ -73,6 +85,18 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   }, []);
 
   useEffect(() => {
+    setLoadingConfig(true);
+    memoryApi.getConfig()
+      .then((response) => {
+        if (response.error) throw new Error(response.error);
+        setMemoryConfig(response.settings);
+        setCanUpdateConfig(!!response.acl?.update);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load memory config'))
+      .finally(() => setLoadingConfig(false));
+  }, []);
+
+  useEffect(() => {
     if (activeTab !== 'sources') return;
     setLoadingSources(true);
     memoryApi.getSources()
@@ -84,9 +108,63 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       .finally(() => setLoadingSources(false));
   }, [activeTab]);
 
+  const getConfigField = (name: string): FieldDef | undefined =>
+    memoryConfig?.fields.find((field) => field.name === name);
+
+  const getConfigValue = (name: string): string => {
+    if (memoryConfigDirty[name] !== undefined) {
+      return memoryConfigDirty[name];
+    }
+    return getConfigField(name)?.value ?? '';
+  };
+
+  const handleConfigChange = (name: string, value: string) => {
+    setMemoryConfigDirty((current) => ({ ...current, [name]: value }));
+    setSuccess(null);
+  };
+
+  const handleConfigSave = async () => {
+    if (Object.keys(memoryConfigDirty).length === 0) {
+      return;
+    }
+
+    setSavingConfig(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await memoryApi.saveConfig(memoryConfigDirty);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      const [overviewResponse, configResponse] = await Promise.all([
+        memoryApi.getOverview(),
+        memoryApi.getConfig(),
+      ]);
+
+      if (overviewResponse.error) {
+        throw new Error(overviewResponse.error);
+      }
+      if (configResponse.error) {
+        throw new Error(configResponse.error);
+      }
+
+      setOverview(overviewResponse as unknown as Record<string, unknown>);
+      setMemoryConfig(configResponse.settings);
+      setCanUpdateConfig(!!configResponse.acl?.update);
+      setMemoryConfigDirty({});
+      setSuccess(`Saved ${response.saved?.length || 0} memory setting(s).`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save memory config');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
   return (
     <div className="container-fluid py-3">
       {error && <Alert variant="danger" dismissible onClose={() => setError(null)}>{error}</Alert>}
+      {success && <Alert variant="success" dismissible onClose={() => setSuccess(null)}>{success}</Alert>}
       <div className="d-flex justify-content-between align-items-center flex-wrap mb-3">
         <div>
           <h2 className="mb-1">LLM Memory</h2>
@@ -94,11 +172,11 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
         </div>
       </div>
 
-      <Tab.Container activeKey={activeTab} onSelect={(key) => setActiveTab((key as MemoryTab) || 'overview')}>
+      <Tab.Container activeKey={activeTab} onSelect={(key) => setActiveTab((key as MemoryTab) || 'general')}>
         <Card>
           <Card.Header>
             <Nav variant="tabs" className="card-header-tabs">
-              <Nav.Item><Nav.Link eventKey="overview">Overview</Nav.Link></Nav.Item>
+              <Nav.Item><Nav.Link eventKey="general">General</Nav.Link></Nav.Item>
               <Nav.Item><Nav.Link eventKey="rules">Rules</Nav.Link></Nav.Item>
               <Nav.Item><Nav.Link eventKey="sources">Sources</Nav.Link></Nav.Item>
               <Nav.Item><Nav.Link eventKey="users">Users</Nav.Link></Nav.Item>
@@ -106,15 +184,69 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
           </Card.Header>
           <Card.Body>
             <Tab.Content>
-              <Tab.Pane eventKey="overview">
-                {loadingOverview ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
+              <Tab.Pane eventKey="general">
+                {(loadingOverview || loadingConfig) ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
                   <Row>
-                    <Col lg={3} md={6} className="mb-3"><Card className="border h-100"><Card.Body><div className="text-muted small">Enabled</div><div className="h5 mb-0">{overview?.enabled ? 'Yes' : 'No'}</div></Card.Body></Card></Col>
-                    <Col lg={3} md={6} className="mb-3"><Card className="border h-100"><Card.Body><div className="text-muted small">Storage Mode</div><div className="h5 mb-0">{String(overview?.storage_mode || '-')}</div></Card.Body></Card></Col>
-                    <Col lg={3} md={6} className="mb-3"><Card className="border h-100"><Card.Body><div className="text-muted small">Rules</div><div className="h5 mb-0">{String(overview?.enabled_rules || 0)}/{String(overview?.rules_count || 0)}</div></Card.Body></Card></Col>
-                    <Col lg={3} md={6} className="mb-3"><Card className="border h-100"><Card.Body><div className="text-muted small">Users With Memory</div><div className="h5 mb-0">{String(overview?.unique_users || 0)}</div></Card.Body></Card></Col>
-                    <Col lg={6} className="mb-3"><Card className="border h-100"><Card.Header>Tables</Card.Header><Card.Body><div><strong>Current:</strong> {String(overview?.current_table || '-')}</div><div><strong>History:</strong> {String(overview?.history_table || '-')}</div><div><strong>Memory Keys:</strong> {Array.isArray(overview?.unique_keys) ? (overview?.unique_keys as string[]).join(', ') : '-'}</div></Card.Body></Card></Col>
-                    <Col lg={6} className="mb-3"><Card className="border h-100"><Card.Header>Quick Links</Card.Header><Card.Body><Button size="sm" variant="outline-primary" className="mr-2 mb-2" onClick={() => setActiveTab('rules')}>Manage Rules</Button><Button size="sm" variant="outline-primary" className="mr-2 mb-2" onClick={() => setActiveTab('sources')}>View Sources</Button><Button size="sm" variant="outline-primary" className="mb-2" onClick={() => setActiveTab('users')}>Browse User Memory</Button></Card.Body></Card></Col>
+                    <Col lg={7} className="mb-3">
+                      {memoryConfig ? (
+                        <>
+                          <MemoryConfigSection
+                            title="Memory System"
+                            iconClass="fa fa-database"
+                            getField={getConfigField}
+                            getVal={getConfigValue}
+                            onChange={handleConfigChange}
+                            disabled={!canUpdateConfig || savingConfig}
+                            hideDetailsWhenDisabled={false}
+                          />
+                          {canUpdateConfig && (
+                            <div className="d-flex align-items-center mb-3">
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={handleConfigSave}
+                                disabled={savingConfig || Object.keys(memoryConfigDirty).length === 0}
+                              >
+                                {savingConfig ? 'Saving...' : 'Save Memory Settings'}
+                              </Button>
+                              {Object.keys(memoryConfigDirty).length > 0 && (
+                                <span className="ml-3 text-muted small">
+                                  {Object.keys(memoryConfigDirty).length} unsaved change(s)
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </Col>
+                    <Col lg={5} className="mb-3">
+                      <Card className="border mb-3">
+                        <Card.Header>System Status</Card.Header>
+                        <Card.Body>
+                          <div className="mb-2 d-flex flex-wrap">
+                            <Badge variant={overview?.enabled ? 'success' : 'secondary'} className="mr-2 mb-2">{overview?.enabled ? 'Enabled' : 'Disabled'}</Badge>
+                            <Badge variant={(Number(overview?.rules_count || 0) > 0 && Number(overview?.sources_count || 0) > 0 && overview?.enabled) ? 'success' : 'warning'} className="mr-2 mb-2">
+                              {(Number(overview?.rules_count || 0) > 0 && Number(overview?.sources_count || 0) > 0 && overview?.enabled) ? 'Configured' : 'Needs setup'}
+                            </Badge>
+                            {Number(overview?.rules_count || 0) === 0 ? <Badge variant="warning" className="mr-2 mb-2">No rules yet</Badge> : null}
+                            {Number(overview?.sources_count || 0) === 0 ? <Badge variant="warning" className="mr-2 mb-2">No sources connected</Badge> : null}
+                          </div>
+                          <div className="small mb-2"><strong>Storage mode:</strong> {String(overview?.storage_mode || '-')}</div>
+                          <div className="small mb-2"><strong>Rules:</strong> {String(overview?.enabled_rules || 0)}/{String(overview?.rules_count || 0)} enabled</div>
+                          <div className="small mb-2"><strong>Users with memory:</strong> {String(overview?.unique_users || 0)}</div>
+                          <div className="small mb-2"><strong>Write sources:</strong> {String(overview?.sources_count || 0)}</div>
+                          <div className="small mb-0"><strong>Latest activity:</strong> {String(overview?.latest_activity_at || 'No activity yet')}</div>
+                        </Card.Body>
+                      </Card>
+                      <Card className="border">
+                        <Card.Header>How It Works</Card.Header>
+                        <Card.Body>
+                          <div className="small mb-2"><strong>Rules</strong> decide when memory should update and how values are derived.</div>
+                          <div className="small mb-2"><strong>Sources</strong> show where those updates come from, such as forms, chat fallback, or system hooks.</div>
+                          <div className="small mb-0"><strong>Users</strong> lets you inspect current memory, review history, and fix issues manually.</div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
                     <Col lg={12} className="mb-3">
                       <Card className="border">
                         <Card.Header>Recent Activity</Card.Header>
@@ -126,10 +258,8 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                                   <tr>
                                     <th>When</th>
                                     <th>User</th>
-                                    <th>Memory Key</th>
                                     <th>Rule</th>
                                     <th>Status</th>
-                                    <th>Summary</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -137,10 +267,8 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                                     <tr key={`${String(item.record_id || index)}`}>
                                       <td>{String(item.event_at || item.created_at || '')}</td>
                                       <td>{String(item.user_name || `User #${String(item.id_users || '')}`)}</td>
-                                      <td>{String(item.memory_key || '-')}</td>
                                       <td>{String(item.rule_key || '-')}</td>
                                       <td>{String(item.update_status || '-')}</td>
-                                      <td>{String(item.change_summary || '-')}</td>
                                     </tr>
                                   ))}
                                 </tbody>

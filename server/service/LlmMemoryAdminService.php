@@ -211,6 +211,15 @@ class LlmMemoryAdminService extends BaseLlmService
             return $normalized;
         }, $recent_activity);
 
+        $write_sources = $this->getWriteSources();
+        $latest_activity_at = null;
+        foreach ($recent_activity as $entry) {
+            $candidate = $entry['event_at'] ?? $entry['created_at'] ?? null;
+            if ($candidate && (!$latest_activity_at || $candidate > $latest_activity_at)) {
+                $latest_activity_at = $candidate;
+            }
+        }
+
         return [
             'enabled'           => $this->config_service->isMemoryEnabled(),
             'storage_mode'      => $this->config_service->getStorageMode(),
@@ -221,6 +230,8 @@ class LlmMemoryAdminService extends BaseLlmService
             'total_entries'     => $total_entries,
             'unique_users'      => count($unique_users),
             'unique_keys'       => array_keys($total_keys),
+            'sources_count'     => count($write_sources),
+            'latest_activity_at'=> $latest_activity_at,
             'rules'             => $rules,
             'recent_activity'   => $recent_activity,
         ];

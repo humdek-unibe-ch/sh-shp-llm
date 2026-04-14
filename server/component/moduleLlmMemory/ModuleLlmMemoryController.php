@@ -10,6 +10,7 @@ require_once __DIR__ . "/ModuleLlmMemoryModel.php";
 require_once __DIR__ . "/../../service/LlmMemoryAdminService.php";
 require_once __DIR__ . "/../../service/LlmMemoryConfigService.php";
 require_once __DIR__ . "/../../service/LlmMemoryRuleService.php";
+require_once __DIR__ . "/../sh_module_llm/Sh_module_llmModel.php";
 
 class ModuleLlmMemoryController extends BaseController
 {
@@ -71,6 +72,14 @@ class ModuleLlmMemoryController extends BaseController
                 $this->requireAccess('select');
                 $this->handleSources();
                 break;
+            case 'memory_config_get':
+                $this->requireAccess('select');
+                $this->handleMemoryConfigGet();
+                break;
+            case 'memory_config_save':
+                $this->requireAccess('update');
+                $this->handleMemoryConfigSave();
+                break;
             case 'memory_users':
                 $this->requireAccess('select');
                 $this->handleMemoryUsers();
@@ -130,6 +139,11 @@ class ModuleLlmMemoryController extends BaseController
     private function getRuleService()
     {
         return new LlmMemoryRuleService($this->model->get_services());
+    }
+
+    private function getSettingsModel()
+    {
+        return new Sh_module_llmModel($this->model->get_services());
     }
 
     private function handleOverview()
@@ -250,6 +264,61 @@ class ModuleLlmMemoryController extends BaseController
     {
         try {
             $this->sendJsonResponse(['sources' => $this->getAdminService()->getWriteSources()]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleMemoryConfigGet()
+    {
+        try {
+            $settings = $this->getSettingsModel()->getStructuredSettings();
+            $this->sendJsonResponse([
+                'settings' => $settings['memory'] ?? ['label' => 'Memory Configuration', 'fields' => []],
+                'acl' => [
+                    'select' => $this->checkAccess('select'),
+                    'update' => $this->checkAccess('update'),
+                ],
+            ]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    private function handleMemoryConfigSave()
+    {
+        try {
+            $raw = file_get_contents('php://input');
+            $data = json_decode($raw, true);
+            if (!is_array($data) || empty($data['fields'])) {
+                $this->sendJsonResponse(['error' => 'No fields provided'], 400);
+                return;
+            }
+
+            $allowedFields = [
+                'llm_memory_enabled',
+                'llm_memory_key',
+                'llm_memory_storage_mode',
+                'llm_memory_table_name',
+                'llm_memory_history_table_name',
+            ];
+
+            $model = $this->getSettingsModel();
+            $saved = [];
+            foreach ($data['fields'] as $name => $value) {
+                if (!in_array($name, $allowedFields, true)) {
+                    continue;
+                }
+
+                if ($model->saveSetting($name, (string)$value)) {
+                    $saved[] = $name;
+                }
+            }
+
+            $this->sendJsonResponse([
+                'success' => true,
+                'saved' => $saved,
+            ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

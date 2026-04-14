@@ -1,7 +1,7 @@
 import React from 'react';
 import { SearchableSelect } from './SearchableSelect';
 
-interface FieldDef {
+export interface FieldDef {
   name: string;
   type: string;
   label: string;
@@ -15,9 +15,20 @@ interface Props {
   getVal: (name: string) => string;
   onChange: (name: string, value: string) => void;
   disabled?: boolean;
+  title?: string;
+  iconClass?: string;
+  hideDetailsWhenDisabled?: boolean;
 }
 
-export const MemoryConfigSection: React.FC<Props> = ({ getField, getVal, onChange, disabled }) => {
+export const MemoryConfigSection: React.FC<Props> = ({
+  getField,
+  getVal,
+  onChange,
+  disabled,
+  title = 'Memory Configuration',
+  iconClass = 'fa fa-brain',
+  hideDetailsWhenDisabled = true,
+}) => {
   const memoryEnabled = getVal('llm_memory_enabled') === '1';
 
   const renderField = (name: string) => {
@@ -81,13 +92,13 @@ export const MemoryConfigSection: React.FC<Props> = ({ getField, getVal, onChang
     <div className="card mb-3">
       <div className="card-header">
         <h6 className="mb-0">
-          <i className="fa fa-brain mr-2 text-muted"></i>
-          Memory Configuration
+          <i className={`${iconClass} mr-2 text-muted`}></i>
+          {title}
         </h6>
       </div>
       <div className="card-body">
         {renderField('llm_memory_enabled')}
-        {memoryEnabled && (
+        {(memoryEnabled || !hideDetailsWhenDisabled) && (
           <>
             {renderField('llm_memory_key')}
             {renderField('llm_memory_storage_mode')}

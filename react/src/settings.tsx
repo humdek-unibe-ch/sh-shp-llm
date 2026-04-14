@@ -5,6 +5,7 @@ import './components/settings/Settings.css';
 
 export interface SettingsBootConfig {
   csrfToken?: string;
+  memoryPageUrl?: string;
 }
 
 function initializeSettings(): void {

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { SettingsBootConfig } from '../../settings';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ModelDefaultsSection } from './ModelDefaultsSection';
-import { MemoryConfigSection } from './MemoryConfigSection';
+import { MemorySettingsSummary } from './MemorySettingsSummary';
 
 interface FieldDef {
   name: string;
@@ -157,11 +157,9 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
         disabled={!canUpdate}
       />
 
-      <MemoryConfigSection
-        getField={(n: string) => getField('memory', n)}
-        getVal={(n: string) => getVal('memory', n)}
-        onChange={handleChange}
-        disabled={!canUpdate}
+      <MemorySettingsSummary
+        enabled={getVal('memory', 'llm_memory_enabled') === '1'}
+        memoryPageUrl={config.memoryPageUrl}
       />
 
       {canUpdate && (

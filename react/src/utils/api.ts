@@ -532,8 +532,28 @@ interface MemoryOverviewResponse {
   total_entries: number;
   unique_users: number;
   unique_keys: string[];
+  sources_count?: number;
+  latest_activity_at?: string | null;
   rules: MemoryRule[];
   recent_activity?: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+interface MemoryConfigField {
+  name: string;
+  type: string;
+  label: string;
+  help: string;
+  value: string;
+  options?: { value: string; label: string }[];
+}
+
+interface MemoryConfigResponse {
+  settings: {
+    label: string;
+    fields: MemoryConfigField[];
+  };
+  acl: { select: boolean; update: boolean };
   error?: string;
 }
 
@@ -706,6 +726,33 @@ export const adminApi = {
 export const memoryApi = {
   async getOverview(): Promise<MemoryOverviewResponse> {
     return apiGet<MemoryOverviewResponse>('overview');
+  },
+
+  async getConfig(): Promise<MemoryConfigResponse> {
+    return apiGet<MemoryConfigResponse>('memory_config_get');
+  },
+
+  async saveConfig(fields: Record<string, string>): Promise<{ success?: boolean; saved?: string[]; error?: string }> {
+    const response = await fetch(window.location.pathname + '?action=memory_config_save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ fields }),
+      credentials: 'same-origin'
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      if (data && typeof data === 'object' && 'error' in data) {
+        throw new Error(data.error);
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return data;
   },
 
   async getRules(): Promise<MemoryRulesResponse> {
