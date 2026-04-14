@@ -25,9 +25,15 @@ export function usePromptBootstrap({
     runtimeOverrides,
   });
   const descriptorRef = useRef(descriptor);
-  const [bootstrap, setBootstrap] = useState<PromptBootstrapData | null>(null);
+  const [bootstrap, setBootstrapRaw] = useState<PromptBootstrapData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const skipNextAutoReloadRef = useRef(false);
+
+  const setBootstrap = useCallback((next: PromptBootstrapData | null) => {
+    skipNextAutoReloadRef.current = true;
+    setBootstrapRaw(next);
+  }, []);
 
   useEffect(() => {
     latestStateRef.current = {
@@ -44,7 +50,7 @@ export function usePromptBootstrap({
   const reload = useCallback(async () => {
     const hasOwnerIdentity = descriptor.ownerId > 0;
     if (!enabled || !hasOwnerIdentity) {
-      setBootstrap(null);
+      setBootstrapRaw(null);
       return null;
     }
 
@@ -57,7 +63,7 @@ export function usePromptBootstrap({
         latestStateRef.current.currentMeta,
         latestStateRef.current.runtimeOverrides,
       );
-      setBootstrap(next);
+      setBootstrapRaw(next);
       return next;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load prompt state';
@@ -70,6 +76,11 @@ export function usePromptBootstrap({
 
   useEffect(() => {
     if (!enabled) {
+      return;
+    }
+
+    if (skipNextAutoReloadRef.current) {
+      skipNextAutoReloadRef.current = false;
       return;
     }
 

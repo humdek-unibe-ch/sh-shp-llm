@@ -254,6 +254,36 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
+     * Return the latest prompt bootstrap for a rule after save/update.
+     *
+     * @param array|int $rule
+     * @param string|null $active_content
+     * @param string|null $meta_json
+     * @return array
+     */
+    public function getPromptBootstrap($rule, $active_content = null, $meta_json = null)
+    {
+        if (!is_array($rule)) {
+            $rule = $this->getRuleById((int)$rule);
+        }
+        if (!$rule) {
+            throw new Exception('Memory rule not found for prompt bootstrap');
+        }
+
+        return $this->registry->bootstrapOwner(
+            $this->buildPromptDescriptor($rule),
+            $active_content !== null ? (string)$active_content : $this->getActivePromptTemplate($rule),
+            $meta_json !== null ? $meta_json : $this->getActivePromptMetaJson($rule),
+            false,
+            array(
+                'llm_model' => $rule['llm_model'] ?? '',
+                'llm_temperature' => $rule['llm_temperature'] ?? '0.2',
+                'llm_max_tokens' => $rule['llm_max_tokens'] ?? '1200'
+            )
+        );
+    }
+
+    /**
      * Sync the rule prompt into prompt lab.
      *
      * @param array $rule

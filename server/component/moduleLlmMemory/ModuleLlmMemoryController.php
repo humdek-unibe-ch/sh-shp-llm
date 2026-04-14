@@ -192,7 +192,10 @@ class ModuleLlmMemoryController extends BaseController
             }
             $rule['prompt_template'] = $service->getActivePromptTemplate($rule);
             $rule['prompt_meta_json'] = $service->getActivePromptMetaJson($rule);
-            $this->sendJsonResponse(['rule' => $rule]);
+            $this->sendJsonResponse([
+                'rule' => $rule,
+                'prompt_bootstrap' => $service->getPromptBootstrap($rule, $rule['prompt_template'], $rule['prompt_meta_json'])
+            ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -229,7 +232,10 @@ class ModuleLlmMemoryController extends BaseController
             $rule = $service->createRule($payload, $prompt_template, $prompt_meta_json, $prompt_change_note);
             $rule['prompt_template'] = $service->getActivePromptTemplate($rule);
             $rule['prompt_meta_json'] = $service->getActivePromptMetaJson($rule);
-            $this->sendJsonResponse(['rule' => $rule]);
+            $this->sendJsonResponse([
+                'rule' => $rule,
+                'prompt_bootstrap' => $service->getPromptBootstrap($rule, $rule['prompt_template'], $rule['prompt_meta_json'])
+            ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
@@ -252,7 +258,10 @@ class ModuleLlmMemoryController extends BaseController
             $rule = $service->updateRule($rule_id, $payload, $prompt_template, $prompt_meta_json, $prompt_change_note);
             $rule['prompt_template'] = $service->getActivePromptTemplate($rule);
             $rule['prompt_meta_json'] = $service->getActivePromptMetaJson($rule);
-            $this->sendJsonResponse(['rule' => $rule]);
+            $this->sendJsonResponse([
+                'rule' => $rule,
+                'prompt_bootstrap' => $service->getPromptBootstrap($rule, $rule['prompt_template'], $rule['prompt_meta_json'])
+            ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

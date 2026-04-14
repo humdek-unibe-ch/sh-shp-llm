@@ -682,6 +682,7 @@ interface MemoryRulesBootstrapResponse {
 
 interface MemoryRuleResponse {
   rule: MemoryRuleRecord;
+  prompt_bootstrap?: import('../components/prompts/promptTypes').PromptBootstrapData;
   error?: string;
 }
 

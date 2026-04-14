@@ -289,6 +289,9 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       setFieldMappingJson(toPrettyJson(normalized.field_mapping));
       setDataConfigJson(toPrettyJson(normalized.data_config));
       setRefreshSectionsJson(toPrettyJson(normalized.refresh_sections));
+      if (response.prompt_bootstrap) {
+        setPromptBootstrap(response.prompt_bootstrap);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rule');
     }
@@ -318,6 +321,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
         setSelectedRuleId(null);
         setDraft(null);
         setMetaState(parsePromptMeta('{}'));
+        setPromptBootstrap(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load rules');
@@ -663,27 +667,31 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       if (response.error) throw new Error(response.error);
       const savedRule = normalizeRule(response.rule, rules.findIndex((rule) => rule.id === nextDraft.id));
       await loadRulesBootstrap(nextDraft.id);
-      try {
-        const bootstrap = await api.bootstrapOwner(
-          {
-            ownerType: 'llm_memory_rule',
-            ownerId: savedRule.id,
-            promptSlot: 'memory_rule',
-            languageId: 1,
-            pageId: config.pageId ?? null,
-            title: savedRule.label || `Rule #${savedRule.id}`,
-          },
-          response.rule.prompt_template || savedRule.prompt_template || '',
-          response.rule.prompt_meta_json || savedRule.prompt_meta_json || '{}',
-          {
-            llm_model: savedRule.llm_model || '',
-            llm_temperature: savedRule.llm_temperature || '',
-            llm_max_tokens: savedRule.llm_max_tokens || '',
-          },
-        );
-        setPromptBootstrap(bootstrap);
-      } catch {
-        await reloadPromptBootstrap().catch(() => undefined);
+      if (response.prompt_bootstrap) {
+        setPromptBootstrap(response.prompt_bootstrap);
+      } else {
+        try {
+          const bootstrap = await api.bootstrapOwner(
+            {
+              ownerType: 'llm_memory_rule',
+              ownerId: savedRule.id,
+              promptSlot: 'memory_rule',
+              languageId: 1,
+              pageId: config.pageId ?? null,
+              title: savedRule.label || `Rule #${savedRule.id}`,
+            },
+            response.rule.prompt_template || savedRule.prompt_template || '',
+            response.rule.prompt_meta_json || savedRule.prompt_meta_json || '{}',
+            {
+              llm_model: savedRule.llm_model || '',
+              llm_temperature: savedRule.llm_temperature || '',
+              llm_max_tokens: savedRule.llm_max_tokens || '',
+            },
+          );
+          setPromptBootstrap(bootstrap);
+        } catch {
+          await reloadPromptBootstrap().catch(() => undefined);
+        }
       }
       setSuccess('Rule saved.');
     } catch (err) {
@@ -786,7 +794,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                 </Card.Body></Card>
 
                 {isDirectMode ? <Card className="memory-rule-section"><Card.Header>Direct Mapping</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Field Mapping</Form.Label><Form.Text className="text-muted mb-2">Use a JSON object like <code>{"{\"preferred_name\":\"{{first_name}}\",\"city\":\"{{city}}\"}"}</code>. Each key becomes a memory field, and each <code>{'{{value}}'}</code> placeholder is replaced from submitted data. A fuller example is documented in the global memory user guide.</Form.Text><JsonMonacoEditor value={fieldMappingJson} minHeight={220} expectObject onChange={setFieldMappingJson} /></Form.Group></Card.Body></Card> : null}
-                {isLlmMode ? <><Card className="memory-rule-section"><Card.Header>LLM Summarization Inputs</Card.Header><Card.Body><div className="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><div className="font-weight-bold">Data Config</div><div className="text-muted small">Reuse the shared data-config builder to pull extra values into the prompt context.</div></div><Button size="sm" variant={draft.data_config.length > 0 ? 'warning' : 'outline-secondary'} onClick={openDataConfigModal}>{getDataConfigLabel()}</Button></div>{draft.data_config.length > 0 ? <div className="mt-3 small text-muted">{draft.data_config.length} data config item{draft.data_config.length > 1 ? 's' : ''} configured.</div> : <div className="mt-3 small text-muted">No extra data sources configured yet.</div>}</Card.Body></Card><Card className="memory-rule-section"><Card.Header>Prompt</Card.Header><Card.Body><PromptToolbar activeVersion={activeVersion} dirty={isDirty} disabled={!promptDescriptor || promptLoading} changeNote={promptChangeNote} onChangeNote={handleChangeNote} onOpenVersions={() => { reloadPromptBootstrap().catch(() => undefined); setShowVersions(true); }} onOpenCompare={() => { const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft'; setDiffState({ initialLeftKey: activeKey, initialRightKey: 'draft' }); setShowDiff(true); }} onOpenPlayground={() => setShowPlayground(true)} onOpenDatasets={() => setShowDatasets(true)} onOpenBuilder={() => setShowBuilder(true)} /><PromptEditor value={draft.prompt_template} language="markdown" onChange={syncPromptTemplate} minHeight={260} /></Card.Body></Card></> : null}
+                {isLlmMode ? <><Card className="memory-rule-section"><Card.Header>LLM Summarization Inputs</Card.Header><Card.Body><div className="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><div className="font-weight-bold">Data Config</div><div className="text-muted small">Reuse the shared data-config builder to pull extra values into the prompt context.</div></div><Button size="sm" variant={draft.data_config.length > 0 ? 'warning' : 'outline-secondary'} onClick={openDataConfigModal}>{getDataConfigLabel()}</Button></div>{draft.data_config.length > 0 ? <div className="mt-3 small text-muted">{draft.data_config.length} data config item{draft.data_config.length > 1 ? 's' : ''} configured.</div> : <div className="mt-3 small text-muted">No extra data sources configured yet.</div>}</Card.Body></Card><Card className="memory-rule-section"><Card.Header>Prompt</Card.Header><Card.Body><PromptToolbar activeVersion={activeVersion} dirty={isDirty} disabled={!promptDescriptor || promptLoading} changeNote={promptChangeNote} onChangeNote={handleChangeNote} onOpenVersions={() => setShowVersions(true)} onOpenCompare={() => { const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft'; setDiffState({ initialLeftKey: activeKey, initialRightKey: 'draft' }); setShowDiff(true); }} onOpenPlayground={() => setShowPlayground(true)} onOpenDatasets={() => setShowDatasets(true)} onOpenBuilder={() => setShowBuilder(true)} /><PromptEditor value={draft.prompt_template} language="markdown" onChange={syncPromptTemplate} minHeight={260} /></Card.Body></Card></> : null}
 
                 <Card className="memory-rule-section"><Card.Header>Advanced</Card.Header><Card.Body><Row><Col md={6}><Form.Group><Form.Label>Usage Tags</Form.Label><Form.Control value={draft.usage_tags.join(', ')} onChange={(event) => setDraftPatch({ usage_tags: parseCsvList(event.target.value) })} placeholder="analytics, onboarding" /></Form.Group></Col><Col md={6}><Form.Group><Form.Label>Refresh Sections</Form.Label><Dropdown><Dropdown.Toggle size="sm" variant="outline-secondary" className="w-100 text-left d-flex justify-content-between align-items-center"><span className="text-truncate">{getSelectedSectionIds().length === 0 ? 'Select sections...' : `${getSelectedSectionIds().length} section${getSelectedSectionIds().length > 1 ? 's' : ''} selected`}</span></Dropdown.Toggle><Dropdown.Menu className="w-100 sections-dropdown-menu" style={{ maxHeight: '250px', overflowY: 'auto' }}><div className="px-2 pb-2"><Form.Control size="sm" type="text" placeholder="Search sections..." value={sectionSearch} onChange={(event) => setSectionSearch(event.target.value)} onClick={(event) => event.stopPropagation()} /></div>{filteredSections.length === 0 ? <Dropdown.ItemText className="text-muted small">No sections found</Dropdown.ItemText> : filteredSections.map((section) => (<Dropdown.Item key={section.id} as="button" className="small py-1" active={getSelectedSectionIds().includes(Number(section.id))} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSection(Number(section.id)); }}><Form.Check type="checkbox" checked={getSelectedSectionIds().includes(Number(section.id))} onChange={() => undefined} label={<span>{section.name} <small className="text-muted">({section.id})</small></span>} className="mb-0" /></Dropdown.Item>))}</Dropdown.Menu></Dropdown>{getSelectedSectionIds().length > 0 ? <div className="mt-2">{getSelectedSectionIds().map((id) => { const section = sections.find((item) => Number(item.id) === id); return <Badge key={id} variant="info" className="mr-1 mb-1 cursor-pointer" onClick={() => toggleSection(id)}>{section?.name || id} <i className="fas fa-times ml-1"></i></Badge>; })}</div> : null}<Form.Text className="text-muted">Sections to refresh after a successful memory update.</Form.Text></Form.Group></Col></Row></Card.Body></Card>
               </Card.Body>
