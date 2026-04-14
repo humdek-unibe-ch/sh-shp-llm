@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && vite build --config vite.admin.config.ts && vite build --config vite.scripts.config.ts && vite build --config vite.memory.config.ts && vite build --config vite.form.config.ts && vite build --config vite.apikeys.config.ts && vite build --config vite.prompt.config.ts && node move-css.cjs",
+    "build": "tsc && vite build && vite build --config vite.admin.config.ts && vite build --config vite.scripts.config.ts && vite build --config vite.memory.config.ts && vite build --config vite.settings.config.ts && vite build --config vite.form.config.ts && vite build --config vite.apikeys.config.ts && vite build --config vite.prompt.config.ts && node move-css.cjs",
     "preview": "vite preview",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit"

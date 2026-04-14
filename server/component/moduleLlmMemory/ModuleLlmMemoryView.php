@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
+require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 class ModuleLlmMemoryView extends BaseView
 {
@@ -15,8 +16,18 @@ class ModuleLlmMemoryView extends BaseView
 
     public function output_content()
     {
+        $menuItems = LlmAdminLayoutHelper::getMenuItems(
+            $this->model->get_services(),
+            LLM_MEMORY_PAGE_KEYWORD
+        );
+
         $config = $this->getReactConfig();
+
+        ob_start();
         require __DIR__ . "/tpl/module_llm_memory.php";
+        $pageContent = ob_get_clean();
+
+        include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
     public function output_content_mobile()
@@ -30,6 +41,7 @@ class ModuleLlmMemoryView extends BaseView
             $git_version = shell_exec("git describe --tags");
             $version = $git_version ? rtrim($git_version) : 'dev';
             $local = array(
+                __DIR__ . "/../../../css/ext/llm-admin-layout.css?v=" . $version,
                 __DIR__ . "/../../../css/ext/llm-memory.css?v=" . $version,
             );
         }
@@ -59,8 +71,6 @@ class ModuleLlmMemoryView extends BaseView
             'csrfToken' => $this->resolveCsrfToken(),
             'promptLabEndpoint' => $prompt_endpoint,
             'pageId' => $this->model->get_services()->get_db()->fetch_page_id_by_keyword(LLM_MEMORY_PAGE_KEYWORD),
-            'adminConsoleUrl' => $this->model->get_link_url(LLM_ADMIN_PAGE_KEYWORD),
-            'scriptsUrl' => $this->model->get_link_url(LLM_SCRIPTS_PAGE_KEYWORD),
             'pageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
         ]);
     }

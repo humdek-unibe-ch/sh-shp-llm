@@ -2,7 +2,20 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.2.0] - 2026-03-25 Pre-release
+## [1.2.0] - 2026-04-14 Pre-release
+
+### Admin UI Redesign
+
+- Replaced the CMS-driven property page with a unified admin layout featuring a persistent left sidebar and per-section content panels.
+- All four admin sections (Settings, Conversations, Scripts, Memory) now share a common sidebar navigation shell.
+- Each section remains a separate ACL-controlled page, preserving SelfHelp's standard permission model.
+- The existing `sh_module_llm` page is converted from `backend` to `component` action, rendering a React-based settings interface for API keys, model defaults, and memory configuration.
+- Settings remain stored in `pages_fields` on the same `sh_module_llm` page, preserving backward compatibility with all 20+ service classes.
+- Normalized all admin URLs under `/admin/module_llm/` hierarchy.
+- Removed the obsolete `llm_panel` field and its CMS hooks (sidebar replaces the old button panel).
+- Removed cross-navigation buttons from React apps (sidebar handles all navigation).
+- Added page title translations (EN/DE) for all admin pages to populate sidebar labels.
+- Responsive layout: sidebar collapses to a horizontal menu on small screens.
 
 ### Global User Memory
 

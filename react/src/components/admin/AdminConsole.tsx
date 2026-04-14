@@ -499,16 +499,6 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                 )}
               </div>
               <div className="admin-header-buttons">
-                {config.memoryPageUrl && (
-                  <Button
-                    size="sm"
-                    variant="outline-secondary"
-                    href={config.memoryPageUrl}
-                  >
-                    <i className="fas fa-brain"></i>
-                    <span className="d-none d-sm-inline">Memory</span>
-                  </Button>
-                )}
                 <Button
                   size="sm"
                   variant={showFilters ? 'secondary' : 'outline-secondary'}

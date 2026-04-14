@@ -7,8 +7,6 @@ import { memoryApi } from '../../utils/api';
 export interface MemoryPageConfig {
   csrfToken?: string;
   promptLabEndpoint: string;
-  adminConsoleUrl?: string;
-  scriptsUrl?: string;
   pageUrl?: string;
   pageId?: number | null;
 }
@@ -93,10 +91,6 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
         <div>
           <h2 className="mb-1">LLM Memory</h2>
           <div className="text-muted">Dedicated global memory manager with sharable URL state.</div>
-        </div>
-        <div className="mt-2 mt-md-0">
-          {config.adminConsoleUrl && <Button variant="outline-secondary" className="mr-2" href={config.adminConsoleUrl}>Conversations</Button>}
-          {config.scriptsUrl && <Button variant="outline-secondary" href={config.scriptsUrl}>Scripts</Button>}
         </div>
       </div>
 

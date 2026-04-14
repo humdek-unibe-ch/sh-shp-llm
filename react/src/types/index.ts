@@ -595,7 +595,6 @@ export interface AdminConfig {
     dateToLabel: string;
   };
   csrfToken?: string;
-  memoryPageUrl?: string;
 }
 
 export interface AdminFilterOption {

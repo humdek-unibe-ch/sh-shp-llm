@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
+require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 /**
  * The view class for the LLM admin console component.
@@ -27,8 +28,18 @@ class ModuleLlmAdminConsoleView extends BaseView
 
     public function output_content()
     {
+        $menuItems = LlmAdminLayoutHelper::getMenuItems(
+            $this->model->get_services(),
+            LLM_ADMIN_PAGE_KEYWORD
+        );
+
         $config = $this->getReactConfig();
+
+        ob_start();
         include __DIR__ . '/tpl/module_llm_admin_console.php';
+        $pageContent = ob_get_clean();
+
+        include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
     public function output_content_mobile()
@@ -42,6 +53,7 @@ class ModuleLlmAdminConsoleView extends BaseView
             $git_version = shell_exec("git describe --tags");
             $version = $git_version ? rtrim($git_version) : 'dev';
                 $local = array(
+                    __DIR__ . "/../../../css/ext/llm-admin-layout.css?v=" . $version,
                     __DIR__ . "/../../../css/ext/llm-admin.css?v=" . $version,
                 );
         }
@@ -72,7 +84,6 @@ class ModuleLlmAdminConsoleView extends BaseView
             'showFilters' => $this->model->getShowFilters(),
             'labels' => $this->model->getLabels(),
             'csrfToken' => $_SESSION['csrf_token'] ?? '',
-            'memoryPageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
         ]);
     }
 }

@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
 require_once __DIR__ . "/../../../../../component/style/BaseStyleComponent.php";
+require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 /**
  * View for the LLM Scripts module.
@@ -22,12 +23,22 @@ class ModuleLlmScriptView extends BaseView
 
     public function output_content()
     {
+        $menuItems = LlmAdminLayoutHelper::getMenuItems(
+            $this->model->get_services(),
+            LLM_SCRIPTS_PAGE_KEYWORD
+        );
+
         $config = $this->getReactConfig();
         $dataConfigBuilder = new BaseStyleComponent("dataConfigBuilder", array(
             "value" => "",
             "name" => "data_config"
         ));
+
+        ob_start();
         require __DIR__ . "/tpl/module_llm_scripts.php";
+        $pageContent = ob_get_clean();
+
+        include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
     public function output_content_mobile()
@@ -41,6 +52,7 @@ class ModuleLlmScriptView extends BaseView
             $git_version = shell_exec("git describe --tags");
             $version = $git_version ? rtrim($git_version) : 'dev';
             $local = array(
+                __DIR__ . "/../../../css/ext/llm-admin-layout.css?v=" . $version,
                 __DIR__ . "/../../../css/ext/llm-scripts.css?v=" . $version,
             );
         }

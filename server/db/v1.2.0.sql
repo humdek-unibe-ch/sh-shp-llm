@@ -155,4 +155,53 @@ VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'l
 INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
 VALUES ((SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'), 'llm-memory-on-profile-name', 'Trigger memory update after successful profile name change', 'ProfileModel', 'change_user_name', 'LlmHooks', 'onProfileNameChangeMemoryTrigger', 20);
 
+-- =====================================================
+-- ADMIN UI REDESIGN: Unified Layout with Sidebar
+-- =====================================================
+
+-- 1a. Convert sh_module_llm from backend to component action (loads Sh_module_llmComponent)
+--     Restore is_headless=0 and nav_position so it appears in the Modules navigation menu
+UPDATE `pages`
+SET `id_actions` = (SELECT id FROM actions WHERE `name` = 'component' LIMIT 1),
+    `is_headless` = 0,
+    `nav_position` = 200
+WHERE `keyword` = 'sh_module_llm';
+
+-- 1b. Ensure admin group has full access to settings page
+SET @id_page_llm_config = (SELECT id FROM pages WHERE keyword = 'sh_module_llm');
+INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
+VALUES ('0000000001', @id_page_llm_config, '1', '1', '1', '1');
+
+-- 1c. Normalize URLs under /admin/module_llm/
+UPDATE `pages` SET `url` = '/admin/module_llm/scripts'
+WHERE `keyword` = 'moduleLlmScript';
+
+UPDATE `pages` SET `url` = '/admin/module_llm/memory'
+WHERE `keyword` = 'moduleLlmMemory';
+
+-- 1d. Remove obsolete llm_panel field links and hooks (sidebar replaces panel buttons)
+DELETE FROM `pageType_fields`
+WHERE `id_pageType` = (SELECT id FROM pageType WHERE `name` = 'sh_module_llm')
+  AND `id_fields` = get_field_id('llm_panel');
+
+DELETE FROM `pages_fields`
+WHERE `id_pages` = (SELECT id FROM pages WHERE keyword = 'sh_module_llm')
+  AND `id_fields` = get_field_id('llm_panel');
+
+DELETE FROM `hooks` WHERE `name` = 'field-llm_panel-edit';
+DELETE FROM `hooks` WHERE `name` = 'field-llm_panel-view';
+
+-- 1e. Add page title translations for module pages (needed for sidebar labels)
+-- Uses INSERT IGNORE so existing translations are preserved
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
+VALUES
+(@id_page_llm_config, get_field_id('title'), '0000000001', 'LLM Settings'),
+(@id_page_llm_config, get_field_id('title'), '0000000002', 'LLM Einstellungen'),
+((SELECT id FROM pages WHERE keyword = 'moduleLlmAdminConsole'), get_field_id('title'), '0000000001', 'LLM Conversations'),
+((SELECT id FROM pages WHERE keyword = 'moduleLlmAdminConsole'), get_field_id('title'), '0000000002', 'LLM Konversationen'),
+((SELECT id FROM pages WHERE keyword = 'moduleLlmScript'), get_field_id('title'), '0000000001', 'LLM Scripts'),
+((SELECT id FROM pages WHERE keyword = 'moduleLlmScript'), get_field_id('title'), '0000000002', 'LLM Skripte'),
+((SELECT id FROM pages WHERE keyword = 'moduleLlmMemory'), get_field_id('title'), '0000000001', 'LLM Memory'),
+((SELECT id FROM pages WHERE keyword = 'moduleLlmMemory'), get_field_id('title'), '0000000002', 'LLM Speicher');
+
 COMMIT;
