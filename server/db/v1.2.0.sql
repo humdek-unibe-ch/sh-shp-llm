@@ -231,4 +231,17 @@ VALUES
 ((SELECT id FROM pages WHERE keyword = 'moduleLlmMemory'), get_field_id('title'), '0000000001', 'LLM Memory'),
 ((SELECT id FROM pages WHERE keyword = 'moduleLlmMemory'), get_field_id('title'), '0000000002', 'LLM Speicher');
 
+-- User cleanup hook for LLM records
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES (
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'llm-clean-user-data',
+    'Remove LLM-owned user data when core clean_user_data runs',
+    'UserModel',
+    'clean_user_data',
+    'LlmHooks',
+    'onCleanUserDataLlmCleanup',
+    20
+);
+
 COMMIT;

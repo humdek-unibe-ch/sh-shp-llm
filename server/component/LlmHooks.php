@@ -1650,6 +1650,44 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /**
+     * Clean LLM-owned user data when core user input cleanup runs.
+     * Hook on UserModel::clean_user_data (hook_overwrite_return, priority 20).
+     *
+     * Core cleanup already removes user activity, scheduled jobs, and all dataRows.
+     * This hook removes the remaining LLM-specific user artifacts that live
+     * outside the generic dataRows tables.
+     */
+    public function onCleanUserDataLlmCleanup($args)
+    {
+        $uid = (int)($args['uid'] ?? 0);
+        $res = $this->execute_private_method($args);
+        if ($res === false || $uid <= 0) {
+            return $res;
+        }
+
+        try {
+            $this->db->begin_transaction();
+
+            $cleanup_ok = true;
+            $cleanup_ok &= $this->db->remove_by_fk('refresh_events', 'id_users', $uid);
+            $cleanup_ok &= $this->db->remove_by_fk('llmConversations', 'id_users', $uid);
+
+            if (!$cleanup_ok) {
+                $this->db->rollback();
+                error_log('LLM cleanup after clean_user_data failed for user ' . $uid);
+                return false;
+            }
+
+            $this->db->commit();
+            return true;
+        } catch (Exception $e) {
+            $this->db->rollback();
+            error_log('LLM cleanup after clean_user_data exception for user ' . $uid . ': ' . $e->getMessage());
+            return false;
+        }
+    }
+
 
 }
 ?>
