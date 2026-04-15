@@ -151,7 +151,7 @@ class LlmMemoryUpdateService extends BaseLlmService
         }
 
         try {
-            $conversation_id = $this->resolveMemoryConversationId($user_id, $memory_key);
+            $conversation_id = $this->resolveMemoryConversationId($user_id, $memory_key, $model);
 
             $response = $this->llm_service->callLlmApi(
                 $prompt,
@@ -501,24 +501,31 @@ class LlmMemoryUpdateService extends BaseLlmService
      * Resolve or create a conversation ID dedicated to memory updates for this user/key.
      * Uses a stable title pattern so repeated calls reuse the same conversation.
      */
-    private function resolveMemoryConversationId($user_id, $memory_key)
+    private function resolveMemoryConversationId($user_id, $memory_key, $model = null)
     {
         $title = '__memory_update__' . $memory_key;
+        $config = $this->getLlmConfig();
+        $effective_model = $model ?: ($config['llm_default_model'] ?? LLM_DEFAULT_MODEL);
+        $effective_model = $this->llm_service->normalizeModelIdentifier($effective_model);
 
         $existing = $this->db->query_db_first(
-            "SELECT id FROM llmConversations WHERE id_users = :uid AND title = :title AND deleted = 0 ORDER BY id DESC LIMIT 1",
+            "SELECT id, model FROM llmConversations WHERE id_users = :uid AND title = :title AND deleted = 0 ORDER BY id DESC LIMIT 1",
             [':uid' => $user_id, ':title' => $title]
         );
 
         if ($existing && !empty($existing['id'])) {
+            if (!empty($effective_model) && (string)($existing['model'] ?? '') !== $effective_model) {
+                $this->db->update_by_ids('llmConversations', [
+                    'model' => $effective_model,
+                ], [
+                    'id' => (int)$existing['id'],
+                ]);
+            }
             return (int)$existing['id'];
         }
 
-        $config = $this->getLlmConfig();
-        $model = $config['llm_default_model'] ?? LLM_DEFAULT_MODEL;
-
         return $this->llm_service->createConversation(
-            $user_id, $title, $model, null, null, null
+            $user_id, $title, $effective_model, null, null, null
         );
     }
 
