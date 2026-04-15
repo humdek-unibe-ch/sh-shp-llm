@@ -314,11 +314,16 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       setSections(response.editor?.sections || []);
       upsertAvailableKeys(response.editor?.available_keys || []);
 
-      const preferredId = nextSelectedId ?? selectedRuleId ?? config.selectedRuleId ?? nextRules[0]?.id ?? null;
+      const requestedId = nextSelectedId ?? selectedRuleId ?? config.selectedRuleId ?? null;
+      const preferredId = requestedId && nextRules.some((rule) => rule.id === requestedId)
+        ? requestedId
+        : nextRules[0]?.id ?? null;
+
       if (preferredId) {
         await loadRule(preferredId, nextRules);
       } else {
         setSelectedRuleId(null);
+        config.onRuleSelected?.(null);
         setDraft(null);
         setMetaState(parsePromptMeta('{}'));
         setPromptBootstrap(null);
@@ -622,18 +627,47 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   };
 
   const handleDelete = async () => {
-    if (!draft?.id || !window.confirm(`Delete memory rule "${draft.label || `Rule #${draft.id}`}"?`)) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const response = await memoryApi.deleteRule(draft.id);
-      if (response.error) throw new Error(response.error);
-      await loadRulesBootstrap(null);
-      setSuccess('Rule deleted.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete rule');
-    } finally {
-      setSaving(false);
+    if (!draft?.id) return;
+
+    const message = `Delete memory rule "${draft.label || `Rule #${draft.id}`}"?`;
+    const performDelete = async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const response = await memoryApi.deleteRule(draft.id);
+        if (response.error) throw new Error(response.error);
+        await loadRulesBootstrap(null);
+        setSuccess('Rule deleted.');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete rule');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    const jquery = (window as any).$ || (window as any).jQuery;
+    if (typeof jquery?.confirm === 'function') {
+      jquery.confirm({
+        title: 'Delete Memory Rule',
+        content: message,
+        type: 'red',
+        buttons: {
+          confirm: {
+            text: 'Delete',
+            btnClass: 'btn-danger',
+            action: () => { void performDelete(); },
+          },
+          cancel: {
+            text: 'Cancel',
+            action: () => {},
+          },
+        },
+      });
+      return;
+    }
+
+    if (window.confirm(message)) {
+      await performDelete();
     }
   };
 
