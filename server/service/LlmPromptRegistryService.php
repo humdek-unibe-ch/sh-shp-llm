@@ -256,6 +256,54 @@ class LlmPromptRegistryService extends BaseLlmService
     }
 
     /**
+     * Resolve the active prompt version for an owner, falling back to any
+     * locale stream that has an active version when the requested locale
+     * does not.
+     *
+     * @param array $descriptor
+     * @return array|null
+     */
+    public function resolveActiveVersionForOwner($descriptor)
+    {
+        $entry = $this->findEntry($descriptor);
+        if (!$entry || empty($entry['id'])) {
+            return null;
+        }
+
+        $preferred_language = isset($descriptor['id_languages']) ? (int)$descriptor['id_languages'] : null;
+        if ($preferred_language) {
+            $locale = $this->findLocale((int)$entry['id'], $preferred_language);
+            if ($locale && !empty($locale['active_version_id'])) {
+                return $this->getVersion((int)$locale['active_version_id']);
+            }
+        }
+
+        $fallback_locale = $this->db->query_db_first(
+            "SELECT *
+             FROM llm_prompt_locales
+             WHERE id_llm_prompt_entries = :entry_id
+               AND active_version_id IS NOT NULL
+             ORDER BY CASE
+                 WHEN :preferred_language IS NOT NULL AND id_languages = :preferred_language THEN 0
+                 WHEN id_languages IS NULL THEN 1
+                 ELSE 2
+             END,
+             id DESC
+             LIMIT 1",
+            array(
+                ':entry_id' => (int)$entry['id'],
+                ':preferred_language' => $preferred_language ?: null,
+            )
+        );
+
+        if ($fallback_locale && !empty($fallback_locale['active_version_id'])) {
+            return $this->getVersion((int)$fallback_locale['active_version_id']);
+        }
+
+        return null;
+    }
+
+    /**
      * Persist a fast summary row for a prompt lab run.
      *
      * @param array $payload

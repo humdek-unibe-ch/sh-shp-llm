@@ -302,7 +302,6 @@ class LlmMemoryConfigService extends BaseLlmService
                 'owner_id' => 0,
                 'prompt_slot' => 'memory_rule',
             ],
-            'prompt_version_override' => 0,
             'llm_model' => '',
             'llm_temperature' => '',
             'llm_max_tokens' => '',

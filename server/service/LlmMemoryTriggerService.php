@@ -510,10 +510,6 @@ class LlmMemoryTriggerService extends BaseLlmService
             $rule['field_mapping'] = $rule_overrides['field_mapping'];
         }
 
-        if (!empty($rule_overrides['prompt_version_override'])) {
-            $rule['prompt_version_override'] = (int)$rule_overrides['prompt_version_override'];
-        }
-
         return $rule;
     }
 

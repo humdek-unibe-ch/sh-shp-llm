@@ -390,8 +390,8 @@ class LlmMemoryRuleService extends BaseLlmService
      */
     public function getActivePromptTemplate($rule)
     {
-        $bootstrap = $this->registry->bootstrapOwner($this->buildPromptDescriptor($rule));
-        return (string)($bootstrap['active_version']['template_raw'] ?? '');
+        $active_version = $this->registry->resolveActiveVersionForOwner($this->buildPromptDescriptor($rule));
+        return (string)($active_version['template_raw'] ?? '');
     }
 
     /**
@@ -402,8 +402,8 @@ class LlmMemoryRuleService extends BaseLlmService
      */
     public function getActivePromptMetaJson($rule)
     {
-        $bootstrap = $this->registry->bootstrapOwner($this->buildPromptDescriptor($rule));
-        $meta = $bootstrap['active_version']['metadata_json'] ?? null;
+        $active_version = $this->registry->resolveActiveVersionForOwner($this->buildPromptDescriptor($rule));
+        $meta = $active_version['metadata_json'] ?? null;
         return is_string($meta) && trim($meta) !== '' ? $meta : '{}';
     }
 

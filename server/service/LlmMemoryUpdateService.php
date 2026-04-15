@@ -225,7 +225,7 @@ class LlmMemoryUpdateService extends BaseLlmService
     {
         $variables = $this->buildInterpolationVariables($rule, $normalized_payload, $current_memory, $memory_key);
         $prompt_text = $this->resolvePromptTemplate($rule);
-        $interpolated = $this->interpolatePrompt($prompt_text, $variables);
+        $interpolated = $this->db->replace_calced_values($prompt_text, $variables);
 
         $output_schema = json_encode([
             'type' => 'object',
@@ -273,7 +273,8 @@ class LlmMemoryUpdateService extends BaseLlmService
 
         $data_config = $rule['data_config'] ?? [];
         if (!empty($data_config) && is_array($data_config)) {
-            $this->resolveDataConfig($data_config, $normalized_payload, $vars);
+            $resolved_data_config = $this->db->replace_calced_values($data_config, $vars);
+            $this->resolveDataConfig($resolved_data_config, $normalized_payload, $vars);
         }
 
         return $vars;
@@ -343,6 +344,10 @@ class LlmMemoryUpdateService extends BaseLlmService
                 $selected = end($rows) ?: [];
             }
 
+            $scope = trim((string)($entry['scope'] ?? ''));
+            $display_name = (string)$user_input->get_dataTable_displayName($table_id);
+            $display_name = $display_name !== '' ? $display_name : $table_name;
+
             $map_fields = $entry['map_fields'] ?? [];
             if (is_array($map_fields) && !empty($map_fields)) {
                 foreach ($map_fields as $map) {
@@ -366,18 +371,52 @@ class LlmMemoryUpdateService extends BaseLlmService
                     $vars[$target] = is_scalar($value) || $value === null
                         ? (string)$value
                         : json_encode($value, JSON_UNESCAPED_SLASHES);
+
+                    if ($scope !== '') {
+                        $vars[$scope . '.' . $target] = $vars[$target];
+                    }
                 }
 
                 continue;
             }
 
             if ($retrieve === 'JSON' || $retrieve === 'all_as_array') {
-                $vars[$table_name] = json_encode($selected, JSON_UNESCAPED_SLASHES);
+                $encoded = json_encode($selected, JSON_UNESCAPED_SLASHES);
+                $vars[$table_name] = $encoded;
+                $vars[$display_name] = $encoded;
                 $vars[$table_name . '_count'] = (string)count($rows);
+                $vars[$display_name . '_count'] = (string)count($rows);
+
+                if ($scope !== '') {
+                    $vars[$scope] = $encoded;
+                    $vars[$scope . '.' . $table_name] = $encoded;
+                    $vars[$scope . '.' . $display_name] = $encoded;
+                    $vars[$scope . '.' . $table_name . '_count'] = (string)count($rows);
+                    $vars[$scope . '.' . $display_name . '_count'] = (string)count($rows);
+                }
+
+                if (!empty($entry['all_fields'])) {
+                    foreach ($rows as $row) {
+                        if (!is_array($row)) {
+                            continue;
+                        }
+                        foreach ($row as $col_key => $col_val) {
+                            $value = is_scalar($col_val) ? (string)$col_val : json_encode($col_val, JSON_UNESCAPED_SLASHES);
+                            $vars[$col_key] = $value;
+                            if ($scope !== '') {
+                                $vars[$scope . '.' . $col_key] = $value;
+                            }
+                        }
+                    }
+                }
             } elseif (is_array($selected)) {
                 foreach ($selected as $col_key => $col_val) {
+                    $value = is_scalar($col_val) ? (string)$col_val : json_encode($col_val, JSON_UNESCAPED_SLASHES);
                     if (!isset($vars[$col_key])) {
-                        $vars[$col_key] = is_scalar($col_val) ? (string)$col_val : json_encode($col_val, JSON_UNESCAPED_SLASHES);
+                        $vars[$col_key] = $value;
+                    }
+                    if ($scope !== '') {
+                        $vars[$scope . '.' . $col_key] = $value;
                     }
                 }
             }
@@ -393,15 +432,8 @@ class LlmMemoryUpdateService extends BaseLlmService
         if (!empty($binding['owner_type']) && !empty($binding['prompt_slot']) && !empty($rule['id'])) {
             try {
                 $registry = new LlmPromptRegistryService($this->services);
-                if (!empty($rule['prompt_version_override'])) {
-                    $version = $registry->getVersion((int)$rule['prompt_version_override']);
-                    if ($version && !empty($version['template_raw'])) {
-                        return $version['template_raw'];
-                    }
-                }
                 $descriptor = $this->rule_service->buildPromptDescriptor($rule);
-                $bootstrap = $registry->bootstrapOwner($descriptor);
-                $active_version = $bootstrap['active_version'] ?? null;
+                $active_version = $registry->resolveActiveVersionForOwner($descriptor);
                 if ($active_version && !empty($active_version['template_raw'])) {
                     return $active_version['template_raw'];
                 }
@@ -433,17 +465,6 @@ class LlmMemoryUpdateService extends BaseLlmService
             . "Keep only stable, useful facts about the user.\n"
             . "If information conflicts, prefer the newer data.\n"
             . "Do not bloat the memory with transient details.";
-    }
-
-    /**
-     * Interpolate {{variable}} placeholders in the prompt text.
-     */
-    private function interpolatePrompt($template, $variables)
-    {
-        return preg_replace_callback('/\{\{(\w+)\}\}/', function ($matches) use ($variables) {
-            $key = $matches[1];
-            return $variables[$key] ?? $matches[0];
-        }, $template);
     }
 
     /**

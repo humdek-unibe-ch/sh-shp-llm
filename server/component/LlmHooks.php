@@ -1375,9 +1375,6 @@ class LlmHooks extends BaseHooks
         if (!empty($config['field_mapping']) && is_array($config['field_mapping'])) {
             $rule_overrides['field_mapping'] = $config['field_mapping'];
         }
-        if (!empty($config['prompt_version_override'])) {
-            $rule_overrides['prompt_version_override'] = (int)$config['prompt_version_override'];
-        }
 
         if (!empty($rule_ids)) {
             $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, $rule_overrides);
@@ -1494,7 +1491,6 @@ class LlmHooks extends BaseHooks
             "run_async" => !array_key_exists('run_async', $job) || !empty($job['run_async']),
             "execution_mode" => $job['execution_mode'] ?? '',
             "field_mapping" => $field_mapping,
-            "prompt_version_override" => !empty($job['prompt_version_override']) ? (int)$job['prompt_version_override'] : 0,
             "trigger_type" => $job['trigger_type'] ?? 'finished',
             "form_data" => $args['form_data'],
             "id_users" => $_SESSION['id_user'] ?? null
