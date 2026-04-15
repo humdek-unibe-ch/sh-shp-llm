@@ -137,9 +137,18 @@ class LlmMemoryUpdateService extends BaseLlmService
         $current_memory = $this->storage_service->getEffectiveMemory($user_id, $memory_key);
 
         $prompt = $this->buildPrompt($rule, $normalized_payload, $current_memory, $memory_key);
-        $model = !empty($rule['llm_model']) ? $rule['llm_model'] : null;
+        $config = $this->getLlmConfig();
+        $model = !empty($rule['llm_model'])
+            ? (string)$rule['llm_model']
+            : (string)($config['llm_default_model'] ?? LLM_DEFAULT_MODEL);
         $temperature = isset($rule['llm_temperature']) ? (float)$rule['llm_temperature'] : 0.2;
         $max_tokens = isset($rule['llm_max_tokens']) ? (int)$rule['llm_max_tokens'] : 1200;
+
+        if (defined('DEBUG') && DEBUG) {
+            error_log('LLM Memory: resolved model for rule '
+                . ($rule['key'] ?? 'unknown')
+                . ' => ' . ($model !== '' ? $model : '[empty]'));
+        }
 
         try {
             $conversation_id = $this->resolveMemoryConversationId($user_id, $memory_key);
