@@ -1,3 +1,12 @@
+/**
+ * Dataset Import Modal — manual structured import of test cases.
+ *
+ * Provides a source-type selector (JSON, CSV) and a text/file input area
+ * for importing cases without LLM assistance. Validates and previews
+ * before persisting.
+ *
+ * @module components/datasets/DatasetImportModal
+ */
 import React, { useEffect, useState } from 'react';
 import Select from 'react-select';
 import { Button, Form, Modal, Spinner, Table } from 'react-bootstrap';
@@ -5,6 +14,7 @@ import type { PromptDescriptor, PromptExecutionProfile } from '../prompts/prompt
 import type { createDatasetApi } from './datasetApi';
 import type { PromptImportCandidate, PromptImportSourceType } from './datasetTypes';
 
+/** shortText function. */
 function shortText(value: string, max = 140): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= max) {
@@ -13,6 +23,7 @@ function shortText(value: string, max = 140): string {
   return `${normalized.slice(0, max)}...`;
 }
 
+/** candidatePreview function. */
 function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
   if (candidate.preview_text) {
     return shortText(candidate.preview_text, 140);
@@ -26,10 +37,12 @@ function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptI
   return shortText(candidate.content || '', 140) || '(empty message)';
 }
 
+/** candidateAssistantPreview function. */
 function candidateAssistantPreview(candidate: PromptImportCandidate): string {
   return shortText(candidate.assistant_preview || candidate.response_content || '', 140);
 }
 
+/** candidateMeta function. */
 function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
   if (sourceType === 'script_run') {
     return `Script #${candidate.id} | model: ${candidate.model || 'default'}`;
@@ -58,6 +71,7 @@ function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImpo
   return parts.length > 0 ? parts.join(' | ') : 'No linked IDs';
 }
 
+/** sourceExecutionProfile function. */
 function sourceExecutionProfile(sourceType: PromptImportSourceType, fallback: PromptExecutionProfile): string {
   if (sourceType === 'form_submission') return 'form_runtime';
   if (sourceType === 'conversation_message') {
@@ -79,6 +93,7 @@ interface DatasetImportModalProps {
   onImported: (count: number) => void;
 }
 
+/** Modal dialog for dataset import modal. */
 export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   show,
   onHide,

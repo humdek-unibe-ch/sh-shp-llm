@@ -97,6 +97,7 @@ class LlmChatView extends StyleView
         return json_encode($this->model->getChatConfig());
     }
 
+    /** @return array Mobile JSON output with chat configuration and conversation data. */
     public function output_content_mobile()
     {
         // Check CMS editing mode (same as web version)

@@ -1,3 +1,18 @@
+/**
+ * Prompt Lab API client.
+ *
+ * Central HTTP client for all Prompt Lab operations: prompt CRUD,
+ * versioning, playground execution, builder calls, dataset management,
+ * evaluation runs, and execution profiles. All requests use the
+ * standard SelfHelp AJAX envelope (`{success, data}`) and route
+ * through the CMS page URL with an `action` query parameter.
+ *
+ * The factory function `createPromptLabApi` accepts a base URL and
+ * returns a namespaced API object consumed by the Prompt Lab UI and
+ * its sub-modules (datasets, evaluations, builder).
+ *
+ * @module components/prompts/promptApi
+ */
 import type {
   PromptBootstrapData,
   PromptBuilderExample,
@@ -118,6 +133,7 @@ interface MoveDatasetCasesRequest {
   removeSource?: boolean;
 }
 
+/** appendDescriptor function. */
 function appendDescriptor(formData: FormData, descriptor: PromptDescriptor): void {
   formData.append('owner_type', descriptor.ownerType);
   formData.append('owner_id', String(descriptor.ownerId));
@@ -134,6 +150,7 @@ function appendDescriptor(formData: FormData, descriptor: PromptDescriptor): voi
   }
 }
 
+/** extractErrorMessage function. */
 function extractErrorMessage(data: unknown): string {
   if (typeof data === 'string' && data.trim() !== '') {
     return data;
@@ -147,6 +164,7 @@ function extractErrorMessage(data: unknown): string {
   return 'Prompt request failed';
 }
 
+/** normalizePromptEndpoint function. */
 function normalizePromptEndpoint(endpoint: string): string {
   if (!endpoint) {
     return endpoint;
@@ -174,6 +192,7 @@ function normalizePromptEndpoint(endpoint: string): string {
   return endpoint;
 }
 
+/** resolveCsrfToken function. */
 function resolveCsrfToken(explicitToken?: string): string {
   if (explicitToken && explicitToken.trim() !== '') {
     return explicitToken;
@@ -197,6 +216,7 @@ function resolveCsrfToken(explicitToken?: string): string {
   return '';
 }
 
+/** API client for create prompt lab api. */
 export function createPromptLabApi(endpoint: string, csrfToken?: string) {
   const resolvedEndpoint = normalizePromptEndpoint(endpoint);
   const resolvedCsrfToken = resolveCsrfToken(csrfToken);

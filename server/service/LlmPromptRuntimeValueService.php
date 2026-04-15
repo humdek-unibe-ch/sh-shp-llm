@@ -8,9 +8,19 @@ require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 require_once __DIR__ . '/LlmScriptService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
 
+/**
+ * LLM Prompt Runtime Value Service
+ *
+ * Resolves runtime variable bindings for prompt execution. Collects
+ * values from memory rules, execution profiles, scripts, and user-provided
+ * overrides, then merges them into a flat map for variable substitution.
+ *
+ * @package LLM Plugin
+ * @see LlmPromptVariableService For placeholder detection and substitution
+ */
 class LlmPromptRuntimeValueService extends BaseLlmService
 {
-    /** @var LlmPromptExecutionProfileService */
+    /** @var LlmPromptExecutionProfileService Provides profile-level variable defaults */
     private $profile_service;
 
     /** @var LlmScriptService */

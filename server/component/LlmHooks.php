@@ -659,6 +659,14 @@ class LlmHooks extends BaseHooks
     /**
      * Output select LLM result placement field (edit mode).
      */
+    /**
+     * Build a CMS select component for LLM result placement (top/bottom/left/right).
+     *
+     * @param string $value    Current placement value.
+     * @param string $name     Form field name attribute.
+     * @param int    $disabled 1 to disable editing, 0 for editable.
+     * @return BaseStyleComponent Select component.
+     */
     private function outputSelectLlmResultPlacementField($value, $name, $disabled)
     {
         $placements = [
@@ -676,6 +684,13 @@ class LlmHooks extends BaseHooks
         ));
     }
 
+    /**
+     * Hook handler that injects the result-placement select into the CMS field output.
+     *
+     * @param array $args     Hook arguments with field metadata.
+     * @param int   $disabled 1 for view mode, 0 for edit mode.
+     * @return mixed Modified component tree with placement select appended.
+     */
     private function returnSelectLlmResultPlacementField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
@@ -698,11 +713,13 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /** @return mixed CMS edit-mode output for the LLM result placement field. */
     public function outputFieldLlmResultPlacementEdit($args)
     {
         return $this->returnSelectLlmResultPlacementField($args, 0);
     }
 
+    /** @return mixed CMS view-mode output for the LLM result placement field. */
     public function outputFieldLlmResultPlacementView($args)
     {
         return $this->returnSelectLlmResultPlacementField($args, 1);
@@ -710,6 +727,14 @@ class LlmHooks extends BaseHooks
 
     /**
      * Output select LLM result panel type field (edit mode).
+     */
+    /**
+     * Build a CMS select component for LLM result panel type (default/card/modal/collapse).
+     *
+     * @param string $value    Current panel value.
+     * @param string $name     Form field name attribute.
+     * @param int    $disabled 1 to disable editing, 0 for editable.
+     * @return BaseStyleComponent Select component.
      */
     private function outputSelectLlmResultPanelField($value, $name, $disabled)
     {
@@ -728,6 +753,13 @@ class LlmHooks extends BaseHooks
         ));
     }
 
+    /**
+     * Hook handler that injects the result-panel select into the CMS field output.
+     *
+     * @param array $args     Hook arguments with field metadata.
+     * @param int   $disabled 1 for view mode, 0 for edit mode.
+     * @return mixed Modified component tree with panel select appended.
+     */
     private function returnSelectLlmResultPanelField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
@@ -750,11 +782,13 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /** @return mixed CMS edit-mode output for the LLM result panel field. */
     public function outputFieldLlmResultPanelEdit($args)
     {
         return $this->returnSelectLlmResultPanelField($args, 0);
     }
 
+    /** @return mixed CMS view-mode output for the LLM result panel field. */
     public function outputFieldLlmResultPanelView($args)
     {
         return $this->returnSelectLlmResultPanelField($args, 1);
@@ -1197,6 +1231,14 @@ class LlmHooks extends BaseHooks
     /**
      * Output select memory storage mode field.
      */
+    /**
+     * Build a CMS select component for the memory storage mode, loading options from lookups.
+     *
+     * @param string $value    Current storage mode lookup code.
+     * @param string $name     Form field name attribute.
+     * @param int    $disabled 1 to disable editing, 0 for editable.
+     * @return BaseStyleComponent Select component with storage mode options.
+     */
     private function outputSelectMemoryStorageModeField($value, $name, $disabled)
     {
         try {
@@ -1228,6 +1270,13 @@ class LlmHooks extends BaseHooks
         ));
     }
 
+    /**
+     * Hook handler that injects the memory storage mode select into the CMS field output.
+     *
+     * @param array $args     Hook arguments with field metadata.
+     * @param int   $disabled 1 for view mode, 0 for edit mode.
+     * @return mixed Modified component tree with storage mode select appended.
+     */
     private function returnSelectMemoryStorageModeField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
@@ -1247,11 +1296,13 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /** @return mixed CMS edit-mode output for the memory storage mode field. */
     public function outputFieldMemoryStorageModeEdit($args)
     {
         return $this->returnSelectMemoryStorageModeField($args, 0);
     }
 
+    /** @return mixed CMS view-mode output for the memory storage mode field. */
     public function outputFieldMemoryStorageModeView($args)
     {
         return $this->returnSelectMemoryStorageModeField($args, 1);

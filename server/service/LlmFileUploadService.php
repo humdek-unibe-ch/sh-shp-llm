@@ -23,6 +23,7 @@ class LlmFileUploadService
 {
     private $llm_service;
 
+    /** @param LlmService $llm_service Core LLM service for conversation/message operations. */
     public function __construct($llm_service)
     {
         $this->llm_service = $llm_service;

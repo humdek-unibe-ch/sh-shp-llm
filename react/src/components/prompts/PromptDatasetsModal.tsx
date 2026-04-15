@@ -1,3 +1,11 @@
+/**
+ * Prompt Datasets Modal — manage evaluation datasets linked to a prompt.
+ *
+ * Allows creating, browsing, and selecting datasets. From here admins
+ * can launch AI import, manual case entry, and evaluation runs.
+ *
+ * @module components/prompts/PromptDatasetsModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Col, Modal, Row, Table } from 'react-bootstrap';
 import { createDatasetApi } from '../datasets/datasetApi';
@@ -52,6 +60,7 @@ function parseJsonSafe<T>(value: unknown, fallback: T): T {
   try { return (JSON.parse(value) as T) ?? fallback; } catch { return fallback; }
 }
 
+/** Modal dialog for prompt datasets modal. */
 export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   show,
   onHide,

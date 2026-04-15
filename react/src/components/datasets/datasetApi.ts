@@ -1,3 +1,13 @@
+/**
+ * Dataset API client factory.
+ *
+ * Creates a scoped API wrapper for dataset CRUD operations, test-case
+ * management, manual/AI import, and batch persistence. Delegates all
+ * HTTP calls to the underlying Prompt Lab API and adds dataset-specific
+ * parameter shaping.
+ *
+ * @module components/datasets/datasetApi
+ */
 import type { createPromptLabApi } from '../prompts/promptApi';
 import type { PromptDescriptor, PromptExecutionProfile } from '../prompts/promptTypes';
 import type {
@@ -12,6 +22,7 @@ import type {
 
 type PromptLabApi = ReturnType<typeof createPromptLabApi>;
 
+/** API client for create dataset api. */
 export function createDatasetApi(api: PromptLabApi) {
   return {
     listDatasets(descriptor: PromptDescriptor, executionProfile: PromptExecutionProfile, search = ''): Promise<PromptDataset[]> {

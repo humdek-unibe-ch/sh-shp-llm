@@ -1,3 +1,13 @@
+/**
+ * LLM Form Panel — renders the LLM-enhanced form interface.
+ *
+ * Manages the chat-style interaction for form-mode LLM components:
+ * sends user input, receives structured JSON responses that populate
+ * form fields, and renders results through a portal into the parent
+ * SelfHelp form section.
+ *
+ * @module components/styles/form/LlmFormPanel
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LlmFormConfig, LlmFormResult, LlmResultMeta } from '../../../types/form';
@@ -9,10 +19,12 @@ interface LlmFormPanelProps {
   formName: string;
 }
 
+/** Fetch or retrieve get main form data. */
 function getMainForm(container: HTMLElement): HTMLFormElement | null {
   return container.querySelector('form.selfHelp-form') as HTMLFormElement | null;
 }
 
+/** syncEditorValuesToForm function. */
 function syncEditorValuesToForm(form: HTMLFormElement): void {
   const textareas = form.querySelectorAll('textarea');
   textareas.forEach((ta) => {
@@ -27,6 +39,7 @@ function syncEditorValuesToForm(form: HTMLFormElement): void {
   });
 }
 
+/** hasMeaningfulValue function. */
 function hasMeaningfulValue(value: FormDataEntryValue | null | undefined): boolean {
   if (value === null || value === undefined) return false;
   const raw = String(value).trim();
@@ -34,6 +47,7 @@ function hasMeaningfulValue(value: FormDataEntryValue | null | undefined): boole
   return raw.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim() !== '';
 }
 
+/** areContextFieldsFilled function. */
 function areContextFieldsFilled(form: HTMLFormElement, contextFieldKeys: string[]): boolean {
   if (!contextFieldKeys || contextFieldKeys.length === 0) return true;
 
@@ -50,6 +64,7 @@ function areContextFieldsFilled(form: HTMLFormElement, contextFieldKeys: string[
   return true;
 }
 
+/** showFormAlert function. */
 function showFormAlert(container: HTMLElement, type: string, message: string): void {
   const existing = container.querySelector('.llm-form-alert');
   if (existing) existing.remove();
@@ -70,6 +85,7 @@ function showFormAlert(container: HTMLElement, type: string, message: string): v
   }, 5000);
 }
 
+/** Panel component for llm form panel. */
 export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContainer, formName }) => {
   const hasPreviousResult = config.llmShowPreviousResult && !!config.previousResult;
   const [result, setResult] = useState<string | null>(hasPreviousResult ? config.previousResult : null);

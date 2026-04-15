@@ -1,3 +1,12 @@
+/**
+ * Memory Admin Panel — browse and inspect stored memory entries.
+ *
+ * Provides a user-list sidebar and a detail view showing per-user
+ * memory entries with field values, timestamps, and raw JSON.
+ * Supports manual memory refresh and entry deletion for admins.
+ *
+ * @module components/memory/MemoryAdminPanel
+ */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Badge, Alert, Spinner, Button, Form, Modal, ListGroup, Tabs, Tab } from 'react-bootstrap';
 import { memoryApi } from '../../utils/api';
@@ -36,6 +45,7 @@ interface MemoryUser {
   memory_keys: string[];
 }
 
+/** tryParseJson utility. */
 function tryParseJson(value: unknown): unknown {
   if (typeof value !== 'string') {
     return value;
@@ -49,10 +59,12 @@ function tryParseJson(value: unknown): unknown {
 
 type MemoryDetailTab = 'current' | 'history' | 'rules';
 
+/** isPlainObject function. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** flattenDiffObject function. */
 function flattenDiffObject(value: unknown, prefix = '', output: Record<string, string> = {}) {
   if (isPlainObject(value)) {
     Object.entries(value).forEach(([key, child]) => {
@@ -66,6 +78,7 @@ function flattenDiffObject(value: unknown, prefix = '', output: Record<string, s
   return output;
 }
 
+/** buildDiffRows function. */
 function buildDiffRows(beforeValue: unknown, afterValue: unknown) {
   const beforeFlat = flattenDiffObject(beforeValue);
   const afterFlat = flattenDiffObject(afterValue);
@@ -88,6 +101,7 @@ function buildDiffRows(beforeValue: unknown, afterValue: unknown) {
     .filter((item): item is { path: string; before: string; after: string; status: string } => item !== null);
 }
 
+/** Panel component for memory admin panel. */
 export const MemoryAdminPanel: React.FC<{
   initialUserId?: number;
   initialMemoryKey?: string;

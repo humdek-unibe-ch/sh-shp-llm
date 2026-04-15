@@ -344,6 +344,11 @@ class LlmMemoryTriggerService extends BaseLlmService
         }
     }
 
+    /**
+     * Execute a memory update synchronously as a fallback when async scheduling fails.
+     *
+     * @param array $worker_args Worker arguments containing user_id, rule_keys, payload, etc.
+     */
     private function executeFallbackSync($worker_args)
     {
         require_once __DIR__ . '/LlmMemoryUpdateService.php';

@@ -25,6 +25,10 @@ class LlmMemoryAdminService extends BaseLlmService
     /** @var LlmMemoryRuleService */
     private $rule_service;
 
+    /**
+     * @param object                   $services       SelfHelp services container.
+     * @param LlmMemoryConfigService|null $config_service Optional override for config service.
+     */
     public function __construct($services, ?LlmMemoryConfigService $config_service = null)
     {
         parent::__construct($services);
@@ -215,6 +219,12 @@ class LlmMemoryAdminService extends BaseLlmService
         ];
     }
 
+    /**
+     * Fetch recent memory activity entries enriched with user names.
+     *
+     * @param int $limit Max entries to return.
+     * @return array Normalized activity rows with user_name.
+     */
     public function getRecentActivity($limit = 25)
     {
         $recent_activity = $this->storage_service->getRecentHistory((int)$limit);
@@ -234,6 +244,7 @@ class LlmMemoryAdminService extends BaseLlmService
         }, $recent_activity);
     }
 
+    /** @return string|null Timestamp of the most recent memory activity, or null. */
     private function getLatestActivityAt()
     {
         $recent_activity = $this->storage_service->getRecentHistory(1);
@@ -479,6 +490,11 @@ class LlmMemoryAdminService extends BaseLlmService
         return $info;
     }
 
+    /**
+     * Collect memory write-source definitions from form actions that contain memory-update jobs.
+     *
+     * @return array Source descriptors with rule_keys, trigger_type, and target metadata.
+     */
     private function getFormActionSources()
     {
         $rows = $this->db->query_db(
@@ -519,6 +535,11 @@ class LlmMemoryAdminService extends BaseLlmService
         return $sources;
     }
 
+    /**
+     * Collect memory write-sources from llmChat sections that have fallback memory_rule_keys configured.
+     *
+     * @return array Source descriptors with section/page metadata and resolved rule keys.
+     */
     private function getLlmChatFallbackSources()
     {
         $profile_service = new LlmPromptExecutionProfileService($this->services);
@@ -565,6 +586,11 @@ class LlmMemoryAdminService extends BaseLlmService
         return $sources;
     }
 
+    /**
+     * Collect memory write-sources from system-level rules (login, profile name change hooks).
+     *
+     * @return array Source descriptors for enabled rules with system source types.
+     */
     private function getSystemRuleSources()
     {
         $sources = array();
@@ -595,6 +621,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return $sources;
     }
 
+    /**
+     * Recursively walk a form-action config tree and extract all memory-update job nodes.
+     *
+     * @param array $config Form action configuration (potentially nested).
+     * @return array Flat list of job nodes whose job_type is LLM_MEMORY_UPDATE.
+     */
     private function extractMemoryJobsFromConfig($config)
     {
         $jobs = array();
@@ -617,6 +649,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return $jobs;
     }
 
+    /**
+     * Parse a comma-separated string or array into a deduplicated list of rule keys.
+     *
+     * @param string|array $raw Comma-separated string or array of keys.
+     * @return string[] Unique, trimmed, non-empty rule key strings.
+     */
     private function normalizeRuleKeys($raw)
     {
         if (is_array($raw)) {
@@ -630,6 +668,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return $keys;
     }
 
+    /**
+     * Parse a comma-separated string or array into a deduplicated list of rule IDs.
+     *
+     * @param string|array $raw Comma-separated string or array of IDs.
+     * @return int[] Unique, non-zero integer rule IDs.
+     */
     private function normalizeRuleIds($raw)
     {
         if (is_array($raw)) {
@@ -642,6 +686,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return array_values(array_filter(array_unique($ids)));
     }
 
+    /**
+     * Resolve rule keys from a job node, falling back to ID-based lookup when keys are absent.
+     *
+     * @param array $job Memory job node with memory_rule_keys or memory_rule_id(s).
+     * @return string[] Resolved rule key strings.
+     */
     private function resolveJobRuleKeys($job)
     {
         $rule_keys = $this->normalizeRuleKeys($job['memory_rule_keys'] ?? '');
@@ -665,6 +715,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return array_values(array_unique($resolved));
     }
 
+    /**
+     * Generate the CMS admin URL for a given form action.
+     *
+     * @param int $action_id Form action ID.
+     * @return string|null Router-generated URL, or null for invalid IDs.
+     */
     private function buildActionUrl($action_id)
     {
         if ((int)$action_id <= 0) {
@@ -676,6 +732,12 @@ class LlmMemoryAdminService extends BaseLlmService
 
     }
 
+    /**
+     * Enrich source descriptors with resolved rule reference objects (id, key, label).
+     *
+     * @param array $sources Source descriptors containing rule_keys arrays.
+     * @return array Same sources with an added rule_refs array on each entry.
+     */
     private function decorateSourcesWithRuleRefs($sources)
     {
         $rule_index = array();
@@ -717,6 +779,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return $sources;
     }
 
+    /**
+     * Normalize a raw memory storage row by decoding JSON fields and extracting flat display fields.
+     *
+     * @param array $row Raw memory row from storage.
+     * @return array Enriched row with flat_fields, decoded memory/payload/source JSON.
+     */
     private function normalizeMemoryRow($row)
     {
         if (!is_array($row) || empty($row)) {
@@ -734,6 +802,12 @@ class LlmMemoryAdminService extends BaseLlmService
         return $row;
     }
 
+    /**
+     * Safely decode a JSON string, returning null on failure.
+     *
+     * @param string $value JSON string.
+     * @return mixed Decoded value, or null on parse error.
+     */
     private function decodeJsonField($value)
     {
         if (!is_string($value) || trim($value) === '') {

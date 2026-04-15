@@ -143,6 +143,7 @@ interface NewConversationModalProps {
   config: LlmChatConfig;
 }
 
+/** NewConversationModal React component. */
 const NewConversationModal: React.FC<NewConversationModalProps> = ({
   isOpen,
   onClose,
@@ -283,4 +284,5 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   );
 };
 
+/** Default export for this module. */
 export default ConversationSidebar;

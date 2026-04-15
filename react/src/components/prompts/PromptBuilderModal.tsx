@@ -1,3 +1,12 @@
+/**
+ * Modal wrapper for the Prompt Builder workspace.
+ *
+ * Opens a full-screen dialog where the admin can instruct the LLM to
+ * auto-generate or refine a system prompt. Delegates all editing logic
+ * to PromptBuilderWorkspace.
+ *
+ * @module components/prompts/PromptBuilderModal
+ */
 import React, { useEffect, useState } from 'react';
 import { Modal } from 'react-bootstrap';
 import { PromptBuilderWorkspace } from './PromptBuilderWorkspace';
@@ -19,6 +28,7 @@ interface PromptBuilderModalProps {
   showAutoApplyOnClose?: boolean;
 }
 
+/** Modal dialog for prompt builder modal. */
 export const PromptBuilderModal: React.FC<PromptBuilderModalProps> = ({
   show,
   onHide,

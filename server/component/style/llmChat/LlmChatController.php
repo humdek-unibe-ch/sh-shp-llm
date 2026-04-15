@@ -1314,6 +1314,15 @@ class LlmChatController extends BaseController
         }
     }
 
+    /**
+     * Persist form-mode field values into the dataTables system via UserInput.
+     *
+     * @param array $form_values     Key-value pairs from the LLM-generated form response.
+     * @param int   $user_id         User ID.
+     * @param int   $message_id      LLM message ID linked to this form submission.
+     * @param int   $conversation_id Conversation ID.
+     * @return int|false Saved record ID, or false on failure.
+     */
     private function saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id)
     {
         try {

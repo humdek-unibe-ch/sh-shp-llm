@@ -3,18 +3,48 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-// LLM Admin Page Keyword
+/**
+ * LLM Plugin Global Constants and Configuration
+ *
+ * This file is auto-loaded during SelfHelp plugin initialization via
+ * Selfhelp::loadPluginGlobals(). It defines all plugin-wide constants
+ * covering page routing, rate limiting, API configuration, file handling,
+ * model capabilities, memory subsystem, and evaluation types.
+ *
+ * Backward-compatible wrapper functions for LlmModelCapabilities are
+ * defined at the bottom; new code should call the static class directly.
+ *
+ * @package LLM Plugin
+ * @version 1.1.0
+ * @see LlmModelCapabilities For model-related utility methods
+ */
+
+/* =========================================================================
+ * ADMIN PAGE ROUTING
+ * ========================================================================= */
+
 define('LLM_ADMIN_PAGE_KEYWORD', 'moduleLlmAdminConsole');
 
-// Upload directories - relative to plugin root
+/* =========================================================================
+ * FILE UPLOAD DIRECTORY
+ * ========================================================================= */
+
 define('LLM_UPLOAD_FOLDER', 'upload');
 
-// Rate limiting
+/* =========================================================================
+ * RATE LIMITING
+ * Per-user request throttling to protect backend LLM infrastructure.
+ * ========================================================================= */
+
 define('LLM_RATE_LIMIT_REQUESTS_PER_MINUTE', 10);
 define('LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS', 3);
 define('LLM_RATE_LIMIT_COOLDOWN_SECONDS', 60);
 
-// Default values
+/* =========================================================================
+ * DEFAULT LLM PARAMETERS
+ * Applied when CMS fields are empty or not configured.
+ * ========================================================================= */
+
 define('LLM_DEFAULT_MODEL', 'qwen3-vl-8b-instruct');
 define('LLM_DEFAULT_TEMPERATURE', 1);
 define('LLM_DEFAULT_MAX_TOKENS', 2048);
@@ -22,15 +52,26 @@ define('LLM_DEFAULT_TIMEOUT', 30);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
 
-// API endpoints
+/* =========================================================================
+ * API ENDPOINTS (OpenAI-compatible paths)
+ * ========================================================================= */
+
 define('LLM_API_CHAT_COMPLETIONS', '/chat/completions');
 define('LLM_API_MODELS', '/models');
 
-// Transaction logging
+/* =========================================================================
+ * TRANSACTION LOGGING
+ * Values stored in the `transactions` table's `transaction_by` column
+ * to identify which subsystem originated the change.
+ * ========================================================================= */
+
 define('TRANSACTION_BY_LLM_PLUGIN', 'by_llm_plugin');
 define('TRANSACTION_BY_LLM_SCRIPT', 'by_llm_script');
 
-// LLM Script constants
+/* =========================================================================
+ * LLM SCRIPTS & PROMPT LAB
+ * ========================================================================= */
+
 define('ACTION_JOB_TYPE_LLM_SCRIPT', 'llm_script');
 define('LLM_TABLE_SCRIPTS', 'llm_scripts');
 define('LLM_SCRIPTS_PAGE_KEYWORD', 'moduleLlmScript');
@@ -44,11 +85,19 @@ define('LLM_PROMPT_RUN_MODE_COMPARE', 'compare');
 define('LLM_PROMPT_META_KEY', 'prompt');
 define('LLM_PROMPT_RUN_MODE_DATASET_EVAL', 'dataset_eval');
 
+/* =========================================================================
+ * EVALUATION TYPES
+ * Scoring strategies used by the evaluation runner.
+ * ========================================================================= */
+
 define('LLM_EVAL_TYPE_PROGRAMMATIC', 'programmatic');
 define('LLM_EVAL_TYPE_LLM_JUDGE', 'llm_judge');
 define('LLM_EVAL_TYPE_HUMAN_REVIEW', 'human_review');
 
-// File upload limits
+/* =========================================================================
+ * FILE UPLOAD CONSTRAINTS
+ * Enforced by LlmFileUploadService during chat attachment handling.
+ * ========================================================================= */
 define('LLM_MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
 define('LLM_MAX_FILES_PER_MESSAGE', 5); // Maximum files per message
 
@@ -89,20 +138,26 @@ define('LLM_ALLOWED_MIME_TYPES', [
     'yml' => ['application/x-yaml', 'text/yaml', 'text/plain'],
 ]);
 
-// File type categories for UI display
+/* =========================================================================
+ * FILE TYPE CATEGORIES
+ * Used by the React UI for icon selection and preview behavior.
+ * ========================================================================= */
+
 define('LLM_FILE_TYPE_IMAGE', 'image');
 define('LLM_FILE_TYPE_DOCUMENT', 'document');
 define('LLM_FILE_TYPE_CODE', 'code');
 
-// Vision-capable models that can process images
-// Add any model that supports image/vision inputs
+/* =========================================================================
+ * MODEL CAPABILITY LISTS
+ * Substring-matched against model IDs to classify models by capability.
+ * ========================================================================= */
+
 define('LLM_VISION_MODELS', [
     'internvl3-8b-instruct', 
     'qwen3-vl-8b-instruct', 
 ]);
 
-// Speech-to-text (Whisper) models
-// Models capable of transcribing audio to text
+/** Speech-to-text models capable of transcribing audio via the Whisper API */
 define('LLM_AUDIO_MODELS', [
     'faster-whisper-large-v3',
     'whisper-large-v3',
@@ -110,8 +165,7 @@ define('LLM_AUDIO_MODELS', [
     'whisper-small'
 ]);
 
-// Embedding model name patterns (case-insensitive substring match)
-// These models generate vector embeddings, not chat completions
+/** Embedding model name patterns (case-insensitive substring match); excluded from chat model lists */
 define('LLM_EMBEDDING_MODEL_PATTERNS', [
     'embed',
     'embedding',
@@ -126,8 +180,7 @@ define('LLM_EMBEDDING_MODEL_PATTERNS', [
     'paraphrase-',
 ]);
 
-// Reranker model name patterns (case-insensitive substring match)
-// These models rerank search results, not generate text
+/** Reranker model name patterns (case-insensitive substring match); excluded from chat model lists */
 define('LLM_RERANKER_MODEL_PATTERNS', [
     'rerank',
     'reranker',
@@ -136,33 +189,49 @@ define('LLM_RERANKER_MODEL_PATTERNS', [
     'bge-reranker',
 ]);
 
-// Maximum audio file size (25MB - OpenAI API limit)
-define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024);
+define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024); // 25 MB — OpenAI Whisper API hard limit
 
-// Cache keys
+/* =========================================================================
+ * CACHE KEY PREFIXES
+ * Used by LlmCacheManager for APCu key generation.
+ * ========================================================================= */
+
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
 define('LLM_CACHE_CONVERSATION_MESSAGES', 'llm_conversation_messages');
 define('LLM_CACHE_RATE_LIMIT', 'llm_rate_limit');
 
-// Model capability flags
-define('LLM_CAPABILITY_VISION', 'vision'); // Can process images
-define('LLM_CAPABILITY_TEXT', 'text'); // Can process text
-define('LLM_CAPABILITY_CODE', 'code'); // Good at code generation
-define('LLM_CAPABILITY_REASONING', 'reasoning'); // Advanced reasoning capabilities
+/* =========================================================================
+ * MODEL CAPABILITY FLAGS
+ * Returned by LlmModelCapabilities::getModelCapabilities().
+ * ========================================================================= */
 
-// UI labels
+define('LLM_CAPABILITY_VISION', 'vision');
+define('LLM_CAPABILITY_TEXT', 'text');
+define('LLM_CAPABILITY_CODE', 'code');
+define('LLM_CAPABILITY_REASONING', 'reasoning');
+
+/* =========================================================================
+ * UI DEFAULTS
+ * ========================================================================= */
 define('LLM_DEFAULT_SUBMIT_LABEL', 'Send Message');
 define('LLM_DEFAULT_NEW_CHAT_LABEL', 'New Conversation');
 
-// Admin page keywords
 define('PAGE_LLM_CONFIG', 'sh_module_llm');
 
-// LLM Form constants
+/* =========================================================================
+ * LLM FORM STYLE CONSTANTS
+ * Used by llmFormRecord / llmFormLog styles for data persistence.
+ * ========================================================================= */
 define('TRANSACTION_BY_LLM_FORM', 'by_llm_form');
 define('LLM_FORM_DEFAULT_RESULT_FIELD', 'llm_result');
 define('LLM_FORM_DEFAULT_META_FIELD', 'llm_result_meta');
 
-// LLM Memory constants
+/* =========================================================================
+ * LLM MEMORY SUBSYSTEM
+ * Constants for the per-user memory layer that persists facts across
+ * conversations. Memory rules define extraction, storage, and triggers.
+ * ========================================================================= */
+
 define('ACTION_JOB_TYPE_LLM_MEMORY_UPDATE', 'llm_memory_update');
 define('TRANSACTION_BY_LLM_MEMORY', 'by_llm_memory');
 define('LLM_MEMORY_DEFAULT_KEY', 'global');

@@ -721,4 +721,5 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
   );
 };
 
+/** Default export for this module. */
 export default LlmChat;

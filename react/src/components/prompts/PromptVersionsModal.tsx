@@ -1,3 +1,11 @@
+/**
+ * Prompt Versions Modal — browse and restore prompt version history.
+ *
+ * Displays a table of all saved versions with timestamps, labels,
+ * published status, and restore/diff actions.
+ *
+ * @module components/prompts/PromptVersionsModal
+ */
 import React from 'react';
 import { Badge, Button, Modal, Table } from 'react-bootstrap';
 import { formatDateTime } from '../../utils/formatters';
@@ -13,6 +21,7 @@ interface PromptVersionsModalProps {
   onCompareVersion: (version: PromptVersion) => void;
 }
 
+/** Modal dialog for prompt versions modal. */
 export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
   show,
   onHide,

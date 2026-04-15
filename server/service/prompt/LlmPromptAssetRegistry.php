@@ -3,6 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+/**
+ * LLM Prompt Asset Registry
+ *
+ * Static mapping of logical prompt asset keys to file paths relative to
+ * the `assets/prompts/` directory. Adding a new prompt template requires
+ * registering it here so LlmPromptAssetLoader can resolve it.
+ *
+ * @package LLM Plugin
+ */
 class LlmPromptAssetRegistry
 {
     public static function getMap()

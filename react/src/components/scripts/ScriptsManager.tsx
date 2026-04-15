@@ -1,3 +1,13 @@
+/**
+ * Scripts Manager — full CRUD interface for LLM scripts.
+ *
+ * Provides a searchable table of scripts with inline JSON editors,
+ * test-variable management, model/temperature overrides, and a
+ * "Test Run" button that executes the script against the backend.
+ * Integrates with the Prompt Lab for prompt editing and evaluation.
+ *
+ * @module components/scripts/ScriptsManager
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -70,6 +80,7 @@ interface DiffState {
   initialRightKey: string;
 }
 
+/** parseJsonObject utility. */
 function parseJsonObject(value: string): Record<string, unknown> {
   if (!value.trim()) {
     return {};
@@ -83,6 +94,7 @@ function parseJsonObject(value: string): Record<string, unknown> {
   }
 }
 
+/** buildPromptMetaJson function. */
 function buildPromptMetaJson(
   promptChangeNote: string,
   promptVariablesSchema: PromptVariableDefinition[] | null,
@@ -104,6 +116,7 @@ function buildPromptMetaJson(
   return JSON.stringify({ prompt });
 }
 
+/** Fetch or retrieve get empty form data. */
 function getEmptyForm(): ScriptFormState {
   return {
     name: '',
@@ -118,6 +131,7 @@ function getEmptyForm(): ScriptFormState {
   };
 }
 
+/** ScriptsManager component. */
 export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) => {
   const api = useRef(createScriptsApi());
   const promptApi = useMemo(

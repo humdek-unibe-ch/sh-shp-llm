@@ -1,3 +1,24 @@
+/**
+ * Admin Console Component
+ * =======================
+ *
+ * Main admin interface for monitoring and moderating LLM conversations.
+ * Provides a split-panel layout with a filterable conversation list on the
+ * left and a detailed message inspector on the right.
+ *
+ * Features:
+ * - Filter conversations by user, section, script, date range, and search text
+ * - Paginated conversation list with type badges and status indicators
+ * - Full message history with raw response / context / payload inspection
+ * - Moderation actions: block, unblock, delete conversations
+ * - Context and payload popups for debugging API interactions
+ *
+ * Data is loaded via the `adminApi` utility which calls the
+ * ModuleLlmAdminConsoleController PHP backend.
+ *
+ * @module components/admin/AdminConsole
+ */
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Container, Row, Col, Card, Form, Button, Badge, Alert, Spinner, Pagination, Modal } from 'react-bootstrap';
 import Select from 'react-select';
@@ -13,6 +34,7 @@ import type { AdminConfig, AdminConversation, Message } from '../../types';
 import { getConversationTypeMeta } from './conversationTypes';
 import './AdminConsole.css';
 
+/** Active filter state for the conversation list. */
 interface AdminFilters {
   userId: string;
   sectionId: string;
@@ -45,6 +67,7 @@ const getTodayDate = (): string => {
   return today.toISOString().split('T')[0];
 };
 
+/** AdminConsole component. */
 export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
   const [filters, setFilters] = useState<AdminFilters>({ 
     userId: '', 

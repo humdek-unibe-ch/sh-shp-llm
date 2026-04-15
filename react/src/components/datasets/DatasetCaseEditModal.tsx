@@ -1,3 +1,11 @@
+/**
+ * Dataset Case Edit Modal — create or edit a single test case.
+ *
+ * Renders input/output payload editors (JSON), expected labels form,
+ * title, and notes fields. Validates JSON before saving.
+ *
+ * @module components/datasets/DatasetCaseEditModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Modal } from 'react-bootstrap';
 import type { PromptDatasetCase, PromptExpectedLabels } from './datasetTypes';
@@ -16,6 +24,7 @@ const dangerLevelOptions: Array<{ value: '' | 'warning' | 'critical' | 'emergenc
   { value: 'emergency', label: 'Emergency' },
 ];
 
+/** Modal dialog for dataset case edit modal. */
 export const DatasetCaseEditModal: React.FC<DatasetCaseEditModalProps> = ({
   show,
   datasetCase,

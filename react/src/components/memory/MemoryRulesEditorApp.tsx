@@ -1,3 +1,13 @@
+/**
+ * Memory Rules Editor — CRUD interface for memory extraction rules.
+ *
+ * Each rule defines a memory field: source conversation or data table,
+ * extraction method (direct-mapping or LLM-summarization), prompt
+ * template, and target column. Rules are linked to the Prompt Lab
+ * for prompt editing and evaluation.
+ *
+ * @module components/memory/MemoryRulesEditorApp
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import CreatableSelect from 'react-select/creatable';
 import { Alert, Badge, Button, Card, Col, Dropdown, Form, Row, Spinner } from 'react-bootstrap';
@@ -51,6 +61,7 @@ interface SectionInfo {
   name: string;
 }
 
+/** Type definition for memory rule draft. */
 export interface MemoryRuleDraft {
   id: number;
   key: string;
@@ -87,6 +98,7 @@ interface PlaygroundCapture {
   } | null;
 }
 
+/** Type definition for memory rules editor page config. */
 export interface MemoryRulesEditorPageConfig {
   promptLabEndpoint: string;
   csrfToken?: string;
@@ -100,6 +112,7 @@ interface DiffState {
   initialRightKey: string;
 }
 
+/** parseJsonObject utility. */
 function parseJsonObject(value: string, fallback: Record<string, unknown> = {}): Record<string, unknown> {
   if (!value.trim()) return fallback;
   const parsed = JSON.parse(value) as Record<string, unknown>;
@@ -112,14 +125,17 @@ function parseJsonArray<T = Record<string, unknown>>(value: string, fallback: T[
   return Array.isArray(parsed) ? parsed : fallback;
 }
 
+/** toPrettyJson function. */
 function toPrettyJson(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
+/** parseCsvList utility. */
 function parseCsvList(value: string): string[] {
   return value.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+/** ensurePromptMeta function. */
 function ensurePromptMeta(meta: PromptMetaState): NonNullable<PromptMetaState['prompt']> {
   if (!meta.prompt || typeof meta.prompt !== 'object') {
     meta.prompt = {};
@@ -127,11 +143,13 @@ function ensurePromptMeta(meta: PromptMetaState): NonNullable<PromptMetaState['p
   return meta.prompt;
 }
 
+/** humanizeKeyLabel function. */
 function humanizeKeyLabel(code: string): string {
   const cleaned = String(code || '').replace(/[_-]+/g, ' ').trim();
   return cleaned ? cleaned.replace(/\b\w/g, (char) => char.toUpperCase()) : 'Global';
 }
 
+/** Fetch or retrieve get default rule data. */
 function getDefaultRule(index = 0): MemoryRuleDraft {
   return {
     id: 0,
@@ -158,6 +176,7 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
   };
 }
 
+/** normalizeRule function. */
 function normalizeRule(raw: any, index: number): MemoryRuleDraft {
   const fallback = getDefaultRule(index);
   const memoryKeys = Array.isArray(raw?.memory_keys)
@@ -194,6 +213,7 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
   };
 }
 
+/** sanitizeRule function. */
 function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
   return {
     id: rule.id,
@@ -217,6 +237,7 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
   };
 }
 
+/** validateRule function. */
 function validateRule(rule: MemoryRuleDraft): string[] {
   const errors: string[] = [];
   if (!rule.label.trim()) errors.push('Rule label is required.');
@@ -226,6 +247,7 @@ function validateRule(rule: MemoryRuleDraft): string[] {
   return errors;
 }
 
+/** Root application component for memory rules editor app. */
 export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfig }> = ({ config }) => {
   const [rules, setRules] = useState<MemoryRuleDraft[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(config.selectedRuleId ?? null);

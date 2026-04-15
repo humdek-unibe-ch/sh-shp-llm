@@ -314,5 +314,6 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
   );
 };
 
+/** Default export for this module. */
 export default StructuredResponseRenderer;
 

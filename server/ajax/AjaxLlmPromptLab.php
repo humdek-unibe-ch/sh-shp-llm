@@ -31,6 +31,9 @@ class AjaxLlmPromptLab extends BaseAjax
     /** @var LlmPromptRuntimeValueService */
     private $runtime_value_service;
 
+    /**
+     * @param object $services SelfHelp services container.
+     */
     public function __construct($services)
     {
         parent::__construct($services);
@@ -42,6 +45,15 @@ class AjaxLlmPromptLab extends BaseAjax
         $this->evaluation_service = new LlmEvaluationService($services);
     }
 
+    /**
+     * Route an incoming AJAX request to the appropriate handler based on `$post['action']`.
+     *
+     * Every handler is guarded by ACL (assertAccess) and mutating actions also
+     * require CSRF verification. Unknown actions return a 400 error.
+     *
+     * @param array $post POST data including 'action', descriptor fields, and action-specific payload.
+     * @return array JSON-serializable response payload.
+     */
     public function dispatch($post)
     {
         $action = $post['action'] ?? '';
@@ -198,6 +210,13 @@ class AjaxLlmPromptLab extends BaseAjax
         }
     }
 
+    /**
+     * Bootstrap the Prompt Lab for a given owner (section, script, memory rule).
+     *
+     * @param array $post POST data with optional 'current_content' and 'current_meta'.
+     * @param array $descriptor Owner descriptor (owner_type, owner_id, prompt_slot, id_languages).
+     * @return array Bootstrap payload with entry, locale, versions, and active version.
+     */
     private function handleBootstrap($post, $descriptor)
     {
         $runtime_values = $this->resolveRuntimeValues($descriptor, $post);
@@ -210,6 +229,13 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Retrieve a single prompt version by ID.
+     *
+     * @param array $post POST data with 'version_id'.
+     * @return array Version record.
+     * @throws Exception If version_id is missing or not found.
+     */
     private function handleGetVersion($post)
     {
         $version_id = isset($post['version_id']) ? (int)$post['version_id'] : 0;
@@ -225,6 +251,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $version;
     }
 
+    /**
+     * List all versions for the current prompt owner.
+     *
+     * @param array $post POST data.
+     * @param array $descriptor Owner descriptor.
+     * @return array{versions: array, active_version: array|null}
+     */
     private function handleListVersions($post, $descriptor)
     {
         $bootstrap = $this->handleBootstrap($post, $descriptor);
@@ -234,6 +267,13 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Execute a prompt in the playground with optional multi-model support.
+     *
+     * @param array $post POST data with 'draft_prompt', 'variables_json', 'message_history_json', 'selected_models_json'.
+     * @param array $descriptor Owner descriptor for context resolution.
+     * @return array Playground execution result(s) per model.
+     */
     private function handlePlaygroundRun($post, $descriptor)
     {
         $runtime_values = $this->resolveRuntimeValues($descriptor, $post);
@@ -251,6 +291,15 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Run the Prompt Builder to generate or refine a system prompt using the LLM.
+     *
+     * Logs the builder run to the playground runs table for audit.
+     *
+     * @param array $post POST data with 'current_prompt', 'instructions', 'selected_model', 'examples_json'.
+     * @param array $descriptor Owner descriptor.
+     * @return array Builder suggestion result.
+     */
     private function handleBuilderRun($post, $descriptor)
     {
         $result = $this->builder_service->buildSuggestion(
@@ -282,6 +331,12 @@ class AjaxLlmPromptLab extends BaseAjax
         return $result;
     }
 
+    /**
+     * List datasets filtered by search, owner scope, and execution profile.
+     *
+     * @param array $post POST data with optional 'search', 'owner_type_scope', 'owner_id_scope', 'execution_profile'.
+     * @return array List of dataset records.
+     */
     private function handleListDatasets($post)
     {
         $filters = array(
@@ -293,6 +348,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->listDatasets($filters);
     }
 
+    /**
+     * Retrieve a dataset and its test cases by ID.
+     *
+     * @param array $post POST data with 'dataset_id'.
+     * @return array{dataset: array, cases: array} Dataset record and its cases.
+     * @throws Exception If dataset_id is missing or not found.
+     */
     private function handleGetDataset($post)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -311,6 +373,13 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Create a new dataset scoped to the current descriptor owner.
+     *
+     * @param array $post POST data with 'name', 'description', 'dataset_type', 'execution_profile'.
+     * @param array $descriptor Owner descriptor for scope binding.
+     * @return array Created dataset record.
+     */
     private function handleCreateDataset($post, $descriptor)
     {
         $payload = array(
@@ -324,6 +393,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->createDataset($payload);
     }
 
+    /**
+     * Update dataset metadata (name, description, type, profile, lock state).
+     *
+     * @param array $post POST data with 'dataset_id' and updatable fields.
+     * @return array Updated dataset record.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleUpdateDataset($post)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -351,6 +427,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->updateDataset($dataset_id, $payload);
     }
 
+    /**
+     * List all test cases for a dataset.
+     *
+     * @param array $post POST data with 'dataset_id'.
+     * @return array List of case records.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleListDatasetCases($post)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -360,6 +443,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->listDatasetCases($dataset_id);
     }
 
+    /**
+     * Delete a dataset and its associated cases.
+     *
+     * @param array $post POST data with 'dataset_id'.
+     * @return array{deleted: bool} Whether deletion succeeded.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleDeleteDataset($post)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -369,6 +459,14 @@ class AjaxLlmPromptLab extends BaseAjax
         return array('deleted' => $this->dataset_service->deleteDataset($dataset_id));
     }
 
+    /**
+     * Add a test case to a dataset from a playground execution run.
+     *
+     * @param array $post POST data with 'dataset_id', descriptor fields, variables, messages, and optional run references.
+     * @param array $descriptor Owner descriptor.
+     * @return array Created case record.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleAddCaseFromPlaygroundRun($post, $descriptor)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -395,6 +493,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->addCaseFromPlaygroundRun($dataset_id, $payload);
     }
 
+    /**
+     * Retrieve import candidate records for a given source type (playground_run, form_submission, conversation, script_run).
+     *
+     * @param array $post POST data with 'source_type' and optional 'limit'.
+     * @return array List of import candidate records.
+     * @throws Exception If source_type is missing.
+     */
     private function handleGetImportCandidates($post)
     {
         $source_type = (string)($post['source_type'] ?? '');
@@ -417,6 +522,14 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Import selected source records as test cases into a dataset.
+     *
+     * @param array $post POST data with 'dataset_id', 'source_type', 'source_ids_json', 'execution_profile'.
+     * @param array $descriptor Owner descriptor for scope validation.
+     * @return array Import result with created case records.
+     * @throws Exception If required fields are missing.
+     */
     private function handleAddCasesFromSource($post, $descriptor)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -449,6 +562,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->addCasesFromSource($dataset_id, $source_type, $source_ids, $context);
     }
 
+    /**
+     * Delete a single test case from a dataset.
+     *
+     * @param array $post POST data with 'dataset_case_id' and optional 'dataset_id'.
+     * @return array{deleted: bool}
+     * @throws Exception If dataset_case_id is missing.
+     */
     private function handleDeleteDatasetCase($post)
     {
         $case_id = isset($post['dataset_case_id']) ? (int)$post['dataset_case_id'] : 0;
@@ -459,6 +579,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return array('deleted' => $this->dataset_service->deleteDatasetCase($case_id, $dataset_id));
     }
 
+    /**
+     * Update a dataset case's metadata (title, notes, tags, expected labels).
+     *
+     * @param array $post POST data with 'dataset_case_id', 'dataset_id', and updatable fields.
+     * @return array Updated case record.
+     * @throws Exception If required IDs are missing.
+     */
     private function handleUpdateDatasetCase($post)
     {
         $case_id = isset($post['dataset_case_id']) ? (int)$post['dataset_case_id'] : 0;
@@ -475,6 +602,13 @@ class AjaxLlmPromptLab extends BaseAjax
         ));
     }
 
+    /**
+     * Send raw text to the LLM for AI-assisted parsing into test case candidates.
+     *
+     * @param array $post POST data with 'raw_text', 'execution_profile', optional 'selected_model', 'runtime_overrides_json'.
+     * @param array $descriptor Owner descriptor for context.
+     * @return array Parsed case candidates and parse metadata.
+     */
     private function handleParseCasesFromText($post, $descriptor)
     {
         $raw_text = (string)($post['raw_text'] ?? '');
@@ -494,6 +628,14 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Batch-import AI-parsed case candidates into a dataset.
+     *
+     * @param array $post POST data with 'dataset_id', 'execution_profile', 'cases_json', 'runtime_overrides_json'.
+     * @param array $descriptor Owner descriptor.
+     * @return array Import summary with created case IDs.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleImportParsedCases($post, $descriptor)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -520,6 +662,16 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Move selected test cases from one dataset to another.
+     *
+     * Validates that both datasets are within the current descriptor scope.
+     *
+     * @param array $post POST data with 'source_dataset_id', 'target_dataset_id', 'case_ids_json', optional 'remove_source'.
+     * @param array $descriptor Owner descriptor for scope check.
+     * @return array Move result summary.
+     * @throws Exception If required IDs are missing or scope validation fails.
+     */
     private function handleMoveDatasetCases($post, $descriptor)
     {
         $source_dataset_id = isset($post['source_dataset_id']) ? (int)$post['source_dataset_id'] : 0;
@@ -546,6 +698,14 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * List datasets compatible with the given dataset for case-move operations.
+     *
+     * @param array $post POST data with 'dataset_id'.
+     * @param array $descriptor Owner descriptor for scope filtering.
+     * @return array List of compatible dataset records.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleListCompatibleDatasets($post, $descriptor)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -559,6 +719,13 @@ class AjaxLlmPromptLab extends BaseAjax
         ));
     }
 
+    /**
+     * List evaluation history for a specific test case across runs.
+     *
+     * @param array $post POST data with 'case_id' and optional 'limit'.
+     * @return array Evaluation history records.
+     * @throws Exception If case_id is missing.
+     */
     private function handleListCaseEvaluationHistory($post)
     {
         $case_id = isset($post['case_id']) ? (int)$post['case_id'] : 0;
@@ -569,6 +736,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->listCaseEvaluationHistory($case_id, $limit);
     }
 
+    /**
+     * List dataset cases eligible as examples for the Prompt Builder.
+     *
+     * @param array $post POST data with optional 'dataset_id', 'search', 'limit'.
+     * @param array $descriptor Owner descriptor for scope filtering.
+     * @return array List of candidate records.
+     */
     private function handleListEvaluationExampleCandidates($post, $descriptor)
     {
         $filters = array(
@@ -581,6 +755,14 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->dataset_service->listEvaluationExampleCandidates($filters);
     }
 
+    /**
+     * Execute an evaluation run against a dataset with configurable models and definitions.
+     *
+     * @param array $post POST data with 'dataset_id', 'target_type', 'draft_prompt', 'selected_models_json', 'eval_definition_ids_json'.
+     * @param array $descriptor Owner descriptor for scope validation.
+     * @return array Evaluation run result with summary and per-case scores.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleRunDatasetEval($post, $descriptor)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -602,6 +784,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->runDatasetEval($payload);
     }
 
+    /**
+     * Retrieve a single evaluation run with summary data.
+     *
+     * @param array $post POST data with 'run_id'.
+     * @return array Evaluation run record.
+     * @throws Exception If run_id is missing or not found.
+     */
     private function handleGetEvalRun($post)
     {
         $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
@@ -615,6 +804,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $run;
     }
 
+    /**
+     * List all per-case results for an evaluation run.
+     *
+     * @param array $post POST data with 'run_id'.
+     * @return array List of run case records with scores.
+     * @throws Exception If run_id is missing.
+     */
     private function handleListEvalRunCases($post)
     {
         $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
@@ -624,6 +820,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->listEvalRunCases($run_id);
     }
 
+    /**
+     * List evaluation runs for a dataset, ordered by most recent.
+     *
+     * @param array $post POST data with 'dataset_id' and optional 'limit'.
+     * @return array List of evaluation run records.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleListEvalRuns($post)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -635,6 +838,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->listEvalRuns($dataset_id, $limit);
     }
 
+    /**
+     * Delete a single evaluation run and its case results.
+     *
+     * @param array $post POST data with 'run_id' and 'dataset_id'.
+     * @return array Deletion result.
+     * @throws Exception If required IDs are missing.
+     */
     private function handleDeleteEvalRun($post)
     {
         $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
@@ -649,6 +859,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->deleteEvalRun($run_id, $dataset_id);
     }
 
+    /**
+     * Delete all evaluation runs for a given dataset.
+     *
+     * @param array $post POST data with 'dataset_id'.
+     * @return array Bulk deletion result.
+     * @throws Exception If dataset_id is missing.
+     */
     private function handleDeleteEvalRunsBulk($post)
     {
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
@@ -659,6 +876,15 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->deleteEvalRunsForDataset($dataset_id);
     }
 
+    /**
+     * Assert that a dataset belongs to the same owner scope as the descriptor.
+     *
+     * Prevents cross-owner dataset operations.
+     *
+     * @param int $dataset_id ID of the dataset to validate.
+     * @param array $descriptor Owner descriptor with 'owner_type' and 'owner_id'.
+     * @throws Exception If dataset is not found or outside the descriptor scope.
+     */
     private function assertDatasetDescriptorScope($dataset_id, $descriptor)
     {
         $dataset = $this->dataset_service->getDataset((int)$dataset_id);
@@ -679,6 +905,13 @@ class AjaxLlmPromptLab extends BaseAjax
         }
     }
 
+    /**
+     * Link an evaluation run to a baseline run for comparison.
+     *
+     * @param array $post POST data with 'run_id', 'baseline_run_id', and optional 'baseline_summary_json'.
+     * @return array Link result.
+     * @throws Exception If required IDs are missing.
+     */
     private function handleLinkEvalRunBaseline($post)
     {
         $run_id = isset($post['run_id']) ? (int)$post['run_id'] : 0;
@@ -691,6 +924,13 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->linkBaselineRun($run_id, $baseline_run_id, is_array($baseline_summary) ? $baseline_summary : array());
     }
 
+    /**
+     * Save a human review score for an evaluation run case.
+     *
+     * @param array $post POST data with 'id_llm_eval_run_cases', 'id_llm_eval_definitions',
+     *                     'score_value_numeric', 'score_value_label', 'passed', 'details_json'.
+     * @return array Saved score record.
+     */
     private function handleSaveHumanScore($post)
     {
         $payload = array(
@@ -704,6 +944,14 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->evaluation_service->saveHumanScore($payload);
     }
 
+    /**
+     * Extract the prompt owner descriptor from POST data.
+     *
+     * Supports both snake_case and camelCase parameter names for frontend compatibility.
+     *
+     * @param array $post POST data with owner_type/ownerType, owner_id/ownerId, prompt_slot/promptSlot, etc.
+     * @return array{owner_type: string, owner_id: int, prompt_slot: string, id_languages: int|null, page_id: int|null, title: string|null}
+     */
     private function readDescriptor($post)
     {
         $owner_type = (string)($post['owner_type'] ?? ($post['ownerType'] ?? ''));
@@ -723,6 +971,13 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Resolve runtime variable values for a descriptor, merging user-supplied overrides.
+     *
+     * @param array $descriptor Owner descriptor.
+     * @param array $post POST data with optional 'runtime_overrides_json'.
+     * @return array Flat key-value map of resolved runtime variables.
+     */
     private function resolveRuntimeValues($descriptor, $post)
     {
         $overrides = $this->decodeJson($post['runtime_overrides_json'] ?? '{}');
@@ -732,6 +987,16 @@ class AjaxLlmPromptLab extends BaseAjax
         return $this->runtime_value_service->resolveRuntimeValues($descriptor, $overrides);
     }
 
+    /**
+     * Assert that the current user has the requested ACL access mode for the descriptor's page context.
+     *
+     * Resolves page ID from the descriptor's owner_type (script → LLM_SCRIPTS_PAGE_KEYWORD,
+     * memory_rule → LLM_MEMORY_PAGE_KEYWORD, or section → pages_sections lookup).
+     *
+     * @param array $descriptor Owner descriptor.
+     * @param string $mode ACL mode ('select', 'update', 'insert', 'delete').
+     * @throws Exception If the user lacks the required permission.
+     */
     private function assertAccess($descriptor, $mode)
     {
         $owner_type = (string)($descriptor['owner_type'] ?? '');
@@ -774,6 +1039,12 @@ class AjaxLlmPromptLab extends BaseAjax
         }
     }
 
+    /**
+     * Resolve the CMS page ID for a given descriptor.
+     *
+     * @param array $descriptor Owner descriptor.
+     * @return int Resolved page ID, or 0 if unresolvable.
+     */
     private function resolveDescriptorPageId($descriptor)
     {
         $owner_type = (string)($descriptor['owner_type'] ?? '');
@@ -800,6 +1071,12 @@ class AjaxLlmPromptLab extends BaseAjax
         return !empty($resolved['id_pages']) ? (int)$resolved['id_pages'] : 0;
     }
 
+    /**
+     * Assert ACL access for script-type source operations.
+     *
+     * @param string $mode ACL mode ('select', 'update').
+     * @throws Exception If the user lacks script page access.
+     */
     private function assertScriptSourceAccess($mode)
     {
         $this->assertAccess(
@@ -812,6 +1089,12 @@ class AjaxLlmPromptLab extends BaseAjax
         );
     }
 
+    /**
+     * Check if the current user can mutate (update) the descriptor's prompt without throwing.
+     *
+     * @param array $descriptor Owner descriptor.
+     * @return bool True if the user has update access.
+     */
     private function canMutate($descriptor)
     {
         try {
@@ -822,6 +1105,14 @@ class AjaxLlmPromptLab extends BaseAjax
         }
     }
 
+    /**
+     * Validate the CSRF token from POST data or HTTP header against session tokens.
+     *
+     * Silently skips if no session token is available (some installations omit CSRF for plugins).
+     *
+     * @param array $post POST data with 'csrf_token' or 'token'.
+     * @throws Exception If a session token exists but does not match.
+     */
     private function assertCsrf($post)
     {
         $token = $post['csrf_token']
@@ -855,6 +1146,12 @@ class AjaxLlmPromptLab extends BaseAjax
         throw new Exception('Invalid CSRF token');
     }
 
+    /**
+     * Safely decode a JSON string, returning an empty array on failure.
+     *
+     * @param string|mixed $value JSON string to decode.
+     * @return array|mixed Decoded value, or empty array if decoding fails.
+     */
     private function decodeJson($value)
     {
         if (!is_string($value) || trim($value) === '') {

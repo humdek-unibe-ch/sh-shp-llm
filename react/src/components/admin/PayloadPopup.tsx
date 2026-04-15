@@ -22,6 +22,7 @@ interface PayloadPopupProps {
   onHide: () => void;
 }
 
+/** Fetch or retrieve payload popup data. */
 export const PayloadPopup: React.FC<PayloadPopupProps> = ({ message, show, onHide }) => {
   const [copied, setCopied] = useState(false);
   const backdropRef = useModalDismiss(show, onHide);

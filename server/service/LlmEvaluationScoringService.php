@@ -7,9 +7,27 @@ require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
+/**
+ * LLM Evaluation Scoring Service
+ *
+ * Applies evaluation definitions to individual test case outputs.
+ * Supports three scoring strategies:
+ * - Programmatic: String matching, JSON diff, regex checks
+ * - LLM Judge: Sends the output to a second LLM for quality scoring
+ * - Human Review: Marks cases as pending for manual review
+ *
+ * Scores are persisted in the `llm_eval_scores` table and linked
+ * to specific run cases.
+ *
+ * @package LLM Plugin
+ * @see LlmEvaluationRunnerService For orchestration context
+ */
 class LlmEvaluationScoringService extends BaseLlmService
 {
+    /** @var LlmService Core LLM service for LLM-judge scoring calls */
     private $llm_service;
+
+    /** @var LlmPromptAssetLoader Loads judge prompt templates */
     private $prompt_assets;
 
     public function __construct($services)
@@ -19,6 +37,14 @@ class LlmEvaluationScoringService extends BaseLlmService
         $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
+    /**
+     * Score a single evaluation case using the definition's eval type (programmatic or LLM judge).
+     *
+     * @param array $definition   Evaluation definition row with eval_type_code, name, config_json.
+     * @param array $run_output   LLM run output with display_content, parsed_response, raw_content.
+     * @param array $dataset_case Dataset case row with expected_labels_json, input_payload_json.
+     * @return array{score_type: string, score_value_numeric: float|null, score_value_label: string, passed: int|null, details: array}
+     */
     public function scoreCase($definition, $run_output, $dataset_case)
     {
         $eval_type = (string)($definition['eval_type_code'] ?? '');
@@ -68,6 +94,15 @@ class LlmEvaluationScoringService extends BaseLlmService
         return $this->scoreResult('programmatic', true, 'skipped', 1.0, array('reason' => 'No evaluator implementation matched'));
     }
 
+    /**
+     * Score a case using an LLM judge: sends case context to a judge model and parses the structured verdict.
+     *
+     * @param array $definition   Evaluation definition.
+     * @param array $run_output   LLM run output.
+     * @param array $dataset_case Dataset case data.
+     * @param array $config       Judge configuration with scale_min, scale_max, pass_threshold, judge_model.
+     * @return array Score result with judge reasoning and model metadata.
+     */
     private function scoreWithJudge($definition, $run_output, $dataset_case, $config)
     {
         $scale_min = isset($config['scale_min']) ? (int)$config['scale_min'] : 1;
@@ -133,11 +168,13 @@ class LlmEvaluationScoringService extends BaseLlmService
         }
     }
 
+    /** Build a standardized score result array. */
     private function scoreResult($score_type, $passed, $label, $numeric, $details)
     {
         return array('score_type' => $score_type, 'score_value_numeric' => $numeric, 'score_value_label' => $label, 'passed' => $passed ? 1 : 0, 'details' => $details);
     }
 
+    /** Decode a JSON string, returning the fallback on failure. */
     private function decodeJsonValue($value, $fallback)
     {
         if (!is_string($value) || trim($value) === '') {
@@ -147,6 +184,13 @@ class LlmEvaluationScoringService extends BaseLlmService
         return $decoded !== null ? $decoded : $fallback;
     }
 
+    /**
+     * Read a dot-separated path from a nested array (e.g., 'safety.danger_level').
+     *
+     * @param array  $data Nested array.
+     * @param string $path Dot-separated key path.
+     * @return mixed Value at path, or null.
+     */
     private function readPathValue($data, $path)
     {
         if (!is_array($data)) {
@@ -165,6 +209,7 @@ class LlmEvaluationScoringService extends BaseLlmService
         return $current;
     }
 
+    /** Check if a dot-separated path exists in a nested array. */
     private function pathExists($data, $path)
     {
         if (!is_array($data)) {
@@ -183,6 +228,7 @@ class LlmEvaluationScoringService extends BaseLlmService
         return true;
     }
 
+    /** Extract a JSON object from text, trying raw decode, code fences, and balanced braces. */
     private function extractJsonObject($text)
     {
         if ($text === '') {

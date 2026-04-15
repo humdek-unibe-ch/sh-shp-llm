@@ -1,3 +1,11 @@
+/**
+ * Memory Settings Summary — read-only overview of memory configuration.
+ *
+ * Displays the current memory-related settings (models, rule count,
+ * storage stats) as a compact summary card.
+ *
+ * @module components/settings/MemorySettingsSummary
+ */
 import React from 'react';
 
 interface Props {
@@ -5,6 +13,7 @@ interface Props {
   memoryPageUrl?: string;
 }
 
+/** MemorySettingsSummary component. */
 export const MemorySettingsSummary: React.FC<Props> = ({ enabled, memoryPageUrl }) => {
   return (
     <div className="card mb-3">

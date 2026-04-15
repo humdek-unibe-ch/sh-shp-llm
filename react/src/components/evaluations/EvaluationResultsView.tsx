@@ -1,3 +1,12 @@
+/**
+ * Evaluation Results View — full results page for a completed evaluation run.
+ *
+ * Renders summary cards, a filterable per-case table, baseline comparison
+ * selector, and human review panel. Loaded when the admin selects a run
+ * from the dataset browser.
+ *
+ * @module components/evaluations/EvaluationResultsView
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Form } from 'react-bootstrap';
 import type { PromptEvalRunCase, PromptEvalRunResult } from './evaluationTypes';
@@ -20,6 +29,7 @@ interface EvaluationResultsViewProps {
   deletingRunId?: number | null;
 }
 
+/** EvaluationResultsView component. */
 export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
   result,
   cases,

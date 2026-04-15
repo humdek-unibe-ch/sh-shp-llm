@@ -535,6 +535,14 @@ class LlmMemoryUpdateService extends BaseLlmService
         ]);
     }
 
+    /**
+     * Log a memory update failure to error_log and the transaction audit trail.
+     *
+     * @param int    $user_id    User ID.
+     * @param string $rule_key   Rule key that failed.
+     * @param string $dedupe_key Deduplication key.
+     * @param string $error      Error message.
+     */
     private function logFailure($user_id, $rule_key, $dedupe_key, $error)
     {
         error_log("LLM Memory: update failed for user=$user_id, rule=$rule_key: $error");
@@ -557,6 +565,13 @@ class LlmMemoryUpdateService extends BaseLlmService
         $this->logFailure($user_id, $rule_key, $dedupe_key, $error_detail);
     }
 
+    /**
+     * Determine the effective memory key, using payload override if present, otherwise the rule key.
+     *
+     * @param array $rule               Rule row with 'key'.
+     * @param array $normalized_payload Payload with optional 'memory_key_override'.
+     * @return string Effective memory key.
+     */
     private function resolveEffectiveMemoryKey($rule, $normalized_payload)
     {
         return !empty($normalized_payload['memory_key_override'])

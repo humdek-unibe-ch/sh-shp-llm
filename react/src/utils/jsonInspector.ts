@@ -1,11 +1,36 @@
+/**
+ * JSON Inspector Utilities
+ * ========================
+ *
+ * Parsing utilities for the JsonInspector component and admin popups.
+ * Handles extraction and classification of JSON content from LLM responses,
+ * context fields, and raw API payloads that may contain mixed text+JSON,
+ * markdown fences, labeled sections, or double-encoded strings.
+ *
+ * @module utils/jsonInspector
+ */
+
 import { normalizeEscapedText } from './text';
 
+/** Classified parse result — determines how the UI renders a value. */
 export interface ParsedJsonValue {
+  /** Whether the value is structured JSON, plain text, or empty */
   kind: 'json' | 'text' | 'empty';
+  /** Parsed JSON object/array if `kind === 'json'` */
   jsonValue: unknown | null;
+  /** Human-readable text representation */
   textValue: string;
 }
 
+/**
+ * Extract the outermost balanced JSON object or array from a string.
+ *
+ * Walks the string character-by-character, tracking brace/bracket depth
+ * and string escaping. Returns null if no balanced structure is found.
+ *
+ * @param value - Raw string potentially containing a JSON fragment
+ * @returns The extracted JSON substring, or null
+ */
 export function extractLikelyJsonFragment(value: string): string | null {
   const input = value.trim();
   if (!input) return null;
@@ -52,6 +77,12 @@ export function extractLikelyJsonFragment(value: string): string | null {
   return null;
 }
 
+/**
+ * Attempt to parse content directly as JSON, stripping markdown code fences.
+ *
+ * @param content - Value to parse (only strings are processed)
+ * @returns Parsed JSON value, or null if parsing fails
+ */
 export function tryParseDirectJson(content: unknown): unknown | null {
   if (typeof content !== 'string') return null;
   const trimmed = content.trim();
@@ -72,6 +103,15 @@ export function tryParseDirectJson(content: unknown): unknown | null {
   }
 }
 
+/**
+ * Parse content that may contain labeled sections like "instructions: ... examples: [...]".
+ *
+ * Handles hybrid text+JSON content commonly found in LLM context fields
+ * and prompt builder outputs. Falls back to generic fragment extraction.
+ *
+ * @param content - Raw string content
+ * @returns Parsed object (possibly with `instructions` and `examples` keys), or null
+ */
 export function tryParseLabeledJsonContent(content: unknown): unknown | null {
   if (typeof content !== 'string') return null;
 
@@ -136,6 +176,15 @@ export function tryParseLabeledJsonContent(content: unknown): unknown | null {
   }
 }
 
+/**
+ * Determine whether a value should be rendered using the JsonInspector
+ * component rather than plain text.
+ *
+ * Returns true for non-string objects, parsable JSON strings, and strings
+ * with labeled JSON sections (e.g., "mapping: {...}").
+ *
+ * @param content - Value to classify
+ */
 export function shouldRenderAsJsonInspector(content: unknown): boolean {
   if (content == null) return false;
   if (typeof content !== 'string') return true;
@@ -158,6 +207,17 @@ export function shouldRenderAsJsonInspector(content: unknown): boolean {
   return false;
 }
 
+/**
+ * Classify and parse a value that may be JSON, double-encoded JSON, or plain text.
+ *
+ * Recursively unwraps double-encoded strings up to `maxDepth` levels.
+ * Used by JsonInspector and admin popups to decide between tree view
+ * and text rendering.
+ *
+ * @param value - The raw value to classify
+ * @param maxDepth - Maximum unwrap depth for nested JSON strings
+ * @returns Classified result with parsed data and text representation
+ */
 export function parseJsonCandidate(value: unknown, maxDepth: number): ParsedJsonValue {
   if (value == null) {
     return { kind: 'empty', jsonValue: null, textValue: '' };

@@ -5,16 +5,60 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 
+/**
+ * LLM Dataset Ingestion Service
+ *
+ * Handles the creation of dataset test cases from various sources:
+ * - Playground runs (manual prompt testing results)
+ * - Form submissions (user-facing form data)
+ * - Conversation messages (chat history excerpts)
+ * - Script executions (automated LLM script outputs)
+ * - Manual entry and bulk CSV/JSON imports
+ * - AI-assisted imports (LLM-parsed unstructured data)
+ *
+ * Each method normalizes source data into the standard case schema
+ * (input_payload, expected_output, source_ref, provenance) before
+ * delegating persistence to LlmDatasetService.
+ *
+ * @package LLM Plugin
+ * @see LlmDatasetService For case persistence and dataset CRUD
+ */
 class LlmDatasetIngestionService extends BaseLlmService
 {
+    /** @var LlmDatasetService Parent dataset service for persistence */
     private $dataset_service;
 
+    /**
+     * @param object $services SelfHelp services container
+     * @param LlmDatasetService $dataset_service Parent dataset service
+     */
     public function __construct($services, $dataset_service)
     {
         parent::__construct($services);
         $this->dataset_service = $dataset_service;
     }
 
+    /**
+     * Create a dataset case from a playground run result, normalizing the run metadata into the standard case schema.
+     *
+     * @param int   $dataset_id Target dataset ID.
+     * @param array $payload {
+     *     @type array       $descriptor           Prompt owner descriptor.
+     *     @type array       $message_history       Conversation messages.
+     *     @type array       $variables             Template variables used.
+     *     @type array       $runtime_overrides     Model parameter overrides.
+     *     @type int|null    $id_llm_prompt_playground_runs  Source run ID.
+     *     @type int|null    $id_llmConversations   Conversation ID.
+     *     @type int|null    $id_llmMessages_request Request message ID.
+     *     @type int|null    $id_llmMessages_response Response message ID.
+     *     @type string|null $title                 Case title.
+     *     @type array|null  $expected_output       Expected output for evaluation.
+     *     @type array|null  $expected_labels       Expected labels for evaluation.
+     *     @type array|null  $tags                  Tag strings.
+     *     @type string|null $notes                 Freetext notes.
+     * }
+     * @return array Created case row.
+     */
     public function addCaseFromPlaygroundRun($dataset_id, $payload)
     {
         $descriptor = is_array($payload['descriptor'] ?? null) ? $payload['descriptor'] : array();
@@ -47,6 +91,15 @@ class LlmDatasetIngestionService extends BaseLlmService
         ));
     }
 
+    /**
+     * List candidate records from a given source type that can be imported as dataset cases.
+     *
+     * @param string $source_type One of: 'playground_run', 'form_submission', 'conversation_message', 'script_run'.
+     * @param int    $limit       Max candidates (clamped to 1–100).
+     * @param array  $context     Filter context with 'descriptor', 'allowed_page_id', 'allow_script_source'.
+     * @return array List of candidate rows with preview_text and assistant_preview fields.
+     * @throws Exception If source_type is unsupported.
+     */
     public function getImportCandidates($source_type, $limit = 50, $context = array())
     {
         $limit = max(1, min((int)$limit, 100));
@@ -72,6 +125,16 @@ class LlmDatasetIngestionService extends BaseLlmService
         throw new Exception('Unsupported source type for import candidates');
     }
 
+    /**
+     * Bulk-import cases from a specific source type by their IDs.
+     *
+     * @param int    $dataset_id  Target dataset ID.
+     * @param string $source_type One of: 'playground_run', 'form_submission', 'conversation_message', 'script_run'.
+     * @param array  $source_ids  Source record IDs to import.
+     * @param array  $context     Filter context with 'descriptor', 'execution_profile', 'runtime_overrides', etc.
+     * @return array List of created case rows.
+     * @throws Exception If no cases could be imported or source_type is unsupported.
+     */
     public function addCasesFromSource($dataset_id, $source_type, $source_ids, $context = array())
     {
         $created = array();
@@ -116,6 +179,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $created;
     }
 
+    /**
+     * Query playground run candidates scoped by descriptor or page access.
+     *
+     * @param int   $limit           Max rows.
+     * @param array $descriptor      Owner descriptor for scope filtering.
+     * @param int   $allowed_page_id Fallback page scope from ACL.
+     * @return array Raw DB rows with request/response content.
+     */
     private function listPlaygroundRunCandidates($limit, $descriptor, $allowed_page_id)
     {
         $params = array();
@@ -153,6 +224,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
     }
 
+    /**
+     * Query form-submission (user message) candidates, filtering to messages that have dataRow links or parseable field lines.
+     *
+     * @param int   $limit           Max results.
+     * @param array $descriptor      Owner descriptor for section scope.
+     * @param int   $allowed_page_id Fallback page scope.
+     * @return array Filtered rows with parseable form data.
+     */
     private function listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id)
     {
         $params = array();
@@ -194,6 +273,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $filtered;
     }
 
+    /**
+     * Query conversation user-message candidates scoped by section, script, or page.
+     *
+     * @param int   $limit           Max results.
+     * @param array $descriptor      Owner descriptor.
+     * @param int   $allowed_page_id Fallback page scope.
+     * @return array Raw message rows.
+     */
     private function listConversationCandidates($limit, $descriptor, $allowed_page_id)
     {
         $params = array();
@@ -221,6 +308,13 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
     }
 
+    /**
+     * Query script fixture candidates (llm_scripts table), optionally scoped to a specific script ID.
+     *
+     * @param int   $limit      Max results.
+     * @param array $descriptor Owner descriptor.
+     * @return array Script rows.
+     */
     private function listScriptCandidates($limit, $descriptor)
     {
         $params = array();
@@ -239,6 +333,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
     }
 
+    /** @return int Numeric lookup ID for the descriptor's owner_type, or 0 if unresolved. */
     private function resolveOwnerTypeLookupId($descriptor)
     {
         if (empty($descriptor['owner_type'])) {
@@ -248,16 +343,23 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $id ? (int)$id : 0;
     }
 
+    /** @return bool Whether the descriptor's owner_type is a CMS style field. */
     private function isStyleOwner($descriptor)
     {
         return ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_STYLE_FIELD;
     }
 
+    /** @return bool Whether the descriptor's owner_type is an LLM script. */
     private function isScriptOwner($descriptor)
     {
         return ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT;
     }
 
+    /**
+     * Import a single playground run as a dataset case after scope validation.
+     *
+     * @return array|null Created case row, or null if out of scope.
+     */
     private function importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
     {
         $row = $this->db->query_db_first(
@@ -317,6 +419,11 @@ class LlmDatasetIngestionService extends BaseLlmService
         ));
     }
 
+    /**
+     * Import a form submission (user message with field data) as a dataset case.
+     *
+     * @return array|null Created case row, or null if out of scope.
+     */
     private function importFormSubmissionCase($dataset_id, $source_id, $descriptor, $runtime_overrides, $allowed_page_id)
     {
         $message = $this->db->query_db_first(
@@ -366,6 +473,11 @@ class LlmDatasetIngestionService extends BaseLlmService
         ));
     }
 
+    /**
+     * Import a conversation user message (with history window) as a dataset case.
+     *
+     * @return array|null Created case row, or null if out of scope.
+     */
     private function importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
     {
         $message = $this->db->query_db_first(
@@ -420,6 +532,12 @@ class LlmDatasetIngestionService extends BaseLlmService
         ));
     }
 
+    /**
+     * Attempt to parse structured variables from a user message (JSON, field lines, or fallback aliases).
+     *
+     * @param string $message_content Raw message content.
+     * @return array Associative variable map.
+     */
     private function buildScriptVariablesFromMessage($message_content)
     {
         $content = trim((string)$message_content);
@@ -448,6 +566,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
     }
 
+    /** @return bool True if $value is an associative (non-sequential) array. */
     private function isAssoc($value)
     {
         if (!is_array($value)) {
@@ -456,6 +575,11 @@ class LlmDatasetIngestionService extends BaseLlmService
         return array_keys($value) !== range(0, count($value) - 1);
     }
 
+    /**
+     * Import an LLM script's test fixture as a dataset case.
+     *
+     * @return array|null Created case row, or null if script not found.
+     */
     private function importScriptFixtureCase($dataset_id, $source_id, $descriptor, $runtime_overrides)
     {
         $script = $this->db->query_db_first(
@@ -506,6 +630,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         ));
     }
 
+    /**
+     * Load a window of recent messages from a conversation up to a specific message ID.
+     *
+     * @param int $conversation_id   Conversation primary key.
+     * @param int $up_to_message_id  Include messages up to (and including) this ID.
+     * @param int $window            Number of messages to include (max 40).
+     * @return array Normalized messages in chronological order.
+     */
     private function loadConversationWindow($conversation_id, $up_to_message_id, $window)
     {
         $rows = $this->db->query_db(
@@ -518,6 +650,13 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $this->dataset_service->normalizeMessages(array_reverse($rows));
     }
 
+    /**
+     * Add preview_text and assistant_preview fields to import candidate rows for UI display.
+     *
+     * @param string $source_type Source type for preview formatting.
+     * @param array  $rows        Raw candidate rows.
+     * @return array Decorated rows with preview fields added.
+     */
     private function decorateImportCandidates($source_type, $rows)
     {
         foreach ($rows as &$row) {
@@ -540,6 +679,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $rows;
     }
 
+    /**
+     * Build a case title from a prefix and a preview of the content (truncated to 72 chars).
+     *
+     * @param string $prefix  Source type label (e.g. 'Playground run').
+     * @param string $preview Content snippet.
+     * @param int    $id      Fallback source ID for the title.
+     * @return string Formatted title.
+     */
     private function buildImportedCaseTitle($prefix, $preview, $id)
     {
         $preview = trim(preg_replace('/\s+/', ' ', (string)$preview));
@@ -552,6 +699,7 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $prefix . ': ' . $preview;
     }
 
+    /** @return string First non-empty scalar value from an array, or empty string. */
     private function buildFieldPreview($values)
     {
         if (!is_array($values)) {
@@ -565,6 +713,13 @@ class LlmDatasetIngestionService extends BaseLlmService
         return '';
     }
 
+    /**
+     * Load the next assistant reply after a specific message in a conversation.
+     *
+     * @param int $conversation_id   Conversation ID.
+     * @param int $after_message_id  Message ID to look after.
+     * @return array|null Assistant message row {id, content} or null.
+     */
     private function loadNextAssistantMessage($conversation_id, $after_message_id)
     {
         return $this->db->query_db_first(
@@ -576,6 +731,12 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
     }
 
+    /**
+     * Load the most recent assistant message from a script's conversation history.
+     *
+     * @param int $script_id Script primary key.
+     * @return array|null Message row {id, content} or null.
+     */
     private function loadLatestScriptAssistantMessage($script_id)
     {
         return $this->db->query_db_first(
@@ -588,6 +749,15 @@ class LlmDatasetIngestionService extends BaseLlmService
         );
     }
 
+    /**
+     * Check whether a source row falls within the descriptor's ownership scope or page scope.
+     * Handles style-field owners, script owners, and page-level fallback matching.
+     *
+     * @param array $row             Source record with id_sections, prompt_owner_id, source_page_id, source_script_id.
+     * @param array $descriptor      Owner descriptor.
+     * @param int   $allowed_page_id ACL-validated page ID fallback.
+     * @return bool True if the row is in scope for import.
+     */
     private function matchesDescriptorScope($row, $descriptor, $allowed_page_id)
     {
         $owner_id = (int)($descriptor['owner_id'] ?? 0);
@@ -638,6 +808,13 @@ class LlmDatasetIngestionService extends BaseLlmService
         return true;
     }
 
+    /**
+     * Merge override values into a base config, with overrides taking precedence.
+     *
+     * @param array $base     Base config array.
+     * @param array $override Override values.
+     * @return array Merged config.
+     */
     private function mergeRuntimeOverrides($base, $override)
     {
         $base = is_array($base) ? $base : array();
@@ -647,6 +824,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $base;
     }
 
+    /**
+     * Resolve the runtime profile to use when importing a conversation message as a case.
+     *
+     * @param string $execution_profile Dataset's declared execution profile.
+     * @param array  $descriptor        Owner descriptor.
+     * @param array  $message           Source message row.
+     * @return string Resolved profile code (defaults to 'chat_runtime').
+     */
     public function resolveConversationImportRuntimeProfile($execution_profile, $descriptor, $message)
     {
         $extended = $this->resolveConversationImportRuntimeProfileExtension($execution_profile, $descriptor, $message);
@@ -657,6 +842,14 @@ class LlmDatasetIngestionService extends BaseLlmService
         return $execution_profile === 'chat_runtime' ? 'chat_runtime' : 'chat_runtime';
     }
 
+    /**
+     * Extension point for custom runtime profile resolution during conversation imports. Returns empty string for default behavior.
+     *
+     * @param string $execution_profile Dataset's execution profile.
+     * @param array  $descriptor        Owner descriptor.
+     * @param array  $message           Source message row.
+     * @return string Custom profile code, or empty string for default handling.
+     */
     public function resolveConversationImportRuntimeProfileExtension($execution_profile, $descriptor, $message)
     {
         return '';

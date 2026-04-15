@@ -1,3 +1,15 @@
+/**
+ * Settings App — main container for the LLM Settings admin page.
+ *
+ * Renders three collapsible sections:
+ * - **API Keys**: Provider API key management (ApiKeysSection)
+ * - **Model Defaults**: Default model, temperature, max tokens (ModelDefaultsSection)
+ * - **Memory Config**: Summary of memory subsystem configuration (MemorySettingsSummary)
+ *
+ * Loads initial config from a bootstrap payload passed by the PHP view.
+ *
+ * @module components/settings/SettingsApp
+ */
 import React, { useEffect, useState, useCallback } from 'react';
 import type { SettingsBootConfig } from '../../settings';
 import { ApiKeysSection } from './ApiKeysSection';
@@ -27,6 +39,7 @@ interface Props {
   config: SettingsBootConfig;
 }
 
+/** Root application component for settings app. */
 export const SettingsApp: React.FC<Props> = ({ config }) => {
   const [data, setData] = useState<SettingsData | null>(null);
   const [models, setModels] = useState<{ id: string; name?: string }[]>([]);

@@ -12,16 +12,38 @@ require_once __DIR__ . "/../../service/LlmMemoryConfigService.php";
 require_once __DIR__ . "/../../service/LlmMemoryRuleService.php";
 require_once __DIR__ . "/../sh_module_llm/Sh_module_llmModel.php";
 
+/**
+ * Controller for the LLM Memory administration module.
+ *
+ * Handles all AJAX requests from the React MemoryAdminPanel and
+ * MemoryRulesEditorApp components. Each action is ACL-checked against
+ * the memory admin page before execution.
+ *
+ * Covers:
+ * - Memory overview and activity dashboard
+ * - Rule CRUD (create, read, update, delete, duplicate)
+ * - Per-user memory browsing, editing, and deletion
+ * - Memory configuration management
+ * - Bulk rebuild and rule re-execution
+ *
+ * @package LLM Plugin
+ * @see LlmMemoryRuleService For rule persistence
+ * @see LlmMemoryAdminService For admin data queries
+ * @see LlmMemoryConfigService For global memory settings
+ */
 class ModuleLlmMemoryController extends BaseController
 {
     use LlmJsonResponseTrait;
 
-    /** @var object */
+    /** @var object SelfHelp ACL service for permission checks */
     private $acl;
 
-    /** @var int|null */
+    /** @var int|null Resolved page ID for ACL lookups */
     private $page_id;
 
+    /**
+     * @param ModuleLlmMemoryModel $model Model instance providing services access
+     */
     public function __construct($model)
     {
         parent::__construct($model);
@@ -31,6 +53,12 @@ class ModuleLlmMemoryController extends BaseController
         $this->handleRequest();
     }
 
+    /**
+     * Dispatch incoming request to the appropriate handler.
+     *
+     * All actions require ACL permission on the memory admin page.
+     * Read operations require 'select'; mutations require 'insert', 'update', or 'delete'.
+     */
     private function handleRequest()
     {
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
@@ -130,6 +158,12 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /**
+     * Halt with 403 JSON response if the current user lacks the specified ACL mode on the memory admin page.
+     *
+     * @param string $mode ACL mode ('select', 'insert', 'update', 'delete').
+     * @return void Exits on failure.
+     */
     private function requireAccess($mode)
     {
         if (!$this->checkAccess($mode)) {
@@ -138,6 +172,12 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /**
+     * Check whether the current user has the specified ACL mode on the memory admin page.
+     *
+     * @param string $mode ACL mode ('select', 'insert', 'update', 'delete').
+     * @return bool True if access is granted.
+     */
     private function checkAccess($mode)
     {
         if (!$this->page_id || !isset($_SESSION['id_user'])) {
@@ -147,21 +187,25 @@ class ModuleLlmMemoryController extends BaseController
         return $this->acl->$method($_SESSION['id_user'], $this->page_id);
     }
 
+    /** @return LlmMemoryAdminService Fresh admin service instance. */
     private function getAdminService()
     {
         return new LlmMemoryAdminService($this->model->get_services());
     }
 
+    /** @return LlmMemoryRuleService Fresh rule service instance. */
     private function getRuleService()
     {
         return new LlmMemoryRuleService($this->model->get_services());
     }
 
+    /** @return Sh_module_llmModel Fresh settings model for memory configuration. */
     private function getSettingsModel()
     {
         return new Sh_module_llmModel($this->model->get_services());
     }
 
+    /** Return the memory overview dashboard data (key stats, rule counts, user counts). */
     private function handleOverview()
     {
         try {
@@ -172,6 +216,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return all memory rules with their form-action usage counts. */
     private function handleRulesList()
     {
         try {
@@ -187,6 +232,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Retrieve a single rule by ID with its active prompt template and bootstrap data. */
     private function handleRuleGet()
     {
         $rule_id = (int)($_GET['rule_id'] ?? 0);
@@ -213,6 +259,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return the full bootstrap payload for the rules editor UI (rules list + editor config). */
     private function handleRulesBootstrap()
     {
         try {
@@ -233,6 +280,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Create a new memory rule from POST data (rule_json, prompt_template, prompt_meta_json). */
     private function handleRuleCreate()
     {
         try {
@@ -253,6 +301,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Update an existing memory rule identified by POST rule_id. */
     private function handleRuleUpdate()
     {
         $rule_id = (int)($_POST['rule_id'] ?? 0);
@@ -279,6 +328,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Delete a memory rule by POST rule_id (refuses if linked to form actions). */
     private function handleRuleDelete()
     {
         $rule_id = (int)($_POST['rule_id'] ?? 0);
@@ -295,6 +345,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Duplicate an existing rule by POST rule_id and return the new copy. */
     private function handleRuleDuplicate()
     {
         $rule_id = (int)($_POST['rule_id'] ?? 0);
@@ -314,6 +365,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return available memory write-source definitions (form actions, hooks, etc.). */
     private function handleSources()
     {
         try {
@@ -323,6 +375,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return the current memory module configuration and the user's ACL flags. */
     private function handleMemoryConfigGet()
     {
         try {
@@ -339,6 +392,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Save memory configuration fields from raw JSON body (whitelisted field names only). */
     private function handleMemoryConfigSave()
     {
         try {
@@ -375,6 +429,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return all memory keys with their usage statistics. */
     private function handleMemoryKeys()
     {
         try {
@@ -386,6 +441,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return recent memory activity log entries (limited by GET 'limit', max 100). */
     private function handleMemoryActivity()
     {
         try {
@@ -398,6 +454,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Delete a memory key from the registry by POST key_code (refuses if in use). */
     private function handleMemoryKeyDelete()
     {
         $key_code = (string)($_POST['key_code'] ?? '');
@@ -414,6 +471,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return paginated list of users who have memory data (with optional search). */
     private function handleMemoryUsers()
     {
         $page = (int)($_GET['page'] ?? 1);
@@ -427,6 +485,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return a specific user's current memory data and available memory keys. */
     private function handleMemoryUserDetail()
     {
         $user_id = (int)($_GET['user_id'] ?? 0);
@@ -447,6 +506,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Return a user's memory history log (optionally scoped by memory_key, limited by GET 'limit'). */
     private function handleMemoryUserHistory()
     {
         $user_id = (int)($_GET['user_id'] ?? 0);
@@ -465,6 +525,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Re-execute a memory rule for a specific user (POST: user_id, rule_key, optional manual_payload_json). */
     private function handleMemoryRerunRule()
     {
         $user_id = (int)($_POST['user_id'] ?? 0);
@@ -483,6 +544,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Rebuild all memory keys for a specific user (POST: user_id). */
     private function handleMemoryRebuild()
     {
         $user_id = (int)($_POST['user_id'] ?? 0);
@@ -499,6 +561,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Manually edit a user's memory for a specific key (POST: user_id, memory_key, memory_text, memory_json). */
     private function handleMemoryEdit()
     {
         $user_id = (int)($_POST['user_id'] ?? 0);
@@ -526,6 +589,7 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /** Delete a user's memory for a specific key (POST: user_id, memory_key). */
     private function handleMemoryDelete()
     {
         $user_id = (int)($_POST['user_id'] ?? 0);
@@ -543,6 +607,13 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
+    /**
+     * Decode a JSON string from a POST field, returning a fallback if absent or invalid.
+     *
+     * @param string $key      POST parameter name.
+     * @param mixed  $fallback Default value if decoding fails.
+     * @return array Decoded array or fallback.
+     */
     private function decodeJsonPost($key, $fallback)
     {
         $raw = $_POST[$key] ?? '';

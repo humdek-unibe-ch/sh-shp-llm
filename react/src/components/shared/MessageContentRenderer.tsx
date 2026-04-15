@@ -286,6 +286,7 @@ export function findPreviousAssistantFormDefinition(
   return undefined;
 }
 
+/** Default export for this module. */
 export default MessageContentRenderer;
 
 

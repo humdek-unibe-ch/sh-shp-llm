@@ -1,3 +1,11 @@
+/**
+ * Evaluation Runner Modal — configure and launch an evaluation run.
+ *
+ * Provides model selection, parameter overrides, and a "Run" button.
+ * Shows progress during execution and redirects to results on completion.
+ *
+ * @module components/evaluations/EvaluationRunnerModal
+ */
 import React, { useState } from 'react';
 import Select from 'react-select';
 import { Button, Form, Modal, Row, Col, Spinner } from 'react-bootstrap';
@@ -26,6 +34,7 @@ interface EvaluationRunnerModalProps {
   }) => Promise<void>;
 }
 
+/** Modal dialog for evaluation runner modal. */
 export const EvaluationRunnerModal: React.FC<EvaluationRunnerModalProps> = ({
   show,
   onHide,

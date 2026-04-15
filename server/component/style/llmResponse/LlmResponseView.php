@@ -40,6 +40,7 @@ class LlmResponseView extends StyleView
         $this->field_name = $this->model->get_db_field('name');
     }
 
+    /** Render the LLM response: edit mode template or display template based on CMS state. */
     public function output_content()
     {
         if ($this->enable_editing) {
@@ -55,6 +56,7 @@ class LlmResponseView extends StyleView
         }
     }
 
+    /** @return array Mobile output with interpolated markdown content and display fields. */
     public function output_content_mobile()
     {
         $style = parent::output_content_mobile();

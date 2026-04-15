@@ -354,6 +354,13 @@ class LlmMemoryStorageService extends BaseLlmService
         }
     }
 
+    /**
+     * Fetch the current (latest) memory row for a user and key from the current-state table.
+     *
+     * @param int    $user_id    User ID.
+     * @param string $memory_key Memory key identifier.
+     * @return array|null Row data, or null if not found.
+     */
     private function getCurrentMemoryRow($user_id, $memory_key)
     {
         $current_table = $this->config_service->getCurrentTableName();
@@ -368,6 +375,13 @@ class LlmMemoryStorageService extends BaseLlmService
         return $rows ?: null;
     }
 
+    /**
+     * Fetch the most recent applied history row for a user and key from the history table.
+     *
+     * @param int    $user_id    User ID.
+     * @param string $memory_key Memory key identifier.
+     * @return array|null History row, or null if not found.
+     */
     private function getLatestHistoryRow($user_id, $memory_key)
     {
         $history_table = $this->config_service->getHistoryTableName();
@@ -392,6 +406,15 @@ class LlmMemoryStorageService extends BaseLlmService
         return $rows ?: null;
     }
 
+    /**
+     * Load full dataRow records by their IDs, preserving the requested ordering.
+     *
+     * @param int      $table_id  DataTable ID.
+     * @param int[]    $row_ids   Row IDs to hydrate.
+     * @param int|null $user_id   Optional user filter.
+     * @param bool     $db_first  If true, return only the first row (or null).
+     * @return array|null Ordered rows, or single row/null when db_first is true.
+     */
     private function hydrateRowsByIds($table_id, $row_ids, $user_id = null, $db_first = false)
     {
         $row_ids = array_values(array_unique(array_filter(array_map('intval', (array)$row_ids))));
@@ -427,6 +450,17 @@ class LlmMemoryStorageService extends BaseLlmService
         return $ordered;
     }
 
+    /**
+     * Find dataRow IDs matching cell-level filters using EXISTS subqueries, ordered DESC.
+     *
+     * @param int      $table_id     DataTable ID.
+     * @param array    $cell_filters Column name => value pairs.
+     * @param int|null $user_id      Optional user filter.
+     * @param bool     $first_only   If true, LIMIT 1.
+     * @param int|null $limit        Max rows (overridden by first_only).
+     * @param int      $offset       Pagination offset.
+     * @return int[] Matching row IDs.
+     */
     private function findMatchingRowIds($table_id, $cell_filters = [], $user_id = null, $first_only = false, $limit = null, $offset = 0)
     {
         $params = [':table_id' => (int)$table_id];
@@ -486,6 +520,15 @@ class LlmMemoryStorageService extends BaseLlmService
         }, $rows);
     }
 
+    /**
+     * Insert or update the current-state memory row for a user and key.
+     *
+     * @param int    $user_id    User ID.
+     * @param string $memory_key Memory key.
+     * @param array  $memory_data {memory_text, memory_object, flat_fields}.
+     * @param array  $metadata   {rule_key, source_type, source_ref, trigger_type, payload_json, ...}.
+     * @return bool True on success.
+     */
     private function upsertCurrentMemory($user_id, $memory_key, $memory_data, $metadata)
     {
         $current_table = $this->config_service->getCurrentTableName();
@@ -529,6 +572,15 @@ class LlmMemoryStorageService extends BaseLlmService
         }
     }
 
+    /**
+     * Append a new row to the memory history table, including the previous memory JSON for diffing.
+     *
+     * @param int    $user_id    User ID.
+     * @param string $memory_key Memory key.
+     * @param array  $memory_data {memory_text, memory_object, change_summary, flat_fields}.
+     * @param array  $metadata   {rule_key, source_type, update_status, ...}.
+     * @return bool True on success.
+     */
     private function appendHistoryRow($user_id, $memory_key, $memory_data, $metadata)
     {
         $history_table = $this->config_service->getHistoryTableName();
@@ -562,6 +614,14 @@ class LlmMemoryStorageService extends BaseLlmService
         }
     }
 
+    /**
+     * Build the field array for an upsert into the current-state memory table.
+     *
+     * @param string $memory_key  Memory key.
+     * @param array  $memory_data Memory data with text, object, and optional flat_fields.
+     * @param array  $metadata    Source and trigger metadata.
+     * @return array Key-value pairs for save_data().
+     */
     private function buildCurrentMemoryFields($memory_key, $memory_data, $metadata)
     {
         $fields = [
@@ -593,6 +653,15 @@ class LlmMemoryStorageService extends BaseLlmService
         return $fields;
     }
 
+    /**
+     * Build the field array for appending a row to the memory history table.
+     *
+     * @param string $memory_key  Memory key.
+     * @param array  $memory_data Memory data with text, object, change_summary, flat_fields.
+     * @param array  $metadata    Source, trigger, and status metadata.
+     * @param string $prev_json   Previous memory_json for diff tracking.
+     * @return array Key-value pairs for save_data().
+     */
     private function buildHistoryFields($memory_key, $memory_data, $metadata, $prev_json)
     {
         $fields = [

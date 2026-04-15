@@ -1,3 +1,11 @@
+/**
+ * Memory Config Section — configure memory subsystem parameters.
+ *
+ * Provides model selection for memory extraction, embedding model,
+ * and reranker model. Part of the full Settings page.
+ *
+ * @module components/settings/MemoryConfigSection
+ */
 import React from 'react';
 import { SearchableSelect } from './SearchableSelect';
 
@@ -21,6 +29,7 @@ interface Props {
   footer?: React.ReactNode;
 }
 
+/** MemoryConfigSection component. */
 export const MemoryConfigSection: React.FC<Props> = ({
   getField,
   getVal,

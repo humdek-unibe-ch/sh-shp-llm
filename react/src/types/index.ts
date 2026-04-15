@@ -578,6 +578,7 @@ export interface DeleteConversationResponse {
 // ADMIN TYPES
 // ============================================================================
 
+/** Admin console configuration with page size and UI labels. */
 export interface AdminConfig {
   pageSize: number;
   labels: {
@@ -597,6 +598,7 @@ export interface AdminConfig {
   csrfToken?: string;
 }
 
+/** A user or entity option for admin filter dropdowns. */
 export interface AdminFilterOption {
   id: number;
   name: string;
@@ -604,6 +606,7 @@ export interface AdminFilterOption {
   user_validation_code?: string | null;
 }
 
+/** Response from the admin filters endpoint with user, section, and script lists. */
 export interface AdminFiltersResponse {
   filters: {
     users: AdminFilterOption[];
@@ -613,6 +616,7 @@ export interface AdminFiltersResponse {
   error?: string;
 }
 
+/** Admin-enriched conversation with user, section, script metadata and moderation flags. */
 export interface AdminConversation extends Conversation {
   id_users?: number;
   id_sections?: number;
@@ -642,6 +646,7 @@ export interface AdminConversationsResponse {
   error?: string;
 }
 
+/** Response from the admin messages endpoint with conversation details and messages. */
 export interface AdminMessagesResponse {
   conversation: AdminConversation | null;
   messages: Message[];

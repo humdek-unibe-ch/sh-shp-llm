@@ -9,19 +9,42 @@ require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
 
 /**
- * Controller for the LLM admin console component.
- * Handles conversation moderation and inspection requests.
+ * Controller for the LLM Admin Console module.
+ *
+ * Handles all AJAX requests from the React-based admin console UI
+ * for moderating and inspecting LLM conversations. Supports filtering,
+ * pagination, message inspection, and moderation actions (block/unblock/delete).
+ *
+ * Actions are dispatched via the `action` GET/POST parameter. All responses
+ * are returned as JSON through LlmJsonResponseTrait.
+ *
+ * @package LLM Plugin
+ * @see ModuleLlmAdminConsoleModel For data retrieval logic
  */
 class ModuleLlmAdminConsoleController extends BaseController
 {
     use LlmJsonResponseTrait;
 
+    /**
+     * @param ModuleLlmAdminConsoleModel $model Model providing admin data operations
+     */
     public function __construct($model)
     {
         parent::__construct($model);
         $this->handleRequest();
     }
 
+    /**
+     * Dispatch incoming request to the appropriate handler based on `action` parameter.
+     *
+     * Supported actions:
+     * - admin_filters: Retrieve available filter options (users, sections, scripts)
+     * - admin_conversations: Paginated, filterable conversation list
+     * - admin_messages: Full message history for a single conversation
+     * - admin_delete_conversation: Soft-delete a conversation (POST)
+     * - admin_block_conversation: Block a conversation with optional reason (POST)
+     * - admin_unblock_conversation: Remove block from a conversation (POST)
+     */
     private function handleRequest()
     {
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
@@ -54,6 +77,12 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
+    /**
+     * Return the set of available filter options for the admin conversation list.
+     *
+     * Provides users, sections, and scripts so the React UI can populate
+     * its filter dropdowns without a separate configuration endpoint.
+     */
     private function handleAdminFilters()
     {
         try {
@@ -64,6 +93,12 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
+    /**
+     * Return a paginated, filterable list of conversations for admin review.
+     *
+     * Accepts optional GET parameters: user_id, section_id, script_id, q (search),
+     * date_from, date_to, page, per_page (max 100).
+     */
     private function handleAdminConversations()
     {
         $page = (int)($_GET['page'] ?? 1);
@@ -98,6 +133,14 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
+    /**
+     * Return the full message history for a specific conversation.
+     *
+     * Includes all messages (validated and unvalidated) with raw_response,
+     * sent_context, reasoning, and request_payload for admin inspection.
+     *
+     * Requires GET parameter: conversation_id.
+     */
     private function handleAdminMessages()
     {
         $conversation_id = $_GET['conversation_id'] ?? null;
@@ -118,6 +161,12 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
+    /**
+     * Soft-delete a conversation and all its messages (POST).
+     *
+     * Requires POST parameter: conversation_id.
+     * Logs the admin user who performed the deletion.
+     */
     private function handleAdminDeleteConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
@@ -139,6 +188,12 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
+    /**
+     * Block a conversation with an optional reason (POST).
+     *
+     * Blocked conversations prevent the user from sending further messages.
+     * Requires POST parameter: conversation_id. Optional: reason.
+     */
     private function handleAdminBlockConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
@@ -161,6 +216,12 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
     }
 
+    /**
+     * Remove block status from a conversation (POST).
+     *
+     * Allows the user to resume sending messages in the conversation.
+     * Requires POST parameter: conversation_id.
+     */
     private function handleAdminUnblockConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;

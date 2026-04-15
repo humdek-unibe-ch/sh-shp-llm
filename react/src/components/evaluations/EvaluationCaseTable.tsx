@@ -1,25 +1,38 @@
+/**
+ * Evaluation Case Table — per-case results for an evaluation run.
+ *
+ * Renders each test case with its input summary, actual output,
+ * expected output, score, pass/fail badge, and an expand button
+ * for detailed inspection.
+ *
+ * @module components/evaluations/EvaluationCaseTable
+ */
 import React from 'react';
 import { Badge, Button, Table } from 'react-bootstrap';
 import type { PromptEvalRunCase } from './evaluationTypes';
 
+/** scoreBadgeVariant function. */
 function scoreBadgeVariant(passed?: number | null): 'success' | 'danger' | 'secondary' {
   if (passed === 1) return 'success';
   if (passed === 0) return 'danger';
   return 'secondary';
 }
 
+/** caseBadgeVariant function. */
 function caseBadgeVariant(status?: string): 'success' | 'danger' | 'warning' {
   if (status === 'failed') return 'danger';
   if (status === 'pending_review') return 'warning';
   return 'success';
 }
 
+/** caseStatusLabel function. */
 function caseStatusLabel(status?: string): string {
   if (status === 'failed') return 'Fail';
   if (status === 'pending_review') return 'Pending';
   return 'Pass';
 }
 
+/** Table component for evaluation case table. */
 export const EvaluationCaseTable: React.FC<{
   cases: PromptEvalRunCase[];
   onInspect: (runCase: PromptEvalRunCase) => void;

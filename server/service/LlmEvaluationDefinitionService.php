@@ -5,6 +5,15 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 
+/**
+ * LLM Evaluation Definition Service
+ *
+ * Manages evaluation scoring definitions stored in `llm_eval_definitions`.
+ * Each definition specifies a scoring strategy (programmatic, LLM judge,
+ * or human review) and its configuration (thresholds, prompts, rubrics).
+ *
+ * @package LLM Plugin
+ */
 class LlmEvaluationDefinitionService extends BaseLlmService
 {
     public function listDefinitions()
@@ -18,6 +27,12 @@ class LlmEvaluationDefinitionService extends BaseLlmService
         );
     }
 
+    /**
+     * Load evaluation definitions by their IDs.
+     *
+     * @param array $ids Evaluation definition IDs.
+     * @return array Definition rows with eval_type_code.
+     */
     public function loadDefinitionsByIds($ids)
     {
         $ids = array_values(array_filter(array_map('intval', (array)$ids)));
@@ -35,6 +50,7 @@ class LlmEvaluationDefinitionService extends BaseLlmService
         );
     }
 
+    /** @return array All default (non-deleted) evaluation definitions ordered by sort_order. */
     public function loadDefaultDefinitions()
     {
         return $this->db->query_db(
@@ -48,6 +64,10 @@ class LlmEvaluationDefinitionService extends BaseLlmService
         );
     }
 
+    /**
+     * @param int $definition_id Definition ID.
+     * @return array|null Single evaluation definition row, or null.
+     */
     public function getDefinition($definition_id)
     {
         return $this->db->query_db_first(

@@ -1,3 +1,11 @@
+/**
+ * Prompt Variable Inputs — renders editable fields for detected `{{variables}}`.
+ *
+ * Parses the current prompt template for placeholders and renders a
+ * text input for each. Values are passed to the playground for substitution.
+ *
+ * @module components/prompts/PromptVariableInputs
+ */
 import React from 'react';
 import { Form, Row } from 'react-bootstrap';
 import { PromptEditor } from './PromptEditor';
@@ -9,6 +17,7 @@ interface PromptVariableInputsProps {
   onChange: (name: string, value: unknown) => void;
 }
 
+/** normalizeValue function. */
 function normalizeValue(value: unknown, type?: string): string | number {
   if (value == null) {
     return '';
@@ -25,6 +34,7 @@ function normalizeValue(value: unknown, type?: string): string | number {
   return String(value);
 }
 
+/** PromptVariableInputs component. */
 export const PromptVariableInputs: React.FC<PromptVariableInputsProps> = ({
   schema,
   values,

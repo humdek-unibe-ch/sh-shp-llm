@@ -22,16 +22,19 @@ export interface LlmScript {
   updated_at: string;
 }
 
+/** Type definition for llm model. */
 export interface LlmModel {
   id: string;
   [key: string]: unknown;
 }
 
+/** Type definition for section info. */
 export interface SectionInfo {
   id: number;
   name: string;
 }
 
+/** Type definition for llm defaults. */
 export interface LlmDefaults {
   default_model: string;
   default_temperature: number;
@@ -44,12 +47,14 @@ export interface LlmDefaults {
   };
 }
 
+/** Type definition for script update payload. */
 export interface ScriptUpdatePayload extends Partial<LlmScript> {
   sid: number;
   prompt_change_note?: string | null;
   prompt_meta_json?: string | null;
 }
 
+/** buildUrl function. */
 function buildUrl(action: string, extraParams: Record<string, string> = {}): string {
   const url = new URL(window.location.href);
   url.searchParams.set('action', action);
@@ -100,6 +105,7 @@ async function apiPost<T>(formData: FormData): Promise<T> {
   return response.json();
 }
 
+/** API client for create scripts api. */
 export function createScriptsApi() {
   return {
     async list(): Promise<LlmScript[]> {

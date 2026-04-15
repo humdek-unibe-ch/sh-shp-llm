@@ -1,3 +1,11 @@
+/**
+ * Model Defaults Section — configure default LLM parameters.
+ *
+ * Provides dropdowns for default model, temperature slider, and max
+ * tokens input. Changes are persisted via the settings API.
+ *
+ * @module components/settings/ModelDefaultsSection
+ */
 import React from 'react';
 import { SearchableSelect } from './SearchableSelect';
 
@@ -18,6 +26,7 @@ interface Props {
   disabled?: boolean;
 }
 
+/** ModelDefaultsSection component. */
 export const ModelDefaultsSection: React.FC<Props> = ({ getField, getVal, onChange, models, disabled }) => {
   const renderField = (name: string) => {
     const field = getField(name);

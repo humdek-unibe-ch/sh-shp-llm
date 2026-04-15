@@ -1,6 +1,12 @@
 /**
- * Form-related utility functions
- * Extracted from types/index.ts to separate concerns
+ * Form-related utility functions.
+ *
+ * Parsing, validation, and transformation helpers for LLM form
+ * definitions, form submissions, and structured-response payloads.
+ * Handles both legacy single-section forms and the newer multi-section
+ * structured response format.
+ *
+ * @module utils/formUtils
  */
 
 import type {

@@ -1,3 +1,11 @@
+/**
+ * Dataset Metadata Modal — edit dataset name, description, type, and profile.
+ *
+ * Provides a form for updating dataset metadata fields and toggling
+ * the locked/unlocked state.
+ *
+ * @module components/datasets/DatasetMetadataModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Button, Form, Modal } from 'react-bootstrap';
@@ -17,6 +25,7 @@ interface DatasetMetadataModalProps {
   disabled?: boolean;
 }
 
+/** Modal dialog for dataset metadata modal. */
 export const DatasetMetadataModal: React.FC<DatasetMetadataModalProps> = ({
   show,
   dataset,

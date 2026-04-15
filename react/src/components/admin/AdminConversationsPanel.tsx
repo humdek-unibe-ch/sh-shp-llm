@@ -1,3 +1,12 @@
+/**
+ * Paginated conversation list panel for the Admin Console.
+ *
+ * Renders a scrollable card list with type badges, date indicators,
+ * and an auto-generated conversation toggle. Supports selection via
+ * click and keyboard-driven pagination.
+ *
+ * @module components/admin/AdminConversationsPanel
+ */
 import React from 'react';
 import { Badge, Card, Form, Pagination, Spinner } from 'react-bootstrap';
 import type { AdminConversation } from '../../types';
@@ -19,6 +28,7 @@ interface AdminConversationsPanelProps {
   emptyLabel: string;
 }
 
+/** Panel component for admin conversations panel. */
 export const AdminConversationsPanel: React.FC<AdminConversationsPanelProps> = ({
   conversations,
   selectedConversation,

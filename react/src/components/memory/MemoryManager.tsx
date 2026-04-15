@@ -1,3 +1,15 @@
+/**
+ * Memory Manager — top-level tabbed interface for the LLM Memory module.
+ *
+ * Provides three tabs:
+ * - **Rules**: Create and edit memory rules (MemoryRulesEditorApp)
+ * - **Browse**: Browse and inspect stored memory entries (MemoryAdminPanel)
+ * - **Settings**: View memory configuration summary
+ *
+ * Loaded as the React root for the Memory admin page.
+ *
+ * @module components/memory/MemoryManager
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Nav, Row, Spinner, Tab } from 'react-bootstrap';
 import { MemoryAdminPanel } from './MemoryAdminPanel';
@@ -5,6 +17,7 @@ import { MemoryRulesEditorApp } from './MemoryRulesEditorApp';
 import { memoryApi } from '../../utils/api';
 import { MemoryConfigSection, type FieldDef } from '../settings/MemoryConfigSection';
 
+/** Type definition for memory page config. */
 export interface MemoryPageConfig {
   csrfToken?: string;
   promptLabEndpoint: string;
@@ -51,6 +64,7 @@ interface MemorySourceRecord {
   details?: Record<string, unknown>;
 }
 
+/** readUrlState function. */
 function readUrlState() {
   const url = new URL(window.location.href);
   return {
@@ -63,6 +77,7 @@ function readUrlState() {
   };
 }
 
+/** writeUrlState function. */
 function writeUrlState(next: { tab: MemoryTab; ruleId?: number | null; userId?: number | null; memoryKey?: string; edit?: boolean; history?: boolean }) {
   const url = new URL(window.location.href);
   url.searchParams.set('tab', next.tab);
@@ -74,6 +89,7 @@ function writeUrlState(next: { tab: MemoryTab; ruleId?: number | null; userId?: 
   window.history.replaceState({}, '', url.toString());
 }
 
+/** MemoryManager component. */
 export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }) => {
   const initialState = useMemo(() => readUrlState(), []);
   const [activeTab, setActiveTab] = useState<MemoryTab>(initialState.tab);

@@ -135,6 +135,7 @@ class LlmChatModel extends StyleModel
         return $this->get_db_field('llm_model', 'qwen3-vl-8b-instruct');
     }
 
+    /** @return int Current session user ID. */
     public function getUserId()
     {
         return $this->user_id;
@@ -170,6 +171,11 @@ class LlmChatModel extends StyleModel
         return $this->conversation_id;
     }
 
+    /**
+     * Get the CMS section ID this chat component belongs to.
+     *
+     * @return int Section ID from the sections table.
+     */
     public function getSectionId()
     {
         return $this->section_id;
@@ -177,13 +183,21 @@ class LlmChatModel extends StyleModel
 
     /* Configuration Getters — read directly from StyleModel field cache ********/
 
+    /** @return int Maximum number of conversations per user. */
     public function getConversationLimit() { return $this->get_db_field('conversation_limit', LLM_DEFAULT_CONVERSATION_LIMIT); }
+    /** @return int Maximum number of messages per conversation. */
     public function getMessageLimit() { return $this->get_db_field('message_limit', LLM_DEFAULT_MESSAGE_LIMIT); }
+    /** @return string Scoped model identifier (e.g. "server/model-name"), empty if not set. */
     public function getLlmModel() { return $this->get_db_field('llm_model', ''); }
+    /** @return string Temperature value as string (e.g. "0.7"). */
     public function getLlmTemperature() { return $this->get_db_field('llm_temperature', '0.7'); }
+    /** @return string Max tokens value as string (e.g. "2048"). */
     public function getLlmMaxTokens() { return $this->get_db_field('llm_max_tokens', '2048'); }
+    /** @return bool Whether the conversation list sidebar is shown to the user. */
     public function isConversationsListEnabled() { return $this->get_db_field('enable_conversations_list', '0') === '1'; }
+    /** @return bool Whether file upload button is available in the chat input. */
     public function isFileUploadsEnabled() { return $this->get_db_field('enable_file_uploads', '0') == '1'; }
+    /** @return bool Whether to reload the full page after conversation actions (delete, new). */
     public function isFullPageReloadEnabled() { return $this->get_db_field('enable_full_page_reload', '0') == '1'; }
 
     /**
@@ -198,8 +212,17 @@ class LlmChatModel extends StyleModel
         return array_merge(LLM_ALLOWED_DOCUMENT_EXTENSIONS, LLM_ALLOWED_CODE_EXTENSIONS, LLM_ALLOWED_IMAGE_EXTENSIONS);
     }
 
+    /** @return bool Whether the configured model supports image/vision input. */
     public function isVisionModel() { return llm_is_vision_model($this->getConfiguredModel()); }
 
+    /**
+     * Build the upload help text shown below the file input.
+     *
+     * Returns the CMS-configured custom text if set, otherwise auto-generates
+     * a summary from the allowed extensions, max file size, and file count.
+     *
+     * @return string Human-readable help text.
+     */
     public function getUploadHelpText()
     {
         $custom = $this->get_db_field('upload_help_text', '');
@@ -214,6 +237,12 @@ class LlmChatModel extends StyleModel
             . " (max {$maxSize}, up to {$maxFiles} files)";
     }
 
+    /**
+     * Format a byte count into a human-readable size string (KB/MB/GB).
+     *
+     * @param int $bytes File size in bytes.
+     * @return string Formatted size (e.g. "10MB").
+     */
     private static function formatFileSizeForDisplay($bytes)
     {
         if ($bytes >= 1073741824) return round($bytes / 1073741824, 1) . 'GB';
@@ -224,7 +253,9 @@ class LlmChatModel extends StyleModel
 
     // ===== Conversation Context =====
 
+    /** @return string Raw conversation context (system prompt) from the CMS field. */
     public function getConversationContext() { return $this->get_db_field('conversation_context', ''); }
+    /** @return bool True if a non-empty conversation context / system prompt is configured. */
     public function hasConversationContext() { return !empty(trim($this->getConversationContext())); }
 
     /**
@@ -274,17 +305,26 @@ class LlmChatModel extends StyleModel
 
     // ===== Feature Flags =====
 
+    /** @return bool Whether the chat auto-starts a conversation when opened. */
     public function isAutoStartConversationEnabled() { return $this->get_db_field('auto_start_conversation', '0') === '1'; }
+    /** @return bool Whether strict conversation mode is enabled (topic enforcement). */
     public function isStrictConversationModeEnabled() { return $this->get_db_field('strict_conversation_mode', '0') === '1'; }
+    /** @return bool True only when strict mode is enabled AND a conversation context is set. */
     public function shouldApplyStrictMode() { return $this->isStrictConversationModeEnabled() && $this->hasConversationContext(); }
+    /** @return string The initial assistant message for auto-started conversations. */
     public function getAutoStartMessage() { return $this->get_db_field('auto_start_message', "Hello! I'm here to help you. What would you like to talk about?"); }
+    /** @return bool Whether form mode (structured JSON responses) is enabled. */
     public function isFormModeEnabled() { return $this->get_db_field('enable_form_mode', '0') === '1'; }
+    /** @return string Title shown in the form mode banner above the chat. */
     public function getFormModeActiveTitle() { return $this->get_db_field('form_mode_active_title', 'Form Mode Active'); }
+    /** @return string Description shown in the form mode banner. */
     public function getFormModeActiveDescription() { return $this->get_db_field('form_mode_active_description', 'Please use the form above to respond.'); }
 
     // ===== Data Saving =====
 
+    /** @return bool Whether LLM form values are persisted to dataTables. */
     public function isDataSavingEnabled() { return $this->get_db_field('enable_data_saving', '0') === '1'; }
+    /** @return string 'log' for append-only or 'record' for upsert mode. */
     public function getDataSaveMode() { return $this->get_db_field('is_log', '0') === '1' ? 'log' : 'record'; }
 
     // ===== Memory =====
@@ -302,22 +342,33 @@ class LlmChatModel extends StyleModel
 
     // ===== Floating Chat Button =====
 
+    /** @return bool Whether the floating chat button is displayed on the page. */
     public function isFloatingButtonEnabled() { return $this->get_db_field('enable_floating_button', '0') === '1'; }
+    /** @return string CSS position class (e.g. 'bottom-right', 'bottom-left'). */
     public function getFloatingButtonPosition() { return $this->get_db_field('floating_button_position', 'bottom-right'); }
+    /** @return string FontAwesome icon class for the floating button (e.g. 'fa-comments'). */
     public function getFloatingButtonIcon() { return $this->get_db_field('floating_button_icon', 'fa-comments'); }
+    /** @return string Text label displayed on/beside the floating button. */
     public function getFloatingButtonLabel() { return $this->get_db_field('floating_button_label', 'Chat'); }
+    /** @return string Title shown in the floating chat panel header. */
     public function getFloatingChatTitle() { return $this->get_db_field('floating_chat_title', 'AI Assistant'); }
 
     // ===== Media Rendering =====
 
+    /** @return bool Whether media rendering instructions are appended to context. */
     public function isMediaRenderingEnabled() { return $this->get_db_field('enable_media_rendering', '1') === '1'; }
+    /** @return string Label for the "Continue" button shown after LLM responses. */
     public function getContinueButtonLabel() { return $this->get_db_field('continue_button_label', 'Continue'); }
 
     // ===== Progress Tracking =====
 
+    /** @return bool Whether topic-based progress tracking is active. */
     public function isProgressTrackingEnabled() { return $this->get_db_field('enable_progress_tracking', '0') === '1'; }
+    /** @return string Label text shown above the progress bar. */
     public function getProgressBarLabel() { return $this->get_db_field('progress_bar_label', 'Progress'); }
+    /** @return string Message displayed when all topics have been covered. */
     public function getProgressCompleteMessage() { return $this->get_db_field('progress_complete_message', 'Great job! You have covered all topics.'); }
+    /** @return bool Whether individual topic names are shown in the progress UI. */
     public function shouldShowProgressTopics() { return $this->get_db_field('progress_show_topics', '0') === '1'; }
 
     /**
@@ -329,6 +380,11 @@ class LlmChatModel extends StyleModel
         return LlmLanguageUtility::getUserLanguageCode('en');
     }
 
+    /**
+     * Assemble the progress tracking configuration for the React frontend.
+     *
+     * @return array{enabled: bool, barLabel: string, completeMessage: string, showTopics: bool, contextLanguage: string}
+     */
     public function getProgressTrackingConfig()
     {
         return [
@@ -342,10 +398,18 @@ class LlmChatModel extends StyleModel
 
     // ===== Danger Detection =====
 
+    /** @return bool Whether keyword-based danger/crisis detection is active. */
     public function isDangerDetectionEnabled() { return $this->get_db_field('enable_danger_detection', '0') === '1'; }
+    /** @return string Newline-separated list of danger keywords/phrases. */
     public function getDangerKeywords() { return $this->get_db_field('danger_keywords', ''); }
+    /** @return string Markdown message shown to the user when danger keywords are detected. */
     public function getDangerBlockedMessage() { return $this->get_db_field('danger_blocked_message', "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you're in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*"); }
 
+    /**
+     * Parse the semicolon/newline-separated list of notification email addresses.
+     *
+     * @return string[] Array of email addresses to notify on danger detection. Empty if none configured.
+     */
     public function getDangerNotificationEmails()
     {
         $raw = $this->get_db_field('danger_notification_emails', '');
@@ -355,12 +419,19 @@ class LlmChatModel extends StyleModel
 
     // ===== Speech-to-Text =====
 
+    /**
+     * Check whether speech-to-text is available.
+     * Requires both the feature flag AND a configured audio model.
+     *
+     * @return bool True if speech-to-text is enabled and a model is set.
+     */
     public function isSpeechToTextEnabled()
     {
         return $this->get_db_field('enable_speech_to_text', '0') === '1'
             && !empty($this->get_db_field('speech_to_text_model', ''));
     }
 
+    /** @return string Whisper audio model identifier for speech transcription. */
     public function getSpeechToTextModel() { return $this->get_db_field('speech_to_text_model', ''); }
 
     // ===== Aggregate Config =====
@@ -474,6 +545,15 @@ class LlmChatModel extends StyleModel
 
     // ===== UI Generation Helpers =====
 
+    /**
+     * Output a JSON-encoded section of interpolation data and terminate the request.
+     *
+     * Used by the controller to serve specific data slices (e.g. conversation config)
+     * without rendering the full page.
+     *
+     * @param string $key Key within `$this->interpolation_data['data_config_retrieved']`.
+     * @return never Exits after echoing JSON.
+     */
     public function return_data($key)
     {
         $result = array();

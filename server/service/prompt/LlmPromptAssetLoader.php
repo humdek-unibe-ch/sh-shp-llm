@@ -5,6 +5,17 @@
 
 require_once __DIR__ . '/LlmPromptAssetRegistry.php';
 
+/**
+ * LLM Prompt Asset Loader
+ *
+ * Loads prompt template files from the `assets/prompts/` directory using
+ * logical asset keys resolved through LlmPromptAssetRegistry. Templates
+ * are cached in a static array for the duration of the request to avoid
+ * redundant disk reads.
+ *
+ * @package LLM Plugin
+ * @see LlmPromptAssetRegistry For the key-to-file mapping
+ */
 class LlmPromptAssetLoader
 {
     /** @var string */
@@ -18,6 +29,14 @@ class LlmPromptAssetLoader
         $this->base_dir = $base_dir ?: __DIR__ . '/../../../assets/prompts';
     }
 
+    /**
+     * Load a prompt template asset from disk by dot-separated key (e.g., 'core.evaluation.judge.system').
+     *
+     * Keys are resolved to file paths under the assets directory. Results are cached in memory.
+     *
+     * @param string $key Dot-separated prompt asset key.
+     * @return string Prompt template content, or empty string if not found.
+     */
     public function load($key)
     {
         $key = trim((string)$key);

@@ -1,5 +1,14 @@
+/**
+ * Evaluation API client factory.
+ *
+ * Thin wrapper that exposes evaluation-specific endpoints from the
+ * Prompt Lab API (run creation, scoring, baseline linking, human review).
+ *
+ * @module components/evaluations/evaluationApi
+ */
 import type { createPromptLabApi } from '../prompts/promptApi';
 
+/** Creates a scoped API for evaluation CRUD and run management. */
 export function createEvaluationApi(api: ReturnType<typeof createPromptLabApi>) {
   return {
     listEvalDefinitions: api.listEvalDefinitions,

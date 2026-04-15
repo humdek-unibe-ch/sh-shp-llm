@@ -1,3 +1,11 @@
+/**
+ * Prompt Result Panel — displays playground execution results.
+ *
+ * Renders the LLM response as markdown/structured content, shows model
+ * metadata (tokens, latency), and provides a "Save as test case" action.
+ *
+ * @module components/prompts/PromptResultPanel
+ */
 import React from 'react';
 import { Alert, Badge } from 'react-bootstrap';
 import { StructuredResponseRenderer } from '../styles/shared/StructuredResponseRenderer';
@@ -11,11 +19,13 @@ interface PromptResultPanelProps {
   colorIndex?: number;
 }
 
+/** colorFromIndex function. */
 function colorFromIndex(index: number): string {
   const palette = ['#0d6efd', '#20c997', '#fd7e14', '#6f42c1', '#d63384', '#198754'];
   return palette[index % palette.length];
 }
 
+/** Panel component for prompt result panel. */
 export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, colorIndex = 0 }) => {
   const color = colorFromIndex(colorIndex);
   const parsedFromRun = run.parsed_response && typeof run.parsed_response === 'object'

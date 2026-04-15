@@ -79,11 +79,17 @@ class LlmFormModel extends FormUserInputModel
 
     /* Public Getters *********************************************************/
 
+    /** @return bool Whether LLM generation is enabled for this form. */
     public function isLlmEnabled()
     {
         return $this->llm_enabled === '1';
     }
 
+    /**
+     * Get the LLM model identifier. Falls back to LLM_DEFAULT_MODEL constant.
+     *
+     * @return string Scoped model identifier (e.g. "server/model-name").
+     */
     public function getLlmModel()
     {
         if (!empty($this->llm_model)) {
@@ -92,111 +98,133 @@ class LlmFormModel extends FormUserInputModel
         return defined('LLM_DEFAULT_MODEL') ? LLM_DEFAULT_MODEL : 'qwen3-vl-8b-instruct';
     }
 
+    /** @return float LLM temperature value (0.0–2.0). */
     public function getLlmTemperature()
     {
         return floatval($this->llm_temperature);
     }
 
+    /** @return int Maximum token count for LLM response generation. */
     public function getLlmMaxTokens()
     {
         return intval($this->llm_max_tokens);
     }
 
+    /** @return string System prompt / context template with optional `{{field}}` placeholders. */
     public function getLlmContext()
     {
         return $this->llm_context;
     }
 
+    /** @return bool Whether the previous LLM result is shown before regeneration. */
     public function isShowPreviousResult()
     {
         return $this->llm_show_previous_result === '1';
     }
 
+    /** @return string DataTable column name where the LLM result text is stored. */
     public function getLlmResultFieldName()
     {
         return $this->llm_result_field_name;
     }
 
+    /** @return string DataTable column name where the LLM result metadata JSON is stored. */
     public function getLlmResultMetaFieldName()
     {
         return $this->llm_result_meta_field_name;
     }
 
+    /** @return string Result panel placement relative to the form ('top'|'bottom'|'left'|'right'). */
     public function getLlmResultPlacement()
     {
         return $this->llm_result_placement;
     }
 
+    /** @return string Result panel display mode ('default'|'card'|'modal'|'collapse'). */
     public function getLlmResultPanel()
     {
         return $this->llm_result_panel;
     }
 
+    /** @return string Title text displayed at the top of the result panel. */
     public function getLlmResultTitle()
     {
         return $this->llm_result_title;
     }
 
+    /** @return bool Whether the user can close/dismiss the result panel. */
     public function isLlmResultClosable()
     {
         return $this->llm_result_closable === '1';
     }
 
+    /** @return string CSS class(es) applied to the result panel container. */
     public function getLlmResultCss()
     {
         return $this->llm_result_css;
     }
 
+    /** @return string Mobile-specific CSS class(es) for the result panel. */
     public function getLlmResultCssMobile()
     {
         return $this->llm_result_css_mobile;
     }
 
+    /** @return bool Whether LLM error messages are shown to the user. */
     public function isShowErrors()
     {
         return $this->llm_show_errors === '1';
     }
 
+    /** @return bool Whether the retry button is available after an LLM error. */
     public function isRetryEnabled()
     {
         return $this->llm_retry_enabled === '1';
     }
 
+    /** @return string Label text for the retry button. */
     public function getRetryLabel()
     {
         return $this->llm_retry_label;
     }
 
+    /** @return bool Whether the regenerate button is shown after successful results. */
     public function isRegenerateEnabled()
     {
         return $this->llm_regenerate_enabled === '1';
     }
 
+    /** @return string Label text for the regenerate button. */
     public function getRegenerateLabel()
     {
         return $this->llm_regenerate_label;
     }
 
+    /** @return string Text shown while the LLM is generating a response (loading indicator). */
     public function getGeneratingText()
     {
         return $this->llm_generating_text;
     }
 
+    /** @return bool Whether to render compact (small) action buttons. */
     public function isUseSmallButtons()
     {
         return $this->use_small_buttons === '1';
     }
 
+    /** @return bool Whether the manual feedback mode is available (skip LLM, enter feedback directly). */
     public function isManualFeedbackEnabled()
     {
         return $this->llm_manual_feedback_enabled === '1';
     }
 
+    /** @return string Label text for the manual feedback button. */
     public function getFeedbackButtonLabel()
     {
         return $this->llm_feedback_button_label;
     }
 
+    /** @return string Bootstrap color class for the feedback button (e.g. 'primary', 'secondary'). */
     public function getFeedbackButtonColor()
     {
         return $this->llm_feedback_button_color;

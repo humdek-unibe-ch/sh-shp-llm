@@ -1,3 +1,12 @@
+/**
+ * Prompt Toolbar — action bar above the prompt editor.
+ *
+ * Provides buttons for Save, Publish, Builder, Playground, Versions,
+ * Datasets, Diff, and variable inputs. Shows the current version badge
+ * and draft/published status.
+ *
+ * @module components/prompts/PromptToolbar
+ */
 import React from 'react';
 import { Badge, Button, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import type { PromptVersion } from './promptTypes';
@@ -17,6 +26,7 @@ interface PromptToolbarProps {
   showDatasets?: boolean;
 }
 
+/** PromptToolbar component. */
 export const PromptToolbar: React.FC<PromptToolbarProps> = ({
   activeVersion,
   dirty = false,

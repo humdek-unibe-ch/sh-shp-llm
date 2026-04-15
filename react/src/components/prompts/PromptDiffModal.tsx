@@ -1,3 +1,11 @@
+/**
+ * Prompt Diff Modal — compare two prompt versions side by side.
+ *
+ * Provides version selectors and renders the diff through PromptDiffViewer
+ * using Monaco's built-in diff editor when available.
+ *
+ * @module components/prompts/PromptDiffModal
+ */
 import React, { useEffect, useState } from 'react';
 import Select from 'react-select';
 import { Col, Form, Modal, Row } from 'react-bootstrap';
@@ -23,6 +31,7 @@ interface PromptDiffModalProps {
   initialRightKey?: string;
 }
 
+/** Modal dialog for prompt diff modal. */
 export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
   show,
   onHide,

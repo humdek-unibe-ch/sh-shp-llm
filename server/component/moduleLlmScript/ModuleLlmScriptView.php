@@ -21,6 +21,7 @@ class ModuleLlmScriptView extends BaseView
         parent::__construct($model, null);
     }
 
+    /** Render the scripts admin page with admin layout and React mount point. */
     public function output_content()
     {
         $menuItems = LlmAdminLayoutHelper::getMenuItems(
@@ -41,11 +42,13 @@ class ModuleLlmScriptView extends BaseView
         include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
+    /** @return array Empty; scripts module not available on mobile. */
     public function output_content_mobile()
     {
         return [];
     }
 
+    /** @return array CSS file paths for admin layout and scripts styles. */
     public function get_css_includes($local = array())
     {
         if (empty($local)) {
@@ -59,6 +62,7 @@ class ModuleLlmScriptView extends BaseView
         return parent::get_css_includes($local);
     }
 
+    /** @return array JS file paths for the scripts UMD bundle. */
     public function get_js_includes($local = array())
     {
         if (empty($local)) {
@@ -88,6 +92,7 @@ class ModuleLlmScriptView extends BaseView
         ]);
     }
 
+    /** @return string CSRF token from session. */
     private function resolveCsrfToken()
     {
         if (!empty($_SESSION['csrf_token'])) {

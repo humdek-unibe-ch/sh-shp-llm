@@ -1,3 +1,11 @@
+/**
+ * Header section for the conversation detail view in the Admin Console.
+ *
+ * Displays conversation metadata (title, user, section, model, timestamps),
+ * type badge, blocked/deleted status, and moderation action buttons.
+ *
+ * @module components/admin/AdminConversationDetailHeader
+ */
 import React from 'react';
 import { Badge } from 'react-bootstrap';
 import type { AdminConversation } from '../../types';
@@ -12,6 +20,7 @@ interface AdminConversationDetailHeaderProps {
   onDeleteConversation: (conversationId: string) => void;
 }
 
+/** AdminConversationDetailHeader component. */
 export const AdminConversationDetailHeader: React.FC<AdminConversationDetailHeaderProps> = ({
   conversation,
   conversationMeta,

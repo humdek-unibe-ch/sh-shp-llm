@@ -1,3 +1,10 @@
+/**
+ * Static option lists and helpers for dataset UI dropdowns.
+ *
+ * @module components/datasets/datasetOptions
+ */
+
+/** Dropdown options for the dataset type selector. */
 export const datasetTypeOptions = [
   { value: 'golden_manual', label: 'golden_manual' },
   { value: 'production_replay', label: 'production_replay' },
@@ -7,6 +14,7 @@ export const datasetTypeOptions = [
   { value: 'script_fixture', label: 'script_fixture' },
 ];
 
+/** executionProfileOptions constant or utility. */
 export const executionProfileOptions = [
   { value: 'chat_runtime', label: 'chat_runtime' },
   { value: 'form_runtime', label: 'form_runtime' },
@@ -14,6 +22,7 @@ export const executionProfileOptions = [
   { value: 'text_only', label: 'text_only' },
 ];
 
+/** describeExecutionProfile function. */
 export function describeExecutionProfile(profile?: string | null): string {
   switch (profile) {
     case 'chat_runtime':

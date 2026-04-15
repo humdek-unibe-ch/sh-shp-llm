@@ -1,7 +1,18 @@
+/**
+ * Prompt Lab React hooks.
+ *
+ * Provides `usePromptBootstrap` for loading and refreshing Prompt Lab
+ * bootstrap data (versions, variables, profiles, datasets) from the
+ * PHP backend. Handles auto-reload on descriptor changes and exposes
+ * a manual refresh trigger.
+ *
+ * @module components/prompts/promptHooks
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { createPromptLabApi } from './promptApi';
 import type { PromptBootstrapData, PromptDescriptor } from './promptTypes';
 
+/** Options for the usePromptBootstrap hook. */
 interface UsePromptBootstrapOptions {
   api: ReturnType<typeof createPromptLabApi>;
   descriptor: PromptDescriptor;
@@ -11,6 +22,13 @@ interface UsePromptBootstrapOptions {
   enabled?: boolean;
 }
 
+/**
+ * Loads Prompt Lab bootstrap data and auto-refreshes on descriptor changes.
+ *
+ * Returns the current bootstrap payload, loading/error state, and a
+ * manual `refresh()` trigger. Skips auto-reload immediately after a
+ * local update to avoid overwriting optimistic state.
+ */
 export function usePromptBootstrap({
   api,
   descriptor,

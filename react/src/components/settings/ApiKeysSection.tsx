@@ -1,3 +1,11 @@
+/**
+ * API Keys Section — manage provider API keys in the Settings page.
+ *
+ * Lists configured LLM providers with masked key display, add/edit/delete
+ * actions, and a connection-test button.
+ *
+ * @module components/settings/ApiKeysSection
+ */
 import React, { useState, useMemo } from 'react';
 
 interface ServerEntry {
@@ -21,11 +29,13 @@ interface Props {
   disabled?: boolean;
 }
 
+/** maskKey function. */
 function maskKey(key: string): string {
   if (!key || key.length < 8) return '********';
   return key.substring(0, 4) + '****' + key.substring(key.length - 4);
 }
 
+/** ApiKeysSection component. */
 export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabled }) => {
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<ServerEntry>>({});

@@ -1,7 +1,20 @@
+/**
+ * JsonMonacoEditor — JSON text editor with live validation and formatting.
+ *
+ * Wraps the PromptEditor code-mirror component in JSON mode, adding
+ * real-time parse-error feedback, a format/minify toolbar, and an
+ * optional callback for valid parsed output.
+ *
+ * Used in the Scripts Manager, Dataset forms, and Evaluation definitions
+ * wherever structured JSON needs to be edited by an admin.
+ *
+ * @module components/shared/JsonMonacoEditor
+ */
 import React, { useMemo } from 'react';
 import { Alert, Button } from 'react-bootstrap';
 import { PromptEditor } from '../prompts/PromptEditor';
 
+/** Props for the JsonMonacoEditor component. */
 interface JsonMonacoEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -13,6 +26,7 @@ interface JsonMonacoEditorProps {
   showToolbar?: boolean;
 }
 
+/** tryParseJson utility. */
 function tryParseJson(value: string): { parsed: unknown | null; error: string | null } {
   if (!value.trim()) {
     return { parsed: null, error: null };
@@ -25,11 +39,13 @@ function tryParseJson(value: string): { parsed: unknown | null; error: string | 
   }
 }
 
+/** formatJson utility. */
 function formatJson(value: string): string {
   const parsed = JSON.parse(value);
   return JSON.stringify(parsed, null, 2);
 }
 
+/** JsonMonacoEditor component. */
 export const JsonMonacoEditor: React.FC<JsonMonacoEditorProps> = ({
   value,
   onChange,

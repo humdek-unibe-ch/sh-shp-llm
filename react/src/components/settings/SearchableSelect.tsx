@@ -1,3 +1,12 @@
+/**
+ * SearchableSelect — custom filterable dropdown component.
+ *
+ * Provides a text-input-based dropdown with fuzzy matching, keyboard
+ * navigation, and "no results" feedback. Used across the Settings page
+ * for model and provider selection.
+ *
+ * @module components/settings/SearchableSelect
+ */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface Option {
@@ -14,6 +23,7 @@ interface Props {
   id?: string;
 }
 
+/** SearchableSelect component. */
 export const SearchableSelect: React.FC<Props> = ({
   options,
   value,

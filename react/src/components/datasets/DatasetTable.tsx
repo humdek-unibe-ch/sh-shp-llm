@@ -1,3 +1,11 @@
+/**
+ * Dataset Table — renders the list of datasets as a sortable table.
+ *
+ * Shows name, type, execution profile, case count, lock status, and
+ * action buttons (view, edit metadata, delete).
+ *
+ * @module components/datasets/DatasetTable
+ */
 import React from 'react';
 import { Badge, Button, Table } from 'react-bootstrap';
 import type { PromptDataset } from './datasetTypes';
@@ -12,6 +20,7 @@ interface DatasetTableProps {
   disabled?: boolean;
 }
 
+/** Table component for dataset table. */
 export const DatasetTable: React.FC<DatasetTableProps> = ({
   datasets,
   selectedDatasetId,

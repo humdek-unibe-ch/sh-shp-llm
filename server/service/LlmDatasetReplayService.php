@@ -7,9 +7,25 @@ require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmPromptPlaygroundService.php';
 require_once __DIR__ . '/LlmPromptRuntimeValueService.php';
 
+/**
+ * LLM Dataset Replay Service
+ *
+ * Replays prompt templates through the LLM for each test case in a dataset.
+ * Substitutes test-case variables into the prompt, executes it via the
+ * playground service, and returns raw LLM output for scoring.
+ *
+ * Used by the evaluation runner to generate actual outputs that are then
+ * compared against expected results.
+ *
+ * @package LLM Plugin
+ * @see LlmEvaluationRunnerService For orchestration context
+ */
 class LlmDatasetReplayService extends BaseLlmService
 {
+    /** @var LlmPromptPlaygroundService Handles prompt execution */
     private $playground_service;
+
+    /** @var LlmPromptRuntimeValueService Resolves runtime variable bindings */
     private $runtime_value_service;
 
     public function __construct($services)
@@ -19,6 +35,14 @@ class LlmDatasetReplayService extends BaseLlmService
         $this->runtime_value_service = new LlmPromptRuntimeValueService($services);
     }
 
+    /**
+     * Replay a dataset case through the playground to get a fresh LLM response.
+     *
+     * @param array $dataset_case Case row with input_payload_json, expected output, etc.
+     * @param array $target       Target prompt info (target_type, draft_prompt, target_version_id).
+     * @param array $options      Additional options (selected_models, runtime_overrides).
+     * @return array Playground run result with rendered content and metadata.
+     */
     public function replayCase($dataset_case, $target, $options = array())
     {
         $input_payload = $this->decodePayload($dataset_case['input_payload_json'] ?? '{}');
@@ -53,6 +77,7 @@ class LlmDatasetReplayService extends BaseLlmService
         );
     }
 
+    /** Safely decode a JSON string to array, returning empty array on failure. */
     private function decodePayload($value)
     {
         if (!is_string($value) || trim($value) === '') {

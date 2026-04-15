@@ -5,9 +5,23 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 
+/**
+ * LLM Dataset Batch Import Service
+ *
+ * Persists multiple AI-parsed test cases into a dataset in a single
+ * transactional batch. Maps each parsed case through the normalization
+ * layer before delegating to the dataset service for storage.
+ *
+ * @package LLM Plugin
+ * @see LlmDatasetAiImportParserService For the parsing step that produces cases
+ * @see LlmDatasetAiImportMapperService For per-case normalization
+ */
 class LlmDatasetBatchImportService extends BaseLlmService
 {
+    /** @var LlmDatasetService Handles individual case persistence */
     private $dataset_service;
+
+    /** @var LlmDatasetAiImportMapperService Normalizes parsed cases */
     private $mapper_service;
 
     public function __construct($services, $dataset_service, $mapper_service)
@@ -17,6 +31,17 @@ class LlmDatasetBatchImportService extends BaseLlmService
         $this->mapper_service = $mapper_service;
     }
 
+    /**
+     * Bulk-import pre-normalized cases into a dataset.
+     *
+     * @param int    $dataset_id        Target dataset ID.
+     * @param array  $descriptor        Owner descriptor.
+     * @param string $execution_profile Execution profile code.
+     * @param array  $cases             Array of normalized case payloads.
+     * @param array  $runtime_overrides Runtime parameter overrides.
+     * @return array{imported: array, warnings: string[], total: int, imported_count: int}
+     * @throws Exception If dataset_id is invalid or no cases provided.
+     */
     public function importParsedCases($dataset_id, $descriptor, $execution_profile, $cases, $runtime_overrides = array())
     {
         $dataset_id = (int)$dataset_id;

@@ -5,6 +5,15 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 
+/**
+ * LLM Evaluation Aggregation Service
+ *
+ * Computes run-level summary statistics from per-case evaluation scores.
+ * Produces pass/fail counts, average scores, per-definition breakdowns,
+ * and failure-bucket analysis for the admin evaluation results view.
+ *
+ * @package LLM Plugin
+ */
 class LlmEvaluationAggregationService extends BaseLlmService
 {
     public function buildSummary($dataset_case_count, $target, $records)

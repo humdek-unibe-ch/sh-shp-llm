@@ -31,6 +31,7 @@ class Sh_module_llmController extends BaseController
         $this->handleRequest();
     }
 
+    /** Route the AJAX request to the appropriate config handler based on 'action'. */
     private function handleRequest()
     {
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
@@ -57,6 +58,11 @@ class Sh_module_llmController extends BaseController
         }
     }
 
+    /**
+     * Enforce ACL access for the given mode; sends 403 and exits on failure.
+     *
+     * @param string $mode ACL mode (select, update, etc.).
+     */
     private function requireAccess($mode)
     {
         if (!$this->checkAccess($mode)) {
@@ -65,6 +71,10 @@ class Sh_module_llmController extends BaseController
         }
     }
 
+    /**
+     * @param string $mode ACL mode.
+     * @return bool Whether current user has access.
+     */
     private function checkAccess($mode)
     {
         if (!$this->pageId || !isset($_SESSION['id_user'])) {
@@ -74,6 +84,7 @@ class Sh_module_llmController extends BaseController
         return $this->acl->$method($_SESSION['id_user'], $this->pageId);
     }
 
+    /** Return structured LLM settings and ACL flags as JSON. */
     private function handleGetConfig()
     {
         try {
@@ -90,6 +101,7 @@ class Sh_module_llmController extends BaseController
         }
     }
 
+    /** Persist whitelisted config fields from the JSON request body. */
     private function handleSaveConfig()
     {
         try {
@@ -127,6 +139,7 @@ class Sh_module_llmController extends BaseController
         }
     }
 
+    /** Return the list of available LLM models as JSON. */
     private function handleModels()
     {
         try {

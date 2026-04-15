@@ -1,3 +1,17 @@
+/**
+ * Prompt System Type Definitions
+ * ==============================
+ *
+ * TypeScript types for the Prompt Lab, Prompt Builder, Playground,
+ * and prompt versioning system. These types correspond to the PHP
+ * `llm_prompts`, `llm_prompt_locales`, and `llm_prompt_versions`
+ * database tables and are used across all prompt-related React components.
+ *
+ * Also re-exports dataset and evaluation types used by prompt-adjacent features.
+ *
+ * @module components/prompts/promptTypes
+ */
+
 export type {
   PromptDataset,
   PromptDatasetCase,
@@ -14,8 +28,10 @@ export type {
   PromptEvalScore,
 } from '../evaluations/evaluationTypes';
 
+/** The entity type that owns a prompt (CMS style field, LLM script, or memory rule). */
 export type PromptOwnerType = 'style_field' | 'llm_script' | 'llm_memory_rule';
 
+/** Runtime execution context that determines how a prompt is compiled and run. */
 export type KnownPromptExecutionProfile =
   | 'chat_runtime'
   | 'form_runtime'
@@ -23,10 +39,13 @@ export type KnownPromptExecutionProfile =
   | 'memory_runtime'
   | 'text_only';
 
+/** Execution profile allowing known values plus arbitrary custom strings. */
 export type PromptExecutionProfile = KnownPromptExecutionProfile | (string & {});
 
+/** Which playground runtime UI to use for a given execution profile. */
 export type PromptPlaygroundRuntimeType = 'chat' | 'form' | 'script' | 'none';
 
+/** Uniquely identifies a prompt in the registry by its owner and slot. */
 export interface PromptDescriptor {
   ownerType: PromptOwnerType;
   ownerId: number;
@@ -36,6 +55,7 @@ export interface PromptDescriptor {
   title?: string | null;
 }
 
+/** A template variable placeholder with optional type and description metadata. */
 export interface PromptVariableDefinition {
   name: string;
   type?: string;
@@ -43,6 +63,7 @@ export interface PromptVariableDefinition {
   description?: string;
 }
 
+/** A single versioned snapshot of a prompt template with metadata. */
 export interface PromptVersion {
   id: number;
   id_llm_prompt_locales: number;
@@ -60,6 +81,7 @@ export interface PromptVersion {
   active_version_id?: number | null;
 }
 
+/** Prompt meta-state stored in CMS field JSON, including registry IDs and pending change notes. */
 export interface PromptMetaState {
   prompt?: {
     entryId?: number | null;
@@ -73,11 +95,13 @@ export interface PromptMetaState {
   [key: string]: unknown;
 }
 
+/** An available LLM model entry for the model selector. */
 export interface PromptModel {
   id: string;
   [key: string]: unknown;
 }
 
+/** Initial data loaded when the Prompt Lab opens for a specific prompt. */
 export interface PromptBootstrapData {
   entry?: { id: number } | null;
   locale?: { id: number } | null;
@@ -91,11 +115,13 @@ export interface PromptBootstrapData {
   meta?: PromptMetaState;
 }
 
+/** A single message in an LLM conversation with a role (system/user/assistant). */
 export interface PromptMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
+/** Result of a single playground execution against a model. */
 export interface PromptPlaygroundRun {
   model: string;
   execution_profile: PromptExecutionProfile;
@@ -116,12 +142,14 @@ export interface PromptPlaygroundRun {
   is_fallback?: boolean;
 }
 
+/** Response from a playground execution, potentially containing multiple model comparison runs. */
 export interface PromptPlaygroundResponse {
   execution_profile: PromptExecutionProfile;
   comparison_group_id?: string | null;
   runs: PromptPlaygroundRun[];
 }
 
+/** AI-generated suggestion from the Prompt Builder with a revised template. */
 export interface PromptBuilderSuggestion {
   prompt_template: string;
   variables: PromptVariableDefinition[];
@@ -129,6 +157,7 @@ export interface PromptBuilderSuggestion {
   change_summary: string;
 }
 
+/** Prompt contract describing the expected structure and section ordering for a prompt template. */
 export interface PromptContract {
   owner_type?: string;
   execution_profile?: string;
@@ -136,6 +165,7 @@ export interface PromptContract {
   guidance?: string;
 }
 
+/** A dataset case used as an example in the prompt builder conversation. */
 export interface PromptBuilderExample {
   score_id?: number;
   run_case_id?: number;
@@ -159,6 +189,7 @@ export interface PromptBuilderExample {
   output_payload_json?: string | null;
 }
 
+/** Full response from the AI prompt builder including the suggestion and conversation context. */
 export interface PromptBuilderResponse {
   suggestion: PromptBuilderSuggestion;
   model: string;
@@ -170,6 +201,10 @@ export interface PromptBuilderResponse {
   id_llmMessages_response?: number | null;
 }
 
+/**
+ * Safely parse a JSON-encoded prompt meta string.
+ * Returns an empty object on null, undefined, or invalid JSON.
+ */
 export function parsePromptMeta(value: string | null | undefined): PromptMetaState {
   if (!value) {
     return {};
@@ -183,6 +218,7 @@ export function parsePromptMeta(value: string | null | undefined): PromptMetaSta
   }
 }
 
+/** Serialize a prompt meta-state object to a JSON string, treating null/undefined as empty. */
 export function stringifyPromptMeta(meta: PromptMetaState): string {
   return JSON.stringify(meta ?? {});
 }

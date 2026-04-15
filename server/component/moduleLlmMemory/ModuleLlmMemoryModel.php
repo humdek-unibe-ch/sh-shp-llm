@@ -6,8 +6,20 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseModel.php";
 
+/**
+ * Model for the LLM Memory administration module.
+ *
+ * Currently a thin wrapper around BaseModel. The actual data operations
+ * are delegated to LlmMemoryAdminService, LlmMemoryRuleService, and
+ * LlmMemoryConfigService, which are instantiated by the controller.
+ *
+ * @package LLM Plugin
+ */
 class ModuleLlmMemoryModel extends BaseModel
 {
+    /**
+     * @param object $services SelfHelp services container
+     */
     public function __construct($services)
     {
         parent::__construct($services);

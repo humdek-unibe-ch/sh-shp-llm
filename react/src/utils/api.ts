@@ -713,6 +713,7 @@ interface MemorySourcesResponse {
   error?: string;
 }
 
+/** API client for admin api. */
 export const adminApi = {
   async getFilters() {
     return apiGet<AdminFiltersResponse>('admin_filters');
@@ -786,6 +787,7 @@ export const adminApi = {
 
 };
 
+/** API client for memory api. */
 export const memoryApi = {
   async getOverview(): Promise<MemoryOverviewResponse> {
     return apiGet<MemoryOverviewResponse>('overview');

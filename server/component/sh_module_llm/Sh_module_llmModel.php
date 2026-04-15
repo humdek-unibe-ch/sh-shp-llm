@@ -102,6 +102,17 @@ class Sh_module_llmModel extends BaseModel
         ];
     }
 
+    /**
+     * Build a structured field descriptor for the settings UI.
+     *
+     * @param string      $name    Field name key.
+     * @param array       $fields  All page field values.
+     * @param string      $type    Field type (text, number, select, etc.).
+     * @param string      $label   Human-readable label.
+     * @param string      $help    Help text description.
+     * @param array|null  $options Select options for dropdown fields.
+     * @return array Structured field array for the React settings form.
+     */
     private function buildField($name, $fields, $type, $label, $help, $options = null)
     {
         $field = [
@@ -117,6 +128,7 @@ class Sh_module_llmModel extends BaseModel
         return $field;
     }
 
+    /** @return array Select options for the memory storage mode dropdown, loaded from lookups. */
     private function getStorageModeOptions()
     {
         try {

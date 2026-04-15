@@ -64,6 +64,7 @@ function isValidated(message: Message): boolean {
   return true;
 }
 
+/** AdminMessageList component. */
 export const AdminMessageList: React.FC<AdminMessageListProps> = ({
   messages,
   formatDate,

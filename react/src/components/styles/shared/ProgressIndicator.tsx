@@ -272,6 +272,7 @@ interface TopicItemProps {
   topic: TopicCoverage;
 }
 
+/** TopicItem React component. */
 const TopicItem: React.FC<TopicItemProps> = ({ topic }) => {
   const { title, coverage, is_covered } = topic;
   
@@ -292,5 +293,6 @@ const TopicItem: React.FC<TopicItemProps> = ({ topic }) => {
   );
 };
 
+/** Default export for this module. */
 export default ProgressIndicator;
 

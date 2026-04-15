@@ -1,3 +1,12 @@
+/**
+ * Dataset AI Import Modal — LLM-assisted import of test cases.
+ *
+ * Allows pasting raw data (CSV, JSON, text), sending it to the LLM
+ * for parsing, reviewing/editing parsed candidates, and batch-importing
+ * them into the dataset.
+ *
+ * @module components/datasets/DatasetAiImportModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Button, Form, Modal, OverlayTrigger, Popover, Spinner, Table } from 'react-bootstrap';
@@ -23,6 +32,7 @@ interface DatasetAiImportModalProps {
   onImported: (count: number) => void;
 }
 
+/** safeJsonStringify function. */
 function safeJsonStringify(value: unknown): string {
   try {
     return JSON.stringify(value ?? {}, null, 2);
@@ -31,6 +41,7 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
+/** parseJsonObject utility. */
 function parseJsonObject(value: string): Record<string, unknown> {
   const parsed = JSON.parse(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -39,6 +50,7 @@ function parseJsonObject(value: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+/** normalizeDraft function. */
 function normalizeDraft(draft: PromptAiImportCaseDraft): PromptAiImportCaseDraft {
   return {
     title: String(draft.title || 'Imported Case'),
@@ -61,6 +73,7 @@ function normalizeDraft(draft: PromptAiImportCaseDraft): PromptAiImportCaseDraft
   };
 }
 
+/** validateDraft function. */
 function validateDraft(draft: PromptAiImportCaseDraft): string[] {
   const errors: string[] = [];
   if (!draft.title || draft.title.trim() === '') {
@@ -72,6 +85,7 @@ function validateDraft(draft: PromptAiImportCaseDraft): string[] {
   return errors;
 }
 
+/** Modal dialog for dataset ai import modal. */
 export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
   show,
   onHide,

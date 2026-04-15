@@ -10,11 +10,13 @@ require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 class ModuleLlmMemoryView extends BaseView
 {
+    /** @param ModuleLlmMemoryModel $model Memory module model. */
     public function __construct($model)
     {
         parent::__construct($model, null);
     }
 
+    /** Render the memory admin module page with React mount point and layout. */
     public function output_content()
     {
         $menuItems = LlmAdminLayoutHelper::getMenuItems(
@@ -35,11 +37,13 @@ class ModuleLlmMemoryView extends BaseView
         include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
+    /** @return array Empty array; memory admin is not available on mobile. */
     public function output_content_mobile()
     {
         return [];
     }
 
+    /** @return array CSS file paths including admin layout and memory styles. */
     public function get_css_includes($local = array())
     {
         if (empty($local)) {
@@ -53,6 +57,7 @@ class ModuleLlmMemoryView extends BaseView
         return parent::get_css_includes($local);
     }
 
+    /** @return array JS file paths including the memory UMD bundle. */
     public function get_js_includes($local = array())
     {
         if (empty($local)) {
@@ -65,6 +70,7 @@ class ModuleLlmMemoryView extends BaseView
         return parent::get_js_includes($local);
     }
 
+    /** @return string JSON-encoded config for the React memory admin app. */
     public function getReactConfig()
     {
         $prompt_endpoint = $this->model->get_link_url(LLM_PROMPT_LAB_PAGE_KEYWORD);
@@ -81,6 +87,7 @@ class ModuleLlmMemoryView extends BaseView
         ]);
     }
 
+    /** @return string CSRF token from session, checking multiple session key conventions. */
     private function resolveCsrfToken()
     {
         if (!empty($_SESSION['csrf_token'])) {

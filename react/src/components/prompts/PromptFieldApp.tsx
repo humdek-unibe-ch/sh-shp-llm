@@ -1,3 +1,13 @@
+/**
+ * Prompt Field App — the main Prompt Lab UI embedded in CMS textarea fields.
+ *
+ * Replaces a standard CMS textarea with a rich prompt editing experience
+ * including versioning, variable detection, playground execution, datasets,
+ * and evaluation. Loads bootstrap data on mount and syncs edits back to
+ * the hidden CMS textarea for form submission.
+ *
+ * @module components/prompts/PromptFieldApp
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Spinner } from 'react-bootstrap';
 import { createPromptLabApi } from './promptApi';
@@ -14,6 +24,7 @@ import { parsePromptMeta, stringifyPromptMeta } from './promptTypes';
 
 declare const $: any;
 
+/** Type definition for prompt field config. */
 export interface PromptFieldConfig {
   endpoint: string;
   csrfToken?: string;
@@ -40,6 +51,7 @@ interface DiffState {
   initialRightKey: string;
 }
 
+/** dispatchFieldChange function. */
 function dispatchFieldChange(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
   input.value = value;
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -50,6 +62,7 @@ function dispatchFieldChange(input: HTMLInputElement | HTMLTextAreaElement, valu
   }
 }
 
+/** ensurePromptMeta function. */
 function ensurePromptMeta(meta: PromptMetaState): NonNullable<PromptMetaState['prompt']> {
   if (!meta.prompt) {
     meta.prompt = {};
@@ -57,6 +70,7 @@ function ensurePromptMeta(meta: PromptMetaState): NonNullable<PromptMetaState['p
   return meta.prompt;
 }
 
+/** readFieldValue function. */
 function readFieldValue(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
   if (element instanceof HTMLInputElement && element.type === 'checkbox') {
     return element.checked ? '1' : '0';
@@ -64,6 +78,7 @@ function readFieldValue(element: HTMLInputElement | HTMLTextAreaElement | HTMLSe
   return element.value;
 }
 
+/** collectCmsRuntimeOverrides function. */
 function collectCmsRuntimeOverrides(
   scope: HTMLElement,
   fieldNames: string[],
@@ -92,6 +107,7 @@ function collectCmsRuntimeOverrides(
   return overrides;
 }
 
+/** extractActiveVersionModel function. */
 function extractActiveVersionModel(configJson?: string | null): string | null {
   if (!configJson) {
     return null;
@@ -106,6 +122,7 @@ function extractActiveVersionModel(configJson?: string | null): string | null {
   }
 }
 
+/** Root application component for prompt field app. */
 export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
   config,
   container,

@@ -16,6 +16,7 @@ interface SelectOption {
   label: string;
 }
 
+/** compactSelectStyles constant or utility. */
 export const compactSelectStyles: StylesConfig<SelectOption, false> = {
   control: (provided) => ({
     ...provided,
