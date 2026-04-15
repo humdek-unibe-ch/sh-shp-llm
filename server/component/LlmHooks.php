@@ -1526,13 +1526,13 @@ class LlmHooks extends BaseHooks
      */
     public function onLoginMemoryTrigger($args)
     {
-        $target_user_id = (int)($args['original_parameters'][0] ?? 0);
+        $user_id = $_SESSION['id_user'] ?? null;
         $previous_last_login = '';
         $target_user_name = '';
-        if ($target_user_id > 0) {
+        if ($user_id > 0) {
             $prev = $this->db->query_db_first(
                 "SELECT name, last_login FROM users WHERE id = :id LIMIT 1",
-                array(':id' => $target_user_id)
+                array(':id' => $user_id)
             );
             $target_user_name = $prev['name'] ?? '';
             $previous_last_login = $prev['last_login'] ?? '';
@@ -1544,8 +1544,7 @@ class LlmHooks extends BaseHooks
         }
 
         try {
-            $user_id = $_SESSION['id_user'] ?? null;
-            if (!$user_id || (int)$user_id !== $target_user_id) {
+            if (!$user_id) {
                 return $res;
             }
 
@@ -1555,7 +1554,7 @@ class LlmHooks extends BaseHooks
             }
 
             $trigger_service = new LlmMemoryTriggerService($this->services, $config_service);
-            $normalized = $trigger_service->normalizeLoginPayload($target_user_id, $target_user_name, $previous_last_login);
+            $normalized = $trigger_service->normalizeLoginPayload($user_id, $target_user_name, $previous_last_login);
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
             error_log('LLM Memory: login trigger failed: ' . $e->getMessage());
