@@ -47,12 +47,35 @@ if (function_exists('uopz_allow_exit')) {
 ini_set('log_errors', '1');
 ini_set('display_errors', '0');
 
+function llm_memory_worker_log_file()
+{
+    return realpath(__DIR__ . '/../..') . DIRECTORY_SEPARATOR . 'llm_memory_worker.log';
+}
+
+function llm_memory_worker_log($message, $context = array())
+{
+    $line = '[' . date('Y-m-d H:i:s') . '] LLM Memory Worker: ' . $message;
+    if (!empty($context)) {
+        $encoded = json_encode($context, JSON_UNESCAPED_SLASHES);
+        if ($encoded !== false) {
+            $line .= ' | ' . $encoded;
+        }
+    }
+
+    @file_put_contents(llm_memory_worker_log_file(), $line . PHP_EOL, FILE_APPEND);
+}
+
 function llm_memory_worker_debug($message)
 {
     if (defined('DEBUG') && DEBUG) {
         trigger_error('LLM Memory Worker: ' . $message, E_USER_WARNING);
     }
 }
+
+llm_memory_worker_log('worker bootstrapping', array(
+    'args_file' => $args_file,
+    'raw_args_keys' => array_keys($args),
+));
 
 $project_root = realpath(__DIR__ . '/../../../../../');
 if (!$project_root) {
@@ -118,9 +141,15 @@ ob_end_clean();
 try {
     $services = new Services(false);
 } catch (Exception $e) {
+    llm_memory_worker_log('services initialization failed', array('error' => $e->getMessage()));
     fwrite(STDERR, "LLM Memory Worker: Failed to initialize services: " . $e->getMessage() . "\n");
     exit(1);
 }
+
+llm_memory_worker_log('services initialized', array(
+    'http_host' => $_SERVER['HTTP_HOST'] ?? '',
+    'session_user' => $_SESSION['id_user'] ?? null,
+));
 
 llm_memory_worker_debug(
     "started, rule_key=" . ($args['rule_key'] ?? 'null')
@@ -136,12 +165,19 @@ try {
 
     $rule_key = $args['rule_key'] ?? null;
     if (!$rule_key) {
+        llm_memory_worker_log('missing rule_key in args', $args);
         fwrite(STDERR, "LLM Memory Worker: No rule_key in args\n");
         exit(1);
     }
 
+    llm_memory_worker_log('resolving rule', array(
+        'rule_key' => $rule_key,
+        'user_id' => $args['user_id'] ?? null,
+    ));
+
     $rule = $config_service->getRuleByKey($rule_key);
     if (!$rule) {
+        llm_memory_worker_log('rule not found', array('rule_key' => $rule_key));
         $transaction = $services->get_transaction();
         $transaction->add_transaction(
             transactionTypes_insert,
@@ -165,7 +201,30 @@ try {
         'force_storage_mode'  => $args['force_storage_mode'] ?? '',
     ];
 
+    llm_memory_worker_log('normalized payload prepared', array(
+        'rule_id' => (int)($rule['id'] ?? 0),
+        'rule_key' => (string)($rule['key'] ?? ''),
+        'execution_mode' => (string)($rule['execution_mode'] ?? ''),
+        'source_type' => (string)($normalized_payload['source_type'] ?? ''),
+        'trigger_type' => (string)($normalized_payload['trigger_type'] ?? ''),
+        'user_id' => (int)($normalized_payload['user_id'] ?? 0),
+        'memory_key_override' => (string)($normalized_payload['memory_key_override'] ?? ''),
+        'field_keys' => array_keys((array)($normalized_payload['fields'] ?? array())),
+        'source_ref' => $normalized_payload['source_ref'] ?? '',
+    ));
+
+    llm_memory_worker_log('starting executeLlmSummarization', array(
+        'rule_key' => (string)($rule['key'] ?? ''),
+        'user_id' => (int)($normalized_payload['user_id'] ?? 0),
+    ));
+
     $success = $update_service->executeLlmSummarization($rule, $normalized_payload);
+
+    llm_memory_worker_log('executeLlmSummarization finished', array(
+        'rule_key' => (string)($rule['key'] ?? ''),
+        'user_id' => (int)($normalized_payload['user_id'] ?? 0),
+        'success' => (bool)$success,
+    ));
 
     llm_memory_worker_debug(
         "Rule '" . $rule_key . "' "
@@ -176,6 +235,10 @@ try {
     exit($success ? 0 : 1);
 
 } catch (Exception $e) {
+    llm_memory_worker_log('fatal exception', array(
+        'error' => $e->getMessage(),
+        'trace' => $e->getTraceAsString(),
+    ));
     error_log("LLM Memory Worker: Fatal error: " . $e->getMessage());
     fwrite(STDERR, "LLM Memory Worker: " . $e->getMessage() . "\n");
     exit(1);
