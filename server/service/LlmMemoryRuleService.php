@@ -193,6 +193,20 @@ class LlmMemoryRuleService extends BaseLlmService
             return false;
         }
 
+        $linked_actions = $this->findFormActionLinksForRule($rule);
+        if (!empty($linked_actions)) {
+            $action_names = array_map(function ($action) {
+                return trim((string)($action['action_name'] ?? '')) ?: ('Action #' . (int)($action['id'] ?? 0));
+            }, $linked_actions);
+
+            throw new Exception(
+                'Cannot delete memory rule "' . ($rule['label'] ?: $rule['key'])
+                . '" because it is linked in form actions: '
+                . implode(', ', $action_names)
+                . '. Remove the rule from those actions first.'
+            );
+        }
+
         $owner_type_id = $this->db->get_lookup_id_by_code('llm_prompt_owner_types', LLM_PROMPT_OWNER_MEMORY_RULE);
         if ($owner_type_id) {
             $entry = $this->db->query_db_first(
@@ -226,6 +240,111 @@ class LlmMemoryRuleService extends BaseLlmService
 
         $this->db->remove_by_fk('llm_memory_rules', 'id', (int)$rule_id);
         return true;
+    }
+
+    private function findFormActionLinksForRule($rule)
+    {
+        $rule_id = (int)($rule['id'] ?? 0);
+        $rule_key = trim((string)($rule['key'] ?? ''));
+        if ($rule_id <= 0 || $rule_key === '') {
+            return array();
+        }
+
+        try {
+            $rows = $this->db->query_db(
+                "SELECT id, action_name, config
+                 FROM view_formActions
+                 ORDER BY action_name ASC"
+            );
+        } catch (Exception $e) {
+            return array();
+        }
+
+        $linked = array();
+        foreach ((array)$rows as $row) {
+            $config = json_decode((string)($row['config'] ?? ''), true);
+            if (!is_array($config)) {
+                continue;
+            }
+
+            $jobs = $this->extractMemoryJobsFromConfig($config);
+            foreach ($jobs as $job) {
+                if ($this->jobReferencesRule($job, $rule_id, $rule_key)) {
+                    $linked[] = array(
+                        'id' => (int)($row['id'] ?? 0),
+                        'action_name' => (string)($row['action_name'] ?? ''),
+                    );
+                    break;
+                }
+            }
+        }
+
+        return $linked;
+    }
+
+    private function extractMemoryJobsFromConfig($config)
+    {
+        $jobs = array();
+        $walk = function ($node) use (&$walk, &$jobs) {
+            if (!is_array($node)) {
+                return;
+            }
+
+            if (($node['job_type'] ?? '') === ACTION_JOB_TYPE_LLM_MEMORY_UPDATE || ($node['type'] ?? '') === ACTION_JOB_TYPE_LLM_MEMORY_UPDATE) {
+                $jobs[] = $node;
+            }
+
+            foreach ($node as $value) {
+                if (is_array($value)) {
+                    $walk($value);
+                }
+            }
+        };
+
+        $walk($config);
+        return $jobs;
+    }
+
+    private function jobReferencesRule($job, $rule_id, $rule_key)
+    {
+        $job_rule_keys = $this->normalizeRuleKeys($job['memory_rule_keys'] ?? '');
+        if (!empty($job_rule_keys) && in_array($rule_key, $job_rule_keys, true)) {
+            return true;
+        }
+
+        $job_rule_ids = $this->normalizeRuleIds($job['memory_rule_id'] ?? ($job['memory_rule_ids'] ?? ''));
+        if (!empty($job_rule_ids) && in_array((int)$rule_id, $job_rule_ids, true)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function normalizeRuleKeys($raw)
+    {
+        if (is_array($raw)) {
+            $keys = $raw;
+        } else {
+            $keys = explode(',', (string)$raw);
+        }
+
+        $keys = array_map(function ($key) {
+            return trim((string)$key);
+        }, $keys);
+
+        return array_values(array_filter(array_unique($keys)));
+    }
+
+    private function normalizeRuleIds($raw)
+    {
+        if (is_array($raw)) {
+            $ids = $raw;
+        } else {
+            $ids = explode(',', (string)$raw);
+        }
+
+        $ids = array_map('intval', $ids);
+        return array_values(array_filter(array_unique($ids)));
     }
 
     /**

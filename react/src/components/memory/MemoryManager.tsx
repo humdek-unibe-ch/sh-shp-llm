@@ -32,6 +32,25 @@ interface MemoryKeyRecord {
   can_delete?: boolean;
 }
 
+interface SourceRuleRef {
+  id: number;
+  key: string;
+  label?: string;
+}
+
+interface MemorySourceRecord {
+  source_category?: string;
+  source_type?: string;
+  rule_keys?: string[];
+  rule_refs?: SourceRuleRef[];
+  trigger_type?: string;
+  target_label?: string;
+  target_secondary?: string;
+  target_id?: number;
+  target_url?: string | null;
+  details?: Record<string, unknown>;
+}
+
 function readUrlState() {
   const url = new URL(window.location.href);
   return {
@@ -68,7 +87,8 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   const [memoryConfigDirty, setMemoryConfigDirty] = useState<Record<string, string>>({});
   const [memoryKeys, setMemoryKeys] = useState<MemoryKeyRecord[]>([]);
   const [canUpdateConfig, setCanUpdateConfig] = useState(false);
-  const [sources, setSources] = useState<Array<Record<string, unknown>>>([]);
+  const [sources, setSources] = useState<MemorySourceRecord[]>([]);
+  const [sourceFilter, setSourceFilter] = useState('');
   const [activityItems, setActivityItems] = useState<Array<Record<string, unknown>>>([]);
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
@@ -134,7 +154,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
     memoryApi.getSources()
       .then((response) => {
         if (response.error) throw new Error(response.error);
-        setSources(response.sources || []);
+        setSources((response.sources || []) as MemorySourceRecord[]);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load sources'))
       .finally(() => setLoadingSources(false));
@@ -255,6 +275,34 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       void performDelete();
     }
   };
+
+  const sourceFilterQuery = sourceFilter.trim().toLowerCase();
+  const filteredSources = useMemo(() => {
+    if (!sourceFilterQuery) {
+      return sources;
+    }
+
+    const includesQuery = (value: unknown): boolean =>
+      String(value ?? '').toLowerCase().includes(sourceFilterQuery);
+
+    return sources.filter((source) => {
+      if (
+        includesQuery(source.target_label)
+        || includesQuery(source.target_secondary)
+        || includesQuery(source.source_category)
+        || includesQuery(source.source_type)
+        || includesQuery(source.trigger_type)
+      ) {
+        return true;
+      }
+
+      if ((source.rule_refs || []).some((ruleRef) => includesQuery(ruleRef.label) || includesQuery(ruleRef.id))) {
+        return true;
+      }
+
+      return false;
+    });
+  }, [sourceFilterQuery, sources]);
 
   return (
     <div className="container-fluid py-3">
@@ -400,21 +448,76 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
               <Tab.Pane eventKey="sources">
                 {loadingSources ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
                   <div>
-                    {sources.length === 0 ? <Alert variant="info">No configured write sources found yet. This tab only shows enabled sources that currently point to memory rules.</Alert> : sources.map((source, index) => (
-                      <Card key={`${String(source.source_category || '')}-${String(source.target_id || index)}`} className="mb-3 border">
-                        <Card.Body>
-                          <div className="d-flex justify-content-between align-items-start flex-wrap">
-                            <div>
-                              <div className="font-weight-bold">{String(source.target_label || 'Source')}</div>
-                              <div className="text-muted small">{String(source.source_category || '')} | {String(source.source_type || '')} {source.trigger_type ? `| ${String(source.trigger_type)}` : ''}</div>
-                              {source.target_secondary ? <div className="small text-muted">{String(source.target_secondary)}</div> : null}
-                            </div>
-                            <div>{Array.isArray(source.rule_keys) && (source.rule_keys as string[]).map((key) => <span key={key} className="badge badge-secondary ml-1">{key}</span>)}</div>
-                          </div>
-                          {source.target_url ? <div className="mt-2"><a href={String(source.target_url)} target="_blank" rel="noopener noreferrer">Open source</a></div> : null}
-                        </Card.Body>
-                      </Card>
-                    ))}
+                    <div className="memory-filter-field mb-3">
+                      <input
+                        type="text"
+                        className="form-control form-control-sm memory-filter-field__input"
+                        placeholder="Filter sources..."
+                        value={sourceFilter}
+                        onChange={(event) => setSourceFilter(event.target.value)}
+                      />
+                      {sourceFilter ? (
+                        <button
+                          type="button"
+                          className="memory-filter-field__clear"
+                          onClick={() => setSourceFilter('')}
+                          aria-label="Clear source filter"
+                          title="Clear"
+                        >
+                          <i className="fas fa-times"></i>
+                        </button>
+                      ) : null}
+                    </div>
+                    {sources.length === 0 ? (
+                      <Alert variant="info">No configured write sources found yet. This tab only shows enabled sources that currently point to memory rules.</Alert>
+                    ) : filteredSources.length === 0 ? (
+                      <Alert variant="light">No sources match the current filter.</Alert>
+                    ) : (
+                      <div className="memory-sources-grid">
+                        {filteredSources.map((source, index) => (
+                          <Card key={`${String(source.source_category || '')}-${String(source.target_id || index)}`} className="border memory-source-card">
+                            <Card.Body>
+                              <div>
+                                <div className="font-weight-bold">{String(source.target_label || 'Source')}</div>
+                                <div className="memory-source-card__meta">{String(source.source_category || '')} | {String(source.source_type || '')} {source.trigger_type ? `| ${String(source.trigger_type)}` : ''}</div>
+                                {source.target_secondary ? <div className="memory-source-card__meta">{String(source.target_secondary)}</div> : null}
+                              </div>
+                              {(source.rule_refs || []).length > 0 ? (
+                                <div className="memory-source-card__rules">
+                                  {(source.rule_refs || []).map((ruleRef) => (
+                                    <Badge key={ruleRef.id || ruleRef.key} variant="light">
+                                      {ruleRef.label || (ruleRef.id > 0 ? `Rule #${ruleRef.id}` : 'Deleted rule')}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <div className="memory-source-card__actions">
+                                {source.target_url ? (
+                                  <a className="btn btn-sm btn-outline-primary" href={String(source.target_url)} target="_blank" rel="noopener noreferrer">
+                                    Open action
+                                  </a>
+                                ) : null}
+                                {(source.rule_refs || []).map((ruleRef) => (
+                                  ruleRef.id > 0 ? (
+                                    <button
+                                      key={`open-rule-${ruleRef.id}`}
+                                      type="button"
+                                      className="btn btn-sm btn-outline-primary"
+                                      onClick={() => {
+                                        setSelectedRuleId(ruleRef.id);
+                                        setActiveTab('rules');
+                                      }}
+                                    >
+                                      {ruleRef.label || `Open rule #${ruleRef.id}`}
+                                    </button>
+                                  ) : null
+                                ))}
+                              </div>
+                            </Card.Body>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </Tab.Pane>

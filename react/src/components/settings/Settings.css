@@ -58,10 +58,27 @@
 /* Searchable select dropdown */
 .searchable-select .dropdown-toggle {
     background: #fff;
+    color: #495057;
+    border-color: #ced4da;
     font-size: 0.875rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.searchable-select .dropdown-toggle:hover,
+.searchable-select .dropdown-toggle:focus,
+.searchable-select .dropdown-toggle:active,
+.searchable-select.show .dropdown-toggle,
+.searchable-select .dropdown-toggle:not(:disabled):not(.disabled):active {
+    background: #fff;
+    color: #495057;
+    border-color: #adb5bd;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.08);
+}
+
+.searchable-select .dropdown-toggle .text-muted {
+    color: #6c757d !important;
 }
 
 .searchable-select .dropdown-toggle::after {

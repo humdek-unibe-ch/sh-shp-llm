@@ -1,12 +1,41 @@
 .llm-memory-rules-editor-root .memory-rule-list {
   display: grid;
   gap: 0.75rem;
-  max-height: 32rem;
-  overflow-y: auto;
 }
 
 .llm-memory-rules-editor-root .memory-rule-subtitle {
   font-size: 0.75rem;
+}
+
+.memory-filter-field {
+  position: relative;
+  width: 100%;
+}
+
+.memory-filter-field .memory-filter-field__input {
+  padding-right: 2.25rem;
+}
+
+.memory-filter-field .memory-filter-field__clear {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.memory-filter-field .memory-filter-field__clear:hover {
+  background: #eef2f7;
+  color: #1f2937;
 }
 
 .llm-memory-rules-editor-root .card-header .btn,
@@ -88,6 +117,40 @@
 .llm-memory-rules-editor-root .memory-rule-editor > .card-body {
   display: grid;
   gap: 1rem;
+}
+
+.memory-sources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.memory-source-card {
+  height: 100%;
+}
+
+.memory-source-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.memory-source-card__meta {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.memory-source-card__rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.memory-source-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
 }
 
 .llm-memory-rules-editor-root .memory-rule-section {

@@ -275,7 +275,7 @@ class LlmMemoryAdminService extends BaseLlmService
         $sources = array_merge($sources, $this->getFormActionSources());
         $sources = array_merge($sources, $this->getLlmChatFallbackSources());
         $sources = array_merge($sources, $this->getSystemRuleSources());
-        return $sources;
+        return $this->decorateSourcesWithRuleRefs($sources);
     }
 
     /* =========================================================================
@@ -674,6 +674,47 @@ class LlmMemoryAdminService extends BaseLlmService
         return $this->services->get_router()->generate('moduleFormsAction', array('aid' => (int)$action_id, 'mode' => UPDATE));
 
 
+    }
+
+    private function decorateSourcesWithRuleRefs($sources)
+    {
+        $rule_index = array();
+        foreach ($this->rule_service->listRules() as $rule) {
+            $key = trim((string)($rule['key'] ?? ''));
+            if ($key === '') {
+                continue;
+            }
+
+            $rule_index[$key] = array(
+                'id' => (int)($rule['id'] ?? 0),
+                'key' => $key,
+                'label' => trim((string)($rule['label'] ?? '')),
+            );
+        }
+
+        foreach ($sources as &$source) {
+            $refs = array();
+            foreach ((array)($source['rule_keys'] ?? array()) as $rule_key) {
+                $rule_key = trim((string)$rule_key);
+                if ($rule_key === '') {
+                    continue;
+                }
+
+                if (isset($rule_index[$rule_key])) {
+                    $refs[] = $rule_index[$rule_key];
+                } else {
+                    $refs[] = array(
+                        'id' => 0,
+                        'key' => $rule_key,
+                        'label' => '',
+                    );
+                }
+            }
+            $source['rule_refs'] = $refs;
+        }
+        unset($source);
+
+        return $sources;
     }
 
     private function normalizeMemoryRow($row)

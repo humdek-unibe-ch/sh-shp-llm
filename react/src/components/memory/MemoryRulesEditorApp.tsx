@@ -357,8 +357,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     const query = filter.trim().toLowerCase();
     if (!query) return rules;
     return rules.filter((rule) =>
-      rule.key.toLowerCase().includes(query)
-      || rule.label.toLowerCase().includes(query)
+      rule.label.toLowerCase().includes(query)
       || rule.source_type.toLowerCase().includes(query)
       || rule.memory_keys.some((key) => key.toLowerCase().includes(query))
     );
@@ -756,8 +755,8 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
           <Badge variant={rule.enabled ? 'success' : 'secondary'}>{rule.enabled ? 'Enabled' : 'Disabled'}</Badge>
         </div>
         <div className="memory-rule-card__badges">
-          <span className="badge badge-light">{sourceTypeLabelMap.get(rule.source_type) || rule.source_type}</span>
-          <span className="badge badge-light">{executionModeLabelMap.get(rule.execution_mode) || rule.execution_mode}</span>
+          <span className="badge badge-secondary">{sourceTypeLabelMap.get(rule.source_type) || rule.source_type}</span>
+          <span className="badge badge-secondary">{executionModeLabelMap.get(rule.execution_mode) || rule.execution_mode}</span>
         </div>
         <div className="memory-rule-card__meta">
           <span>{firstKeyLabel}{extraKeys > 0 ? ` +${extraKeys}` : ''}</span>
@@ -778,13 +777,33 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       {promptError && <Alert variant="warning">Prompt Lab: {promptError}</Alert>}
       <Row>
         <Col lg={4} className="mb-3">
-          <Card className="memory-rule-sidebar">
+            <Card className="memory-rule-sidebar">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <strong>Rules</strong>
               <Button size="sm" onClick={handleCreate} disabled={saving}>New Rule</Button>
             </Card.Header>
             <Card.Body>
-              <Form.Control type="text" size="sm" placeholder="Filter rules..." value={filter} onChange={(event) => setFilter(event.target.value)} className="mb-3" />
+              <div className="memory-filter-field mb-3">
+                <Form.Control
+                  type="text"
+                  size="sm"
+                  placeholder="Filter rules..."
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value)}
+                  className="memory-filter-field__input"
+                />
+                {filter ? (
+                  <button
+                    type="button"
+                    className="memory-filter-field__clear"
+                    onClick={() => setFilter('')}
+                    aria-label="Clear rule filter"
+                    title="Clear"
+                  >
+                    <i className="fas fa-times"></i>
+                  </button>
+                ) : null}
+              </div>
               {loading ? <div className="text-center py-3"><Spinner animation="border" size="sm" /></div> : <div className="memory-rule-list">{filteredRules.map(renderRuleCard)}{filteredRules.length === 0 && <div className="text-muted small px-1 py-2">No rules found.</div>}</div>}
             </Card.Body>
           </Card>
