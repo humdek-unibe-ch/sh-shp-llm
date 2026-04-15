@@ -534,7 +534,7 @@ class LlmMemoryStorageService extends BaseLlmService
         $current_table = $this->config_service->getCurrentTableName();
         $user_input = $this->services->get_user_input();
 
-        $fields = $this->buildCurrentMemoryFields($memory_key, $memory_data, $metadata);
+        $fields = $this->buildCurrentMemoryFields($user_id, $memory_key, $memory_data, $metadata);
         $table_id = $user_input->get_dataTable_id($current_table);
         if (!$table_id) {
             $this->initializeMemoryTables();
@@ -549,22 +549,18 @@ class LlmMemoryStorageService extends BaseLlmService
             $existing = $this->getCurrentMemoryRow($user_id, $memory_key);
             if ($existing && isset($existing['record_id'])) {
                 return $user_input->save_data(
-                    transactionTypes_update,
                     TRANSACTION_BY_LLM_MEMORY,
-                    $table_id,
+                    $current_table,
                     $fields,
-                    $user_id,
-                    true,
-                    $existing['record_id']
+                    ['record_id' => (int)$existing['record_id']],
+                    true
                 ) !== false;
             }
 
             return $user_input->save_data(
-                transactionTypes_insert,
                 TRANSACTION_BY_LLM_MEMORY,
-                $table_id,
-                $fields,
-                $user_id
+                $current_table,
+                $fields
             ) !== false;
         } catch (Exception $e) {
             $this->logError('Failed to upsert current memory', ['error' => $e->getMessage()]);
@@ -598,15 +594,13 @@ class LlmMemoryStorageService extends BaseLlmService
         $current = $this->getCurrentMemoryRow($user_id, $memory_key);
         $prev_json = $current ? ($current['memory_json'] ?? '') : '';
 
-        $fields = $this->buildHistoryFields($memory_key, $memory_data, $metadata, $prev_json);
+        $fields = $this->buildHistoryFields($user_id, $memory_key, $memory_data, $metadata, $prev_json);
 
         try {
             return $user_input->save_data(
-                transactionTypes_insert,
                 TRANSACTION_BY_LLM_MEMORY,
-                $table_id,
-                $fields,
-                $user_id
+                $history_table,
+                $fields
             ) !== false;
         } catch (Exception $e) {
             $this->logError('Failed to append memory history row', ['error' => $e->getMessage()]);
@@ -622,9 +616,10 @@ class LlmMemoryStorageService extends BaseLlmService
      * @param array  $metadata    Source and trigger metadata.
      * @return array Key-value pairs for save_data().
      */
-    private function buildCurrentMemoryFields($memory_key, $memory_data, $metadata)
+    private function buildCurrentMemoryFields($user_id, $memory_key, $memory_data, $metadata)
     {
         $fields = [
+            'id_users'           => (int)$user_id,
             'memory_key'        => $memory_key,
             'memory_text'       => $memory_data['memory_text'] ?? '',
             'memory_json'       => is_string($memory_data['memory_object'] ?? null)
@@ -662,9 +657,10 @@ class LlmMemoryStorageService extends BaseLlmService
      * @param string $prev_json   Previous memory_json for diff tracking.
      * @return array Key-value pairs for save_data().
      */
-    private function buildHistoryFields($memory_key, $memory_data, $metadata, $prev_json)
+    private function buildHistoryFields($user_id, $memory_key, $memory_data, $metadata, $prev_json)
     {
         $fields = [
+            'id_users'       => (int)$user_id,
             'memory_key'     => $memory_key,
             'memory_text'    => $memory_data['memory_text'] ?? '',
             'memory_json'    => is_string($memory_data['memory_object'] ?? null)

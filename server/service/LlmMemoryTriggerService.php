@@ -88,23 +88,26 @@ class LlmMemoryTriggerService extends BaseLlmService
      * Normalize a login trigger payload.
      *
      * @param int    $user_id
-     * @param string $user_name
-     * @param string $last_login Previous login timestamp
+     * @param array  $profile_fields
+     * @param string $event_at
      * @return array Normalized payload
      */
-    public function normalizeLoginPayload($user_id, $user_name, $last_login = '')
+    public function normalizeLoginPayload($user_id, $profile_fields = [], $event_at = '')
     {
+        $event_at = $event_at ?: date('Y-m-d H:i:s');
+        $profile_fields = is_array($profile_fields) ? $profile_fields : [];
+
         return [
             'source_type'  => LLM_MEMORY_SOURCE_LOGIN,
             'source_ref'   => json_encode(['user_id' => $user_id], JSON_UNESCAPED_SLASHES),
             'trigger_type' => '',
             'user_id'      => $user_id,
-            'event_at'     => date('Y-m-d H:i:s'),
-            'fields'       => [
-                'user_name'  => $user_name,
-                'last_login' => $last_login,
-                'login_time' => date('Y-m-d H:i:s'),
-            ],
+            'event_at'     => $event_at,
+            'fields'       => array_merge([
+                'login_now'  => $event_at,
+                'login_time' => $event_at,
+                'user_id'    => (string)$user_id,
+            ], $profile_fields),
             'match_criteria' => [],
         ];
     }

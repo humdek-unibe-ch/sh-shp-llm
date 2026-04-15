@@ -1527,17 +1527,6 @@ class LlmHooks extends BaseHooks
     public function onLoginMemoryTrigger($args)
     {
         $user_id = $_SESSION['id_user'] ?? null;
-        $previous_last_login = '';
-        $target_user_name = '';
-        if ($user_id > 0) {
-            $prev = $this->db->query_db_first(
-                "SELECT name, last_login FROM users WHERE id = :id LIMIT 1",
-                array(':id' => $user_id)
-            );
-            $target_user_name = $prev['name'] ?? '';
-            $previous_last_login = $prev['last_login'] ?? '';
-        }
-
         $res = $this->execute_private_method($args);
         if ($res === false) {
             return $res;
@@ -1554,13 +1543,68 @@ class LlmHooks extends BaseHooks
             }
 
             $trigger_service = new LlmMemoryTriggerService($this->services, $config_service);
-            $normalized = $trigger_service->normalizeLoginPayload($user_id, $target_user_name, $previous_last_login);
+            $login_at = date('Y-m-d H:i:s');
+            $profile = $this->buildLoginMemoryProfile($user_id);
+            $normalized = $trigger_service->normalizeLoginPayload($user_id, $profile, $login_at);
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
             error_log('LLM Memory: login trigger failed: ' . $e->getMessage());
         }
 
         return $res;
+    }
+
+    /**
+     * Build a stable profile snapshot for login-triggered memory updates.
+     * Excludes the system-provided last_login field because the rule prompt
+     * should infer prior login timing from memory/history instead.
+     *
+     * @param int $user_id
+     * @return array
+     */
+    private function buildLoginMemoryProfile($user_id)
+    {
+        $profile = array();
+
+        try {
+            $user = $this->db->query_db_first(
+                "SELECT * FROM view_users WHERE id = :id LIMIT 1",
+                array(':id' => $user_id)
+            );
+
+            if (!$user) {
+                $user = $this->db->query_db_first(
+                    "SELECT id, name, email, blocked FROM users WHERE id = :id LIMIT 1",
+                    array(':id' => $user_id)
+                );
+            }
+
+            if (!is_array($user)) {
+                return $profile;
+            }
+
+            $profile = array(
+                'user_name' => (string)($user['name'] ?? ''),
+                'email' => (string)($user['email'] ?? ''),
+                'user_code' => (string)($user['code'] ?? ''),
+                'status' => (string)($user['status'] ?? ''),
+                'status_description' => (string)($user['description'] ?? ''),
+                'groups' => (string)($user['groups'] ?? ''),
+                'user_type' => (string)($user['user_type'] ?? ''),
+                'user_type_code' => (string)($user['user_type_code'] ?? ''),
+                'blocked' => isset($user['blocked']) ? (string)$user['blocked'] : '',
+                'user_activity_count' => isset($user['user_activity']) ? (string)$user['user_activity'] : '',
+                'distinct_url_count' => isset($user['ac']) ? (string)$user['ac'] : '',
+            );
+
+            $profile_snapshot = $user;
+            unset($profile_snapshot['last_login']);
+            $profile['profile_json'] = json_encode($profile_snapshot, JSON_UNESCAPED_SLASHES);
+        } catch (Exception $e) {
+            error_log('LLM Memory: failed to build login profile: ' . $e->getMessage());
+        }
+
+        return $profile;
     }
 
     /**
