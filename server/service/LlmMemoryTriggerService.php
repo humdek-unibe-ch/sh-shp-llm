@@ -345,7 +345,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                 . $php_flags . ' '
                 . '"' . $worker_script . '" '
                 . '"' . $tmp_file . '"'
-                . ' >> "' . $log_file . '" 2>&1';
+                . ' >NUL 2>&1';
         } else {
             $cmd = escapeshellarg($php_bin)
                 . ' ' . $php_flags
