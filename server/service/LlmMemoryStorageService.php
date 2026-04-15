@@ -505,9 +505,7 @@ class LlmMemoryStorageService extends BaseLlmService
         if ($first_only) {
             $sql .= " LIMIT 1";
         } elseif ($limit !== null) {
-            $sql .= " LIMIT :limit OFFSET :offset";
-            $params[':limit'] = (int)$limit;
-            $params[':offset'] = (int)$offset;
+            $sql .= " LIMIT " . (int)$limit . " OFFSET " . (int)$offset;
         }
 
         $rows = $this->db->query_db($sql, $params);
