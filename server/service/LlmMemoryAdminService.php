@@ -475,7 +475,7 @@ class LlmMemoryAdminService extends BaseLlmService
         $placeholders = implode(',', array_fill(0, count($user_ids), '?'));
         $sql = "SELECT u.id, u.`name`, u.email, vc.`code`
                 FROM users u
-                LEFT JOIN view_user_codes vc ON u.id = vc.id_users
+                LEFT JOIN validation_codes vc ON vc.id_users = u.id
                 WHERE u.id IN ($placeholders)";
 
         $rows = $db->query_db($sql, array_values($user_ids));
