@@ -181,6 +181,33 @@
   z-index: 20;
 }
 
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:hover,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:focus,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:active,
+.llm-memory-rules-editor-root .searchable-select.show > .dropdown-toggle.btn-outline-secondary,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:not(:disabled):not(.disabled):active {
+  background: #fff !important;
+  color: #495057 !important;
+  border-color: #ced4da !important;
+  box-shadow: none !important;
+}
+
+.llm-memory-rules-editor-root .searchable-select.show > .dropdown-toggle.btn-outline-secondary,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:focus {
+  border-color: #adb5bd !important;
+}
+
+.llm-memory-rules-editor-root .searchable-select .dropdown-menu {
+  background: #fff;
+}
+
+.llm-memory-rules-editor-root .searchable-select .dropdown-item.active,
+.llm-memory-rules-editor-root .searchable-select .dropdown-item:active {
+  background-color: #0d6efd;
+  color: #fff;
+}
+
 @media (max-width: 991.98px) {
   .llm-memory-rules-editor-root .prompt-toolbar {
     position: static;
