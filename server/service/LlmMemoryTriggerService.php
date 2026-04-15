@@ -138,11 +138,11 @@ class LlmMemoryTriggerService extends BaseLlmService
 
     /**
      * Dispatch a normalized payload to matching memory rules.
-     * Returns the list of rule keys that were dispatched.
      *
      * @param array $normalized_payload
      * @param bool  $async Whether to run asynchronously (default true)
-     * @return array Rule keys that were dispatched
+     * @param array $rule_overrides
+     * @return array Rule IDs that were dispatched
      */
     public function dispatchMemoryUpdate($normalized_payload, $async = true, $rule_overrides = [])
     {
@@ -165,8 +165,8 @@ class LlmMemoryTriggerService extends BaseLlmService
         $rules = $this->config_service->findMatchingRules($source_type, $match_criteria);
         $this->appendWorkerLog('dispatchMemoryUpdate rules resolved', array(
             'source_type' => (string)$source_type,
-            'rule_keys' => array_values(array_map(function ($rule) {
-                return (string)($rule['key'] ?? '');
+            'rule_ids' => array_values(array_map(function ($rule) {
+                return (int)($rule['id'] ?? 0);
             }, (array)$rules)),
         ));
 
@@ -184,7 +184,7 @@ class LlmMemoryTriggerService extends BaseLlmService
             if (!empty($rule['trigger_types']) && !empty($trigger_type)) {
                 if (!in_array($trigger_type, $rule['trigger_types'])) {
                     $this->appendWorkerLog('dispatchMemoryUpdate skipped by trigger type', array(
-                        'rule_key' => (string)($rule['key'] ?? ''),
+                        'rule_id' => (int)($rule['id'] ?? 0),
                         'trigger_type' => (string)$trigger_type,
                         'allowed_trigger_types' => $rule['trigger_types'],
                     ));
@@ -193,7 +193,7 @@ class LlmMemoryTriggerService extends BaseLlmService
             }
 
             $rule = $this->applyRuleOverrides($rule, $rule_overrides);
-            $dispatched[] = $rule['key'];
+            $dispatched[] = (int)$rule['id'];
             foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
                 $payload_for_key = $normalized_payload;
                 $payload_for_key['memory_key_override'] = $target_memory_key;
@@ -203,56 +203,20 @@ class LlmMemoryTriggerService extends BaseLlmService
 
         $this->appendWorkerLog('dispatchMemoryUpdate dispatched', array(
             'source_type' => (string)$source_type,
-            'rule_keys' => $dispatched,
+            'rule_ids' => $dispatched,
         ));
 
         return $dispatched;
     }
 
     /**
-     * Dispatch a single memory update for specific rule keys.
-     *
-     * @param array  $rule_keys
-     * @param array  $normalized_payload
-     * @param bool   $async
-     * @return array Rule keys dispatched
-     */
-    public function dispatchForRuleKeys($rule_keys, $normalized_payload, $async = true, $rule_overrides = [])
-    {
-        if (!$this->config_service->isMemoryEnabled()) {
-            return [];
-        }
-
-        $dispatched = [];
-        foreach ($rule_keys as $key) {
-            $rule = $this->config_service->getRuleByKey(trim($key));
-            if (!$rule) {
-                continue;
-            }
-            if (!$rule['enabled']) {
-                $this->logDisabledRuleSkip($rule, $normalized_payload, 'rule_key_dispatch');
-                continue;
-            }
-            $rule = $this->applyRuleOverrides($rule, $rule_overrides);
-            $dispatched[] = $rule['key'];
-            foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
-                $payload_for_key = $normalized_payload;
-                $payload_for_key['memory_key_override'] = $target_memory_key;
-                $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
-            }
-        }
-
-        return $dispatched;
-    }
-
-    /**
-     * Dispatch a single memory update for specific rule ids.
+     * Dispatch memory updates for specific rule IDs.
      *
      * @param array $rule_ids
      * @param array $normalized_payload
      * @param bool $async
      * @param array $rule_overrides
-     * @return array
+     * @return array Rule IDs dispatched
      */
     public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [])
     {
@@ -275,7 +239,7 @@ class LlmMemoryTriggerService extends BaseLlmService
             }
 
             $rule = $this->applyRuleOverrides($rule, $rule_overrides);
-            $dispatched[] = $rule['key'];
+            $dispatched[] = (int)$rule['id'];
             foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
                 $payload_for_key = $normalized_payload;
                 $payload_for_key['memory_key_override'] = $target_memory_key;
@@ -296,7 +260,7 @@ class LlmMemoryTriggerService extends BaseLlmService
     private function enqueueMemoryUpdate($rule, $normalized_payload, $async)
     {
         $worker_args = [
-            'rule_key'            => $rule['key'],
+            'rule_id'             => (int)$rule['id'],
             'user_id'             => $normalized_payload['user_id'],
             'source_type'         => $normalized_payload['source_type'],
             'source_ref'          => $normalized_payload['source_ref'] ?? '',
@@ -310,7 +274,7 @@ class LlmMemoryTriggerService extends BaseLlmService
         ];
 
         $this->appendWorkerLog('enqueueMemoryUpdate prepared', array(
-            'rule_key' => (string)($rule['key'] ?? ''),
+            'rule_id' => (int)($rule['id'] ?? 0),
             'execution_mode' => (string)($rule['execution_mode'] ?? ''),
             'user_id' => (int)($normalized_payload['user_id'] ?? 0),
             'source_type' => (string)($normalized_payload['source_type'] ?? ''),
@@ -321,7 +285,7 @@ class LlmMemoryTriggerService extends BaseLlmService
 
         if ($rule['execution_mode'] === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {
             $this->appendWorkerLog('enqueueMemoryUpdate executing direct mapping sync', array(
-                'rule_key' => (string)($rule['key'] ?? ''),
+                'rule_id' => (int)($rule['id'] ?? 0),
             ));
             require_once __DIR__ . '/LlmMemoryUpdateService.php';
             $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
@@ -331,7 +295,7 @@ class LlmMemoryTriggerService extends BaseLlmService
 
         if (!$async) {
             $this->appendWorkerLog('enqueueMemoryUpdate executing summarization sync', array(
-                'rule_key' => (string)($rule['key'] ?? ''),
+                'rule_id' => (int)($rule['id'] ?? 0),
             ));
             require_once __DIR__ . '/LlmMemoryUpdateService.php';
             $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
@@ -353,7 +317,7 @@ class LlmMemoryTriggerService extends BaseLlmService
         if (!$tmp_file || file_put_contents($tmp_file, json_encode($worker_args)) === false) {
             error_log('LLM Memory: failed to write temp args file, falling back to sync');
             $this->appendWorkerLog('spawnAsyncWorker failed to write args file, using sync fallback', array(
-                'rule_key' => (string)($worker_args['rule_key'] ?? ''),
+                'rule_id' => (int)($worker_args['rule_id'] ?? 0),
                 'user_id' => (int)($worker_args['user_id'] ?? 0),
             ));
             $this->executeFallbackSync($worker_args);
@@ -391,7 +355,7 @@ class LlmMemoryTriggerService extends BaseLlmService
         }
 
         $this->appendWorkerLog('spawnAsyncWorker launching', array(
-            'rule_key' => (string)($worker_args['rule_key'] ?? ''),
+            'rule_id' => (int)($worker_args['rule_id'] ?? 0),
             'user_id' => (int)($worker_args['user_id'] ?? 0),
             'tmp_file' => $tmp_file,
             'php_bin' => $php_bin,
@@ -404,13 +368,13 @@ class LlmMemoryTriggerService extends BaseLlmService
         if ($handle) {
             pclose($handle);
             $this->appendWorkerLog('spawnAsyncWorker process launched', array(
-                'rule_key' => (string)($worker_args['rule_key'] ?? ''),
+                'rule_id' => (int)($worker_args['rule_id'] ?? 0),
                 'user_id' => (int)($worker_args['user_id'] ?? 0),
             ));
         } else {
             error_log('LLM Memory: popen failed, falling back to sync');
             $this->appendWorkerLog('spawnAsyncWorker popen failed, using sync fallback', array(
-                'rule_key' => (string)($worker_args['rule_key'] ?? ''),
+                'rule_id' => (int)($worker_args['rule_id'] ?? 0),
                 'user_id' => (int)($worker_args['user_id'] ?? 0),
             ));
             @unlink($tmp_file);
@@ -421,21 +385,22 @@ class LlmMemoryTriggerService extends BaseLlmService
     /**
      * Execute a memory update synchronously as a fallback when async scheduling fails.
      *
-     * @param array $worker_args Worker arguments containing user_id, rule_keys, payload, etc.
+     * @param array $worker_args Worker arguments containing user_id, rule_id, payload, etc.
      */
     private function executeFallbackSync($worker_args)
     {
+        $rule_id = (int)($worker_args['rule_id'] ?? 0);
         $this->appendWorkerLog('executeFallbackSync entered', array(
-            'rule_key' => (string)($worker_args['rule_key'] ?? ''),
+            'rule_id' => $rule_id,
             'user_id' => (int)($worker_args['user_id'] ?? 0),
         ));
         require_once __DIR__ . '/LlmMemoryUpdateService.php';
         $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
 
-        $rule = $this->config_service->getRuleByKey($worker_args['rule_key']);
+        $rule = $this->config_service->getRuleById($rule_id);
         if (!$rule) {
             $this->appendWorkerLog('executeFallbackSync rule not found', array(
-                'rule_key' => (string)($worker_args['rule_key'] ?? ''),
+                'rule_id' => $rule_id,
             ));
             return;
         }
@@ -454,14 +419,14 @@ class LlmMemoryTriggerService extends BaseLlmService
 
         if (($rule['execution_mode'] ?? '') === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {
             $this->appendWorkerLog('executeFallbackSync running direct mapping', array(
-                'rule_key' => (string)($rule['key'] ?? ''),
+                'rule_id' => (int)($rule['id'] ?? 0),
             ));
             $update_service->executeDirectMapping($rule, $normalized);
             return;
         }
 
         $this->appendWorkerLog('executeFallbackSync running summarization', array(
-            'rule_key' => (string)($rule['key'] ?? ''),
+            'rule_id' => (int)($rule['id'] ?? 0),
         ));
         $update_service->executeLlmSummarization($rule, $normalized);
     }
@@ -533,7 +498,6 @@ class LlmMemoryTriggerService extends BaseLlmService
             'LLM Memory skipped disabled rule: ' . json_encode([
                 'dispatch_mode' => $dispatch_mode,
                 'rule_id' => (int)($rule['id'] ?? 0),
-                'rule_key' => (string)($rule['key'] ?? ''),
                 'rule_label' => (string)($rule['label'] ?? ''),
                 'user_id' => (int)($normalized_payload['user_id'] ?? 0),
                 'source_type' => (string)($normalized_payload['source_type'] ?? ''),

@@ -558,10 +558,9 @@ interface MemoryConfigResponse {
 }
 
 interface MemoryRule {
-  key: string;
+  id: number;
   label?: string;
   enabled: boolean;
-  memory_key?: string;
   memory_keys?: string[];
   source_type?: string;
   source_match?: Record<string, unknown>;
@@ -615,11 +614,9 @@ interface MemoryRebuildResponse {
 
 interface MemoryRuleRecord {
   id: number;
-  key?: string;
   label?: string;
   enabled: boolean;
   source_type: string;
-  memory_key: string;
   memory_keys: string[];
   execution_mode: string;
   trigger_types?: string[];
@@ -631,7 +628,6 @@ interface MemoryRuleRecord {
   llm_temperature: string;
   llm_max_tokens: string;
   refresh_sections: Array<number | string>;
-  usage_tags: string[];
   prompt_template?: string;
   prompt_meta_json?: string;
   sources_count?: number;
@@ -916,11 +912,11 @@ export const memoryApi = {
     return apiGet<MemoryHistoryResponse>('memory_user_history', params);
   },
 
-  async rerunRule(userId: string, ruleKey: string, payload?: Record<string, unknown>): Promise<AdminActionResponse> {
+  async rerunRule(userId: string, ruleId: number, payload?: Record<string, unknown>): Promise<AdminActionResponse> {
     const formData = new FormData();
     formData.append('action', 'memory_rerun_rule');
     formData.append('user_id', userId);
-    formData.append('rule_key', ruleKey);
+    formData.append('rule_id', String(ruleId));
     if (payload) formData.append('manual_payload_json', JSON.stringify(payload));
     return apiPost<AdminActionResponse>(formData);
   },

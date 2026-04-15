@@ -15,12 +15,12 @@ import { JsonInspector } from '../shared/JsonInspector';
 import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 
 interface MemoryRule {
-  key: string;
+  id: number;
   label?: string;
   enabled: boolean;
   execution_mode: string;
   source_type?: string;
-  memory_key?: string;
+  memory_keys?: string[];
 }
 
 interface MemoryOverview {
@@ -235,11 +235,11 @@ export const MemoryAdminPanel: React.FC<{
     await loadHistory(user.user_id, initialMemoryKey || user.memory_keys[0] || 'global');
   };
 
-  const handleRerunRule = async (ruleKey: string) => {
+  const handleRerunRule = async (ruleId: number) => {
     if (!selectedUser) return;
     setActionLoading(true);
     try {
-      const res = await memoryApi.rerunRule(String(selectedUser.user_id), ruleKey);
+      const res = await memoryApi.rerunRule(String(selectedUser.user_id), ruleId);
       if (res.error) throw new Error(res.error);
       await loadUserDetail(selectedUser.user_id, selectedMemoryKey);
       await loadHistory(selectedUser.user_id, selectedMemoryKey);
@@ -495,13 +495,13 @@ export const MemoryAdminPanel: React.FC<{
                           <h6 className="text-muted">Source Metadata</h6>
                           <div className="border rounded bg-light p-2">
                             <JsonInspector value={{
-                              last_rule_key: userMemory['last_rule_key'],
-                              last_source_type: userMemory['last_source_type'],
-                              last_source_ref: userMemory['last_source_ref_decoded'] || tryParseJson(userMemory['last_source_ref']),
-                              last_trigger_type: userMemory['last_trigger_type'],
-                              last_payload_json: userMemory['last_payload_json_decoded'] || tryParseJson(userMemory['last_payload_json']),
-                              last_event_at: userMemory['last_event_at'],
-                              last_updated_at: userMemory['last_updated_at'],
+                              rule_id: userMemory['rule_id'],
+                              source_type: userMemory['source_type'],
+                              source_ref: tryParseJson(userMemory['source_ref']) || userMemory['source_ref'],
+                              trigger_type: userMemory['trigger_type'],
+                              payload_json: tryParseJson(userMemory['payload_json']) || userMemory['payload_json'],
+                              event_at: userMemory['event_at'],
+                              updated_at: userMemory['updated_at'],
                             }} className="small" />
                           </div>
                         </>
@@ -534,7 +534,7 @@ export const MemoryAdminPanel: React.FC<{
                                 </span>
                               </div>
                               <div className="small">
-                                <strong>Rule:</strong> {String(entry['rule_key'] || '-')} |{' '}
+                                <strong>Rule:</strong> {entry['rule_id'] ? `#${String(entry['rule_id'])}` : '-'} |{' '}
                                 <strong>Source:</strong> {String(entry['source_type'] || '-')}
                               </div>
                               {Boolean(entry['change_summary']) && (
@@ -613,13 +613,13 @@ export const MemoryAdminPanel: React.FC<{
                         <div className="text-muted text-center py-3">No memory rules configured</div>
                       ) : (
                         overview.rules.map(rule => (
-                          <Card key={rule.key} className="mb-2 border">
+                          <Card key={rule.id} className="mb-2 border">
                             <Card.Body className="py-2 px-3 d-flex justify-content-between align-items-center">
                               <div>
                                 <Badge variant={rule.enabled ? 'success' : 'secondary'} className="mr-2">
                                   {rule.enabled ? 'ON' : 'OFF'}
                                 </Badge>
-                                <strong className="small">{rule.label || rule.key}</strong>
+                                <strong className="small">{rule.label || `Rule #${rule.id}`}</strong>
                                 <span className="text-muted ml-2 small">
                                   {rule.execution_mode} | {rule.source_type || 'any'}
                                 </span>
@@ -627,7 +627,7 @@ export const MemoryAdminPanel: React.FC<{
                               <Button
                                 size="sm"
                                 variant="outline-primary"
-                                onClick={() => handleRerunRule(rule.key)}
+                                onClick={() => handleRerunRule(rule.id)}
                                 disabled={actionLoading || !rule.enabled}
                                 title="Re-run this rule for selected user"
                               >

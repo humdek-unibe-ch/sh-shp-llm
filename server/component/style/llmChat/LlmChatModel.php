@@ -330,14 +330,16 @@ class LlmChatModel extends StyleModel
     // ===== Memory =====
 
     /**
-     * Get the comma-separated list of memory rule keys configured for this chat section.
-     * Empty string means "use auto-matching by source_type".
+     * Get the comma-separated list of memory rule IDs configured for this chat section.
+     * Empty array means "use auto-matching by source_type".
+     *
+     * @return int[]
      */
-    public function getMemoryRuleKeys()
+    public function getMemoryRuleIds()
     {
-        $raw = $this->get_db_field('memory_rule_keys', '');
+        $raw = $this->get_db_field('memory_rule_ids', '');
         if (empty($raw)) return [];
-        return array_filter(array_map('trim', explode(',', $raw)));
+        return array_values(array_filter(array_map('intval', explode(',', $raw))));
     }
 
     // ===== Floating Chat Button =====

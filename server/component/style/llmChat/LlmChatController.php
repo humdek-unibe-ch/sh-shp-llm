@@ -1303,9 +1303,9 @@ class LlmChatController extends BaseController
                 $form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id
             );
 
-            $rule_keys = $this->model->getMemoryRuleKeys();
-            if (!empty($rule_keys)) {
-                $trigger_service->dispatchForRuleKeys($rule_keys, $normalized);
+            $rule_ids = $this->model->getMemoryRuleIds();
+            if (!empty($rule_ids)) {
+                $trigger_service->dispatchForRuleIds($rule_ids, $normalized);
             } else {
                 $trigger_service->dispatchMemoryUpdate($normalized);
             }

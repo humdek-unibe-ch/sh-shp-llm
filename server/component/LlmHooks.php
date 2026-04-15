@@ -1344,11 +1344,6 @@ class LlmHooks extends BaseHooks
         }
         $rule_ids = array_values(array_filter(array_map('intval', $rule_ids)));
 
-        $rule_keys = $config['memory_rule_keys'] ?? [];
-        if (is_string($rule_keys)) {
-            $rule_keys = array_filter(array_map('trim', explode(',', $rule_keys)));
-        }
-
         $run_async = !empty($config['run_async']);
         $form_fields = $config['form_data']['form_fields'] ?? [];
 
@@ -1378,8 +1373,6 @@ class LlmHooks extends BaseHooks
 
         if (!empty($rule_ids)) {
             $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, $rule_overrides);
-        } elseif (!empty($rule_keys)) {
-            $dispatched = $trigger_service->dispatchForRuleKeys($rule_keys, $normalized, $run_async, $rule_overrides);
         } else {
             $this->transaction->add_transaction(
                 transactionTypes_insert,
@@ -1485,7 +1478,6 @@ class LlmHooks extends BaseHooks
             "type" => $job[ACTION_JOB_TYPE],
             "description" => $description,
             "memory_rule_id" => (string)($job['memory_rule_id'] ?? ''),
-            "memory_rule_keys" => $job['memory_rule_keys'] ?? '',
             "memory_key_override" => $job['memory_key_override'] ?? '',
             "force_storage_mode" => $job['force_storage_mode'] ?? '',
             "run_async" => !array_key_exists('run_async', $job) || !empty($job['run_async']),

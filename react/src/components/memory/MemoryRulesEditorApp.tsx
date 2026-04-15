@@ -73,10 +73,8 @@ const memoryPromptInterpolationDocs = [
 /** Type definition for memory rule draft. */
 export interface MemoryRuleDraft {
   id: number;
-  key: string;
   label: string;
   enabled: boolean;
-  memory_key: string;
   memory_keys: string[];
   source_type: string;
   source_match: Record<string, unknown>;
@@ -89,7 +87,6 @@ export interface MemoryRuleDraft {
   llm_temperature: string;
   llm_max_tokens: string;
   refresh_sections: Array<number | string>;
-  usage_tags: string[];
   prompt_template: string;
   prompt_meta_json: string;
   sources_count?: number;
@@ -139,11 +136,6 @@ function toPrettyJson(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
 }
 
-/** parseCsvList utility. */
-function parseCsvList(value: string): string[] {
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
-}
-
 /** ensurePromptMeta function. */
 function ensurePromptMeta(meta: PromptMetaState): NonNullable<PromptMetaState['prompt']> {
   if (!meta.prompt || typeof meta.prompt !== 'object') {
@@ -162,10 +154,8 @@ function humanizeKeyLabel(code: string): string {
 function getDefaultRule(index = 0): MemoryRuleDraft {
   return {
     id: 0,
-    key: `memory_rule_${index + 1}`,
     label: `Memory Rule ${index + 1}`,
     enabled: true,
-    memory_key: 'global',
     memory_keys: ['global'],
     source_type: 'form_action_submit',
     source_match: {},
@@ -178,7 +168,6 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
     llm_temperature: '',
     llm_max_tokens: '',
     refresh_sections: [],
-    usage_tags: [],
     prompt_template: '',
     prompt_meta_json: '{}',
     sources_count: 0,
@@ -192,15 +181,13 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
     ? raw.memory_keys.map((value: unknown) => String(value).trim()).filter(Boolean)
     : [];
   const nextMemoryKeys = memoryKeys.length > 0
-    ? Array.from(new Set(memoryKeys))
-    : [typeof raw?.memory_key === 'string' && raw.memory_key.trim() !== '' ? raw.memory_key : 'global'];
+    ? Array.from(new Set(memoryKeys)) as string[]
+    : ['global'];
 
   return {
     id: Number(raw?.id || 0),
-    key: typeof raw?.key === 'string' ? raw.key : fallback.key,
     label: typeof raw?.label === 'string' ? raw.label : fallback.label,
     enabled: raw?.enabled !== false,
-    memory_key: nextMemoryKeys[0] || 'global',
     memory_keys: nextMemoryKeys,
     source_type: typeof raw?.source_type === 'string' ? raw.source_type : fallback.source_type,
     source_match: raw?.source_match && typeof raw.source_match === 'object' && !Array.isArray(raw.source_match) ? raw.source_match : {},
@@ -215,7 +202,6 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
     llm_temperature: raw?.llm_temperature != null ? String(raw.llm_temperature) : '',
     llm_max_tokens: raw?.llm_max_tokens != null ? String(raw.llm_max_tokens) : '',
     refresh_sections: Array.isArray(raw?.refresh_sections) ? raw.refresh_sections : [],
-    usage_tags: Array.isArray(raw?.usage_tags) ? raw.usage_tags.map((value: unknown) => String(value)) : [],
     prompt_template: typeof raw?.prompt_template === 'string' ? raw.prompt_template : '',
     prompt_meta_json: typeof raw?.prompt_meta_json === 'string' ? raw.prompt_meta_json : '{}',
     sources_count: Number(raw?.sources_count || 0),
@@ -226,10 +212,8 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
 function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
   return {
     id: rule.id,
-    key: rule.key.trim(),
     label: rule.label.trim(),
     enabled: !!rule.enabled,
-    memory_key: rule.memory_keys[0] || 'global',
     memory_keys: rule.memory_keys,
     source_type: rule.source_type.trim(),
     source_match: rule.source_match || {},
@@ -242,7 +226,6 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
     llm_temperature: rule.llm_temperature || '',
     llm_max_tokens: rule.llm_max_tokens || '',
     refresh_sections: rule.refresh_sections || [],
-    usage_tags: rule.usage_tags || [],
   };
 }
 
@@ -452,9 +435,9 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       promptSlot: 'memory_rule',
       languageId: 1,
       pageId: config.pageId ?? null,
-      title: draft.label || draft.key,
+      title: draft.label || `Rule #${draft.id}`,
     };
-  }, [config.pageId, draft?.id, draft?.key, draft?.label]);
+  }, [config.pageId, draft?.id, draft?.label]);
 
   const effectiveTemperature = draft?.llm_temperature || defaults.llm_temperature || '0.2';
   const effectiveMaxTokens = draft?.llm_max_tokens || defaults.llm_max_tokens || '1200';
@@ -882,7 +865,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                   {showAutomaticSourceHint ? <Alert variant="info" className="mb-0 mt-3">This source runs automatically from the system hook.</Alert> : <Alert variant="light" className="mb-0 mt-3">This rule runs only when it is explicitly attached to a form action, llmChat fallback, or matching source hook.</Alert>}
                 </Card.Body></Card>
 
-                <Card className="memory-rule-section"><Card.Header>Where It Writes</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Memory Keys</Form.Label><CreatableSelect isMulti className="memory-rule-select" classNamePrefix="react-select" value={selectedKeyOptions} options={memoryKeyOptions} placeholder="Search or create memory keys..." onCreateOption={(inputValue) => { const code = inputValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, ''); if (!code) return; upsertAvailableKeys([{ code, label: humanizeKeyLabel(code), description: '', enabled: true }]); setDraftPatch({ memory_keys: Array.from(new Set([...(draft.memory_keys || []), code])), memory_key: code }); }} onChange={(values) => { const nextKeys = (values || []).map((item) => item.value); setDraftPatch({ memory_keys: nextKeys, memory_key: nextKeys[0] || '' }); }} /><Form.Text className="text-muted">Selected keys become the memory spaces this rule updates. You can search existing keys or create new ones here.</Form.Text></Form.Group></Card.Body></Card>
+                <Card className="memory-rule-section"><Card.Header>Where It Writes</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Memory Keys</Form.Label><CreatableSelect isMulti className="memory-rule-select" classNamePrefix="react-select" value={selectedKeyOptions} options={memoryKeyOptions} placeholder="Search or create memory keys..." onCreateOption={(inputValue) => { const code = inputValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, ''); if (!code) return; upsertAvailableKeys([{ code, label: humanizeKeyLabel(code), description: '', enabled: true }]); setDraftPatch({ memory_keys: Array.from(new Set([...(draft.memory_keys || []), code])) }); }} onChange={(values) => { const nextKeys = (values || []).map((item) => item.value); setDraftPatch({ memory_keys: nextKeys }); }} /><Form.Text className="text-muted">Selected keys become the memory spaces this rule updates. You can search existing keys or create new ones here.</Form.Text></Form.Group></Card.Body></Card>
 
                 <Card className="memory-rule-section"><Card.Header>How It Works</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Execution Mode</Form.Label><SearchableSelect options={executionModeOptions} value={draft.execution_mode} onChange={(value) => setDraftPatch({ execution_mode: value })} placeholder="Select execution mode" /><Form.Text className="text-muted">{draft.execution_mode === 'direct_mapping' ? 'Direct mapping writes stable fields straight into memory without calling the LLM.' : 'LLM summarize uses the prompt, current memory, and payload data to produce the new memory state.'}</Form.Text></Form.Group></Card.Body></Card>
 
@@ -897,7 +880,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                 {isDirectMode ? <Card className="memory-rule-section"><Card.Header>Direct Mapping</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Field Mapping</Form.Label><Form.Text className="text-muted mb-2">Use a JSON object like <code>{"{\"preferred_name\":\"{{first_name}}\",\"city\":\"{{city}}\"}"}</code>. Each key becomes a memory field, and each <code>{'{{value}}'}</code> placeholder is replaced from submitted data. A fuller example is documented in the global memory user guide.</Form.Text><JsonMonacoEditor value={fieldMappingJson} minHeight={220} expectObject onChange={setFieldMappingJson} /></Form.Group></Card.Body></Card> : null}
                 {isLlmMode ? <><Card className="memory-rule-section"><Card.Header>LLM Summarization Inputs</Card.Header><Card.Body><div className="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><div className="font-weight-bold">Data Config</div><div className="text-muted small">Reuse the shared data-config builder to pull extra values into the prompt context.</div></div><Button size="sm" variant={draft.data_config.length > 0 ? 'warning' : 'outline-secondary'} onClick={openDataConfigModal}>{getDataConfigLabel()}</Button></div>{draft.data_config.length > 0 ? <div className="mt-3 small text-muted">{draft.data_config.length} data config item{draft.data_config.length > 1 ? 's' : ''} configured.</div> : <div className="mt-3 small text-muted">No extra data sources configured yet.</div>}</Card.Body></Card><Card className="memory-rule-section"><Card.Header><div className="d-flex align-items-center">Prompt<InfoPopover title="Available Prompt Variables" placement="left" buttonClassName="ml-2" ariaLabel="Available prompt variables help">{memoryPromptInterpolationDocs.map((line) => <div key={line} className="small mb-2">{line}</div>)}</InfoPopover></div></Card.Header><Card.Body><PromptToolbar activeVersion={activeVersion} dirty={isDirty} disabled={!promptDescriptor || promptLoading} changeNote={promptChangeNote} onChangeNote={handleChangeNote} onOpenVersions={() => setShowVersions(true)} onOpenCompare={() => { const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft'; setDiffState({ initialLeftKey: activeKey, initialRightKey: 'draft' }); setShowDiff(true); }} onOpenPlayground={() => setShowPlayground(true)} onOpenDatasets={() => setShowDatasets(true)} onOpenBuilder={() => setShowBuilder(true)} /><PromptEditor value={draft.prompt_template} language="markdown" onChange={syncPromptTemplate} minHeight={260} /></Card.Body></Card></> : null}
 
-                <Card className="memory-rule-section"><Card.Header>Advanced</Card.Header><Card.Body><Row><Col md={6}><Form.Group><Form.Label>Usage Tags</Form.Label><Form.Control value={draft.usage_tags.join(', ')} onChange={(event) => setDraftPatch({ usage_tags: parseCsvList(event.target.value) })} placeholder="analytics, onboarding" /></Form.Group></Col><Col md={6}><Form.Group><Form.Label>Refresh Sections</Form.Label><Dropdown><Dropdown.Toggle size="sm" variant="outline-secondary" className="w-100 text-left d-flex justify-content-between align-items-center"><span className="text-truncate">{getSelectedSectionIds().length === 0 ? 'Select sections...' : `${getSelectedSectionIds().length} section${getSelectedSectionIds().length > 1 ? 's' : ''} selected`}</span></Dropdown.Toggle><Dropdown.Menu className="w-100 sections-dropdown-menu" style={{ maxHeight: '250px', overflowY: 'auto' }}><div className="px-2 pb-2"><Form.Control size="sm" type="text" placeholder="Search sections..." value={sectionSearch} onChange={(event) => setSectionSearch(event.target.value)} onClick={(event) => event.stopPropagation()} /></div>{filteredSections.length === 0 ? <Dropdown.ItemText className="text-muted small">No sections found</Dropdown.ItemText> : filteredSections.map((section) => (<Dropdown.Item key={section.id} as="button" className="small py-1" active={getSelectedSectionIds().includes(Number(section.id))} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSection(Number(section.id)); }}><Form.Check type="checkbox" checked={getSelectedSectionIds().includes(Number(section.id))} onChange={() => undefined} label={<span>{section.name} <small className="text-muted">({section.id})</small></span>} className="mb-0" /></Dropdown.Item>))}</Dropdown.Menu></Dropdown>{getSelectedSectionIds().length > 0 ? <div className="mt-2">{getSelectedSectionIds().map((id) => { const section = sections.find((item) => Number(item.id) === id); return <Badge key={id} variant="info" className="mr-1 mb-1 cursor-pointer" onClick={() => toggleSection(id)}>{section?.name || id} <i className="fas fa-times ml-1"></i></Badge>; })}</div> : null}<Form.Text className="text-muted">Sections to refresh after a successful memory update.</Form.Text></Form.Group></Col></Row></Card.Body></Card>
+                <Card className="memory-rule-section"><Card.Header>Advanced</Card.Header><Card.Body><Form.Group><Form.Label>Refresh Sections</Form.Label><Dropdown><Dropdown.Toggle size="sm" variant="outline-secondary" className="w-100 text-left d-flex justify-content-between align-items-center"><span className="text-truncate">{getSelectedSectionIds().length === 0 ? 'Select sections...' : `${getSelectedSectionIds().length} section${getSelectedSectionIds().length > 1 ? 's' : ''} selected`}</span></Dropdown.Toggle><Dropdown.Menu className="w-100 sections-dropdown-menu" style={{ maxHeight: '250px', overflowY: 'auto' }}><div className="px-2 pb-2"><Form.Control size="sm" type="text" placeholder="Search sections..." value={sectionSearch} onChange={(event) => setSectionSearch(event.target.value)} onClick={(event) => event.stopPropagation()} /></div>{filteredSections.length === 0 ? <Dropdown.ItemText className="text-muted small">No sections found</Dropdown.ItemText> : filteredSections.map((section) => (<Dropdown.Item key={section.id} as="button" className="small py-1" active={getSelectedSectionIds().includes(Number(section.id))} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSection(Number(section.id)); }}><Form.Check type="checkbox" checked={getSelectedSectionIds().includes(Number(section.id))} onChange={() => undefined} label={<span>{section.name} <small className="text-muted">({section.id})</small></span>} className="mb-0" /></Dropdown.Item>))}</Dropdown.Menu></Dropdown>{getSelectedSectionIds().length > 0 ? <div className="mt-2">{getSelectedSectionIds().map((id) => { const section = sections.find((item) => Number(item.id) === id); return <Badge key={id} variant="info" className="mr-1 mb-1 cursor-pointer" onClick={() => toggleSection(id)}>{section?.name || id} <i className="fas fa-times ml-1"></i></Badge>; })}</div> : null}<Form.Text className="text-muted">Sections to refresh after a successful memory update.</Form.Text></Form.Group></Card.Body></Card>
               </Card.Body>
             </Card>
           )}

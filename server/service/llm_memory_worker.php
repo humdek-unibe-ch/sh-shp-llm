@@ -151,8 +151,10 @@ llm_memory_worker_log('services initialized', array(
     'session_user' => $_SESSION['id_user'] ?? null,
 ));
 
+$rule_id = (int)($args['rule_id'] ?? 0);
+
 llm_memory_worker_debug(
-    "started, rule_key=" . ($args['rule_key'] ?? 'null')
+    "started, rule_id=" . $rule_id
     . ", user=" . ($args['user_id'] ?? 'null')
 );
 
@@ -163,29 +165,28 @@ try {
     $config_service = new LlmMemoryConfigService($services);
     $update_service = new LlmMemoryUpdateService($services, $config_service);
 
-    $rule_key = $args['rule_key'] ?? null;
-    if (!$rule_key) {
-        llm_memory_worker_log('missing rule_key in args', $args);
-        fwrite(STDERR, "LLM Memory Worker: No rule_key in args\n");
+    if ($rule_id <= 0) {
+        llm_memory_worker_log('missing rule_id in args', $args);
+        fwrite(STDERR, "LLM Memory Worker: No rule_id in args\n");
         exit(1);
     }
 
     llm_memory_worker_log('resolving rule', array(
-        'rule_key' => $rule_key,
+        'rule_id' => $rule_id,
         'user_id' => $args['user_id'] ?? null,
     ));
 
-    $rule = $config_service->getRuleByKey($rule_key);
+    $rule = $config_service->getRuleById($rule_id);
     if (!$rule) {
-        llm_memory_worker_log('rule not found', array('rule_key' => $rule_key));
+        llm_memory_worker_log('rule not found', array('rule_id' => $rule_id));
         $transaction = $services->get_transaction();
         $transaction->add_transaction(
             transactionTypes_insert,
             TRANSACTION_BY_LLM_MEMORY,
             null, null, null, false,
-            "LLM Memory Worker: Rule not found; key=" . $rule_key
+            "LLM Memory Worker: Rule not found; id=" . $rule_id
         );
-        fwrite(STDERR, "LLM Memory Worker: Rule not found: $rule_key\n");
+        fwrite(STDERR, "LLM Memory Worker: Rule not found: id=$rule_id\n");
         exit(1);
     }
 
@@ -203,7 +204,6 @@ try {
 
     llm_memory_worker_log('normalized payload prepared', array(
         'rule_id' => (int)($rule['id'] ?? 0),
-        'rule_key' => (string)($rule['key'] ?? ''),
         'execution_mode' => (string)($rule['execution_mode'] ?? ''),
         'source_type' => (string)($normalized_payload['source_type'] ?? ''),
         'trigger_type' => (string)($normalized_payload['trigger_type'] ?? ''),
@@ -214,20 +214,20 @@ try {
     ));
 
     llm_memory_worker_log('starting executeLlmSummarization', array(
-        'rule_key' => (string)($rule['key'] ?? ''),
+        'rule_id' => (int)($rule['id'] ?? 0),
         'user_id' => (int)($normalized_payload['user_id'] ?? 0),
     ));
 
     $success = $update_service->executeLlmSummarization($rule, $normalized_payload);
 
     llm_memory_worker_log('executeLlmSummarization finished', array(
-        'rule_key' => (string)($rule['key'] ?? ''),
+        'rule_id' => (int)($rule['id'] ?? 0),
         'user_id' => (int)($normalized_payload['user_id'] ?? 0),
         'success' => (bool)$success,
     ));
 
     llm_memory_worker_debug(
-        "Rule '" . $rule_key . "' "
+        "Rule #" . $rule_id . " "
         . ($success ? "completed successfully" : "failed")
         . " for user " . $args['user_id']
     );

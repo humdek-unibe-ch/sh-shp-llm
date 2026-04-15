@@ -2,99 +2,30 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.2.0] - 2026-04-14 Pre-release
+## [1.2.0] - 2026-04-15 Pre-release
 
 ### Admin UI Redesign
 
-- Replaced the CMS-driven property page with a unified admin layout featuring a persistent left sidebar and per-section content panels.
-- All four admin sections (Settings, Conversations, Scripts, Memory) now share a common sidebar navigation shell.
-- Each section remains a separate ACL-controlled page, preserving SelfHelp's standard permission model.
-- The existing `sh_module_llm` page is converted from `backend` to `component` action, rendering a React-based settings interface for API keys, model defaults, and memory configuration.
-- Settings remain stored in `pages_fields` on the same `sh_module_llm` page, preserving backward compatibility with all 20+ service classes.
-- Normalized all admin URLs under `/admin/module_llm/` hierarchy.
-- Removed the obsolete `llm_panel` field and its CMS hooks (sidebar replaces the old button panel).
-- Removed cross-navigation buttons from React apps (sidebar handles all navigation).
-- Added page title translations (EN/DE) for all admin pages to populate sidebar labels.
-- Responsive layout: sidebar collapses to a horizontal menu on small screens.
+- Unified admin layout with persistent sidebar navigation for Settings, Conversations, Scripts, and Memory sections.
+- Each section is a separate ACL-controlled page under `/admin/module_llm/`.
+- Settings page converted to React-based interface for API keys, model defaults, and memory configuration.
+- Responsive sidebar collapses to horizontal menu on small screens.
 
 ### Global User Memory
 
-- Added a full global user memory feature for the LLM module.
-- Memory is now managed centrally at module level instead of being tied to a single `llmChat` section.
-- Admins can enable memory, choose a default memory key, choose storage mode, and define current/history table names from `sh_module_llm`.
-- Supported storage modes:
-  - `record` for current state only
-  - `log` for history only
-  - `both` for current state plus history
+- Centralized user memory at module level with configurable storage modes (`record`, `log`, or `both`).
+- Dedicated Memory admin page with tabs for Overview, Rules, Sources, Users, and Activity.
+- Memory rules stored in normalized `llm_memory_rules` table with full CRUD, duplication, and source visibility.
+- Prompt Lab integration for memory rules: version history, diff, playground, datasets, and prompt builder.
+- Triggers from form actions, llmChat fallback, login, and profile name changes.
+- Admin user browser with memory inspection, history diff, manual editing, rebuild, and rerun.
 
-### New Memory Admin Page
+### Memory System Cleanup
 
-- Added a dedicated `LLM Memory` admin page (`moduleLlmMemory`).
-- The page is organized into sharable URL-driven tabs:
-  - `Overview`
-  - `Rules`
-  - `Sources`
-  - `Users`
-- Added overview metrics for memory status, storage mode, rule counts, tables, user counts, and recent activity.
-- Added a user browser for current memory, history, before/after comparison, rebuild, rerun, delete, and manual edits.
-- Added URL state for selected tab, rule, user, memory key, edit mode, and history mode so links can be shared directly.
-
-### Rule Management
-
-- Replaced the old unreleased JSON/CMS-field memory rule editor with a dedicated rule-management UI.
-- Memory rules are now stored in a normalized `llm_memory_rules` table instead of module JSON.
-- Added rule CRUD, duplication, enable/disable handling, source matching, execution mode selection, and structured JSON editing for advanced fields.
-- Added derived source visibility so admins can see where each memory rule is used.
-
-### Prompt Lab For Memory Rules
-
-- Added first-class Prompt Lab support for memory rules through `llm_memory_rule`.
-- Each memory rule now owns its prompt directly, with stable rule-based ownership instead of the earlier temporary module-scoped approach.
-- Memory rule prompts now support:
-  - version history
-  - compare/diff
-  - playground runs
-  - datasets
-  - prompt builder
-- Memory playground execution is now handled explicitly as `memory_runtime`.
-
-### Memory Updates And Usage
-
-- Memory rules still work with the existing SelfHelp architecture:
-  - form actions via `llm_memory_update`
-  - `llmChat` fallback triggers when data saving is off
-  - login triggers
-  - profile name change triggers
-- Memory usage remains explicit through `data_config`; there is no hidden automatic injection into prompts.
-- Added recent activity inspection and better write-source visibility for form actions, chat fallback bindings, and system-triggered rules.
-
-### Admin Editing And Auditability
-
-- Added manual memory editing from the memory admin page.
-- Manual edits are recorded through normal memory history plus transaction attribution, so changes remain traceable.
-- Added clearer history inspection with:
-  - previous memory
-  - new memory
-  - field-level diff view
-  - source reference and payload inspection
-
-### Improvements And Cleanup
-
-- Removed the unreleased CMS memory-rules editor path and its old bundle/template hooks.
-- Simplified the admin console so it now only links to memory instead of carrying extra dead memory UI scaffolding.
-- Consolidated the memory page to use its own API surface instead of depending on admin-console URL context.
-- Removed the remaining cross-repo dependency for profile-name-change memory triggers so the plugin owns the feature end to end.
-- Updated docs and migration scope to match the final dedicated-page memory design.
-- Refined the memory rule editor into a simpler guided flow:
-  - removed editable rule keys from the normal UI
-  - removed trigger-type editing from the normal UI
-  - removed source-match editing from the normal UI
-  - added clearer multi-key selection, direct-mapping help text, and shared data-config / refresh-section tooling
-- Reworked memory form-action linking so actions now attach to explicit memory rule IDs instead of free-text rule keys.
-- Limited the form-action memory rule dropdown to `form_action_submit` rules only and removed auto-match behavior from the action UI.
-- Defaulted form-action memory jobs to async execution.
-- Fixed memory prompt save behavior so saving a changed rule prompt refreshes the prompt-lab state correctly and creates the expected new version stream state.
-- Hid the `LLM chat form submit` source from the rule editor for now, with a TODO to re-enable it once its attachment UX is finalized.
+- Rules identified exclusively by integer `rule_id`; removed `rule_key`, `memory_key`, and `usage_tags_json` columns.
+- Unified current/history table column names by dropping the `last_` prefix.
+- Flat fields stored inside `memory_json` instead of as dynamic `dataCols`.
+- All PHP services, hooks, controllers, async worker, and React frontend updated to use `rule_id` only.
 
 ## [1.1.0] - 2026-03-19
 

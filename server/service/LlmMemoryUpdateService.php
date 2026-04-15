@@ -47,13 +47,14 @@ class LlmMemoryUpdateService extends BaseLlmService
     public function executeDirectMapping($rule, $normalized_payload)
     {
         $user_id = $normalized_payload['user_id'];
+        $rule_id = (int)($rule['id'] ?? 0);
         $memory_key = $this->resolveEffectiveMemoryKey($rule, $normalized_payload);
         $storage_mode = !empty($normalized_payload['force_storage_mode'])
             ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
             : $this->config_service->resolveStorageMode($rule);
 
         $dedupe_key = LlmMemoryConfigService::buildDedupeKey(
-            $user_id, $memory_key, $rule['key'],
+            $user_id, $memory_key, $rule_id,
             $normalized_payload['source_type'],
             $normalized_payload['source_ref'] ?? '',
             $normalized_payload['trigger_type'] ?? '',
@@ -85,7 +86,7 @@ class LlmMemoryUpdateService extends BaseLlmService
         ];
 
         $metadata = [
-            'rule_key'      => $rule['key'],
+            'rule_id'       => $rule_id,
             'source_type'   => $normalized_payload['source_type'],
             'source_ref'    => $normalized_payload['source_ref'] ?? '',
             'trigger_type'  => $normalized_payload['trigger_type'] ?? '',
@@ -109,13 +110,14 @@ class LlmMemoryUpdateService extends BaseLlmService
     public function executeLlmSummarization($rule, $normalized_payload)
     {
         $user_id = $normalized_payload['user_id'];
+        $rule_id = (int)($rule['id'] ?? 0);
         $memory_key = $this->resolveEffectiveMemoryKey($rule, $normalized_payload);
         $storage_mode = !empty($normalized_payload['force_storage_mode'])
             ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
             : $this->config_service->resolveStorageMode($rule);
 
         $dedupe_key = LlmMemoryConfigService::buildDedupeKey(
-            $user_id, $memory_key, $rule['key'],
+            $user_id, $memory_key, $rule_id,
             $normalized_payload['source_type'],
             $normalized_payload['source_ref'] ?? '',
             $normalized_payload['trigger_type'] ?? '',
@@ -145,8 +147,8 @@ class LlmMemoryUpdateService extends BaseLlmService
         $max_tokens = isset($rule['llm_max_tokens']) ? (int)$rule['llm_max_tokens'] : 1200;
 
         if (defined('DEBUG') && DEBUG) {
-            error_log('LLM Memory: resolved model for rule '
-                . ($rule['key'] ?? 'unknown')
+            error_log('LLM Memory: resolved model for rule #'
+                . $rule_id
                 . ' => ' . ($model !== '' ? $model : '[empty]'));
         }
 
@@ -166,18 +168,18 @@ class LlmMemoryUpdateService extends BaseLlmService
             );
 
             if (!$response || !isset($response['content'])) {
-                $this->handleFailedUpdate($user_id, $rule['key'], $dedupe_key, 'No content in LLM response');
+                $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key, 'No content in LLM response');
                 return false;
             }
 
             $memory_data = $this->parseMemoryOutput($response['content']);
             if (!$memory_data) {
-                $this->handleFailedUpdate($user_id, $rule['key'], $dedupe_key, 'Failed to parse LLM output as valid memory structure');
+                $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key, 'Failed to parse LLM output as valid memory structure');
                 return false;
             }
 
             $metadata = [
-                'rule_key'      => $rule['key'],
+                'rule_id'       => $rule_id,
                 'source_type'   => $normalized_payload['source_type'],
                 'source_ref'    => $normalized_payload['source_ref'] ?? '',
                 'trigger_type'  => $normalized_payload['trigger_type'] ?? '',
@@ -198,7 +200,7 @@ class LlmMemoryUpdateService extends BaseLlmService
                         $user_id,
                         $section_ids,
                         'llm_memory_updated',
-                        json_encode(['rule_key' => $rule['key'], 'memory_key' => $memory_key])
+                        json_encode(['rule_id' => $rule_id, 'memory_key' => $memory_key])
                     );
                 }
             }
@@ -206,7 +208,7 @@ class LlmMemoryUpdateService extends BaseLlmService
             return $success;
 
         } catch (Exception $e) {
-            $this->handleFailedUpdate($user_id, $rule['key'], $dedupe_key, $e->getMessage());
+            $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key, $e->getMessage());
             return false;
         }
     }
@@ -219,6 +221,7 @@ class LlmMemoryUpdateService extends BaseLlmService
      * @param array      $rule
      * @param array      $normalized_payload
      * @param array|null $current_memory
+     * @param string     $memory_key
      * @return array API messages
      */
     private function buildPrompt($rule, $normalized_payload, $current_memory, $memory_key)
@@ -520,7 +523,6 @@ class LlmMemoryUpdateService extends BaseLlmService
 
     /**
      * Resolve or create a conversation ID dedicated to memory updates for this user/key.
-     * Uses a stable title pattern so repeated calls reuse the same conversation.
      */
     private function resolveMemoryConversationId($user_id, $memory_key, $model = null)
     {
@@ -555,13 +557,14 @@ class LlmMemoryUpdateService extends BaseLlmService
      */
     private function persistIgnored($user_id, $memory_key, $rule, $normalized_payload, $dedupe_key, $status)
     {
+        $rule_id = (int)($rule['id'] ?? 0);
         if (defined('DEBUG') && DEBUG) {
-            error_log("LLM Memory: $status for user=$user_id, rule=" . $rule['key'] . ", dedupe=$dedupe_key");
+            error_log("LLM Memory: $status for user=$user_id, rule_id=$rule_id, dedupe=$dedupe_key");
         }
 
         $this->storage_service->initializeMemoryTables();
         $this->storage_service->persistIgnoredHistory($user_id, $memory_key, [
-            'rule_key'      => $rule['key'],
+            'rule_id'       => $rule_id,
             'source_type'   => $normalized_payload['source_type'] ?? '',
             'source_ref'    => $normalized_payload['source_ref'] ?? '',
             'trigger_type'  => $normalized_payload['trigger_type'] ?? '',
@@ -576,36 +579,33 @@ class LlmMemoryUpdateService extends BaseLlmService
      * Log a memory update failure to error_log and the transaction audit trail.
      *
      * @param int    $user_id    User ID.
-     * @param string $rule_key   Rule key that failed.
+     * @param int    $rule_id    Rule ID that failed.
      * @param string $dedupe_key Deduplication key.
      * @param string $error      Error message.
      */
-    private function logFailure($user_id, $rule_key, $dedupe_key, $error)
+    private function logFailure($user_id, $rule_id, $dedupe_key, $error)
     {
-        error_log("LLM Memory: update failed for user=$user_id, rule=$rule_key: $error");
+        error_log("LLM Memory: update failed for user=$user_id, rule_id=$rule_id: $error");
         $this->services->get_transaction()->add_transaction(
             transactionTypes_insert,
             TRANSACTION_BY_LLM_MEMORY,
             $user_id, null, null, false,
-            "Memory update failed: rule=$rule_key, error=$error"
+            "Memory update failed: rule_id=$rule_id, error=$error"
         );
     }
 
     /**
      * Handle a failed memory update.
-     * Per design: failures are only logged via the transaction system,
-     * NOT persisted as history rows. This prevents polluting the history
-     * table with incomplete data.
      */
-    private function handleFailedUpdate($user_id, $rule_key, $dedupe_key, $error_detail)
+    private function handleFailedUpdate($user_id, $rule_id, $dedupe_key, $error_detail)
     {
-        $this->logFailure($user_id, $rule_key, $dedupe_key, $error_detail);
+        $this->logFailure($user_id, $rule_id, $dedupe_key, $error_detail);
     }
 
     /**
-     * Determine the effective memory key, using payload override if present, otherwise the rule key.
+     * Determine the effective memory key, using payload override if present, otherwise the rule config.
      *
-     * @param array $rule               Rule row with 'key'.
+     * @param array $rule               Rule row.
      * @param array $normalized_payload Payload with optional 'memory_key_override'.
      * @return string Effective memory key.
      */

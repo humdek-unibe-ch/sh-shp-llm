@@ -47,14 +47,13 @@ interface MemoryKeyRecord {
 
 interface SourceRuleRef {
   id: number;
-  key: string;
   label?: string;
 }
 
 interface MemorySourceRecord {
   source_category?: string;
   source_type?: string;
-  rule_keys?: string[];
+  rule_ids?: number[];
   rule_refs?: SourceRuleRef[];
   trigger_type?: string;
   target_label?: string;
@@ -501,7 +500,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                               {(source.rule_refs || []).length > 0 ? (
                                 <div className="memory-source-card__rules">
                                   {(source.rule_refs || []).map((ruleRef) => (
-                                    <Badge key={ruleRef.id || ruleRef.key} variant="light">
+                                    <Badge key={ruleRef.id} variant="light">
                                       {ruleRef.label || (ruleRef.id > 0 ? `Rule #${ruleRef.id}` : 'Deleted rule')}
                                     </Badge>
                                   ))}
@@ -572,7 +571,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                                 <tr key={`${String(item.record_id || index)}`}>
                                   <td>{String(item.event_at || item.created_at || '')}</td>
                                   <td>{String(item.user_name || `User #${String(item.id_users || '')}`)}</td>
-                                  <td>{String(item.rule_key || '-')}</td>
+                                  <td>{String(item.rule_id || '-')}</td>
                                   <td>{String(item.update_status || '-')}</td>
                                 </tr>
                               ))}

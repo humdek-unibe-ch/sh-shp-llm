@@ -8,8 +8,11 @@ require_once __DIR__ . '/LlmMemoryConfigService.php';
 
 /**
  * Handles memory storage operations: initializing dataTables,
- * reading effective memory, writing current memory, appending history rows,
- * and flattening fields into columns.
+ * reading effective memory, writing current memory, appending history rows.
+ *
+ * Both current and history tables share a unified column naming scheme.
+ * Dynamic flat_fields are NOT written as separate dataTable columns --
+ * they are stored inside the `memory_json` column only.
  */
 class LlmMemoryStorageService extends BaseLlmService
 {
@@ -62,8 +65,8 @@ class LlmMemoryStorageService extends BaseLlmService
      *
      * @param int    $user_id
      * @param string $memory_key
-     * @param array  $memory_data Keys: memory_text, memory_json, flat_fields, change_summary
-     * @param array  $metadata    Keys: rule_key, source_type, source_ref, trigger_type, payload_json, event_at, dedupe_key
+     * @param array  $memory_data Keys: memory_text, memory_object, flat_fields, change_summary
+     * @param array  $metadata    Keys: rule_id, source_type, source_ref, trigger_type, payload_json, event_at, dedupe_key
      * @param string $storage_mode record|log|both
      * @return bool
      */
@@ -161,8 +164,6 @@ class LlmMemoryStorageService extends BaseLlmService
 
     /**
      * Get all user memory entries (for admin listing).
-     * Storage-mode-neutral: reads current table first, falls back to
-     * history table if current is empty (pure log mode).
      *
      * @param int|null $limit
      * @param int $offset
@@ -216,7 +217,7 @@ class LlmMemoryStorageService extends BaseLlmService
         $current_table = $this->config_service->getCurrentTableName();
         $current_id = $user_input->get_dataTable_id($current_table);
         if ($current_id) {
-            $row_ids = $this->findMatchingRowIds($current_id, ['last_dedupe_key' => $dedupe_key], null, true, 1, 0);
+            $row_ids = $this->findMatchingRowIds($current_id, ['dedupe_key' => $dedupe_key], null, true, 1, 0);
             if (!empty($row_ids)) {
                 return true;
             }
@@ -245,7 +246,7 @@ class LlmMemoryStorageService extends BaseLlmService
     }
 
     /**
-     * Return the reserved, non-flat memory field names.
+     * Return the reserved memory field names (unified for both current and history tables).
      *
      * @return array
      */
@@ -253,36 +254,15 @@ class LlmMemoryStorageService extends BaseLlmService
     {
         return [
             'id_users', 'memory_key', 'memory_text', 'memory_json', 'memory_version',
-            'last_rule_key', 'last_source_type', 'last_source_ref', 'last_trigger_type',
-            'last_payload_json', 'last_updated_at', 'last_event_at', 'last_dedupe_key',
-            'prev_memory_json', 'rule_key', 'source_type', 'source_ref', 'trigger_type',
-            'payload_json', 'change_summary', 'worker_status', 'created_at', 'event_at',
-            'dedupe_key', 'update_status', 'record_id', 'created', 'updated', 'deleted'
+            'rule_id', 'source_type', 'source_ref', 'trigger_type',
+            'payload_json', 'updated_at', 'event_at', 'dedupe_key',
+            'prev_memory_json', 'change_summary', 'update_status',
+            'created_at', 'record_id', 'created', 'updated', 'deleted'
         ];
     }
 
     /**
-     * Extract flattened dynamic fields from a memory row.
-     *
-     * @param array $row
-     * @return array
-     */
-    public function extractFlatFieldsFromRow($row)
-    {
-        $reserved = array_flip(self::getReservedMemoryFieldNames());
-        $flat = [];
-        foreach ((array)$row as $key => $value) {
-            if (isset($reserved[$key]) || $value === null || $value === '') {
-                continue;
-            }
-            $flat[$key] = $value;
-        }
-        return $flat;
-    }
-
-    /**
      * Check ordering guard: is the incoming event newer than what's stored?
-     * Checks both current table and latest history row for robustness.
      *
      * @param int    $user_id
      * @param string $memory_key
@@ -295,8 +275,8 @@ class LlmMemoryStorageService extends BaseLlmService
         $latest_stored = null;
 
         $current = $this->getCurrentMemoryRow($user_id, $memory_key);
-        if ($current && !empty($current['last_event_at'])) {
-            $latest_stored = strtotime($current['last_event_at']);
+        if ($current && !empty($current['event_at'])) {
+            $latest_stored = strtotime($current['event_at']);
         }
 
         $latest_history = $this->getLatestHistoryRow($user_id, $memory_key);
@@ -343,11 +323,10 @@ class LlmMemoryStorageService extends BaseLlmService
         }
 
         try {
-            $this->db->insert('dataTables', [
+            return $this->db->insert('dataTables', [
                 'name'        => $table_name,
                 'displayName' => $display_name,
             ]);
-            return $this->db->get_last_insert_id();
         } catch (Exception $e) {
             $this->logError('Failed to create memory dataTable: ' . $table_name, ['error' => $e->getMessage()]);
             return null;
@@ -524,7 +503,7 @@ class LlmMemoryStorageService extends BaseLlmService
      * @param int    $user_id    User ID.
      * @param string $memory_key Memory key.
      * @param array  $memory_data {memory_text, memory_object, flat_fields}.
-     * @param array  $metadata   {rule_key, source_type, source_ref, trigger_type, payload_json, ...}.
+     * @param array  $metadata   {rule_id, source_type, source_ref, trigger_type, payload_json, ...}.
      * @return bool True on success.
      */
     private function upsertCurrentMemory($user_id, $memory_key, $memory_data, $metadata)
@@ -572,7 +551,7 @@ class LlmMemoryStorageService extends BaseLlmService
      * @param int    $user_id    User ID.
      * @param string $memory_key Memory key.
      * @param array  $memory_data {memory_text, memory_object, change_summary, flat_fields}.
-     * @param array  $metadata   {rule_key, source_type, update_status, ...}.
+     * @param array  $metadata   {rule_id, source_type, update_status, ...}.
      * @return bool True on success.
      */
     private function appendHistoryRow($user_id, $memory_key, $memory_data, $metadata)
@@ -608,48 +587,43 @@ class LlmMemoryStorageService extends BaseLlmService
 
     /**
      * Build the field array for an upsert into the current-state memory table.
+     * Uses unified column names (no `last_` prefix). No dynamic flat_fields columns.
      *
-     * @param string $memory_key  Memory key.
+     * @param int    $user_id    User ID.
+     * @param string $memory_key Memory key.
      * @param array  $memory_data Memory data with text, object, and optional flat_fields.
      * @param array  $metadata    Source and trigger metadata.
      * @return array Key-value pairs for save_data().
      */
     private function buildCurrentMemoryFields($user_id, $memory_key, $memory_data, $metadata)
     {
-        $fields = [
-            'id_users'           => (int)$user_id,
-            'memory_key'        => $memory_key,
-            'memory_text'       => $memory_data['memory_text'] ?? '',
-            'memory_json'       => is_string($memory_data['memory_object'] ?? null)
+        return [
+            'id_users'       => (int)$user_id,
+            'memory_key'     => $memory_key,
+            'memory_text'    => $memory_data['memory_text'] ?? '',
+            'memory_json'    => is_string($memory_data['memory_object'] ?? null)
                 ? $memory_data['memory_object']
                 : json_encode($memory_data['memory_object'] ?? [], JSON_UNESCAPED_SLASHES),
-            'memory_version'    => date('YmdHis'),
-            'last_rule_key'     => $metadata['rule_key'] ?? '',
-            'last_source_type'  => $metadata['source_type'] ?? '',
-            'last_source_ref'   => $metadata['source_ref'] ?? '',
-            'last_trigger_type' => $metadata['trigger_type'] ?? '',
-            'last_payload_json' => is_string($metadata['payload_json'] ?? null)
+            'memory_version' => date('YmdHis'),
+            'rule_id'        => (int)($metadata['rule_id'] ?? 0),
+            'source_type'    => $metadata['source_type'] ?? '',
+            'source_ref'     => $metadata['source_ref'] ?? '',
+            'trigger_type'   => $metadata['trigger_type'] ?? '',
+            'payload_json'   => is_string($metadata['payload_json'] ?? null)
                 ? $metadata['payload_json']
                 : json_encode($metadata['payload_json'] ?? [], JSON_UNESCAPED_SLASHES),
-            'last_updated_at'   => date('Y-m-d H:i:s'),
-            'last_event_at'     => $metadata['event_at'] ?? date('Y-m-d H:i:s'),
-            'last_dedupe_key'   => $metadata['dedupe_key'] ?? '',
+            'updated_at'     => date('Y-m-d H:i:s'),
+            'event_at'       => $metadata['event_at'] ?? date('Y-m-d H:i:s'),
+            'dedupe_key'     => $metadata['dedupe_key'] ?? '',
         ];
-
-        $flat_fields = $memory_data['flat_fields'] ?? [];
-        if (is_array($flat_fields)) {
-            foreach ($flat_fields as $key => $value) {
-                $fields[$key] = is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_SLASHES);
-            }
-        }
-
-        return $fields;
     }
 
     /**
      * Build the field array for appending a row to the memory history table.
+     * Uses unified column names. No dynamic flat_fields columns.
      *
-     * @param string $memory_key  Memory key.
+     * @param int    $user_id    User ID.
+     * @param string $memory_key Memory key.
      * @param array  $memory_data Memory data with text, object, change_summary, flat_fields.
      * @param array  $metadata    Source, trigger, and status metadata.
      * @param string $prev_json   Previous memory_json for diff tracking.
@@ -657,36 +631,27 @@ class LlmMemoryStorageService extends BaseLlmService
      */
     private function buildHistoryFields($user_id, $memory_key, $memory_data, $metadata, $prev_json)
     {
-        $fields = [
-            'id_users'       => (int)$user_id,
-            'memory_key'     => $memory_key,
-            'memory_text'    => $memory_data['memory_text'] ?? '',
-            'memory_json'    => is_string($memory_data['memory_object'] ?? null)
+        return [
+            'id_users'        => (int)$user_id,
+            'memory_key'      => $memory_key,
+            'memory_text'     => $memory_data['memory_text'] ?? '',
+            'memory_json'     => is_string($memory_data['memory_object'] ?? null)
                 ? $memory_data['memory_object']
                 : json_encode($memory_data['memory_object'] ?? [], JSON_UNESCAPED_SLASHES),
             'prev_memory_json' => $prev_json,
-            'rule_key'       => $metadata['rule_key'] ?? '',
-            'source_type'    => $metadata['source_type'] ?? '',
-            'source_ref'     => $metadata['source_ref'] ?? '',
-            'trigger_type'   => $metadata['trigger_type'] ?? '',
-            'payload_json'   => is_string($metadata['payload_json'] ?? null)
+            'rule_id'         => (int)($metadata['rule_id'] ?? 0),
+            'source_type'     => $metadata['source_type'] ?? '',
+            'source_ref'      => $metadata['source_ref'] ?? '',
+            'trigger_type'    => $metadata['trigger_type'] ?? '',
+            'payload_json'    => is_string($metadata['payload_json'] ?? null)
                 ? $metadata['payload_json']
                 : json_encode($metadata['payload_json'] ?? [], JSON_UNESCAPED_SLASHES),
-            'change_summary' => $memory_data['change_summary'] ?? '',
-            'update_status'  => $metadata['update_status'] ?? LLM_MEMORY_STATUS_APPLIED,
-            'created_at'     => date('Y-m-d H:i:s'),
-            'event_at'       => $metadata['event_at'] ?? date('Y-m-d H:i:s'),
-            'dedupe_key'     => $metadata['dedupe_key'] ?? '',
+            'change_summary'  => $memory_data['change_summary'] ?? '',
+            'update_status'   => $metadata['update_status'] ?? LLM_MEMORY_STATUS_APPLIED,
+            'created_at'      => date('Y-m-d H:i:s'),
+            'event_at'        => $metadata['event_at'] ?? date('Y-m-d H:i:s'),
+            'dedupe_key'      => $metadata['dedupe_key'] ?? '',
         ];
-
-        $flat_fields = $memory_data['flat_fields'] ?? [];
-        if (is_array($flat_fields)) {
-            foreach ($flat_fields as $key => $value) {
-                $fields[$key] = is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_SLASHES);
-            }
-        }
-
-        return $fields;
     }
 }
 ?>

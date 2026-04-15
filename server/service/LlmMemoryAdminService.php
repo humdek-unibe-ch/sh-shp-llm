@@ -73,7 +73,7 @@ class LlmMemoryAdminService extends BaseLlmService
             if (!in_array($mk, $user_map[$uid]['memory_keys'])) {
                 $user_map[$uid]['memory_keys'][] = $mk;
             }
-            $event_at = $entry['last_event_at'] ?? $entry['event_at'] ?? $entry['last_updated_at'] ?? null;
+            $event_at = $entry['event_at'] ?? $entry['updated_at'] ?? null;
             if ($event_at && (!$user_map[$uid]['last_updated'] || $event_at > $user_map[$uid]['last_updated'])) {
                 $user_map[$uid]['last_updated'] = $event_at;
             }
@@ -257,19 +257,21 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Count how many write sources reference each rule key.
+     * Count how many write sources reference each rule ID.
      *
-     * @return array
+     * @return array Keyed by rule ID => count.
      */
     public function getRuleUsageCounts()
     {
         $counts = array();
         foreach ($this->getWriteSources() as $source) {
-            foreach ((array)($source['rule_keys'] ?? array()) as $rule_key) {
-                if (!isset($counts[$rule_key])) {
-                    $counts[$rule_key] = 0;
+            foreach ((array)($source['rule_ids'] ?? array()) as $rule_id) {
+                $rule_id = (int)$rule_id;
+                if ($rule_id <= 0) continue;
+                if (!isset($counts[$rule_id])) {
+                    $counts[$rule_id] = 0;
                 }
-                $counts[$rule_key]++;
+                $counts[$rule_id]++;
             }
         }
         return $counts;
@@ -297,13 +299,13 @@ class LlmMemoryAdminService extends BaseLlmService
      * Manually re-run a memory rule for a specific user with an admin-supplied payload.
      *
      * @param int    $user_id
-     * @param string $rule_key
+     * @param int    $rule_id
      * @param array  $manual_payload   Optional field overrides
      * @return bool
      */
-    public function reRunRuleForUser($user_id, $rule_key, $manual_payload = [])
+    public function reRunRuleForUser($user_id, $rule_id, $manual_payload = [])
     {
-        $rule = $this->config_service->getRuleByKey($rule_key);
+        $rule = $this->config_service->getRuleById((int)$rule_id);
         if (!$rule) {
             return false;
         }
@@ -312,7 +314,7 @@ class LlmMemoryAdminService extends BaseLlmService
             'source_type'  => 'admin_manual',
             'source_ref'   => json_encode([
                 'admin_rerun' => true,
-                'rule_key' => $rule_key,
+                'rule_id' => (int)$rule_id,
                 'admin_user_id' => $_SESSION['id_user'] ?? null,
             ]),
             'trigger_type' => 'manual',
@@ -335,7 +337,7 @@ class LlmMemoryAdminService extends BaseLlmService
      *
      * @param int   $user_id
      * @param array $manual_payload  Optional field overrides
-     * @return array Rule keys that were run
+     * @return array Memory keys that were rebuilt
      */
     public function rebuildUserMemory($user_id, $manual_payload = [])
     {
@@ -359,16 +361,15 @@ class LlmMemoryAdminService extends BaseLlmService
                 $memory_object = [];
             }
 
-            $flat_fields = $this->storage_service->extractFlatFieldsFromRow($row);
             $memory_data = [
                 'memory_text'    => (string)($row['memory_text'] ?? ''),
                 'memory_object'  => $memory_object,
-                'flat_fields'    => $flat_fields,
+                'flat_fields'    => [],
                 'change_summary' => 'Rebuilt current memory from history.',
             ];
 
             $metadata = [
-                'rule_key'      => 'admin_rebuild_from_history',
+                'rule_id'       => 0,
                 'source_type'   => 'admin_manual',
                 'source_ref'    => json_encode([
                     'rebuild_from_history' => true,
@@ -404,7 +405,7 @@ class LlmMemoryAdminService extends BaseLlmService
         $storage_mode = $this->config_service->getStorageMode();
 
         $metadata = [
-            'rule_key'      => 'admin_edit',
+            'rule_id'       => 0,
             'source_type'   => 'admin_manual',
             'source_ref'    => json_encode([
                 'admin_edit' => true,
@@ -438,7 +439,7 @@ class LlmMemoryAdminService extends BaseLlmService
         ];
 
         $metadata = [
-            'rule_key'      => 'admin_delete',
+            'rule_id'       => 0,
             'source_type'   => 'admin_manual',
             'source_ref'    => json_encode([
                 'admin_delete' => true,
@@ -493,7 +494,7 @@ class LlmMemoryAdminService extends BaseLlmService
     /**
      * Collect memory write-source definitions from form actions that contain memory-update jobs.
      *
-     * @return array Source descriptors with rule_keys, trigger_type, and target metadata.
+     * @return array Source descriptors with rule_ids, trigger_type, and target metadata.
      */
     private function getFormActionSources()
     {
@@ -513,11 +514,11 @@ class LlmMemoryAdminService extends BaseLlmService
             }
 
             foreach ($this->extractMemoryJobsFromConfig($config) as $job) {
-                $rule_keys = $this->resolveJobRuleKeys($job);
+                $rule_ids = $this->resolveJobRuleIds($job);
                 $sources[] = array(
                     'source_category' => 'form_action',
                     'source_type' => LLM_MEMORY_SOURCE_FORM_ACTION,
-                    'rule_keys' => $rule_keys,
+                    'rule_ids' => $rule_ids,
                     'trigger_type' => $row['trigger_type'] ?? ($job['trigger_type'] ?? ''),
                     'target_label' => $row['action_name'] ?? ('Action #' . ($row['id'] ?? '')),
                     'target_secondary' => $row['table_name'] ?? ($row['dataTable_name'] ?? ''),
@@ -536,9 +537,9 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Collect memory write-sources from llmChat sections that have fallback memory_rule_keys configured.
+     * Collect memory write-sources from llmChat sections that have fallback memory_rule_ids configured.
      *
-     * @return array Source descriptors with section/page metadata and resolved rule keys.
+     * @return array Source descriptors with section/page metadata and resolved rule IDs.
      */
     private function getLlmChatFallbackSources()
     {
@@ -560,16 +561,16 @@ class LlmMemoryAdminService extends BaseLlmService
 
         $sources = array();
         foreach ($section_rows as $row) {
-            $values = $profile_service->getStyleFieldValues((int)$row['id'], 1, array('memory_rule_keys'));
-            $rule_keys = $this->normalizeRuleKeys($values['memory_rule_keys'] ?? '');
-            if (empty($rule_keys)) {
+            $values = $profile_service->getStyleFieldValues((int)$row['id'], 1, array('memory_rule_ids'));
+            $rule_ids = $this->rule_service->normalizeRuleIds($values['memory_rule_ids'] ?? '');
+            if (empty($rule_ids)) {
                 continue;
             }
 
             $sources[] = array(
                 'source_category' => 'llm_chat_fallback',
                 'source_type' => LLM_MEMORY_SOURCE_LLM_CHAT_FORM,
-                'rule_keys' => $rule_keys,
+                'rule_ids' => $rule_ids,
                 'trigger_type' => 'finished',
                 'target_label' => $row['section_name'] ?? ('Section #' . $row['id']),
                 'target_secondary' => 'llmChat fallback',
@@ -605,15 +606,14 @@ class LlmMemoryAdminService extends BaseLlmService
             $sources[] = array(
                 'source_category' => 'system',
                 'source_type' => $rule['source_type'],
-                'rule_keys' => array($rule['key']),
+                'rule_ids' => array((int)$rule['id']),
                 'trigger_type' => '',
                 'target_label' => $rule['source_type'] === LLM_MEMORY_SOURCE_LOGIN ? 'Login trigger' : 'Profile name change trigger',
                 'target_secondary' => 'Plugin hook',
                 'target_id' => 0,
                 'target_url' => null,
                 'details' => array(
-                    'rule_id' => $rule['id'],
-                    'rule_key' => $rule['key'],
+                    'rule_id' => (int)$rule['id'],
                 ),
             );
         }
@@ -650,69 +650,14 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Parse a comma-separated string or array into a deduplicated list of rule keys.
+     * Resolve rule IDs from a job node.
      *
-     * @param string|array $raw Comma-separated string or array of keys.
-     * @return string[] Unique, trimmed, non-empty rule key strings.
+     * @param array $job Memory job node with memory_rule_id(s).
+     * @return int[] Resolved rule IDs.
      */
-    private function normalizeRuleKeys($raw)
+    private function resolveJobRuleIds($job)
     {
-        if (is_array($raw)) {
-            $keys = $raw;
-        } else {
-            $keys = explode(',', (string)$raw);
-        }
-
-        $keys = array_map('trim', $keys);
-        $keys = array_values(array_filter(array_unique($keys)));
-        return $keys;
-    }
-
-    /**
-     * Parse a comma-separated string or array into a deduplicated list of rule IDs.
-     *
-     * @param string|array $raw Comma-separated string or array of IDs.
-     * @return int[] Unique, non-zero integer rule IDs.
-     */
-    private function normalizeRuleIds($raw)
-    {
-        if (is_array($raw)) {
-            $ids = $raw;
-        } else {
-            $ids = explode(',', (string)$raw);
-        }
-
-        $ids = array_map('intval', $ids);
-        return array_values(array_filter(array_unique($ids)));
-    }
-
-    /**
-     * Resolve rule keys from a job node, falling back to ID-based lookup when keys are absent.
-     *
-     * @param array $job Memory job node with memory_rule_keys or memory_rule_id(s).
-     * @return string[] Resolved rule key strings.
-     */
-    private function resolveJobRuleKeys($job)
-    {
-        $rule_keys = $this->normalizeRuleKeys($job['memory_rule_keys'] ?? '');
-        if (!empty($rule_keys)) {
-            return $rule_keys;
-        }
-
-        $rule_ids = $this->normalizeRuleIds($job['memory_rule_id'] ?? ($job['memory_rule_ids'] ?? ''));
-        if (empty($rule_ids)) {
-            return array();
-        }
-
-        $resolved = array();
-        foreach ($rule_ids as $rule_id) {
-            $rule = $this->rule_service->getRuleById($rule_id);
-            if (!empty($rule['key'])) {
-                $resolved[] = $rule['key'];
-            }
-        }
-
-        return array_values(array_unique($resolved));
+        return $this->rule_service->normalizeRuleIds($job['memory_rule_id'] ?? ($job['memory_rule_ids'] ?? ''));
     }
 
     /**
@@ -728,46 +673,42 @@ class LlmMemoryAdminService extends BaseLlmService
         }
 
         return $this->services->get_router()->generate('moduleFormsAction', array('aid' => (int)$action_id, 'mode' => UPDATE));
-
-
     }
 
     /**
-     * Enrich source descriptors with resolved rule reference objects (id, key, label).
+     * Enrich source descriptors with resolved rule reference objects (id, label).
      *
-     * @param array $sources Source descriptors containing rule_keys arrays.
+     * @param array $sources Source descriptors containing rule_ids arrays.
      * @return array Same sources with an added rule_refs array on each entry.
      */
     private function decorateSourcesWithRuleRefs($sources)
     {
         $rule_index = array();
         foreach ($this->rule_service->listRules() as $rule) {
-            $key = trim((string)($rule['key'] ?? ''));
-            if ($key === '') {
+            $rule_id = (int)($rule['id'] ?? 0);
+            if ($rule_id <= 0) {
                 continue;
             }
 
-            $rule_index[$key] = array(
-                'id' => (int)($rule['id'] ?? 0),
-                'key' => $key,
+            $rule_index[$rule_id] = array(
+                'id' => $rule_id,
                 'label' => trim((string)($rule['label'] ?? '')),
             );
         }
 
         foreach ($sources as &$source) {
             $refs = array();
-            foreach ((array)($source['rule_keys'] ?? array()) as $rule_key) {
-                $rule_key = trim((string)$rule_key);
-                if ($rule_key === '') {
+            foreach ((array)($source['rule_ids'] ?? array()) as $rid) {
+                $rid = (int)$rid;
+                if ($rid <= 0) {
                     continue;
                 }
 
-                if (isset($rule_index[$rule_key])) {
-                    $refs[] = $rule_index[$rule_key];
+                if (isset($rule_index[$rid])) {
+                    $refs[] = $rule_index[$rid];
                 } else {
                     $refs[] = array(
-                        'id' => 0,
-                        'key' => $rule_key,
+                        'id' => $rid,
                         'label' => '',
                     );
                 }
@@ -780,10 +721,10 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Normalize a raw memory storage row by decoding JSON fields and extracting flat display fields.
+     * Normalize a raw memory storage row by decoding JSON fields.
      *
      * @param array $row Raw memory row from storage.
-     * @return array Enriched row with flat_fields, decoded memory/payload/source JSON.
+     * @return array Enriched row with decoded memory/payload/source JSON.
      */
     private function normalizeMemoryRow($row)
     {
@@ -791,13 +732,10 @@ class LlmMemoryAdminService extends BaseLlmService
             return $row;
         }
 
-        $row['flat_fields'] = $this->storage_service->extractFlatFieldsFromRow($row);
         $row['memory_json_decoded'] = $this->decodeJsonField($row['memory_json'] ?? '{}');
         $row['prev_memory_json_decoded'] = $this->decodeJsonField($row['prev_memory_json'] ?? '{}');
         $row['source_ref_decoded'] = $this->decodeJsonField($row['source_ref'] ?? '{}');
         $row['payload_json_decoded'] = $this->decodeJsonField($row['payload_json'] ?? '{}');
-        $row['last_source_ref_decoded'] = $this->decodeJsonField($row['last_source_ref'] ?? '{}');
-        $row['last_payload_json_decoded'] = $this->decodeJsonField($row['last_payload_json'] ?? '{}');
 
         return $row;
     }

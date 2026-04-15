@@ -67,10 +67,10 @@ INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `he
 ((SELECT id FROM pages WHERE keyword = 'sh_module_llm'), get_field_id('llm_memory_storage_mode'), 'memory_storage_both', 'Storage mode.');
 
 INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
-(NULL, 'memory_rule_keys', get_field_type_id('text'), '0');
+(NULL, 'memory_rule_ids', get_field_type_id('text'), '0');
 
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('llmChat'), get_field_id('memory_rule_keys'), '', 'Comma-separated memory rule keys to trigger on form submission when data saving is disabled. Used only as a fallback when form-action triggers are not available.');
+(get_style_id('llmChat'), get_field_id('memory_rule_ids'), '', 'Comma-separated memory rule IDs to trigger on form submission when data saving is disabled. Used only as a fallback when form-action triggers are not available.');
 
 -- =====================================================
 -- NORMALIZED MEMORY RULE TABLE
@@ -78,10 +78,8 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 
 CREATE TABLE IF NOT EXISTS `llm_memory_rules` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
-    `rule_key` VARCHAR(128) NOT NULL,
     `label` VARCHAR(255) DEFAULT NULL,
     `enabled` TINYINT(1) NOT NULL DEFAULT 1,
-    `memory_key` VARCHAR(128) NOT NULL DEFAULT 'global',
     `source_type` VARCHAR(64) NOT NULL,
     `source_match_json` LONGTEXT DEFAULT NULL,
     `trigger_types_json` LONGTEXT DEFAULT NULL,
@@ -93,13 +91,11 @@ CREATE TABLE IF NOT EXISTS `llm_memory_rules` (
     `llm_temperature` VARCHAR(32) DEFAULT NULL,
     `llm_max_tokens` INT DEFAULT NULL,
     `refresh_sections_json` LONGTEXT DEFAULT NULL,
-    `usage_tags_json` LONGTEXT DEFAULT NULL,
     `id_users_created` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
     `id_users_updated` INT(10) UNSIGNED ZEROFILL DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uniq_llm_memory_rule_key` (`rule_key`),
     KEY `idx_llm_memory_rule_source_type` (`source_type`),
     KEY `idx_llm_memory_rule_enabled` (`enabled`),
     CONSTRAINT `fk_llm_memory_rules_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
@@ -135,12 +131,6 @@ CREATE TABLE IF NOT EXISTS `llm_memory_rule_keys` (
 
 INSERT IGNORE INTO `llm_memory_keys` (`key_code`, `label`, `description`, `enabled`, `sort_order`)
 VALUES ('global', 'Global', 'Default shared memory space.', 1, 0);
-
-INSERT IGNORE INTO `llm_memory_rule_keys` (`id_llm_memory_rules`, `id_llm_memory_keys`)
-SELECT r.id, k.id
-FROM llm_memory_rules r
-INNER JOIN llm_memory_keys k
-    ON k.key_code = COALESCE(NULLIF(TRIM(r.memory_key), ''), 'global');
 
 -- =====================================================
 -- DEDICATED MEMORY PAGE

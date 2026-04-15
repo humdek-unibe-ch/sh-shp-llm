@@ -223,7 +223,8 @@ class ModuleLlmMemoryController extends BaseController
             $rules = $this->getRuleService()->listRules();
             $sources = $this->getAdminService()->getRuleUsageCounts();
             foreach ($rules as &$rule) {
-                $rule['sources_count'] = (int)($sources[$rule['key']] ?? 0);
+                $rule_id = (int)($rule['id'] ?? 0);
+                $rule['sources_count'] = (int)($sources[$rule_id] ?? 0);
             }
             unset($rule);
             $this->sendJsonResponse(['rules' => $rules]);
@@ -267,7 +268,8 @@ class ModuleLlmMemoryController extends BaseController
             $rules = $rule_service->listRules();
             $sources = $this->getAdminService()->getRuleUsageCounts();
             foreach ($rules as &$rule) {
-                $rule['sources_count'] = (int)($sources[$rule['key']] ?? 0);
+                $rule_id = (int)($rule['id'] ?? 0);
+                $rule['sources_count'] = (int)($sources[$rule_id] ?? 0);
             }
             unset($rule);
 
@@ -525,19 +527,19 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
-    /** Re-execute a memory rule for a specific user (POST: user_id, rule_key, optional manual_payload_json). */
+    /** Re-execute a memory rule for a specific user (POST: user_id, rule_id, optional manual_payload_json). */
     private function handleMemoryRerunRule()
     {
         $user_id = (int)($_POST['user_id'] ?? 0);
-        $rule_key = (string)($_POST['rule_key'] ?? '');
-        if (!$user_id || $rule_key === '') {
-            $this->sendJsonResponse(['error' => 'user_id and rule_key required'], 400);
+        $rule_id = (int)($_POST['rule_id'] ?? 0);
+        if (!$user_id || !$rule_id) {
+            $this->sendJsonResponse(['error' => 'user_id and rule_id required'], 400);
             return;
         }
 
         try {
             $manual_payload = $this->decodeJsonPost('manual_payload_json', array());
-            $success = $this->getAdminService()->reRunRuleForUser($user_id, $rule_key, $manual_payload);
+            $success = $this->getAdminService()->reRunRuleForUser($user_id, $rule_id, $manual_payload);
             $this->sendJsonResponse(['success' => $success]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);

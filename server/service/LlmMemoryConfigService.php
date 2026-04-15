@@ -106,19 +106,19 @@ class LlmMemoryConfigService extends BaseLlmService
      *
      * @param int $user_id
      * @param string $memory_key
-     * @param string $rule_key
+     * @param int $rule_id
      * @param string $source_type
      * @param string $source_ref
      * @param string $trigger_type
      * @param array $payload_fields
      * @return string
      */
-    public static function buildDedupeKey($user_id, $memory_key, $rule_key, $source_type, $source_ref, $trigger_type, $payload_fields)
+    public static function buildDedupeKey($user_id, $memory_key, $rule_id, $source_type, $source_ref, $trigger_type, $payload_fields)
     {
         $fingerprint = json_encode([
             'u'  => $user_id,
             'mk' => $memory_key,
-            'rk' => $rule_key,
+            'ri' => $rule_id,
             'st' => $source_type,
             'sr' => $source_ref,
             'tt' => $trigger_type,
@@ -145,7 +145,7 @@ class LlmMemoryConfigService extends BaseLlmService
     }
 
     /**
-     * Load and return all normalized memory rules keyed by rule key.
+     * Load and return all normalized memory rules keyed by rule ID.
      *
      * @return array
      */
@@ -157,33 +157,14 @@ class LlmMemoryConfigService extends BaseLlmService
 
         $this->rules = [];
         foreach ($this->rule_service->listRules() as $rule) {
-            if (empty($rule['key'])) {
+            $rule_id = (int)($rule['id'] ?? 0);
+            if ($rule_id <= 0) {
                 continue;
             }
-            $this->rules[$rule['key']] = $this->applyRuleDefaults($rule);
+            $this->rules[$rule_id] = $this->applyRuleDefaults($rule);
         }
 
         return $this->rules;
-    }
-
-    /**
-     * @param string $key
-     * @return array|null
-     */
-    public function getRuleByKey($key)
-    {
-        $key = trim((string)$key);
-        if ($key === '') {
-            return null;
-        }
-
-        $rules = $this->getRules();
-        if (isset($rules[$key])) {
-            return $rules[$key];
-        }
-
-        $rule = $this->rule_service->getRuleByKey($key);
-        return $rule ? $this->applyRuleDefaults($rule) : null;
     }
 
     /**
@@ -192,7 +173,17 @@ class LlmMemoryConfigService extends BaseLlmService
      */
     public function getRuleById($id)
     {
-        $rule = $this->rule_service->getRuleById((int)$id);
+        $id = (int)$id;
+        if ($id <= 0) {
+            return null;
+        }
+
+        $rules = $this->getRules();
+        if (isset($rules[$id])) {
+            return $rules[$id];
+        }
+
+        $rule = $this->rule_service->getRuleById($id);
         return $rule ? $this->applyRuleDefaults($rule) : null;
     }
 
@@ -237,6 +228,8 @@ class LlmMemoryConfigService extends BaseLlmService
     }
 
     /**
+     * Resolve the primary memory key for a rule (first from memory_keys array).
+     *
      * @param array $rule
      * @return string
      */
@@ -247,9 +240,6 @@ class LlmMemoryConfigService extends BaseLlmService
             if (!empty($first)) {
                 return (string)$first;
             }
-        }
-        if (!empty($rule['memory_key'])) {
-            return $rule['memory_key'];
         }
         return $this->getDefaultMemoryKey();
     }
@@ -285,10 +275,8 @@ class LlmMemoryConfigService extends BaseLlmService
     {
         return array_merge([
             'id' => 0,
-            'key' => '',
             'label' => '',
             'enabled' => true,
-            'memory_key' => LLM_MEMORY_DEFAULT_KEY,
             'memory_keys' => [LLM_MEMORY_DEFAULT_KEY],
             'source_type' => '',
             'source_match' => [],
@@ -306,7 +294,6 @@ class LlmMemoryConfigService extends BaseLlmService
             'llm_temperature' => '',
             'llm_max_tokens' => '',
             'refresh_sections' => [],
-            'usage_tags' => [],
         ], $rule);
     }
 

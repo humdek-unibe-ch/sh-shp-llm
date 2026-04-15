@@ -39,7 +39,7 @@ class LlmMemoryRuleService extends BaseLlmService
         $rows = $this->db->query_db(
             "SELECT *
              FROM llm_memory_rules
-             ORDER BY enabled DESC, label ASC, rule_key ASC"
+             ORDER BY enabled DESC, label ASC, id ASC"
         );
 
         if (!is_array($rows)) {
@@ -70,27 +70,6 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Get one rule by key.
-     *
-     * @param string $rule_key
-     * @return array|null
-     */
-    public function getRuleByKey($rule_key)
-    {
-        $rule_key = trim((string)$rule_key);
-        if ($rule_key === '') {
-            return null;
-        }
-
-        $row = $this->db->query_db_first(
-            "SELECT * FROM llm_memory_rules WHERE rule_key = :rule_key LIMIT 1",
-            array(':rule_key' => $rule_key)
-        );
-
-        return $row ? $this->normalizeRuleRow($row) : null;
-    }
-
-    /**
      * Create a new rule row.
      *
      * @param array $payload
@@ -107,7 +86,7 @@ class LlmMemoryRuleService extends BaseLlmService
             throw new Exception('Failed to create memory rule');
         }
 
-        $this->syncRuleMemoryKeys($rule_id, $payload['memory_keys'] ?? array($prepared['memory_key']));
+        $this->syncRuleMemoryKeys($rule_id, $payload['memory_keys'] ?? array(LLM_MEMORY_DEFAULT_KEY));
 
         $rule = $this->getRuleById($rule_id);
         if (!$rule) {
@@ -140,7 +119,7 @@ class LlmMemoryRuleService extends BaseLlmService
 
         $prepared = $this->prepareRulePayload(array_merge($existing, (array)$payload), true);
         $this->db->update_by_ids('llm_memory_rules', $prepared, array('id' => (int)$rule_id));
-        $this->syncRuleMemoryKeys($rule_id, $payload['memory_keys'] ?? $existing['memory_keys'] ?? array($prepared['memory_key']));
+        $this->syncRuleMemoryKeys($rule_id, $payload['memory_keys'] ?? $existing['memory_keys'] ?? array(LLM_MEMORY_DEFAULT_KEY));
 
         $rule = $this->getRuleById($rule_id);
         if (!$rule) {
@@ -174,7 +153,6 @@ class LlmMemoryRuleService extends BaseLlmService
 
         $copy = $existing;
         unset($copy['id'], $copy['prompt_binding'], $copy['sources_count']);
-        $copy['key'] = '';
         $copy['label'] = trim((string)($existing['label'] ?: 'Memory Rule')) . ' Copy';
 
         $template = $this->getActivePromptTemplate($existing);
@@ -203,7 +181,7 @@ class LlmMemoryRuleService extends BaseLlmService
             }, $linked_actions);
 
             throw new Exception(
-                'Cannot delete memory rule "' . ($rule['label'] ?: $rule['key'])
+                'Cannot delete memory rule "' . ($rule['label'] ?: ('#' . $rule['id']))
                 . '" because it is linked in form actions: '
                 . implode(', ', $action_names)
                 . '. Remove the rule from those actions first.'
@@ -246,16 +224,15 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Find form actions that reference a given rule (by key or ID) in their config JSON.
+     * Find form actions that reference a given rule by ID in their config JSON.
      *
-     * @param array $rule Normalized rule row with 'id' and 'key'.
+     * @param array $rule Normalized rule row with 'id'.
      * @return array List of form-action stubs [{id, action_name}] that reference the rule.
      */
     private function findFormActionLinksForRule($rule)
     {
         $rule_id = (int)($rule['id'] ?? 0);
-        $rule_key = trim((string)($rule['key'] ?? ''));
-        if ($rule_id <= 0 || $rule_key === '') {
+        if ($rule_id <= 0) {
             return array();
         }
 
@@ -278,7 +255,7 @@ class LlmMemoryRuleService extends BaseLlmService
 
             $jobs = $this->extractMemoryJobsFromConfig($config);
             foreach ($jobs as $job) {
-                if ($this->jobReferencesRule($job, $rule_id, $rule_key)) {
+                if ($this->jobReferencesRule($job, $rule_id)) {
                     $linked[] = array(
                         'id' => (int)($row['id'] ?? 0),
                         'action_name' => (string)($row['action_name'] ?? ''),
@@ -321,47 +298,16 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Check whether a memory-update job node references a specific rule by key or ID.
+     * Check whether a memory-update job node references a specific rule by ID.
      *
      * @param array  $job      Memory-update job config node.
      * @param int    $rule_id  Rule primary key.
-     * @param string $rule_key Rule key string.
      * @return bool True if the job references this rule.
      */
-    private function jobReferencesRule($job, $rule_id, $rule_key)
+    private function jobReferencesRule($job, $rule_id)
     {
-        $job_rule_keys = $this->normalizeRuleKeys($job['memory_rule_keys'] ?? '');
-        if (!empty($job_rule_keys) && in_array($rule_key, $job_rule_keys, true)) {
-            return true;
-        }
-
         $job_rule_ids = $this->normalizeRuleIds($job['memory_rule_id'] ?? ($job['memory_rule_ids'] ?? ''));
-        if (!empty($job_rule_ids) && in_array((int)$rule_id, $job_rule_ids, true)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Normalize a raw comma-separated or array value into a unique list of trimmed rule keys.
-     *
-     * @param string|array $raw CSV string or array of rule keys.
-     * @return string[] Unique, non-empty rule key strings.
-     */
-    private function normalizeRuleKeys($raw)
-    {
-        if (is_array($raw)) {
-            $keys = $raw;
-        } else {
-            $keys = explode(',', (string)$raw);
-        }
-
-        $keys = array_map(function ($key) {
-            return trim((string)$key);
-        }, $keys);
-
-        return array_values(array_filter(array_unique($keys)));
+        return !empty($job_rule_ids) && in_array((int)$rule_id, $job_rule_ids, true);
     }
 
     /**
@@ -370,7 +316,7 @@ class LlmMemoryRuleService extends BaseLlmService
      * @param string|array $raw CSV string or array of rule IDs.
      * @return int[] Unique, positive integer rule IDs.
      */
-    private function normalizeRuleIds($raw)
+    public function normalizeRuleIds($raw)
     {
         if (is_array($raw)) {
             $ids = $raw;
@@ -483,7 +429,7 @@ class LlmMemoryRuleService extends BaseLlmService
             'owner_id' => (int)$rule['id'],
             'prompt_slot' => 'memory_rule',
             'id_languages' => $this->registry->getCurrentCmsLanguageId(),
-            'title' => $rule['label'] ?: $rule['key'],
+            'title' => $rule['label'] ?: ('Rule #' . $rule['id']),
             'rule_config' => $rule
         );
     }
@@ -497,14 +443,12 @@ class LlmMemoryRuleService extends BaseLlmService
     public function normalizeRuleRow($row)
     {
         $rule_id = (int)($row['id'] ?? 0);
-        $key_codes = $this->getRuleMemoryKeyCodes($rule_id, (string)($row['memory_key'] ?? LLM_MEMORY_DEFAULT_KEY));
+        $key_codes = $this->getRuleMemoryKeyCodes($rule_id);
 
         return array(
             'id' => $rule_id,
-            'key' => (string)($row['rule_key'] ?? ''),
             'label' => (string)($row['label'] ?? ''),
             'enabled' => !empty($row['enabled']) && $row['enabled'] !== '0',
-            'memory_key' => !empty($key_codes[0]) ? $key_codes[0] : (string)($row['memory_key'] ?? LLM_MEMORY_DEFAULT_KEY),
             'memory_keys' => $key_codes,
             'source_type' => (string)($row['source_type'] ?? ''),
             'source_match' => $this->decodeJsonObject($row['source_match_json'] ?? '{}'),
@@ -522,7 +466,6 @@ class LlmMemoryRuleService extends BaseLlmService
             'llm_temperature' => (string)($row['llm_temperature'] ?? '0.2'),
             'llm_max_tokens' => (string)($row['llm_max_tokens'] ?? '1200'),
             'refresh_sections' => $this->decodeJsonArray($row['refresh_sections_json'] ?? '[]'),
-            'usage_tags' => $this->decodeJsonArray($row['usage_tags_json'] ?? '[]'),
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,
             'id_users_created' => $row['id_users_created'] ?? null,
@@ -539,27 +482,14 @@ class LlmMemoryRuleService extends BaseLlmService
      */
     private function prepareRulePayload($payload, $for_update = false)
     {
-        $existing_id = (int)($payload['id'] ?? 0);
         $label = trim((string)($payload['label'] ?? ''));
         if ($label === '') {
             $label = $for_update ? 'Memory Rule' : ('Memory Rule ' . date('YmdHis'));
         }
-        $rule_key = $this->buildUniqueRuleKey(
-            (string)($payload['key'] ?? $payload['rule_key'] ?? ''),
-            $label,
-            $existing_id
-        );
-
-        $memory_keys = $this->normalizeMemoryKeyCodes($payload['memory_keys'] ?? array($payload['memory_key'] ?? LLM_MEMORY_DEFAULT_KEY));
-        if (empty($memory_keys)) {
-            $memory_keys = array(LLM_MEMORY_DEFAULT_KEY);
-        }
 
         return array(
-            'rule_key' => $rule_key,
             'label' => $label,
             'enabled' => !empty($payload['enabled']) ? 1 : 0,
-            'memory_key' => $memory_keys[0],
             'source_type' => trim((string)($payload['source_type'] ?? '')),
             'source_match_json' => $this->encodeJson($payload['source_match'] ?? array()),
             'trigger_types_json' => $this->encodeJson($payload['trigger_types'] ?? array('finished')),
@@ -571,7 +501,6 @@ class LlmMemoryRuleService extends BaseLlmService
             'llm_temperature' => $this->normalizeNullableString($payload['llm_temperature'] ?? null),
             'llm_max_tokens' => $this->normalizeNullableInt($payload['llm_max_tokens'] ?? null),
             'refresh_sections_json' => $this->encodeJson($payload['refresh_sections'] ?? array()),
-            'usage_tags_json' => $this->encodeJson($payload['usage_tags'] ?? array()),
             'id_users_updated' => $_SESSION['id_user'] ?? null,
             'id_users_created' => $for_update ? ($payload['id_users_created'] ?? null) : ($_SESSION['id_user'] ?? null),
         );
@@ -700,7 +629,7 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Assemble the full bootstrap payload for the memory-rule editor UI (available keys, defaults, models, options).
+     * Assemble the full bootstrap payload for the memory-rule editor UI.
      *
      * @param object|null $settings_model Optional settings model (unused, reserved for future overrides).
      * @return array Bootstrap config with available_keys, defaults, models, source_types, execution_modes, storage_modes, sections.
@@ -713,8 +642,6 @@ class LlmMemoryRuleService extends BaseLlmService
             array('value' => LLM_MEMORY_SOURCE_LOGIN, 'label' => 'Login'),
             array('value' => LLM_MEMORY_SOURCE_PROFILE_NAME, 'label' => 'Profile name change'),
         );
-        // TODO: Re-enable llmChat form submit as an editor option once the
-        // attachment UX for chat-driven sources is finalized.
         $execution_mode_options = array(
             array('value' => LLM_MEMORY_EXECUTION_LLM_SUMMARIZE, 'label' => 'LLM summarize'),
             array('value' => LLM_MEMORY_EXECUTION_DIRECT_MAPPING, 'label' => 'Direct mapping'),
@@ -743,7 +670,7 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Synchronize the many-to-many memory-key bindings for a rule, upserting keys and updating the junction table.
+     * Synchronize the many-to-many memory-key bindings for a rule.
      *
      * @param int   $rule_id     Memory rule primary key.
      * @param array $memory_keys Array of memory key codes to bind.
@@ -762,7 +689,6 @@ class LlmMemoryRuleService extends BaseLlmService
         }
 
         if (!$this->hasMemoryKeyRegistry() || !$this->hasRuleKeyBindings()) {
-            $this->db->update_by_ids('llm_memory_rules', array('memory_key' => $key_codes[0]), array('id' => $rule_id));
             return;
         }
 
@@ -790,8 +716,6 @@ class LlmMemoryRuleService extends BaseLlmService
                 )
             );
         }
-
-        $this->db->update_by_ids('llm_memory_rules', array('memory_key' => $key_codes[0]), array('id' => $rule_id));
     }
 
     /**
@@ -934,36 +858,6 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Generate a unique rule_key based on a preferred key or label, appending numeric suffixes to avoid collisions.
-     *
-     * @param string $preferred_key Desired rule key (may be empty).
-     * @param string $label         Rule label used as fallback for key generation.
-     * @param int    $existing_id   ID of existing rule (to allow self-match during updates).
-     * @return string Unique rule key.
-     */
-    private function buildUniqueRuleKey($preferred_key, $label, $existing_id = 0)
-    {
-        $base_key = $this->normalizeMemoryKeyCode($preferred_key);
-        if ($base_key === '') {
-            $base_key = $this->normalizeMemoryKeyCode($label);
-        }
-        if ($base_key === '') {
-            $base_key = 'memory_rule';
-        }
-
-        $candidate = $base_key;
-        $suffix = 2;
-        while (true) {
-            $existing = $this->getRuleByKey($candidate);
-            if (!$existing || (int)$existing['id'] === (int)$existing_id) {
-                return $candidate;
-            }
-            $candidate = $base_key . '_' . $suffix;
-            $suffix++;
-        }
-    }
-
-    /**
      * Check if the llm_memory_keys table exists (cached after first check).
      *
      * @return bool True if the memory-key registry table is present.
@@ -1006,17 +900,15 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
-     * Resolve all memory key codes bound to a rule via the junction table, falling back to the rule's own memory_key column.
+     * Resolve all memory key codes bound to a rule via the junction table.
      *
-     * @param int    $rule_id      Rule primary key.
-     * @param string $fallback_key Fallback memory key code if no bindings found.
+     * @param int $rule_id Rule primary key.
      * @return string[] Ordered list of memory key codes.
      */
-    private function getRuleMemoryKeyCodes($rule_id, $fallback_key)
+    private function getRuleMemoryKeyCodes($rule_id)
     {
-        $fallback_code = $this->normalizeMemoryKeyCode($fallback_key) ?: LLM_MEMORY_DEFAULT_KEY;
         if ($rule_id <= 0 || !$this->hasMemoryKeyRegistry() || !$this->hasRuleKeyBindings()) {
-            return array($fallback_code);
+            return array(LLM_MEMORY_DEFAULT_KEY);
         }
 
         try {
@@ -1029,7 +921,7 @@ class LlmMemoryRuleService extends BaseLlmService
                 array(':rule_id' => $rule_id)
             );
         } catch (Exception $e) {
-            return array($fallback_code);
+            return array(LLM_MEMORY_DEFAULT_KEY);
         }
 
         $codes = array();
@@ -1041,7 +933,7 @@ class LlmMemoryRuleService extends BaseLlmService
         }
 
         if (empty($codes)) {
-            $codes[] = $fallback_code;
+            $codes[] = LLM_MEMORY_DEFAULT_KEY;
         }
 
         return $codes;
