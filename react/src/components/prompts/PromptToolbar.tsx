@@ -8,7 +8,8 @@
  * @module components/prompts/PromptToolbar
  */
 import React from 'react';
-import { Badge, Button, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Badge, Button, Form } from 'react-bootstrap';
+import { InfoPopover } from '../shared/InfoPopover';
 import type { PromptVersion } from './promptTypes';
 
 interface PromptToolbarProps {
@@ -94,16 +95,16 @@ export const PromptToolbar: React.FC<PromptToolbarProps> = ({
       <Form.Group className="mb-0 mt-2">
         <Form.Label className="small text-muted mb-1">
           Version Comment
-          <OverlayTrigger
+          <InfoPopover
+            title="Version Comment"
             placement="top"
-            overlay={(
-              <Tooltip id="prompt-version-comment-hint">
-                Saved only on normal Save. If prompt text or config changed, this note is stored on the new version.
-              </Tooltip>
-            )}
+            buttonClassName="ml-2"
+            ariaLabel="Version comment help"
           >
-            <i className="fas fa-info-circle ml-2 text-secondary"></i>
-          </OverlayTrigger>
+            <div className="small">
+              Saved only on normal Save. If prompt text or config changed, this note is stored on the new version.
+            </div>
+          </InfoPopover>
         </Form.Label>
         <Form.Control
           size="sm"
