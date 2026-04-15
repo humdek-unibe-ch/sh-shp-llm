@@ -550,7 +550,7 @@ class LlmMemoryStorageService extends BaseLlmService
                     TRANSACTION_BY_LLM_MEMORY,
                     $current_table,
                     $fields,
-                    ['record_id' => (int)$existing['record_id']],
+                    array('record_id' => $existing['record_id']),
                     true
                 ) !== false;
             }
