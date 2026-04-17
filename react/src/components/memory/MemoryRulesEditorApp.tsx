@@ -440,13 +440,14 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     };
   }, [config.pageId, draft?.id, draft?.label]);
 
+  const effectiveModel = draft?.llm_model || defaults.llm_model || '';
   const effectiveTemperature = draft?.llm_temperature || defaults.llm_temperature || '';
   const effectiveMaxTokens = draft?.llm_max_tokens || defaults.llm_max_tokens || '';
   const promptRuntimeOverrides = useMemo(() => ({
-    llm_model: draft?.llm_model || '',
-    llm_temperature: draft?.llm_temperature || '',
-    llm_max_tokens: draft?.llm_max_tokens || '',
-  }), [draft?.llm_max_tokens, draft?.llm_model, draft?.llm_temperature]);
+    llm_model: effectiveModel,
+    llm_temperature: effectiveTemperature,
+    llm_max_tokens: effectiveMaxTokens,
+  }), [effectiveMaxTokens, effectiveModel, effectiveTemperature]);
 
   const { bootstrap: promptBootstrap, loading: promptLoading, error: promptError, reload: reloadPromptBootstrap, setBootstrap: setPromptBootstrap } = usePromptBootstrap({
     api,
@@ -469,7 +470,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   const effectiveVariablesSchema = metaState.prompt?.variablesSchema || promptBootstrap?.variables_schema || [];
   const promptChangeNote = metaState.prompt?.pendingChangeNote || '';
   const isDirty = (draft?.prompt_template || '') !== (activeVersion?.template_raw || '');
-  const defaultPromptModel = String(draft?.llm_model || defaults.llm_model || '') || promptBootstrap?.models?.[0]?.id || null;
+  const defaultPromptModel = String(effectiveModel) || promptBootstrap?.models?.[0]?.id || null;
 
   const setDraftPatch = (patch: Partial<MemoryRuleDraft>) => {
     setDraft((current) => current ? { ...current, ...patch } : current);
@@ -731,9 +732,9 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
             response.rule.prompt_template || savedRule.prompt_template || '',
             response.rule.prompt_meta_json || savedRule.prompt_meta_json || '{}',
             {
-              llm_model: savedRule.llm_model || '',
-              llm_temperature: savedRule.llm_temperature || '',
-              llm_max_tokens: savedRule.llm_max_tokens || '',
+              llm_model: savedRule.llm_model || defaults.llm_model || '',
+              llm_temperature: savedRule.llm_temperature || defaults.llm_temperature || '',
+              llm_max_tokens: savedRule.llm_max_tokens || defaults.llm_max_tokens || '',
             },
           );
           setPromptBootstrap(bootstrap);

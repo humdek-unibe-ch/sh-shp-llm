@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . '/base/BaseLlmService.php';
+require_once __DIR__ . '/LlmMemoryConfigService.php';
 require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 require_once __DIR__ . '/LlmScriptService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
@@ -29,12 +30,16 @@ class LlmPromptRuntimeValueService extends BaseLlmService
     /** @var LlmMemoryRuleService */
     private $memory_rule_service;
 
+    /** @var LlmMemoryConfigService */
+    private $memory_config_service;
+
     public function __construct($services)
     {
         parent::__construct($services);
         $this->profile_service = new LlmPromptExecutionProfileService($services);
         $this->script_service = new LlmScriptService($services);
         $this->memory_rule_service = new LlmMemoryRuleService($services);
+        $this->memory_config_service = new LlmMemoryConfigService($services, $this->memory_rule_service);
     }
 
     /**
@@ -85,10 +90,11 @@ class LlmPromptRuntimeValueService extends BaseLlmService
                 $rule_config = $loaded;
             }
         }
+
         return array(
-            'llm_model' => $rule_config['llm_model'] ?? '',
-            'llm_temperature' => $rule_config['llm_temperature'] ?? '0.2',
-            'llm_max_tokens' => $rule_config['llm_max_tokens'] ?? '1200'
+            'llm_model' => $this->memory_config_service->resolveRuleLlmModel($rule_config),
+            'llm_temperature' => (string)$this->memory_config_service->resolveRuleLlmTemperature($rule_config),
+            'llm_max_tokens' => (string)$this->memory_config_service->resolveRuleLlmMaxTokens($rule_config)
         );
     }
 }

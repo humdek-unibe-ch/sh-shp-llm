@@ -55,6 +55,9 @@ class LlmMemoryConfigService extends BaseLlmService
             'enabled' => !empty($llm_config['llm_memory_enabled']) && $llm_config['llm_memory_enabled'] !== '0',
             'memory_key' => LLM_MEMORY_DEFAULT_KEY,
             'storage_mode' => !empty($llm_config['llm_memory_storage_mode']) ? $llm_config['llm_memory_storage_mode'] : LLM_MEMORY_DEFAULT_STORAGE_MODE,
+            'llm_model' => (string)($llm_config['llm_default_model'] ?? LLM_DEFAULT_MODEL),
+            'llm_temperature' => (string)($llm_config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE),
+            'llm_max_tokens' => (string)($llm_config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS),
             'table_name' => LLM_MEMORY_DEFAULT_TABLE,
             'history_table_name' => LLM_MEMORY_DEFAULT_HISTORY_TABLE,
         ];
@@ -242,6 +245,53 @@ class LlmMemoryConfigService extends BaseLlmService
             }
         }
         return $this->getDefaultMemoryKey();
+    }
+
+    /**
+     * Resolve the effective LLM model for a rule, falling back to the module default.
+     *
+     * @param array $rule
+     * @return string
+     */
+    public function resolveRuleLlmModel($rule)
+    {
+        if (!empty($rule['llm_model'])) {
+            return (string)$rule['llm_model'];
+        }
+
+        return (string)$this->getMemoryConfig()['llm_model'];
+    }
+
+    /**
+     * Resolve the effective LLM temperature for a rule, falling back to the module default.
+     *
+     * @param array $rule
+     * @return float
+     */
+    public function resolveRuleLlmTemperature($rule)
+    {
+        $rule_temp = $rule['llm_temperature'] ?? '';
+        if ($rule_temp !== '' && $rule_temp !== null) {
+            return (float)$rule_temp;
+        }
+
+        return (float)$this->getMemoryConfig()['llm_temperature'];
+    }
+
+    /**
+     * Resolve the effective max tokens for a rule, falling back to the module default.
+     *
+     * @param array $rule
+     * @return int
+     */
+    public function resolveRuleLlmMaxTokens($rule)
+    {
+        $rule_tokens = $rule['llm_max_tokens'] ?? '';
+        if ($rule_tokens !== '' && $rule_tokens !== null && (int)$rule_tokens > 0) {
+            return (int)$rule_tokens;
+        }
+
+        return (int)$this->getMemoryConfig()['llm_max_tokens'];
     }
 
     /**

@@ -375,11 +375,7 @@ class LlmMemoryRuleService extends BaseLlmService
             $active_content !== null ? (string)$active_content : $this->getActivePromptTemplate($rule),
             $meta_json !== null ? $meta_json : $this->getActivePromptMetaJson($rule),
             false,
-            array(
-                'llm_model' => $rule['llm_model'] ?? '',
-                'llm_temperature' => $rule['llm_temperature'] ?? '0.2',
-                'llm_max_tokens' => $rule['llm_max_tokens'] ?? '1200'
-            )
+            $this->buildPromptRuntimeOverrides($rule)
         );
     }
 
@@ -401,11 +397,7 @@ class LlmMemoryRuleService extends BaseLlmService
             $descriptor,
             (string)$prompt_template,
             $meta_json,
-            array(
-                'llm_model' => $rule['llm_model'] ?? '',
-                'llm_temperature' => $rule['llm_temperature'] ?? '0.2',
-                'llm_max_tokens' => $rule['llm_max_tokens'] ?? '1200'
-            )
+            $this->buildPromptRuntimeOverrides($rule)
         );
     }
 
@@ -431,6 +423,31 @@ class LlmMemoryRuleService extends BaseLlmService
             'id_languages' => $this->registry->getCurrentCmsLanguageId(),
             'title' => $rule['label'] ?: ('Rule #' . $rule['id']),
             'rule_config' => $rule
+        );
+    }
+
+    /**
+     * Build prompt runtime overrides with rule values inheriting from module defaults.
+     *
+     * @param array $rule
+     * @return array
+     */
+    private function buildPromptRuntimeOverrides($rule)
+    {
+        $llm_config = $this->getLlmConfig();
+        $rule_temp = $rule['llm_temperature'] ?? '';
+        $rule_tokens = $rule['llm_max_tokens'] ?? '';
+
+        return array(
+            'llm_model' => !empty($rule['llm_model'])
+                ? (string)$rule['llm_model']
+                : (string)($llm_config['llm_default_model'] ?? LLM_DEFAULT_MODEL),
+            'llm_temperature' => ($rule_temp !== '' && $rule_temp !== null)
+                ? (string)$rule_temp
+                : (string)($llm_config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE),
+            'llm_max_tokens' => ($rule_tokens !== '' && $rule_tokens !== null && (int)$rule_tokens > 0)
+                ? (string)$rule_tokens
+                : (string)($llm_config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS),
         );
     }
 

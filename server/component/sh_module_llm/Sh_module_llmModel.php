@@ -14,6 +14,9 @@ require_once __DIR__ . "/../../service/LlmService.php";
  */
 class Sh_module_llmModel extends BaseModel
 {
+    /** @var int Canonical language ID used for global plugin config storage */
+    private const CONFIG_LANGUAGE_ID = 1;
+
     /** @var int|null The page ID of sh_module_llm */
     private $configPageId;
 
@@ -44,15 +47,12 @@ class Sh_module_llmModel extends BaseModel
             return $this->pageFields;
         }
 
-        $langId = $_SESSION['user_language'] ?? 2;
-        $defaultLangId = $_SESSION['language'] ?? 2;
-
         $result = $this->db->query_db_first(
             "CALL get_page_fields(:id_page, :id_languages, :id_default_languages, '', '')",
             [
                 'id_page' => $this->configPageId,
-                'id_languages' => $langId,
-                'id_default_languages' => $defaultLangId,
+                'id_languages' => self::CONFIG_LANGUAGE_ID,
+                'id_default_languages' => self::CONFIG_LANGUAGE_ID,
             ]
         );
 
@@ -162,7 +162,6 @@ class Sh_module_llmModel extends BaseModel
      */
     public function saveSetting($fieldName, $value)
     {
-        $langId = $_SESSION['user_language'] ?? 2;
         $fieldId = $this->db->query_db_first(
             "SELECT id FROM fields WHERE name = ?",
             [$fieldName]
@@ -175,18 +174,18 @@ class Sh_module_llmModel extends BaseModel
         $fid = $fieldId['id'];
         $existing = $this->db->query_db_first(
             "SELECT id_pages FROM pages_fields_translation WHERE id_pages = ? AND id_fields = ? AND id_languages = ?",
-            [$this->configPageId, $fid, $langId]
+            [$this->configPageId, $fid, self::CONFIG_LANGUAGE_ID]
         );
 
         if ($existing) {
             $this->db->execute_update_db(
                 "UPDATE pages_fields_translation SET content = ? WHERE id_pages = ? AND id_fields = ? AND id_languages = ?",
-                [$value, $this->configPageId, $fid, $langId]
+                [$value, $this->configPageId, $fid, self::CONFIG_LANGUAGE_ID]
             );
         } else {
             $this->db->execute_update_db(
                 "INSERT INTO pages_fields_translation (id_pages, id_fields, id_languages, content) VALUES (?, ?, ?, ?)",
-                [$this->configPageId, $fid, $langId, $value]
+                [$this->configPageId, $fid, self::CONFIG_LANGUAGE_ID, $value]
             );
         }
 

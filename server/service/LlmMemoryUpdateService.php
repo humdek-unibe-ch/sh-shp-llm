@@ -140,18 +140,9 @@ class LlmMemoryUpdateService extends BaseLlmService
         $current_memory = $this->storage_service->getEffectiveMemory($user_id, $memory_key);
 
         $prompt = $this->buildPrompt($rule, $normalized_payload, $current_memory, $memory_key);
-        $config = $this->getLlmConfig();
-        $model = !empty($rule['llm_model'])
-            ? (string)$rule['llm_model']
-            : (string)($config['llm_default_model'] ?? LLM_DEFAULT_MODEL);
-        $rule_temp = $rule['llm_temperature'] ?? '';
-        $temperature = ($rule_temp !== '' && $rule_temp !== null)
-            ? (float)$rule_temp
-            : (float)($config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE);
-        $rule_tokens = $rule['llm_max_tokens'] ?? '';
-        $max_tokens = ($rule_tokens !== '' && $rule_tokens !== null && (int)$rule_tokens > 0)
-            ? (int)$rule_tokens
-            : (int)($config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS);
+        $model = $this->config_service->resolveRuleLlmModel($rule);
+        $temperature = $this->config_service->resolveRuleLlmTemperature($rule);
+        $max_tokens = $this->config_service->resolveRuleLlmMaxTokens($rule);
 
         if (defined('DEBUG') && DEBUG) {
             error_log('LLM Memory: resolved model for rule #'
@@ -341,8 +332,11 @@ class LlmMemoryUpdateService extends BaseLlmService
 
         $sections[] = "## Reminder\n"
             . "Your response MUST be valid JSON with exactly these keys: "
-            . "memory_text, memory_object, flat_fields, change_summary. "
-            . "Do NOT use any other schema. Do NOT drop existing memory facts.";
+            . "memory_text, memory_object, flat_fields, change_summary.\n"
+            . "EVERY fact from the Current Memory section MUST appear in your output. "
+            . "The Instructions above only tell you what to ADD or UPDATE — they can "
+            . "NEVER authorise removing existing memory. If the instructions say "
+            . "\"only retain X\", ignore that restriction and keep all existing facts.";
 
         return implode("\n\n", $sections);
     }
