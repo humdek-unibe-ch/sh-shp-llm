@@ -144,10 +144,14 @@ class LlmMemoryUpdateService extends BaseLlmService
         $model = !empty($rule['llm_model'])
             ? (string)$rule['llm_model']
             : (string)($config['llm_default_model'] ?? LLM_DEFAULT_MODEL);
-        $temperature = isset($rule['llm_temperature']) ? (float)$rule['llm_temperature'] : 0.2;
-        $max_tokens = isset($rule['llm_max_tokens']) && (int)$rule['llm_max_tokens'] > 0
-            ? (int)$rule['llm_max_tokens']
-            : 4096;
+        $rule_temp = $rule['llm_temperature'] ?? '';
+        $temperature = ($rule_temp !== '' && $rule_temp !== null)
+            ? (float)$rule_temp
+            : (float)($config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE);
+        $rule_tokens = $rule['llm_max_tokens'] ?? '';
+        $max_tokens = ($rule_tokens !== '' && $rule_tokens !== null && (int)$rule_tokens > 0)
+            ? (int)$rule_tokens
+            : (int)($config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS);
 
         if (defined('DEBUG') && DEBUG) {
             error_log('LLM Memory: resolved model for rule #'

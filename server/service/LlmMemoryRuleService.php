@@ -463,8 +463,8 @@ class LlmMemoryRuleService extends BaseLlmService
                 'prompt_slot' => 'memory_rule'
             ),
             'llm_model' => (string)($row['llm_model'] ?? ''),
-            'llm_temperature' => (string)($row['llm_temperature'] ?? '0.2'),
-            'llm_max_tokens' => (string)($row['llm_max_tokens'] ?? '1200'),
+            'llm_temperature' => $row['llm_temperature'] !== null && $row['llm_temperature'] !== '' ? (string)$row['llm_temperature'] : '',
+            'llm_max_tokens' => $row['llm_max_tokens'] !== null && $row['llm_max_tokens'] !== '' ? (string)$row['llm_max_tokens'] : '',
             'refresh_sections' => $this->decodeJsonArray($row['refresh_sections_json'] ?? '[]'),
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'] ?? null,

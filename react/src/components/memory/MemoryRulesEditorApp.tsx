@@ -440,8 +440,8 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     };
   }, [config.pageId, draft?.id, draft?.label]);
 
-  const effectiveTemperature = draft?.llm_temperature || defaults.llm_temperature || '0.2';
-  const effectiveMaxTokens = draft?.llm_max_tokens || defaults.llm_max_tokens || '1200';
+  const effectiveTemperature = draft?.llm_temperature || defaults.llm_temperature || '';
+  const effectiveMaxTokens = draft?.llm_max_tokens || defaults.llm_max_tokens || '';
   const promptRuntimeOverrides = useMemo(() => ({
     llm_model: draft?.llm_model || '',
     llm_temperature: draft?.llm_temperature || '',
