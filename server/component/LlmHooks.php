@@ -1338,6 +1338,24 @@ class LlmHooks extends BaseHooks
             return false;
         }
 
+        $form_table = $config['form_data']['table_name'] ?? '';
+        if ($form_table !== '') {
+            $memory_config = new LlmMemoryConfigService($this->services);
+            $blocked_tables = [
+                $memory_config->getCurrentTableName(),
+                $memory_config->getHistoryTableName(),
+            ];
+            if (in_array($form_table, $blocked_tables, true)) {
+                $this->transaction->add_transaction(
+                    transactionTypes_insert,
+                    TRANSACTION_BY_LLM_MEMORY,
+                    $user_id, null, null, false,
+                    "LLM Memory task BLOCKED: form table is a memory table (infinite loop prevention); table=" . $form_table
+                );
+                return true;
+            }
+        }
+
         $rule_ids = $config['memory_rule_id'] ?? $config['memory_rule_ids'] ?? [];
         if (!is_array($rule_ids)) {
             $rule_ids = array_filter(array_map('trim', explode(',', (string)$rule_ids)));

@@ -191,15 +191,17 @@ try {
     }
 
     $normalized_payload = [
-        'source_type'         => $args['source_type'] ?? '',
-        'source_ref'          => $args['source_ref'] ?? '',
-        'trigger_type'        => $args['trigger_type'] ?? '',
-        'user_id'             => $args['user_id'],
-        'event_at'            => $args['event_at'] ?? date('Y-m-d H:i:s'),
-        'fields'              => $args['fields'] ?? [],
-        'readable_text'       => $args['readable_text'] ?? '',
-        'memory_key_override' => $args['memory_key_override'] ?? '',
-        'force_storage_mode'  => $args['force_storage_mode'] ?? '',
+        'source_type'            => $args['source_type'] ?? '',
+        'source_ref'             => $args['source_ref'] ?? '',
+        'trigger_type'           => $args['trigger_type'] ?? '',
+        'user_id'                => $args['user_id'],
+        'event_at'               => $args['event_at'] ?? date('Y-m-d H:i:s'),
+        'fields'                 => $args['fields'] ?? [],
+        'readable_text'          => $args['readable_text'] ?? '',
+        'memory_key_override'    => $args['memory_key_override'] ?? '',
+        'force_storage_mode'     => $args['force_storage_mode'] ?? '',
+        'user_language'          => $args['user_language'] ?? '',
+        'user_language_locale'   => $args['user_language_locale'] ?? '',
     ];
 
     llm_memory_worker_log('normalized payload prepared', array(

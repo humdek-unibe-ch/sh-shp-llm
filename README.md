@@ -196,14 +196,12 @@ Manage memory rules, write sources, and user memory operations on the dedicated 
 
 #### Rule example
 
-Memory rules are stored in the normalized `llm_memory_rules` table and edited through the dedicated memory page.
+Memory rules are stored in the normalized `llm_memory_rules` table and edited through the dedicated memory page. Rules are identified by integer `rule_id`.
 
 ```json
 {
-  "rule_key": "sleep_form_finished",
   "label": "Sleep Form Finished",
   "enabled": true,
-  "memory_key": "global",
   "source_type": "form_action_submit",
   "source_match_json": {
     "table_name": "0000001234"
@@ -211,21 +209,9 @@ Memory rules are stored in the normalized `llm_memory_rules` table and edited th
   "trigger_types_json": ["finished"],
   "storage_mode_override": "both",
   "execution_mode": "llm_summarize",
-  "data_config_json": [
-    {
-      "table": "llm_memory",
-      "retrieve": "last",
-      "current_user": true,
-      "map_fields": [
-        { "field_name": "memory_text", "value": "memory_text" },
-        { "field_name": "memory_json", "value": "memory_json" }
-      ]
-    }
-  ],
   "llm_model": "",
   "llm_temperature": 0.2,
-  "llm_max_tokens": 1200,
-  "refresh_sections_json": []
+  "llm_max_tokens": 1200
 }
 ```
 
@@ -238,6 +224,16 @@ Prompt Lab ownership is derived from the rule row itself:
 
 - `llm_summarize`: send the event payload to the async memory worker and let the prompt decide what to keep
 - `direct_mapping`: write stable facts directly from submitted fields without calling the LLM
+
+#### Auto-injected context (llm_summarize mode)
+
+When a rule uses `llm_summarize`, the system automatically injects the following into the LLM call:
+- **Current memory** -- the user's existing memory_text and memory_json
+- **Submitted data** -- all form field values or event payload
+- **Data Config results** -- any extra data sources configured on the rule
+- **User language** -- detected from the session; the LLM writes memory in the user's language
+
+The admin prompt (from Prompt Lab or the default) only needs to contain instructions, e.g. "Extract the user's hobbies from the form data." The system prompt handles merge/append/replace logic and JSON output format.
 
 Direct-mapping example:
 

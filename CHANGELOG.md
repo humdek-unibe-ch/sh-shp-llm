@@ -2,30 +2,31 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.2.0] - 2026-04-15 Pre-release
+## [1.2.0] - 2026-04-17 Pre-release
 
-### Admin UI Redesign
+### New: Global User Memory
 
-- Unified admin layout with persistent sidebar navigation for Settings, Conversations, Scripts, and Memory sections.
-- Each section is a separate ACL-controlled page under `/admin/module_llm/`.
+A centralized memory system that stores user-specific facts across all LLM interactions.
+
+- Enable memory and choose storage mode (`record`, `log`, or `both`) from the LLM Settings page.
+- Create memory rules that trigger from form submissions, login, or profile changes.
+- Rules use either `llm_summarize` (LLM extracts key facts) or `direct_mapping` (field-to-field copy).
+- Admin writes only the intent (e.g. "Extract hobbies from the form") -- the system auto-injects current memory, submitted data, user language, and Data Config context.
+- Memory content is written in the user's language automatically.
+- Infinite loop protection: memory update jobs are blocked when the form source is the memory table itself.
+- Dedicated Memory admin page with rules editor, source visibility, user memory browser, and history diff.
+- Prompt Lab integration for memory rules with version history, playground, and datasets.
+
+### New: Admin UI Redesign
+
+- Unified admin layout with persistent sidebar navigation for Settings, Conversations, Scripts, and Memory.
 - Settings page converted to React-based interface for API keys, model defaults, and memory configuration.
-- Responsive sidebar collapses to horizontal menu on small screens.
 
-### Global User Memory
+### Internal
 
-- Centralized user memory at module level with configurable storage modes (`record`, `log`, or `both`).
-- Dedicated Memory admin page with tabs for Overview, Rules, Sources, Users, and Activity.
-- Memory rules stored in normalized `llm_memory_rules` table with full CRUD, duplication, and source visibility.
-- Prompt Lab integration for memory rules: version history, diff, playground, datasets, and prompt builder.
-- Triggers from form actions, llmChat fallback, login, and profile name changes.
-- Admin user browser with memory inspection, history diff, manual editing, rebuild, and rerun.
-
-### Memory System Cleanup
-
-- Rules identified exclusively by integer `rule_id`; removed `rule_key`, `memory_key`, and `usage_tags_json` columns.
-- Unified current/history table column names by dropping the `last_` prefix.
-- Flat fields stored inside `memory_json` instead of as dynamic `dataCols`.
-- All PHP services, hooks, controllers, async worker, and React frontend updated to use `rule_id` only.
+- Memory rules identified by integer `rule_id` only; simplified database schema.
+- Prompt templates externalized to `assets/prompts/core/memory/`.
+- Async memory workers execute multiple rules in parallel on Windows and Linux.
 
 ## [1.1.0] - 2026-03-19
 

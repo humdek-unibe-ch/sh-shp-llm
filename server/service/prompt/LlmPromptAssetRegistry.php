@@ -34,6 +34,9 @@ class LlmPromptAssetRegistry
             'core.response_schema.system_instructions' => 'core/response/schema-system-instructions.md',
             'core.dataset_import.system' => 'core/dataset-import/system.md',
             'core.dataset_import.repair_json' => 'core/dataset-import/repair-json.md',
+            'core.memory.system' => 'core/memory/system.md',
+            'core.memory.language_suffix' => 'core/memory/language-suffix.md',
+            'core.memory.default_instructions' => 'core/memory/default-instructions.md',
         );
     }
 }

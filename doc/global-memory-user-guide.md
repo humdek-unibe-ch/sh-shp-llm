@@ -14,7 +14,8 @@ It is:
 
 It is not:
 - tied to only one `llmChat` section
-- injected into prompts automatically
+
+Note: When a memory rule runs, the current memory, submitted data, and user language are automatically injected into the LLM call. You do not need to include them in your rule prompt.
 
 ## Where To Manage It
 
@@ -52,6 +53,28 @@ A rule defines:
 Choose the execution mode like this:
 - `llm_summarize`: best for free text, surveys, or richer user input
 - `direct_mapping`: best for stable field-to-field facts without an LLM call
+
+### LLM Summarize Prompt
+
+When using `llm_summarize`, you only need to write the **instructions** for the LLM. The system automatically injects:
+- the user's current memory state
+- the submitted form data (all field values)
+- any extra Data Config results you configured
+- the user's language (memory content is written in that language)
+
+Example prompt:
+
+```text
+Extract the user's hobbies and preferences from the submitted form data.
+```
+
+The system wraps your instructions with a smart system prompt that handles merge/append/replace logic and the correct JSON output format. You do not need to include `{{event_payload_json}}` or `{{memory_text}}` -- they are injected automatically.
+
+You can still reference interpolation variables if you want fine-grained control:
+- `{{user_language}}` -- the user's language name (e.g. "Deutsch (Schweiz)")
+- `{{user_language_locale}}` -- the locale code (e.g. "de-CH")
+- `{{hobbies}}`, `{{email}}`, etc. -- any submitted form field by name
+- `{{memory_key}}`, `{{source_type}}`, `{{trigger_type}}` -- event metadata
 
 ### Direct Mapping Example
 

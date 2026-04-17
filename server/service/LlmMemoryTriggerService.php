@@ -23,6 +23,27 @@ class LlmMemoryTriggerService extends BaseLlmService
     }
 
     /**
+     * Resolve the current user's language name and locale from the session.
+     *
+     * @return array{user_language: string, user_language_locale: string}
+     */
+    private function resolveUserLanguage()
+    {
+        $lang_id = $_SESSION['user_language'] ?? null;
+        if (!$lang_id) {
+            return ['user_language' => '', 'user_language_locale' => ''];
+        }
+        $lang = $this->db->fetch_language($lang_id);
+        if (!$lang) {
+            return ['user_language' => '', 'user_language_locale' => ''];
+        }
+        return [
+            'user_language'        => $lang['language'] ?? '',
+            'user_language_locale' => $lang['locale'] ?? '',
+        ];
+    }
+
+    /**
      * Normalize a form-action-based trigger payload.
      *
      * @param array $form_data  Keys: form_fields, form_name, table_name, trigger_type, record_id
@@ -35,7 +56,7 @@ class LlmMemoryTriggerService extends BaseLlmService
         $user_input = $this->services->get_user_input();
         $form_values = $user_input->get_form_values($form_fields);
 
-        return [
+        return array_merge([
             'source_type'  => LLM_MEMORY_SOURCE_FORM_ACTION,
             'source_ref'   => json_encode([
                 'table_name' => $form_data['table_name'] ?? '',
@@ -50,7 +71,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                 'table_name' => $form_data['table_name'] ?? '',
                 'form_name'  => $form_data['form_name'] ?? '',
             ],
-        ];
+        ], $this->resolveUserLanguage());
     }
 
     /**
@@ -66,7 +87,7 @@ class LlmMemoryTriggerService extends BaseLlmService
      */
     public function normalizeLlmChatFormPayload($form_values, $readable_text, $user_id, $section_id, $conversation_id = null, $message_id = null)
     {
-        return [
+        return array_merge([
             'source_type'  => LLM_MEMORY_SOURCE_LLM_CHAT_FORM,
             'source_ref'   => json_encode([
                 'section_id'      => $section_id,
@@ -81,7 +102,7 @@ class LlmMemoryTriggerService extends BaseLlmService
             'match_criteria' => [
                 'section_id' => $section_id,
             ],
-        ];
+        ], $this->resolveUserLanguage());
     }
 
     /**
@@ -97,7 +118,7 @@ class LlmMemoryTriggerService extends BaseLlmService
         $event_at = $event_at ?: date('Y-m-d H:i:s');
         $profile_fields = is_array($profile_fields) ? $profile_fields : [];
 
-        return [
+        return array_merge([
             'source_type'  => LLM_MEMORY_SOURCE_LOGIN,
             'source_ref'   => json_encode(['user_id' => $user_id], JSON_UNESCAPED_SLASHES),
             'trigger_type' => '',
@@ -109,7 +130,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                 'user_id'    => (string)$user_id,
             ], $profile_fields),
             'match_criteria' => [],
-        ];
+        ], $this->resolveUserLanguage());
     }
 
     /**
@@ -122,7 +143,7 @@ class LlmMemoryTriggerService extends BaseLlmService
      */
     public function normalizeProfileNamePayload($user_id, $old_name, $new_name)
     {
-        return [
+        return array_merge([
             'source_type'  => LLM_MEMORY_SOURCE_PROFILE_NAME,
             'source_ref'   => json_encode(['user_id' => $user_id], JSON_UNESCAPED_SLASHES),
             'trigger_type' => '',
@@ -133,7 +154,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                 'new_name' => $new_name,
             ],
             'match_criteria' => [],
-        ];
+        ], $this->resolveUserLanguage());
     }
 
     /**
@@ -260,17 +281,19 @@ class LlmMemoryTriggerService extends BaseLlmService
     private function enqueueMemoryUpdate($rule, $normalized_payload, $async)
     {
         $worker_args = [
-            'rule_id'             => (int)$rule['id'],
-            'user_id'             => $normalized_payload['user_id'],
-            'source_type'         => $normalized_payload['source_type'],
-            'source_ref'          => $normalized_payload['source_ref'] ?? '',
-            'trigger_type'        => $normalized_payload['trigger_type'] ?? '',
-            'event_at'            => $normalized_payload['event_at'] ?? date('Y-m-d H:i:s'),
-            'fields'              => $normalized_payload['fields'] ?? [],
-            'readable_text'       => $normalized_payload['readable_text'] ?? '',
-            'memory_key_override' => $normalized_payload['memory_key_override'] ?? '',
-            'force_storage_mode'  => $normalized_payload['force_storage_mode'] ?? '',
-            'http_host'           => $_SERVER['HTTP_HOST'] ?? 'localhost',
+            'rule_id'                => (int)$rule['id'],
+            'user_id'                => $normalized_payload['user_id'],
+            'source_type'            => $normalized_payload['source_type'],
+            'source_ref'             => $normalized_payload['source_ref'] ?? '',
+            'trigger_type'           => $normalized_payload['trigger_type'] ?? '',
+            'event_at'               => $normalized_payload['event_at'] ?? date('Y-m-d H:i:s'),
+            'fields'                 => $normalized_payload['fields'] ?? [],
+            'readable_text'          => $normalized_payload['readable_text'] ?? '',
+            'memory_key_override'    => $normalized_payload['memory_key_override'] ?? '',
+            'force_storage_mode'     => $normalized_payload['force_storage_mode'] ?? '',
+            'user_language'          => $normalized_payload['user_language'] ?? '',
+            'user_language_locale'   => $normalized_payload['user_language_locale'] ?? '',
+            'http_host'              => $_SERVER['HTTP_HOST'] ?? 'localhost',
         ];
 
         $this->appendWorkerLog('enqueueMemoryUpdate prepared', array(
@@ -406,15 +429,17 @@ class LlmMemoryTriggerService extends BaseLlmService
         }
 
         $normalized = [
-            'source_type'         => $worker_args['source_type'],
-            'source_ref'          => $worker_args['source_ref'],
-            'trigger_type'        => $worker_args['trigger_type'],
-            'user_id'             => $worker_args['user_id'],
-            'event_at'            => $worker_args['event_at'],
-            'fields'              => $worker_args['fields'],
-            'readable_text'       => $worker_args['readable_text'] ?? '',
-            'memory_key_override' => $worker_args['memory_key_override'] ?? '',
-            'force_storage_mode'  => $worker_args['force_storage_mode'] ?? '',
+            'source_type'            => $worker_args['source_type'],
+            'source_ref'             => $worker_args['source_ref'],
+            'trigger_type'           => $worker_args['trigger_type'],
+            'user_id'                => $worker_args['user_id'],
+            'event_at'               => $worker_args['event_at'],
+            'fields'                 => $worker_args['fields'],
+            'readable_text'          => $worker_args['readable_text'] ?? '',
+            'memory_key_override'    => $worker_args['memory_key_override'] ?? '',
+            'force_storage_mode'     => $worker_args['force_storage_mode'] ?? '',
+            'user_language'          => $worker_args['user_language'] ?? '',
+            'user_language_locale'   => $worker_args['user_language_locale'] ?? '',
         ];
 
         if (($rule['execution_mode'] ?? '') === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {

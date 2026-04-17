@@ -8,6 +8,7 @@ require_once __DIR__ . '/LlmMemoryConfigService.php';
 require_once __DIR__ . '/LlmMemoryStorageService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
 require_once __DIR__ . '/LlmService.php';
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 /**
  * Orchestrates a single memory update: loads current memory,
@@ -216,7 +217,11 @@ class LlmMemoryUpdateService extends BaseLlmService
     /* Private Methods *********************************************************/
 
     /**
-     * Build the LLM prompt messages array from rule config, payload, and current memory.
+     * Build the LLM prompt messages array.
+     *
+     * Architecture:
+     *   system = smart built-in prompt (merge/append/replace rules, JSON schema, language)
+     *   user   = auto-assembled sections (current memory, submitted data, data_config, admin instructions)
      *
      * @param array      $rule
      * @param array      $normalized_payload
@@ -227,9 +232,23 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function buildPrompt($rule, $normalized_payload, $current_memory, $memory_key)
     {
         $variables = $this->buildInterpolationVariables($rule, $normalized_payload, $current_memory, $memory_key);
-        $prompt_text = $this->resolvePromptTemplate($rule);
-        $interpolated = $this->db->replace_calced_values($prompt_text, $variables);
+        $user_language = $normalized_payload['user_language'] ?? '';
 
+        return [
+            ['role' => 'system', 'content' => $this->buildSystemMessage($user_language)],
+            ['role' => 'user',   'content' => $this->buildUserMessage($rule, $normalized_payload, $current_memory, $variables)],
+        ];
+    }
+
+    /**
+     * Build the system message from the asset template with dynamic schema and language.
+     *
+     * @param string $user_language  e.g. "Deutsch (Schweiz)" or ""
+     * @return string
+     */
+    private function buildSystemMessage($user_language)
+    {
+        $loader = new LlmPromptAssetLoader();
         $output_schema = json_encode([
             'type' => 'object',
             'required' => ['memory_text', 'memory_object', 'flat_fields', 'change_summary'],
@@ -241,14 +260,63 @@ class LlmMemoryUpdateService extends BaseLlmService
             ],
         ], JSON_UNESCAPED_SLASHES);
 
-        $system = "You are a memory extraction assistant. Your task is to maintain a user's evolving memory profile.\n"
-            . "ALWAYS respond with valid JSON matching this schema:\n" . $output_schema . "\n"
-            . "Keep memory concise. Only store stable, useful user facts. Remove outdated information.";
+        $system = str_replace('{{output_schema}}', $output_schema, $loader->load('core.memory.system'));
 
-        return [
-            ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => $interpolated],
-        ];
+        if (!empty($user_language)) {
+            $suffix = $loader->load('core.memory.language_suffix');
+            $system .= "\n\n" . str_replace('{{user_language}}', $user_language, $suffix);
+        }
+
+        return $system;
+    }
+
+    /**
+     * Auto-assemble the user message from structured context sections.
+     *
+     * Sections are always injected so admins never need to reference
+     * {{memory_text}} or {{event_payload_json}} manually.
+     *
+     * @param array      $rule
+     * @param array      $normalized_payload
+     * @param array|null $current_memory
+     * @param array      $variables  Already-resolved interpolation variables
+     * @return string
+     */
+    private function buildUserMessage($rule, $normalized_payload, $current_memory, $variables)
+    {
+        $sections = [];
+
+        $mem_text = $current_memory['memory_text'] ?? '';
+        $mem_json = $current_memory['memory_json'] ?? '{}';
+        if ($mem_text !== '' || $mem_json !== '{}') {
+            $sections[] = "## Current Memory\n" . $mem_text
+                . "\n\n### Structured Data\n```json\n" . $mem_json . "\n```";
+        } else {
+            $sections[] = "## Current Memory\nNo existing memory for this user yet.";
+        }
+
+        $fields = $normalized_payload['fields'] ?? [];
+        if (!empty($fields)) {
+            $json = json_encode($fields, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            $sections[] = "## Submitted Data\nThe following data was submitted:\n```json\n" . $json . "\n```";
+        }
+
+        $extra = $this->buildDataConfigContext($rule, $normalized_payload, $variables);
+        if ($extra !== '') {
+            $sections[] = "## Additional Context\n" . $extra;
+        }
+
+        $instructions = $this->resolveAdminInstructions($rule, $variables);
+        if ($instructions !== '') {
+            $sections[] = "## Instructions\n" . $instructions;
+        }
+
+        $sections[] = "## Reminder\n"
+            . "Your response MUST be valid JSON with exactly these keys: "
+            . "memory_text, memory_object, flat_fields, change_summary. "
+            . "Do NOT use any other schema. Do NOT drop existing memory facts.";
+
+        return implode("\n\n", $sections);
     }
 
     /**
@@ -257,14 +325,16 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function buildInterpolationVariables($rule, $normalized_payload, $current_memory, $memory_key)
     {
         $vars = [
-            'memory_key'          => $memory_key,
-            'memory_text'         => $current_memory['memory_text'] ?? '',
-            'memory_json'         => $current_memory['memory_json'] ?? '{}',
-            'source_type'         => $normalized_payload['source_type'] ?? '',
-            'source_ref'          => $normalized_payload['source_ref'] ?? '',
-            'trigger_type'        => $normalized_payload['trigger_type'] ?? '',
-            'event_payload_json'  => json_encode($normalized_payload['fields'] ?? [], JSON_UNESCAPED_SLASHES),
-            'readable_text'       => $normalized_payload['readable_text'] ?? '',
+            'memory_key'             => $memory_key,
+            'memory_text'            => $current_memory['memory_text'] ?? '',
+            'memory_json'            => $current_memory['memory_json'] ?? '{}',
+            'source_type'            => $normalized_payload['source_type'] ?? '',
+            'source_ref'             => $normalized_payload['source_ref'] ?? '',
+            'trigger_type'           => $normalized_payload['trigger_type'] ?? '',
+            'event_payload_json'     => json_encode($normalized_payload['fields'] ?? [], JSON_UNESCAPED_SLASHES),
+            'readable_text'          => $normalized_payload['readable_text'] ?? '',
+            'user_language'          => $normalized_payload['user_language'] ?? '',
+            'user_language_locale'   => $normalized_payload['user_language_locale'] ?? '',
         ];
 
         $fields = $normalized_payload['fields'] ?? [];
@@ -427,7 +497,99 @@ class LlmMemoryUpdateService extends BaseLlmService
     }
 
     /**
-     * Resolve the prompt template: from prompt-lab binding or fallback to inline template.
+     * Build readable context from resolved data_config entries for the
+     * auto-injected "Additional Context" section. Entries that contributed
+     * data to the variables are formatted as labeled JSON blocks.
+     *
+     * @param array $rule
+     * @param array $normalized_payload
+     * @param array $variables
+     * @return string Human-readable context or empty string
+     */
+    private function buildDataConfigContext($rule, $normalized_payload, $variables)
+    {
+        $data_config = $rule['data_config'] ?? [];
+        if (empty($data_config) || !is_array($data_config)) {
+            return '';
+        }
+
+        $user_id = $normalized_payload['user_id'] ?? null;
+        if (!$user_id) {
+            return '';
+        }
+
+        $user_input = $this->services->get_user_input();
+        $blocks = [];
+
+        foreach ($data_config as $entry) {
+            $table_name = $entry['table'] ?? '';
+            if (empty($table_name)) {
+                continue;
+            }
+
+            $table_id = $user_input->get_dataTable_id($table_name);
+            if (!$table_id) {
+                continue;
+            }
+
+            $display_name = (string)$user_input->get_dataTable_displayName($table_id);
+            $label = $display_name !== '' ? $display_name : $table_name;
+            $scope = trim((string)($entry['scope'] ?? ''));
+            if ($scope !== '') {
+                $label .= ' (' . $scope . ')';
+            }
+
+            $retrieve = $entry['retrieve'] ?? 'last';
+            $filter = ($retrieve === 'last') ? "ORDER BY record_id DESC" : "ORDER BY record_id ASC";
+            if (!empty($entry['filter'])) {
+                $filter = $entry['filter'];
+            }
+
+            $current_user = array_key_exists('current_user', $entry) ? !empty($entry['current_user']) : true;
+            $rows = $user_input->get_data($table_id, $filter, $current_user, $user_id);
+            if (!$rows || !is_array($rows)) {
+                continue;
+            }
+
+            $rows = array_values(array_filter($rows, function ($v) {
+                return (!isset($v['deleted']) || $v['deleted'] != 1);
+            }));
+            if (empty($rows)) {
+                continue;
+            }
+
+            if ($retrieve === 'JSON' || $retrieve === 'all_as_array') {
+                $selected = $rows;
+            } elseif ($retrieve === 'first') {
+                $selected = reset($rows) ?: [];
+            } else {
+                $selected = end($rows) ?: [];
+            }
+
+            $json = json_encode($selected, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            $blocks[] = "### " . $label . "\n```json\n" . $json . "\n```";
+        }
+
+        return implode("\n\n", $blocks);
+    }
+
+    /**
+     * Resolve the admin instructions: from Prompt Lab or the default asset template.
+     * The result is interpolated with the full variable set.
+     *
+     * @param array $rule
+     * @param array $variables
+     * @return string
+     */
+    private function resolveAdminInstructions($rule, $variables)
+    {
+        $template = $this->resolvePromptTemplate($rule);
+        $interpolated = trim($this->db->replace_calced_values($template, $variables));
+        return $interpolated;
+    }
+
+    /**
+     * Resolve the prompt template: from prompt-lab binding or fallback to default asset.
      */
     private function resolvePromptTemplate($rule)
     {
@@ -445,29 +607,18 @@ class LlmMemoryUpdateService extends BaseLlmService
             }
         }
 
-        return $this->getDefaultPromptTemplate($rule);
+        return $this->getDefaultPromptTemplate();
     }
 
     /**
-     * Provide a sensible default prompt when no prompt is configured.
+     * Load the default instructions from the asset file.
+     *
+     * @return string
      */
-    private function getDefaultPromptTemplate($rule)
+    private function getDefaultPromptTemplate()
     {
-        return "## Memory Update Task\n\n"
-            . "### Source Event\n"
-            . "Type: {{source_type}}\n"
-            . "Trigger: {{trigger_type}}\n\n"
-            . "### Current User Memory\n"
-            . "{{memory_text}}\n\n"
-            . "### Current Memory (JSON)\n"
-            . "{{memory_json}}\n\n"
-            . "### New Event Data\n"
-            . "{{event_payload_json}}\n\n"
-            . "### Instructions\n"
-            . "Merge the new event data into the existing user memory.\n"
-            . "Keep only stable, useful facts about the user.\n"
-            . "If information conflicts, prefer the newer data.\n"
-            . "Do not bloat the memory with transient details.";
+        $loader = new LlmPromptAssetLoader();
+        return $loader->load('core.memory.default_instructions');
     }
 
     /**

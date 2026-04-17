@@ -63,11 +63,12 @@ interface SectionInfo {
 }
 
 const memoryPromptInterpolationDocs = [
-  'Built-in variables: {{memory_key}}, {{memory_text}}, {{memory_json}}, {{source_type}}, {{source_ref}}, {{trigger_type}}, {{event_payload_json}}, {{readable_text}}.',
-  'All source payload fields are also exposed directly by name. Example: if the payload contains user_id, email, or login_now, you can use {{user_id}}, {{email}}, {{login_now}}.',
-  'Data Config values are added after interpolation. Mapped aliases use the target name you configured, and scoped values can be referenced as {{scope.field_name}}.',
-  'For JSON/all-array data config entries, the table name and display name become variables too, plus count helpers such as {{table_name_count}} and {{scope.table_name_count}}.',
-  'If Data Config uses all_fields, each returned column is exposed directly and, when a scope is set, also as {{scope.column_name}}.',
+  '**Automatic context** — The system always injects the current memory state, submitted data (form fields, login profile, etc.), and any Data Config results into the LLM call. You do NOT need to reference them in your prompt.',
+  '**Your prompt = instructions only** — Write what the LLM should do with the data, e.g. "Extract the user\'s hobbies and preferences from the submitted form data."',
+  '**Language** — The user\'s language is auto-detected from their session and the LLM writes memory content in that language. You can reference {{user_language}} (e.g. "Deutsch (Schweiz)") or {{user_language_locale}} (e.g. "de-CH") if needed.',
+  '**Built-in variables**: {{memory_key}}, {{memory_text}}, {{memory_json}}, {{source_type}}, {{trigger_type}}, {{event_payload_json}}, {{user_language}}, {{user_language_locale}}, {{readable_text}}.',
+  '**Submitted data fields**: All fields from the form submission or event payload are available by name. For example, if the form has a "hobbies" field, you can use {{hobbies}}.',
+  '**Data Config variables**: Extra data sources configured above are injected as additional context. Mapped aliases use the target name, scoped values as {{scope.field_name}}, and count helpers as {{table_name_count}}.',
 ];
 
 /** Type definition for memory rule draft. */
