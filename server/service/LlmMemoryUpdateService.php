@@ -145,7 +145,9 @@ class LlmMemoryUpdateService extends BaseLlmService
             ? (string)$rule['llm_model']
             : (string)($config['llm_default_model'] ?? LLM_DEFAULT_MODEL);
         $temperature = isset($rule['llm_temperature']) ? (float)$rule['llm_temperature'] : 0.2;
-        $max_tokens = isset($rule['llm_max_tokens']) ? (int)$rule['llm_max_tokens'] : 1200;
+        $max_tokens = isset($rule['llm_max_tokens']) && (int)$rule['llm_max_tokens'] > 0
+            ? (int)$rule['llm_max_tokens']
+            : 4096;
 
         if (defined('DEBUG') && DEBUG) {
             error_log('LLM Memory: resolved model for rule #'
@@ -173,10 +175,32 @@ class LlmMemoryUpdateService extends BaseLlmService
                 return false;
             }
 
-            $memory_data = $this->parseMemoryOutput($response['content']);
+            $parse_error = '';
+            $memory_data = $this->parseMemoryOutput($response['content'], $parse_error);
             if (!$memory_data) {
-                $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key, 'Failed to parse LLM output as valid memory structure');
-                return false;
+                error_log("LLM Memory: parse failed (attempt 1), error=$parse_error, raw=" . mb_substr($response['content'], 0, 500));
+
+                $retry_tokens = min($max_tokens * 2, 8192);
+                $retry_response = $this->llm_service->callLlmApi(
+                    $prompt,
+                    $model,
+                    $temperature,
+                    $retry_tokens,
+                    [
+                        'conversation_id' => $conversation_id,
+                        'sent_context'    => $prompt,
+                        'is_validated'    => true,
+                    ]
+                );
+                if ($retry_response && isset($retry_response['content'])) {
+                    $memory_data = $this->parseMemoryOutput($retry_response['content'], $parse_error);
+                }
+
+                if (!$memory_data) {
+                    $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key,
+                        "Failed to parse LLM output after retry: $parse_error");
+                    return false;
+                }
             }
 
             $metadata = [
@@ -638,7 +662,7 @@ class LlmMemoryUpdateService extends BaseLlmService
      * @param string $content Raw LLM response content
      * @return array|null Parsed memory data or null on failure
      */
-    private function parseMemoryOutput($content)
+    private function parseMemoryOutput($content, &$error = '')
     {
         $content = trim($content);
 
@@ -648,26 +672,32 @@ class LlmMemoryUpdateService extends BaseLlmService
 
         $parsed = json_decode($content, true);
         if (json_last_error() !== JSON_ERROR_NONE || !is_array($parsed)) {
+            $error = 'Invalid JSON: ' . json_last_error_msg()
+                . ' (first 200 chars: ' . mb_substr($content, 0, 200) . ')';
             return null;
         }
 
-        if (
-            !array_key_exists('memory_text', $parsed)
-            || !array_key_exists('memory_object', $parsed)
-            || !array_key_exists('flat_fields', $parsed)
-            || !array_key_exists('change_summary', $parsed)
-        ) {
+        $required = ['memory_text', 'memory_object', 'flat_fields', 'change_summary'];
+        $missing = array_diff($required, array_keys($parsed));
+        if (!empty($missing)) {
+            $error = 'Missing required keys: ' . implode(', ', $missing)
+                . '; got keys: ' . implode(', ', array_keys($parsed));
             return null;
         }
 
-        if (!is_array($parsed['memory_object']) || !is_array($parsed['flat_fields'])) {
+        if (!is_array($parsed['memory_object'])) {
+            $error = 'memory_object is not an array/object';
+            return null;
+        }
+        if (!is_array($parsed['flat_fields'])) {
+            $error = 'flat_fields is not an array/object';
             return null;
         }
 
         return [
             'memory_text'    => (string)($parsed['memory_text'] ?? ''),
-            'memory_object'  => $parsed['memory_object'] ?? [],
-            'flat_fields'    => $parsed['flat_fields'] ?? [],
+            'memory_object'  => $parsed['memory_object'],
+            'flat_fields'    => $parsed['flat_fields'],
             'change_summary' => (string)($parsed['change_summary'] ?? ''),
         ];
     }
