@@ -314,7 +314,7 @@ class LlmMemoryUpdateService extends BaseLlmService
             $sections[] = "## Current Memory\nNo existing memory for this user yet.";
         }
 
-        $fields = $normalized_payload['fields'] ?? [];
+        $fields = $this->stripInternalFormFields($normalized_payload['fields'] ?? []);
         if (!empty($fields)) {
             $json = json_encode($fields, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
             $sections[] = "## Submitted Data\nThe following data was submitted:\n```json\n" . $json . "\n```";
@@ -641,6 +641,23 @@ class LlmMemoryUpdateService extends BaseLlmService
     {
         $loader = new LlmPromptAssetLoader();
         return $loader->load('core.memory.default_instructions');
+    }
+
+    private static $INTERNAL_FORM_FIELDS = [
+        'ajax', 'is_log', 'redirect_at_end', 'trigger_type', 'record_id',
+        '__form_name', '__session_id', '__csrf_token', '__post_id',
+        '#section_id', '#form_id',
+    ];
+
+    /**
+     * Remove SelfHelp internal form metadata that has no semantic meaning for user memory.
+     *
+     * @param array $fields Raw form field values.
+     * @return array Cleaned fields with internal keys removed.
+     */
+    private function stripInternalFormFields(array $fields)
+    {
+        return array_diff_key($fields, array_flip(self::$INTERNAL_FORM_FIELDS));
     }
 
     /**
