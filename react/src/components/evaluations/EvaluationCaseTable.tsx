@@ -37,8 +37,8 @@ export const EvaluationCaseTable: React.FC<{
   cases: PromptEvalRunCase[];
   onInspect: (runCase: PromptEvalRunCase) => void;
   onDeleteEvaluation?: (runCase: PromptEvalRunCase) => void;
-  deletingRunId?: number | null;
-}> = ({ cases, onInspect, onDeleteEvaluation, deletingRunId = null }) => (
+  deletingRunCaseId?: number | null;
+}> = ({ cases, onInspect, onDeleteEvaluation, deletingRunCaseId = null }) => (
   <div className="table-responsive mt-3">
     <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
@@ -100,10 +100,10 @@ export const EvaluationCaseTable: React.FC<{
                     <Button
                       size="sm"
                       variant="outline-danger"
-                      disabled={deletingRunId != null && deletingRunId === Number(item.id_llm_eval_runs || 0)}
+                      disabled={deletingRunCaseId != null && deletingRunCaseId === runCaseId}
                       onClick={() => onDeleteEvaluation(item)}
                     >
-                      {deletingRunId != null && deletingRunId === Number(item.id_llm_eval_runs || 0) ? 'Deleting...' : 'Delete'}
+                      {deletingRunCaseId != null && deletingRunCaseId === runCaseId ? 'Deleting...' : 'Delete'}
                     </Button>
                   )}
                 </div>

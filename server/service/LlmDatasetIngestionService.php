@@ -114,7 +114,7 @@ class LlmDatasetIngestionService extends BaseLlmService
             return $this->isStyleOwner($descriptor) ? $this->decorateImportCandidates('form_submission', $this->listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id)) : array();
         }
         if ($source_type === 'conversation_message') {
-            return ($this->isStyleOwner($descriptor) || $this->isScriptOwner($descriptor))
+            return ($this->isStyleOwner($descriptor) || $this->isScriptOwner($descriptor) || $this->isMemoryOwner($descriptor))
                 ? $this->decorateImportCandidates('conversation_message', $this->listConversationCandidates($limit, $descriptor, $allowed_page_id))
                 : array();
         }
@@ -208,6 +208,15 @@ class LlmDatasetIngestionService extends BaseLlmService
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
+        // Only include genuine playground tests (and compare runs). Exclude
+        // builder runs (prompt improvement with AI) and dataset-evaluation runs
+        // so dataset import reflects what the user actually tested in the
+        // playground UI.
+        $allowed_mode_ids = $this->resolvePlaygroundImportRunModeIds();
+        if (!empty($allowed_mode_ids)) {
+            $where[] = 'pr.id_lookups_run_mode IN (' . implode(',', array_map('intval', $allowed_mode_ids)) . ')';
+        }
+
         return $this->db->query_db(
             "SELECT pr.id, pr.created_at, pr.id_llmConversations, pr.id_llmMessages_request, pr.id_llmMessages_response,
                     req.content AS request_content, res.content AS response_content
@@ -222,6 +231,25 @@ class LlmDatasetIngestionService extends BaseLlmService
              ORDER BY pr.created_at DESC LIMIT {$limit}",
             $params
         );
+    }
+
+    /**
+     * Resolve the lookup IDs for run modes that represent real playground
+     * activity (playground manual runs and multi-model compare runs).
+     * Builder runs (prompt improvement) and dataset-eval runs are excluded.
+     *
+     * @return array<int> Numeric lookup IDs (may be empty if lookups missing).
+     */
+    private function resolvePlaygroundImportRunModeIds()
+    {
+        $ids = array();
+        foreach (array(LLM_PROMPT_RUN_MODE_PLAYGROUND, LLM_PROMPT_RUN_MODE_COMPARE) as $code) {
+            $id = $this->db->get_lookup_id_by_code('llm_prompt_run_modes', $code);
+            if ($id) {
+                $ids[] = (int)$id;
+            }
+        }
+        return $ids;
     }
 
     /**
@@ -284,20 +312,44 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function listConversationCandidates($limit, $descriptor, $allowed_page_id)
     {
         $params = array();
-        $where = array("m.role = 'user'");
+        // Memory-update conversations only contain assistant messages — the
+        // memory worker calls LlmService::callLlmApi() which auto-logs only the
+        // assistant response (with the full prompt kept in `sent_context`).
+        // For memory owners we therefore look for assistant rows; every other
+        // owner keeps the original "user message" semantics.
+        $is_memory_owner = $this->isMemoryOwner($descriptor);
+        $where = array($is_memory_owner ? "m.role = 'assistant'" : "m.role = 'user'");
         if (!empty($descriptor['owner_id']) && $this->isStyleOwner($descriptor)) {
             $where[] = 'lc.id_sections = :section_id';
             $params[':section_id'] = (int)$descriptor['owner_id'];
         } elseif (!empty($descriptor['owner_id']) && $this->isScriptOwner($descriptor)) {
             $where[] = 'lc.id_llm_scripts = :script_id';
             $params[':script_id'] = (int)$descriptor['owner_id'];
+        } elseif ($is_memory_owner) {
+            // Memory-update conversations have no id_sections / id_llm_scripts
+            // link. They are identified solely by the `__memory_update__<key>`
+            // title pattern written by LlmMemoryUpdateService.
+            $title_patterns = $this->resolveMemoryConversationTitlePatterns($descriptor);
+            if (empty($title_patterns)) {
+                $where[] = "lc.title LIKE :memory_title_prefix";
+                $params[':memory_title_prefix'] = '__memory_update__%';
+            } else {
+                $title_clauses = array();
+                foreach ($title_patterns as $i => $pattern) {
+                    $key = ':memory_title_' . $i;
+                    $title_clauses[] = 'lc.title = ' . $key;
+                    $params[$key] = $pattern;
+                }
+                $where[] = '(' . implode(' OR ', $title_clauses) . ')';
+            }
         } elseif ($allowed_page_id > 0) {
             $where[] = 'ps.id_pages = :allowed_page_id';
             $params[':allowed_page_id'] = $allowed_page_id;
         }
 
         return $this->db->query_db(
-            "SELECT m.id, m.id_llmConversations, m.timestamp AS created_at, m.role, m.content, lc.id_llm_scripts
+            "SELECT m.id, m.id_llmConversations, m.timestamp AS created_at, m.role, m.content,
+                    lc.id_llm_scripts, lc.id_sections, lc.title AS conversation_title
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
@@ -306,6 +358,44 @@ class LlmDatasetIngestionService extends BaseLlmService
              ORDER BY m.timestamp DESC LIMIT {$limit}",
             $params
         );
+    }
+
+    /**
+     * Resolve the specific `__memory_update__<key>` titles that belong to a
+     * memory-rule descriptor. Falls back to empty array so the caller can use
+     * the generic prefix filter when the rule's keys cannot be determined.
+     *
+     * @param array $descriptor Owner descriptor for a memory rule.
+     * @return array<string> List of fully-qualified conversation titles.
+     */
+    private function resolveMemoryConversationTitlePatterns($descriptor)
+    {
+        $rule_id = (int)($descriptor['owner_id'] ?? 0);
+        if ($rule_id <= 0) {
+            return array();
+        }
+        try {
+            require_once __DIR__ . '/LlmMemoryRuleService.php';
+            $rule_service = new LlmMemoryRuleService($this->services);
+            $rule = $rule_service->getRuleById($rule_id);
+            if (!$rule) {
+                return array();
+            }
+            $keys = isset($rule['memory_keys']) && is_array($rule['memory_keys'])
+                ? $rule['memory_keys']
+                : array();
+            $patterns = array();
+            foreach ($keys as $key) {
+                $key = trim((string)$key);
+                if ($key === '') {
+                    continue;
+                }
+                $patterns[] = '__memory_update__' . $key;
+            }
+            return $patterns;
+        } catch (Exception $e) {
+            return array();
+        }
     }
 
     /**
@@ -353,6 +443,12 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function isScriptOwner($descriptor)
     {
         return ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT;
+    }
+
+    /** @return bool Whether the descriptor's owner_type is an LLM memory rule. */
+    private function isMemoryOwner($descriptor)
+    {
+        return ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_MEMORY_RULE;
     }
 
     /**
@@ -481,7 +577,9 @@ class LlmDatasetIngestionService extends BaseLlmService
     private function importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
     {
         $message = $this->db->query_db_first(
-            "SELECT m.id, m.id_llmConversations, m.content, lc.id_sections, lc.id_llm_scripts AS source_script_id, ps.id_pages AS source_page_id
+            "SELECT m.id, m.id_llmConversations, m.role, m.content, m.sent_context,
+                    lc.id_sections, lc.id_llm_scripts AS source_script_id,
+                    lc.title AS conversation_title, ps.id_pages AS source_page_id
              FROM llmMessages m
              LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
              LEFT JOIN sections sec ON sec.id = lc.id_sections
@@ -494,32 +592,61 @@ class LlmDatasetIngestionService extends BaseLlmService
         }
 
         $is_script_owner = $this->isScriptOwner($descriptor);
-        $runtime_profile = $is_script_owner
-            ? 'script_runtime'
-            : $this->resolveConversationImportRuntimeProfile($execution_profile, $descriptor, $message);
-        $history = $this->loadConversationWindow((int)$message['id_llmConversations'], (int)$message['id'], 12);
-        $assistant_reply = $this->loadNextAssistantMessage((int)$message['id_llmConversations'], (int)$message['id']);
-        $trigger_message = (string)$message['content'];
-        $variables = $is_script_owner ? $this->buildScriptVariablesFromMessage($trigger_message) : array();
+        $is_memory_owner = $this->isMemoryOwner($descriptor);
+        if ($is_script_owner) {
+            $runtime_profile = 'script_runtime';
+        } elseif ($is_memory_owner) {
+            $runtime_profile = 'memory_runtime';
+        } else {
+            $runtime_profile = $this->resolveConversationImportRuntimeProfile($execution_profile, $descriptor, $message);
+        }
+        if ($is_memory_owner) {
+            // The source row IS the assistant reply (memory workers only log
+            // assistant messages); the original prompt lives in `sent_context`.
+            $history = $this->dataset_service->normalizeMessages(
+                $this->dataset_service->decodeJsonColumn((string)($message['sent_context'] ?? ''), array())
+            );
+            $assistant_reply = array(
+                'id'      => (int)$message['id'],
+                'content' => (string)$message['content'],
+            );
+            $trigger_message = $this->extractMemoryTriggerFromHistory($history);
+            $memory_context = $this->buildMemoryContextFromHistory($history, $descriptor);
+            $variables = !empty($memory_context['variables'])
+                ? $memory_context['variables']
+                : $this->buildScriptVariablesFromMessage($trigger_message);
+        } else {
+            $history = $this->loadConversationWindow((int)$message['id_llmConversations'], (int)$message['id'], 12);
+            $assistant_reply = $this->loadNextAssistantMessage((int)$message['id_llmConversations'], (int)$message['id']);
+            $trigger_message = (string)$message['content'];
+            $variables = $is_script_owner
+                ? $this->buildScriptVariablesFromMessage($trigger_message)
+                : array();
+            $memory_context = null;
+        }
 
+        $input_payload = array(
+            'execution_profile' => $runtime_profile,
+            'owner_descriptor' => $this->dataset_service->buildOwnerDescriptor($descriptor),
+            'message_history' => $history,
+            'trigger_message' => $trigger_message,
+            'variables' => $variables,
+            'runtime_overrides' => $runtime_overrides,
+            'source_context' => array(
+                'id_llmConversations' => (int)$message['id_llmConversations'],
+                'id_llmMessages_request' => (int)$message['id'],
+                'id_llmMessages_response' => !empty($assistant_reply['id']) ? (int)$assistant_reply['id'] : null,
+                'message_window' => 'last_12'
+            )
+        );
+        if ($is_memory_owner && !empty($memory_context)) {
+            $input_payload['memory_context'] = $memory_context;
+        }
         return $this->dataset_service->createCase($dataset_id, array(
             'title' => $this->buildImportedCaseTitle('Conversation message', $trigger_message, (int)$message['id']),
             'case_type' => $this->dataset_service->toCaseType($runtime_profile),
             'source_type' => 'conversation_message',
-            'input_payload' => array(
-                'execution_profile' => $runtime_profile,
-                'owner_descriptor' => $this->dataset_service->buildOwnerDescriptor($descriptor),
-                'message_history' => $history,
-                'trigger_message' => $trigger_message,
-                'variables' => $variables,
-                'runtime_overrides' => $runtime_overrides,
-                'source_context' => array(
-                    'id_llmConversations' => (int)$message['id_llmConversations'],
-                    'id_llmMessages_request' => (int)$message['id'],
-                    'id_llmMessages_response' => !empty($assistant_reply['id']) ? (int)$assistant_reply['id'] : null,
-                    'message_window' => 'last_12'
-                )
-            ),
+            'input_payload' => $input_payload,
             'expected_output' => !empty($assistant_reply['content']) ? array('assistant_text' => (string)$assistant_reply['content']) : null,
             'source_ref' => array(
                 'id_llmConversations' => (int)$message['id_llmConversations'],
@@ -528,7 +655,9 @@ class LlmDatasetIngestionService extends BaseLlmService
             ),
             'tags' => $is_script_owner
                 ? array('imported', 'conversation', 'script_conversation')
-                : array('imported', 'conversation')
+                : ($is_memory_owner
+                    ? array('imported', 'conversation', 'memory_conversation')
+                    : array('imported', 'conversation'))
         ));
     }
 
@@ -564,6 +693,247 @@ class LlmDatasetIngestionService extends BaseLlmService
             'topic' => $content,
             'text' => $content
         );
+    }
+
+    /**
+     * Extract the last user-role content from a memory prompt history.
+     * Falls back to system content, then empty string.
+     *
+     * @param array $history Normalized message array.
+     * @return string
+     */
+    private function extractMemoryTriggerFromHistory($history)
+    {
+        if (!is_array($history)) {
+            return '';
+        }
+        for ($i = count($history) - 1; $i >= 0; $i--) {
+            $role = (string)($history[$i]['role'] ?? '');
+            $content = trim((string)($history[$i]['content'] ?? ''));
+            if ($role === 'user' && $content !== '') {
+                return $content;
+            }
+        }
+        foreach ($history as $entry) {
+            $content = trim((string)($entry['content'] ?? ''));
+            if ($content !== '') {
+                return $content;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Parse a memory-worker sent_context (system + user messages) into a structured
+     * context payload so the evaluator can replay the exact same situation while
+     * swapping in the draft admin instructions.
+     *
+     * The user message produced by LlmMemoryUpdateService::buildUserMessage follows
+     * a fixed section layout:
+     *
+     *   ## Scope
+     *   Memory key: `<key>`
+     *   Rule: <label>
+     *
+     *   ## Current Memory
+     *   <memory_text>
+     *
+     *   ### Structured Data
+     *   ```json
+     *   <memory_json>
+     *   ```
+     *
+     *   ## Submitted Data
+     *   The following data was submitted:
+     *   ```json
+     *   <fields_json>
+     *   ```
+     *
+     *   ## Additional Context
+     *   <data_config_context>
+     *
+     *   ## Instructions
+     *   <admin_instructions>
+     *
+     *   ## Reminder
+     *   ...
+     *
+     * We split the user message at the `## Instructions` header so the evaluator
+     * can substitute a fresh draft into that slot while keeping every other
+     * section intact. Parsed values (memory_key, memory_text, memory_json,
+     * event_payload_json, individual form fields) become variables for
+     * interpolating the draft prompt.
+     *
+     * @param array $history Normalized message array (system + user).
+     * @param array $descriptor Prompt owner descriptor.
+     * @return array|null Structured memory context or null when the history is unusable.
+     */
+    private function buildMemoryContextFromHistory($history, $descriptor)
+    {
+        if (!is_array($history) || empty($history)) {
+            return null;
+        }
+
+        $system_message = '';
+        $user_message = '';
+        foreach ($history as $entry) {
+            $role = (string)($entry['role'] ?? '');
+            $content = (string)($entry['content'] ?? '');
+            if ($role === 'system' && $system_message === '') {
+                $system_message = $content;
+            } elseif ($role === 'user' && $user_message === '') {
+                $user_message = $content;
+            }
+        }
+        if ($user_message === '') {
+            return null;
+        }
+
+        // Split user message at the Instructions header. The worker always
+        // emits "\n\n## Instructions\n<text>\n\n## Reminder\n..." when the rule
+        // has an admin template; when the template is empty the Instructions
+        // section is omitted entirely.
+        $prefix = $user_message;
+        $suffix = '';
+        $original_instructions = '';
+        $instructions_pos = strpos($user_message, "\n## Instructions\n");
+        if ($instructions_pos !== false) {
+            $prefix = substr($user_message, 0, $instructions_pos);
+            $rest = substr($user_message, $instructions_pos + strlen("\n## Instructions\n"));
+            $reminder_pos = strpos($rest, "\n\n## Reminder");
+            if ($reminder_pos !== false) {
+                $original_instructions = substr($rest, 0, $reminder_pos);
+                $suffix = substr($rest, $reminder_pos);
+            } else {
+                $original_instructions = $rest;
+            }
+        } else {
+            // No Instructions block. Expect the Reminder section to exist at
+            // the end; we splice the new Instructions right before it.
+            $reminder_pos = strpos($user_message, "\n\n## Reminder");
+            if ($reminder_pos !== false) {
+                $prefix = substr($user_message, 0, $reminder_pos);
+                $suffix = substr($user_message, $reminder_pos);
+            } else {
+                $prefix = $user_message;
+                $suffix = '';
+            }
+        }
+
+        $variables = $this->extractMemoryVariablesFromUserMessage($user_message);
+
+        return array(
+            'system_message'         => $system_message,
+            'user_message'           => $user_message,
+            'prefix_before_instructions' => $prefix,
+            'suffix_after_instructions'  => $suffix,
+            'original_instructions'  => $original_instructions,
+            'memory_key'             => (string)($variables['memory_key'] ?? ''),
+            'variables'              => $variables,
+            'owner_descriptor'       => $this->dataset_service->buildOwnerDescriptor($descriptor),
+        );
+    }
+
+    /**
+     * Extract interpolation variables from a memory worker's user message so
+     * the evaluator can re-interpolate the draft prompt.
+     *
+     * Produces at minimum: memory_key, memory_text, memory_json,
+     * event_payload_json, plus every scalar form field. Missing sections are
+     * silently skipped so import never fails on edge-case layouts.
+     *
+     * @param string $user_message Raw user message content.
+     * @return array Interpolation variable map.
+     */
+    private function extractMemoryVariablesFromUserMessage($user_message)
+    {
+        $vars = array();
+        if (!is_string($user_message) || $user_message === '') {
+            return $vars;
+        }
+
+        if (preg_match('/^Memory key:\s*`([^`]+)`/m', $user_message, $m)) {
+            $vars['memory_key'] = $m[1];
+        }
+        if (preg_match('/^Rule:\s*(.+)$/m', $user_message, $m)) {
+            $vars['rule_label'] = trim($m[1]);
+        }
+
+        $memory_section = $this->extractSection($user_message, '## Current Memory');
+        if ($memory_section !== '') {
+            $structured_pos = strpos($memory_section, '### Structured Data');
+            if ($structured_pos !== false) {
+                $memory_text = trim(substr($memory_section, 0, $structured_pos));
+                $structured_block = substr($memory_section, $structured_pos);
+                $vars['memory_text'] = $memory_text;
+                $memory_json = $this->extractJsonBlock($structured_block);
+                if ($memory_json !== '') {
+                    $vars['memory_json'] = $memory_json;
+                }
+            } else {
+                $vars['memory_text'] = trim($memory_section);
+            }
+        }
+
+        $submitted_section = $this->extractSection($user_message, '## Submitted Data');
+        if ($submitted_section !== '') {
+            $fields_json = $this->extractJsonBlock($submitted_section);
+            if ($fields_json !== '') {
+                $vars['event_payload_json'] = $fields_json;
+                $decoded = json_decode($fields_json, true);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $key => $value) {
+                        if (!array_key_exists($key, $vars)) {
+                            $vars[$key] = is_scalar($value)
+                                ? (string)$value
+                                : json_encode($value, JSON_UNESCAPED_SLASHES);
+                        }
+                    }
+                }
+            }
+        }
+
+        return $vars;
+    }
+
+    /**
+     * Return the text of a markdown H2 section (from the matching header up to
+     * the next H2 header or end-of-string). Empty string when the header is
+     * not present.
+     *
+     * @param string $source Full markdown-like text.
+     * @param string $header e.g. "## Scope".
+     * @return string Section body without the header line.
+     */
+    private function extractSection($source, $header)
+    {
+        $pos = strpos($source, $header);
+        if ($pos === false) {
+            return '';
+        }
+        $after = substr($source, $pos + strlen($header));
+        if ($after !== '' && $after[0] === "\n") {
+            $after = substr($after, 1);
+        }
+        // Stop at the next top-level (## ) header.
+        if (preg_match('/\n##\s/', $after, $match, PREG_OFFSET_CAPTURE)) {
+            $after = substr($after, 0, $match[0][1]);
+        }
+        return $after;
+    }
+
+    /**
+     * Extract the first fenced JSON block (```json ... ```) from a chunk of text.
+     *
+     * @param string $chunk Section body.
+     * @return string Raw JSON content, or empty string when no block is present.
+     */
+    private function extractJsonBlock($chunk)
+    {
+        if (!preg_match('/```json\s*\n(.*?)\n```/s', $chunk, $m)) {
+            return '';
+        }
+        return trim($m[1]);
     }
 
     /** @return bool True if $value is an associative (non-sequential) array. */
@@ -800,6 +1170,19 @@ class LlmDatasetIngestionService extends BaseLlmService
             }
 
             // Legacy script-linked rows can miss prompt owner linkage.
+            return true;
+        }
+        if ($this->isMemoryOwner($descriptor)) {
+            // Memory-rule scopes rely on conversation title (__memory_update__<key>).
+            // Any row already filtered through listConversationCandidates is in scope.
+            $title = (string)($row['conversation_title'] ?? '');
+            if ($title !== '' && strpos($title, '__memory_update__') === 0) {
+                return true;
+            }
+            $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
+            if ($prompt_owner_id > 0 && $owner_id > 0) {
+                return $prompt_owner_id === $owner_id;
+            }
             return true;
         }
         if ($allowed_page_id > 0) {

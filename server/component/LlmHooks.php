@@ -1338,7 +1338,19 @@ class LlmHooks extends BaseHooks
             return false;
         }
 
-        $form_table = $config['form_data']['table_name'] ?? '';
+        // UserInput::save_data builds $form_data with the table name in
+        // `form_name` and the inserted/updated record id inside
+        // `form_fields[ENTRY_RECORD_ID]`. Older code paths still occasionally
+        // populate `table_name` / `record_id` at the top level, so accept both.
+        $form_fields = $config['form_data']['form_fields'] ?? [];
+        $form_table = (string)(
+            $config['form_data']['table_name']
+            ?? $config['form_data']['form_name']
+            ?? ''
+        );
+        $record_id = $config['form_data']['record_id']
+            ?? ($form_fields[ENTRY_RECORD_ID] ?? null);
+
         if ($form_table !== '') {
             $memory_config = new LlmMemoryConfigService($this->services);
             $blocked_tables = [
@@ -1363,15 +1375,14 @@ class LlmHooks extends BaseHooks
         $rule_ids = array_values(array_filter(array_map('intval', $rule_ids)));
 
         $run_async = !empty($config['run_async']);
-        $form_fields = $config['form_data']['form_fields'] ?? [];
 
         $trigger_service = new LlmMemoryTriggerService($this->services);
         $normalized = $trigger_service->normalizeFormActionPayload([
             'form_fields'  => $form_fields,
-            'form_name'    => $config['form_data']['form_name'] ?? '',
-            'table_name'   => $config['form_data']['table_name'] ?? '',
+            'form_name'    => $config['form_data']['form_name'] ?? $form_table,
+            'table_name'   => $form_table,
             'trigger_type' => $config['trigger_type'] ?? 'finished',
-            'record_id'    => $config['form_data']['record_id'] ?? null,
+            'record_id'    => $record_id,
         ], $user_id);
 
         if (!empty($config['memory_key_override'])) {

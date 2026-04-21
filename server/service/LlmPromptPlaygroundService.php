@@ -176,6 +176,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
                 $draft_prompt,
                 $runtime_values,
                 $variables,
+                $message_history,
                 $model_name,
                 $config_snapshot,
                 $comparison_group_id,
@@ -200,19 +201,34 @@ class LlmPromptPlaygroundService extends BaseLlmService
     }
 
     /**
-     * Execute a memory-rule prompt via the script runtime with memory-specific config overrides.
+     * Execute a memory-rule prompt.
+     *
+     * When the caller supplies a structured `memory_context` (dataset replays
+     * populate this from the imported sent_context), the runtime reassembles
+     * the exact prompt the live memory worker produced: the original system
+     * message, and the original user message with every context section
+     * (Scope, Current Memory, Submitted Data, Additional Context, Reminder)
+     * preserved. Only the `## Instructions` block is replaced by the draft
+     * admin prompt, interpolated with the variables parsed from the case.
+     * The messages are then sent to the LLM directly via callLlmApi.
+     *
+     * When no memory_context is available (raw playground runs from the UI
+     * without an imported scenario), the runtime falls back to the script
+     * runtime so the admin can still iterate on an instruction template with
+     * mock variables.
      *
      * @param array  $descriptor          Prompt owner descriptor.
      * @param string $draft_prompt        Raw prompt template text.
      * @param array  $runtime_values      Override values including 'name' for the rule.
      * @param array  $variables           Template variable key-value pairs.
+     * @param array  $message_history     Message history from the dataset case.
      * @param string $model_name          LLM model identifier.
      * @param array  $config_snapshot     Resolved config snapshot.
      * @param string|null $comparison_group_id Comparison group ID for multi-model runs.
-     * @param array  $options             Additional run options.
+     * @param array  $options             Additional run options. May carry 'memory_context'.
      * @return array Run result with execution_profile set to 'memory_runtime'.
      */
-    private function runMemoryRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $model_name, $config_snapshot, $comparison_group_id, $options)
+    private function runMemoryRuntime($descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $runtime_values = is_array($runtime_values) ? $runtime_values : array();
         if (empty($runtime_values['name'])) {
@@ -224,20 +240,145 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $memory_config_snapshot['playground_runtime_type'] = 'memory_runtime';
         $memory_config_snapshot['playground_runtime_label'] = 'Memory Rule';
 
-        $result = $this->runScriptRuntime(
-            $descriptor,
-            $draft_prompt,
-            $runtime_values,
-            $variables,
-            $model_name,
-            $memory_config_snapshot,
-            $comparison_group_id,
-            $options
-        );
+        $memory_context = is_array($options['memory_context'] ?? null) ? $options['memory_context'] : null;
+
+        if ($memory_context !== null) {
+            $result = $this->runMemoryStructuredReplay(
+                $descriptor,
+                $draft_prompt,
+                $variables,
+                $memory_context,
+                $model_name,
+                $memory_config_snapshot,
+                $comparison_group_id,
+                $options
+            );
+        } else {
+            $result = $this->runScriptRuntime(
+                $descriptor,
+                $draft_prompt,
+                $runtime_values,
+                $variables,
+                $model_name,
+                $memory_config_snapshot,
+                $comparison_group_id,
+                $options
+            );
+        }
 
         $result['execution_profile'] = 'memory_runtime';
         $result['playground_runtime_type'] = 'memory_runtime';
         return $result;
+    }
+
+    /**
+     * Replay a memory rule prompt using the structured memory_context captured
+     * at import time. The draft admin prompt replaces the `## Instructions`
+     * block of the original user message; everything else (system message,
+     * Current Memory, Submitted Data, Additional Context, Reminder) is sent
+     * verbatim so the LLM sees exactly what the live memory worker would see.
+     *
+     * @param array  $descriptor
+     * @param string $draft_prompt
+     * @param array  $variables           Variables parsed from the imported case plus user overrides.
+     * @param array  $memory_context      Structured memory context from dataset case input_payload.
+     * @param string $model_name
+     * @param array  $config_snapshot
+     * @param string|null $comparison_group_id
+     * @param array  $options
+     * @return array Normalized run result.
+     */
+    private function runMemoryStructuredReplay($descriptor, $draft_prompt, $variables, $memory_context, $model_name, $config_snapshot, $comparison_group_id, $options)
+    {
+        $context_variables = is_array($memory_context['variables'] ?? null) ? $memory_context['variables'] : array();
+        $effective_variables = array_merge($context_variables, is_array($variables) ? $variables : array());
+
+        $interpolated_instructions = $this->db->replace_calced_values(
+            (string)$draft_prompt,
+            $effective_variables
+        );
+
+        $prefix = (string)($memory_context['prefix_before_instructions'] ?? '');
+        $suffix = (string)($memory_context['suffix_after_instructions'] ?? '');
+        $user_message = rtrim($prefix)
+            . "\n\n## Instructions\n"
+            . $interpolated_instructions
+            . ($suffix !== '' ? $suffix : '');
+
+        $system_message = (string)($memory_context['system_message'] ?? '');
+        $effective_messages = array();
+        if ($system_message !== '') {
+            $effective_messages[] = array('role' => 'system', 'content' => $system_message);
+        }
+        $effective_messages[] = array('role' => 'user', 'content' => $user_message);
+
+        $temperature = $config_snapshot['temperature'] ?? LLM_DEFAULT_TEMPERATURE;
+        $max_tokens = $config_snapshot['max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS;
+
+        $conversation_id = $this->getOrCreatePromptLabConversation(
+            (int)($_SESSION['id_user'] ?? 0),
+            $model_name,
+            $temperature,
+            $max_tokens,
+            (int)($descriptor['owner_id'] ?? 0),
+            (string)($descriptor['prompt_slot'] ?? 'memory_rule')
+        );
+
+        $request_msg_id = $this->llm_service->addMessage(
+            $conversation_id,
+            'user',
+            $user_message,
+            null,
+            $model_name,
+            0,
+            null,
+            $effective_messages,
+            null,
+            true,
+            null
+        );
+
+        $started_at = microtime(true);
+        $response = $this->llm_service->callLlmApi(
+            $effective_messages,
+            $model_name,
+            $temperature,
+            $max_tokens,
+            array(
+                'conversation_id' => $conversation_id,
+                'sent_context'    => $effective_messages,
+                'is_validated'    => true
+            )
+        );
+
+        $rendered = $this->render_service->render($response['content'] ?? '', $model_name);
+        $duration_ms = !empty($response['processing_time'])
+            ? (int)round(((float)$response['processing_time']) * 1000)
+            : (int)round((microtime(true) - $started_at) * 1000);
+
+        $normalized = array_merge($rendered, array(
+            'model' => $model_name,
+            'execution_profile' => 'memory_runtime',
+            'request_payload' => $response['request_payload'] ?? null,
+            'effective_context' => $effective_messages,
+            'id_llmConversations' => $conversation_id,
+            'id_llmMessages_request' => $request_msg_id,
+            'id_llmMessages_response' => $response['logged_message_id'] ?? null,
+            'tokens_used' => $response['usage']['total_tokens'] ?? null,
+            'duration_ms' => $duration_ms,
+            'logged_message_id' => $response['logged_message_id'] ?? null
+        ));
+
+        $normalized['id_llm_prompt_playground_runs'] = $this->logRun(
+            $descriptor,
+            $config_snapshot,
+            $effective_variables,
+            $normalized,
+            $comparison_group_id,
+            $options
+        );
+
+        return $normalized;
     }
 
     /**
@@ -471,6 +612,18 @@ class LlmPromptPlaygroundService extends BaseLlmService
             $data_config = is_array($decoded) ? $decoded : array();
         }
 
+        // Only scripts should be linked via id_llm_scripts. Memory rules and other
+        // owner types must pass null to avoid FK violations on llmConversations.
+        $owner_type = (string)($descriptor['owner_type'] ?? '');
+        $effective_script_id = $owner_type === LLM_PROMPT_OWNER_SCRIPT
+            ? ($descriptor['owner_id'] ?? null)
+            : null;
+        $default_name_prefix = $owner_type === LLM_PROMPT_OWNER_MEMORY_RULE
+            ? 'Memory Rule '
+            : 'Script ';
+        $effective_script_name = $runtime_values['name']
+            ?? ($default_name_prefix . ($descriptor['owner_id'] ?? '0'));
+
         $started_at = microtime(true);
         $result = $this->script_service->execute_llm_script(
             $draft_prompt,
@@ -480,8 +633,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
             $model_name,
             $config_snapshot['temperature'] ?? null,
             $config_snapshot['max_tokens'] ?? null,
-            $descriptor['owner_id'] ?? null,
-            $runtime_values['name'] ?? ('Script ' . ($descriptor['owner_id'] ?? '0'))
+            $effective_script_id,
+            $effective_script_name
         );
 
         if (empty($result['result'])) {

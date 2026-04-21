@@ -339,6 +339,75 @@ class LlmEvaluationRunnerService extends BaseLlmService
     }
 
     /**
+     * Delete a single evaluation run-case row (one target case within a run). Its associated
+     * scores are removed automatically by the `fk_eval_scores_run_case` cascade.
+     *
+     * If the parent run has no remaining cases after the delete, the run itself is also removed
+     * so empty runs do not clutter the dashboard.
+     *
+     * @param int $run_case_id Primary key in `llm_eval_run_cases`.
+     * @param int $dataset_id  Optional dataset scope check (0 = skip).
+     * @return array{deleted: bool, deleted_count: int, run_id: int, run_deleted: bool, dataset_id: int}
+     * @throws Exception If the case does not belong to the specified dataset.
+     */
+    public function deleteEvalRunCase($run_case_id, $dataset_id = 0)
+    {
+        $run_case_id = (int)$run_case_id;
+        $dataset_id = (int)$dataset_id;
+        if ($run_case_id <= 0) {
+            throw new Exception('run_case_id is required');
+        }
+
+        $row = $this->db->query_db_first(
+            "SELECT rc.id, rc.id_llm_eval_runs, r.id_llm_eval_datasets
+             FROM llm_eval_run_cases rc
+             INNER JOIN llm_eval_runs r ON r.id = rc.id_llm_eval_runs
+             WHERE rc.id = :run_case_id",
+            array(':run_case_id' => $run_case_id)
+        );
+        if (!$row) {
+            return array(
+                'deleted' => true,
+                'deleted_count' => 0,
+                'run_id' => 0,
+                'run_deleted' => false,
+                'dataset_id' => $dataset_id
+            );
+        }
+
+        $parent_run_id = (int)$row['id_llm_eval_runs'];
+        $parent_dataset_id = (int)$row['id_llm_eval_datasets'];
+        if ($dataset_id > 0 && $parent_dataset_id !== $dataset_id) {
+            throw new Exception('Evaluation case does not belong to selected dataset');
+        }
+
+        $this->db->remove_by_ids('llm_eval_run_cases', array('id' => $run_case_id));
+        $this->addPluginTransaction('delete', 'llm_eval_run_cases', $run_case_id, 'LLM evaluation run-case deleted');
+
+        // If this was the last case in the parent run, drop the (now empty) run row too so
+        // the UI does not display an orphan "Run #N" with zero cases.
+        $run_deleted = false;
+        $remaining = $this->db->query_db_first(
+            "SELECT COUNT(*) AS cnt FROM llm_eval_run_cases WHERE id_llm_eval_runs = :run_id",
+            array(':run_id' => $parent_run_id)
+        );
+        $remaining_count = (int)($remaining['cnt'] ?? 0);
+        if ($remaining_count === 0) {
+            $this->db->remove_by_ids('llm_eval_runs', array('id' => $parent_run_id));
+            $this->addPluginTransaction('delete', 'llm_eval_runs', $parent_run_id, 'LLM evaluation run deleted (last case removed)');
+            $run_deleted = true;
+        }
+
+        return array(
+            'deleted' => true,
+            'deleted_count' => 1,
+            'run_id' => $parent_run_id,
+            'run_deleted' => $run_deleted,
+            'dataset_id' => $parent_dataset_id
+        );
+    }
+
+    /**
      * Delete all evaluation runs associated with a dataset (bulk cleanup).
      *
      * @param int $dataset_id Dataset primary key.

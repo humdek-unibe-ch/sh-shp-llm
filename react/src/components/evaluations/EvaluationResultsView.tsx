@@ -26,7 +26,7 @@ interface EvaluationResultsViewProps {
   onInspectCase: (runCase: PromptEvalRunCase) => void;
   headerActions?: React.ReactNode;
   onDeleteCaseEvaluation?: (runCase: PromptEvalRunCase) => void;
-  deletingRunId?: number | null;
+  deletingRunCaseId?: number | null;
 }
 
 /** EvaluationResultsView component. */
@@ -37,7 +37,7 @@ export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
   onInspectCase,
   headerActions,
   onDeleteCaseEvaluation,
-  deletingRunId = null,
+  deletingRunCaseId = null,
 }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_review' | 'passed' | 'failed'>('all');
@@ -117,7 +117,7 @@ export const EvaluationResultsView: React.FC<EvaluationResultsViewProps> = ({
           Showing {filteredCases.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + pageSize, filteredCases.length)} of {filteredCases.length}
         </div>
       </div>
-      <EvaluationCaseTable cases={pagedCases} onInspect={onInspectCase} onDeleteEvaluation={onDeleteCaseEvaluation} deletingRunId={deletingRunId} />
+      <EvaluationCaseTable cases={pagedCases} onInspect={onInspectCase} onDeleteEvaluation={onDeleteCaseEvaluation} deletingRunCaseId={deletingRunCaseId} />
       <div className="d-flex justify-content-between align-items-center mt-2">
         <div className="d-flex align-items-center" style={{ gap: 8 }}>
           <span className="small text-muted">Rows:</span>

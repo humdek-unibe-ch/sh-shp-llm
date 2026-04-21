@@ -4,29 +4,117 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ## [1.2.0] - 2026-04-17 Pre-release
 
-### New: Global User Memory
+### Added
 
-A centralized memory system that stores user-specific facts across all LLM interactions.
+- **Global User Memory.** Centralized, per-user memory that stores stable
+  facts across all LLM interactions.
+  - Enable memory and choose storage mode (`record`, `log`, or `both`) from
+    the LLM Settings page.
+  - Create memory rules that trigger from form submissions, login, or
+    profile changes. Rules use LLM summarization to extract and merge key
+    facts from submitted data.
+  - Admins write only the intent (e.g. "Extract hobbies from the form");
+    the system auto-injects current memory, submitted data, user language,
+    and Data Config context.
+  - Memory content is written in the user's language automatically.
+  - Infinite-loop protection blocks memory-update jobs whose source is the
+    memory table itself.
+  - Dedicated Memory admin page with a rules editor, source visibility,
+    per-user memory browser, and history diff.
+  - Full Prompt Lab integration for memory rules: version history,
+    playground, datasets, and evaluations.
+  - Async memory workers execute multiple rules in parallel on Windows and
+    Linux.
+- **Admin UI redesign.** Unified admin layout with persistent sidebar
+  navigation (Settings, Conversations, Scripts, Memory). The Settings page
+  is now a React interface for API keys, model defaults, and memory
+  configuration.
+- **Memory updates are importable as evaluation cases.** Real memory-update
+  conversations now appear as candidates in the dataset import modal's
+  "From conversations" source and are imported as `memory_runtime` cases
+  tagged `memory_conversation`.
+- **Structured memory replay.** When a memory case is imported, the memory
+  worker's full prompt context is captured (system prompt, `## Current
+  Memory`, `## Submitted Data`, `## Instructions`, `## Reminder`, plus
+  parsed variables such as `memory_key`, `memory_text`, `memory_json`, and
+  `event_payload_json`). Replay reassembles this context around the draft
+  prompt, so evaluations measure the prompt change instead of a reduced,
+  context-less rerun.
+- **Per-case evaluation delete.** The row-level Delete button in the
+  Evaluation Summary now removes only the selected evaluation case and its
+  scores — sibling cases in the same run are preserved. The parent run is
+  cleaned up automatically once its last case is removed. The bulk
+  "Delete All Evaluations" button is unchanged.
+- **Schema-aware LLM judge.** The judge receives an
+  `output_format_contract` when the runtime enforces a fixed output
+  envelope (for example, the memory JSON schema). The judge-system prompt
+  instructs the judge to respect this contract and score the *content*
+  inside the enforced fields rather than the envelope.
 
-- Enable memory and choose storage mode (`record`, `log`, or `both`) from the LLM Settings page.
-- Create memory rules that trigger from form submissions, login, or profile changes.
-- Rules use LLM summarization to extract and merge key facts from submitted data into user memory.
-- Admin writes only the intent (e.g. "Extract hobbies from the form") -- the system auto-injects current memory, submitted data, user language, and Data Config context.
-- Memory content is written in the user's language automatically.
-- Infinite loop protection: memory update jobs are blocked when the form source is the memory table itself.
-- Dedicated Memory admin page with rules editor, source visibility, user memory browser, and history diff.
-- Prompt Lab integration for memory rules with version history, playground, and datasets.
+### Changed
 
-### New: Admin UI Redesign
+- **Dataset import is owner-aware.** The import modal only offers sources
+  that make sense for the owner. Memory rules default to "From memory
+  executions (conversations)" and hide `form_submission` / `script_run`.
+  Scripts hide `form_submission`. Contextual banners explain where the
+  entries come from.
+- **Playground import is limited to real playground tests.** Candidate
+  runs from `llm_prompt_playground_runs` are filtered to `playground` and
+  `compare` run modes only — builder ("Build With AI") and
+  dataset-evaluation runs are excluded.
+- **Memory conversations list correctly.** Dataset import queries
+  assistant rows (not user rows) for memory rules, because the memory
+  worker logs only a single assistant row per update and keeps the prompt
+  in `sent_context`. That `sent_context` payload is replayed as the
+  message history on import.
+- **Evaluation calls inherit model parameters from the global LLM config.**
+  `judge_temperature` and `judge_max_tokens` can be set per evaluator;
+  otherwise the scorer inherits `llm_temperature` / `llm_max_tokens` from
+  the LLM Settings page and finally from built-in defaults. All other
+  evaluation paths already resolve through `LlmService::callLlmApi`, which
+  honours the same hierarchy.
+- **Lean LLM judge input.** The judge receives a focused summary of each
+  case: for memory, `memory_key`, `current_memory`, `submitted_data`, and
+  `instructions`; for other profiles, a trimmed `trigger_message` plus
+  pruned variables. Internal form metadata (`_json`, `_meta_*`,
+  `response_id`, `pageNo`, `trigger_type`, and similar) is stripped,
+  oversized strings are truncated with a marker, and `model_output` is
+  reduced to `display_content` only.
 
-- Unified admin layout with persistent sidebar navigation for Settings, Conversations, Scripts, and Memory.
-- Settings page converted to React-based interface for API keys, model defaults, and memory configuration.
+### Fixed
+
+- **Playground works for memory rules.** Running a memory-rule prompt
+  through the playground no longer fails with
+  `SQLSTATE[23000] ... fk_llmConversations_llm_scripts` /
+  "Failed to create conversation for strict LLM logging".
+- **Memory evaluations no longer fail with "information is incomplete".**
+  Imported memory cases replay with the full original context (system +
+  structured user message) rather than the admin instructions alone.
+- **LLM judge no longer fails with "Control character error".** Judge
+  verdicts are no longer truncated (response budget inherits from the
+  global config instead of a fixed small value), and JSON parsing
+  tolerates unescaped control characters that many LLMs emit inside
+  string values.
+- **Memory responses are no longer scored "unhelpful" for being JSON.**
+  Admin instructions that ask for a narrative paragraph no longer cause
+  the judge to penalise the mandatory JSON envelope — the judge scores the
+  prose inside `memory_text` instead.
+- **Form-triggered memory updates record the correct record id and table.**
+  `source_ref` written to `llm_memory_history` now contains the real
+  submission identifiers, and the memory-table infinite-loop guard works
+  correctly.
 
 ### Internal
 
-- Memory rules identified by integer `rule_id` only; simplified database schema.
-- Prompt templates externalized to `assets/prompts/core/memory/`.
-- Async memory workers execute multiple rules in parallel on Windows and Linux.
+- Memory rules identified by integer `rule_id` only; simplified database
+  schema.
+- Memory prompt templates externalized to `assets/prompts/core/memory/`.
+- Evaluation scoring consolidated behind a single `buildLeanJudgeInput`
+  path with shared truncation and pruning utilities.
+- New endpoints: `AjaxLlmPromptLab` action `delete_eval_run_case`; service
+  methods `LlmEvaluationRunnerService::deleteEvalRunCase()` and facade
+  `LlmEvaluationService::deleteEvalRunCase()`; React clients
+  `promptApi.deleteEvalRunCase` and `evaluationApi.deleteEvalRunCase`.
 
 ## [1.1.0] - 2026-03-19
 

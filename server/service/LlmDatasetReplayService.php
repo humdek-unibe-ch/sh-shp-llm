@@ -63,6 +63,21 @@ class LlmDatasetReplayService extends BaseLlmService
             $variables = $input_payload['form_data'];
         }
 
+        $playground_options = array(
+            'run_mode' => LLM_PROMPT_RUN_MODE_DATASET_EVAL,
+            'target_version_id' => !empty($target['target_ref']['prompt_version_id']) ? (int)$target['target_ref']['prompt_version_id'] : null
+        );
+        // Memory rule cases carry a pre-parsed `memory_context` so the
+        // playground can reassemble the original memory-worker prompt (system
+        // message + structured user message) and splice the draft Instructions
+        // block. Without it, the script runtime would send only the raw
+        // interpolated admin instructions and the LLM would answer with
+        // "information is incomplete" because the Current Memory / Submitted
+        // Data sections are missing.
+        if (is_array($input_payload['memory_context'] ?? null)) {
+            $playground_options['memory_context'] = $input_payload['memory_context'];
+        }
+
         return $this->playground_service->run(
             $descriptor,
             (string)($target['draft_prompt'] ?? ''),
@@ -70,10 +85,7 @@ class LlmDatasetReplayService extends BaseLlmService
             $variables,
             is_array($input_payload['message_history'] ?? null) ? $input_payload['message_history'] : array(),
             is_array($options['selected_models'] ?? null) ? $options['selected_models'] : array(),
-            array(
-                'run_mode' => LLM_PROMPT_RUN_MODE_DATASET_EVAL,
-                'target_version_id' => !empty($target['target_ref']['prompt_version_id']) ? (int)$target['target_ref']['prompt_version_id'] : null
-            )
+            $playground_options
         );
     }
 

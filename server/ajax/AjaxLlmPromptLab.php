@@ -187,6 +187,11 @@ class AjaxLlmPromptLab extends BaseAjax
                     $this->assertCsrf($post);
                     return $this->handleDeleteEvalRun($post);
 
+                case 'delete_eval_run_case':
+                    $this->assertAccess($descriptor, 'update');
+                    $this->assertCsrf($post);
+                    return $this->handleDeleteEvalRunCase($post);
+
                 case 'delete_eval_runs_bulk':
                     $this->assertAccess($descriptor, 'update');
                     $this->assertCsrf($post);
@@ -857,6 +862,28 @@ class AjaxLlmPromptLab extends BaseAjax
         }
         $this->assertDatasetDescriptorScope($dataset_id, $this->readDescriptor($post));
         return $this->evaluation_service->deleteEvalRun($run_id, $dataset_id);
+    }
+
+    /**
+     * Delete a single evaluation run-case (one row per dataset case within a run). Scores are
+     * cascaded automatically by the schema; the parent run is also removed when it becomes empty.
+     *
+     * @param array $post POST data with 'run_case_id' and 'dataset_id'.
+     * @return array Deletion result.
+     * @throws Exception If required IDs are missing.
+     */
+    private function handleDeleteEvalRunCase($post)
+    {
+        $run_case_id = isset($post['run_case_id']) ? (int)$post['run_case_id'] : 0;
+        if ($run_case_id <= 0) {
+            throw new Exception('Missing run_case_id');
+        }
+        $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $this->readDescriptor($post));
+        return $this->evaluation_service->deleteEvalRunCase($run_case_id, $dataset_id);
     }
 
     /**

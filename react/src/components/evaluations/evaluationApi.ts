@@ -16,6 +16,7 @@ export function createEvaluationApi(api: ReturnType<typeof createPromptLabApi>) 
     getEvalRun: api.getEvalRun,
     listEvalRuns: api.listEvalRuns,
     deleteEvalRun: api.deleteEvalRun,
+    deleteEvalRunCase: api.deleteEvalRunCase,
     deleteEvalRunsBulk: api.deleteEvalRunsBulk,
     listEvalRunCases: api.listEvalRunCases,
     linkEvalRunBaseline: api.linkEvalRunBaseline,

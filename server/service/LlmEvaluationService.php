@@ -72,11 +72,16 @@ class LlmEvaluationService extends BaseLlmService
 
     /** @param int $run_id Run to delete
      *  @param int $dataset_id Dataset guard
-     *  @return bool Success */
+     *  @return array Deletion result */
     public function deleteEvalRun($run_id, $dataset_id = 0) { return $this->runner_service->deleteEvalRun($run_id, $dataset_id); }
 
+    /** @param int $run_case_id Single run-case row to delete
+     *  @param int $dataset_id Dataset guard
+     *  @return array Deletion result with run_id and run_deleted flag */
+    public function deleteEvalRunCase($run_case_id, $dataset_id = 0) { return $this->runner_service->deleteEvalRunCase($run_case_id, $dataset_id); }
+
     /** @param int $dataset_id Delete all runs for this dataset
-     *  @return bool Success */
+     *  @return array Bulk deletion result */
     public function deleteEvalRunsForDataset($dataset_id) { return $this->runner_service->deleteEvalRunsForDataset($dataset_id); }
 
     /** Link a baseline run for regression comparison.

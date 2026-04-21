@@ -163,6 +163,46 @@ Recommended default:
 5. Load memory later with `data_config` wherever you want the LLM to use it.
 6. Review memory writes and user state in the `Users` tab.
 
+## Deduplication (`dedupe_key`)
+
+Every persisted memory update stores a SHA-256 `dedupe_key` in
+`llm_memory_history` (and on the `llm_memory_current` row when a record is
+written). The key is a deterministic fingerprint of:
+
+- `user_id`
+- `memory_key`
+- `rule_id`
+- `source_type`
+- `source_ref` (e.g. `{"table_name":"...","form_name":"...","record_id":123}`)
+- `trigger_type`
+- MD5 of the submitted `payload_fields`
+
+Purpose:
+
+- **Idempotency** — the async memory worker may be re-spawned if a job is
+  retried or if the same form submission triggers the same rule more than
+  once. When `LlmMemoryStorageService::dedupeKeyExists()` sees the same
+  fingerprint, the update is skipped with status `LLM_MEMORY_STATUS_DUPLICATE`
+  so the LLM is not called and the snapshot is not rewritten with identical
+  content.
+- **Staleness tracking** — if a newer snapshot already exists for the key,
+  the duplicate update is marked `LLM_MEMORY_STATUS_STALE` instead of
+  overwriting fresh data.
+- **Audit** — the fingerprint is part of history rows so admins can trace
+  which exact submission produced a memory change.
+
+Because `source_ref` contributes to the fingerprint, **form-triggered updates
+must include the correct `table_name` and `record_id`** -- otherwise two
+different submissions collapse into the same dedupe key and the second one is
+silently ignored as a duplicate. Since v1.2.0 `LlmHooks::execute_memory_task`
+reads the table from `form_data.form_name` and the record id from
+`form_data.form_fields[record_id]` to keep `source_ref` unique per
+submission.
+
+Admin-initiated memory rebuilds / edits / deletes build their own unique
+`dedupe_key` per action (see `LlmMemoryAdminService`) so they never collide
+with trigger-based updates.
+
 ## Troubleshooting
 
 If memory is not updating, check:

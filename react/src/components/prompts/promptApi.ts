@@ -686,6 +686,16 @@ export function createPromptLabApi(endpoint: string, csrfToken?: string) {
       return post<{ deleted: boolean; deleted_count: number }>(formData);
     },
 
+    async deleteEvalRunCase(descriptor: PromptDescriptor, datasetId: number, runCaseId: number): Promise<{ deleted: boolean; deleted_count: number; run_id: number; run_deleted: boolean }> {
+      const formData = new FormData();
+      formData.append('action', 'delete_eval_run_case');
+      appendDescriptor(formData, descriptor);
+      formData.append('dataset_id', String(datasetId));
+      formData.append('run_case_id', String(runCaseId));
+      formData.append('csrf_token', resolvedCsrfToken);
+      return post<{ deleted: boolean; deleted_count: number; run_id: number; run_deleted: boolean }>(formData);
+    },
+
     async deleteEvalRunsBulk(descriptor: PromptDescriptor, datasetId: number): Promise<{ deleted: boolean; deleted_count: number }> {
       const formData = new FormData();
       formData.append('action', 'delete_eval_runs_bulk');
