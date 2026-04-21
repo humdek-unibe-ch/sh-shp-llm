@@ -35,11 +35,6 @@ VALUES
 ('llmMemoryUpdateStatus', 'memory_status_failed', 'failed', 'Memory update failed (LLM or validation error)');
 
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
-VALUES
-('llmMemoryExecutionMode', 'memory_exec_direct_mapping', 'direct_mapping', 'Direct field-to-memory mapping without LLM call'),
-('llmMemoryExecutionMode', 'memory_exec_llm_summarize', 'llm_summarize', 'LLM-based summarization and extraction');
-
-INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES ('transactionBy', 'by_llm_memory', 'By LLM Memory', 'Actions performed by LLM memory update system');
 
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
@@ -84,8 +79,6 @@ CREATE TABLE IF NOT EXISTS `llm_memory_rules` (
     `source_match_json` LONGTEXT DEFAULT NULL,
     `trigger_types_json` LONGTEXT DEFAULT NULL,
     `storage_mode_override` VARCHAR(32) DEFAULT NULL,
-    `execution_mode` VARCHAR(64) NOT NULL DEFAULT 'llm_summarize',
-    `field_mapping_json` LONGTEXT DEFAULT NULL,
     `data_config_json` LONGTEXT DEFAULT NULL,
     `llm_model` VARCHAR(255) DEFAULT NULL,
     `llm_temperature` VARCHAR(32) DEFAULT NULL,

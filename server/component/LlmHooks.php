@@ -1381,16 +1381,8 @@ class LlmHooks extends BaseHooks
             $normalized['force_storage_mode'] = $config['force_storage_mode'];
         }
 
-        $rule_overrides = array();
-        if (!empty($config['execution_mode'])) {
-            $rule_overrides['execution_mode'] = $config['execution_mode'];
-        }
-        if (!empty($config['field_mapping']) && is_array($config['field_mapping'])) {
-            $rule_overrides['field_mapping'] = $config['field_mapping'];
-        }
-
         if (!empty($rule_ids)) {
-            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, $rule_overrides);
+            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async);
         } else {
             $this->transaction->add_transaction(
                 transactionTypes_insert,
@@ -1484,14 +1476,6 @@ class LlmHooks extends BaseHooks
             ? $job['job_name']
             : 'LLM Memory Update (form: ' . ($args['form_data']['form_name'] ?? 'unknown') . ')';
 
-        $field_mapping = array();
-        if (!empty($job['field_mapping'])) {
-            $decoded_mapping = json_decode($job['field_mapping'], true);
-            if (is_array($decoded_mapping)) {
-                $field_mapping = $decoded_mapping;
-            }
-        }
-
         return array(
             "type" => $job[ACTION_JOB_TYPE],
             "description" => $description,
@@ -1499,8 +1483,6 @@ class LlmHooks extends BaseHooks
             "memory_key_override" => $job['memory_key_override'] ?? '',
             "force_storage_mode" => $job['force_storage_mode'] ?? '',
             "run_async" => !array_key_exists('run_async', $job) || !empty($job['run_async']),
-            "execution_mode" => $job['execution_mode'] ?? '',
-            "field_mapping" => $field_mapping,
             "trigger_type" => $job['trigger_type'] ?? 'finished',
             "form_data" => $args['form_data'],
             "id_users" => $_SESSION['id_user'] ?? null

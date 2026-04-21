@@ -471,8 +471,6 @@ class LlmMemoryRuleService extends BaseLlmService
             'source_match' => $this->decodeJsonObject($row['source_match_json'] ?? '{}'),
             'trigger_types' => $this->decodeJsonArray($row['trigger_types_json'] ?? '["finished"]', array('finished')),
             'storage_mode_override' => (string)($row['storage_mode_override'] ?? ''),
-            'execution_mode' => (string)($row['execution_mode'] ?? LLM_MEMORY_EXECUTION_LLM_SUMMARIZE),
-            'field_mapping' => $this->decodeJsonObject($row['field_mapping_json'] ?? '{}'),
             'data_config' => $this->decodeJsonArray($row['data_config_json'] ?? '[]'),
             'prompt_binding' => array(
                 'owner_type' => LLM_PROMPT_OWNER_MEMORY_RULE,
@@ -511,8 +509,6 @@ class LlmMemoryRuleService extends BaseLlmService
             'source_match_json' => $this->encodeJson($payload['source_match'] ?? array()),
             'trigger_types_json' => $this->encodeJson($payload['trigger_types'] ?? array('finished')),
             'storage_mode_override' => trim((string)($payload['storage_mode_override'] ?? '')),
-            'execution_mode' => trim((string)($payload['execution_mode'] ?? LLM_MEMORY_EXECUTION_LLM_SUMMARIZE)) ?: LLM_MEMORY_EXECUTION_LLM_SUMMARIZE,
-            'field_mapping_json' => $this->encodeJson($payload['field_mapping'] ?? array()),
             'data_config_json' => $this->encodeJson($payload['data_config'] ?? array()),
             'llm_model' => trim((string)($payload['llm_model'] ?? '')),
             'llm_temperature' => $this->normalizeNullableString($payload['llm_temperature'] ?? null),
@@ -649,7 +645,7 @@ class LlmMemoryRuleService extends BaseLlmService
      * Assemble the full bootstrap payload for the memory-rule editor UI.
      *
      * @param object|null $settings_model Optional settings model (unused, reserved for future overrides).
-     * @return array Bootstrap config with available_keys, defaults, models, source_types, execution_modes, storage_modes, sections.
+     * @return array Bootstrap config with available_keys, defaults, models, source_types, storage_modes, sections.
      */
     public function getEditorBootstrap($settings_model = null)
     {
@@ -658,10 +654,6 @@ class LlmMemoryRuleService extends BaseLlmService
             array('value' => LLM_MEMORY_SOURCE_FORM_ACTION, 'label' => 'Form action submit'),
             array('value' => LLM_MEMORY_SOURCE_LOGIN, 'label' => 'Login'),
             array('value' => LLM_MEMORY_SOURCE_PROFILE_NAME, 'label' => 'Profile name change'),
-        );
-        $execution_mode_options = array(
-            array('value' => LLM_MEMORY_EXECUTION_LLM_SUMMARIZE, 'label' => 'LLM summarize'),
-            array('value' => LLM_MEMORY_EXECUTION_DIRECT_MAPPING, 'label' => 'Direct mapping'),
         );
         $storage_mode_options = array(
             array('value' => '', 'label' => 'Use module default'),
@@ -680,7 +672,6 @@ class LlmMemoryRuleService extends BaseLlmService
             ),
             'models' => $this->getAvailableModelsForEditor(),
             'source_types' => $source_type_options,
-            'execution_modes' => $execution_mode_options,
             'storage_modes' => $storage_mode_options,
             'sections' => $this->getAvailableSectionsForEditor(),
         );

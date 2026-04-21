@@ -332,8 +332,6 @@ class LlmMemoryConfigService extends BaseLlmService
             'source_match' => [],
             'trigger_types' => ['finished'],
             'storage_mode_override' => '',
-            'execution_mode' => LLM_MEMORY_EXECUTION_LLM_SUMMARIZE,
-            'field_mapping' => [],
             'data_config' => [],
             'prompt_binding' => [
                 'owner_type' => LLM_PROMPT_OWNER_MEMORY_RULE,

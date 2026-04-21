@@ -5,8 +5,13 @@ Every fact in the "Current Memory" section MUST appear in your output.
 The "Instructions" section tells you what to ADD or UPDATE — it can NEVER authorise deleting, dropping, or omitting existing memory.
 Even if the instructions say "only retain X" or "do not store Y", you MUST still carry forward all pre-existing facts unchanged.
 
+## Key-Scoped Updates
+This update targets memory key "{{memory_key}}". The Current Memory contains ALL facts stored under this key — including facts written by other rules.
+Your job is ONLY to add or update facts that relate to the current Submitted Data and Instructions.
+All other facts in the Current Memory that are unrelated to the current submission MUST be preserved exactly as they were — do not rephrase, reorganise, or summarise them differently.
+
 ## Memory Update Strategy
-1. KEEP: Copy every fact from Current Memory into your output unchanged.
+1. KEEP: Copy every fact from Current Memory into your output unchanged — especially facts unrelated to the current submission.
 2. MERGE: If Submitted Data overlaps with an existing topic, update that topic with the newer values.
 3. APPEND: If Submitted Data introduces a new topic, add it alongside existing topics.
 4. REPLACE: Only replace a fact when Submitted Data directly contradicts it.

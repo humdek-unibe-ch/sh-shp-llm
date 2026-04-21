@@ -325,10 +325,6 @@ class LlmMemoryAdminService extends BaseLlmService
 
         $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
 
-        if ($rule['execution_mode'] === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {
-            return $update_service->executeDirectMapping($rule, $normalized);
-        }
-
         return $update_service->executeLlmSummarization($rule, $normalized);
     }
 

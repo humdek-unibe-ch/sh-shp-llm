@@ -239,8 +239,6 @@ define('LLM_MEMORY_DEFAULT_STORAGE_MODE', 'both');
 define('LLM_MEMORY_DEFAULT_TABLE', 'llm_memory');
 define('LLM_MEMORY_DEFAULT_HISTORY_TABLE', 'llm_memory_history');
 define('LLM_PROMPT_OWNER_MEMORY_RULE', 'llm_memory_rule');
-define('LLM_MEMORY_EXECUTION_DIRECT_MAPPING', 'direct_mapping');
-define('LLM_MEMORY_EXECUTION_LLM_SUMMARIZE', 'llm_summarize');
 define('LLM_MEMORY_SOURCE_FORM_ACTION', 'form_action_submit');
 define('LLM_MEMORY_SOURCE_LLM_CHAT_FORM', 'llm_chat_form_submit');
 define('LLM_MEMORY_SOURCE_LOGIN', 'login');

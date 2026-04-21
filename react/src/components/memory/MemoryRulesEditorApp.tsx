@@ -2,16 +2,14 @@
  * Memory Rules Editor — CRUD interface for memory extraction rules.
  *
  * Each rule defines a memory field: source conversation or data table,
- * extraction method (direct-mapping or LLM-summarization), prompt
- * template, and target column. Rules are linked to the Prompt Lab
- * for prompt editing and evaluation.
+ * LLM prompt template, and target column. Rules are linked to the
+ * Prompt Lab for prompt editing and evaluation.
  *
  * @module components/memory/MemoryRulesEditorApp
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import CreatableSelect from 'react-select/creatable';
 import { Alert, Badge, Button, Card, Col, Dropdown, Form, Row, Spinner } from 'react-bootstrap';
-import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import { InfoPopover } from '../shared/InfoPopover';
 import { PromptBuilderModal } from '../prompts/PromptBuilderModal';
 import { PromptDatasetsModal } from '../prompts/PromptDatasetsModal';
@@ -81,8 +79,6 @@ export interface MemoryRuleDraft {
   source_match: Record<string, unknown>;
   trigger_types: string[];
   storage_mode_override: string;
-  execution_mode: string;
-  field_mapping: Record<string, string>;
   data_config: Array<Record<string, unknown>>;
   llm_model: string;
   llm_temperature: string;
@@ -162,8 +158,6 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
     source_match: {},
     trigger_types: ['finished'],
     storage_mode_override: '',
-    execution_mode: 'llm_summarize',
-    field_mapping: {},
     data_config: [],
     llm_model: '',
     llm_temperature: '',
@@ -194,10 +188,6 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
     source_match: raw?.source_match && typeof raw.source_match === 'object' && !Array.isArray(raw.source_match) ? raw.source_match : {},
     trigger_types: Array.isArray(raw?.trigger_types) ? raw.trigger_types.map((value: unknown) => String(value)) : ['finished'],
     storage_mode_override: typeof raw?.storage_mode_override === 'string' ? raw.storage_mode_override : '',
-    execution_mode: typeof raw?.execution_mode === 'string' ? raw.execution_mode : 'llm_summarize',
-    field_mapping: raw?.field_mapping && typeof raw.field_mapping === 'object' && !Array.isArray(raw.field_mapping)
-      ? Object.fromEntries(Object.entries(raw.field_mapping).map(([key, value]) => [key, String(value)]))
-      : {},
     data_config: Array.isArray(raw?.data_config) ? raw.data_config : [],
     llm_model: typeof raw?.llm_model === 'string' ? raw.llm_model : '',
     llm_temperature: raw?.llm_temperature != null ? String(raw.llm_temperature) : '',
@@ -220,8 +210,6 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
     source_match: rule.source_match || {},
     trigger_types: rule.trigger_types.filter(Boolean),
     storage_mode_override: rule.storage_mode_override || '',
-    execution_mode: rule.execution_mode || 'llm_summarize',
-    field_mapping: rule.field_mapping || {},
     data_config: rule.data_config || [],
     llm_model: rule.llm_model || '',
     llm_temperature: rule.llm_temperature || '',
@@ -235,7 +223,6 @@ function validateRule(rule: MemoryRuleDraft): string[] {
   const errors: string[] = [];
   if (!rule.label.trim()) errors.push('Rule label is required.');
   if (!rule.source_type.trim()) errors.push('Source type is required.');
-  if (!rule.execution_mode.trim()) errors.push('Execution mode is required.');
   if (!Array.isArray(rule.memory_keys) || rule.memory_keys.length === 0) errors.push('Select at least one memory key.');
   return errors;
 }
@@ -252,7 +239,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [fieldMappingJson, setFieldMappingJson] = useState('{}');
   const [dataConfigJson, setDataConfigJson] = useState('[]');
   const [refreshSectionsJson, setRefreshSectionsJson] = useState('[]');
   const [showVersions, setShowVersions] = useState(false);
@@ -265,7 +251,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   const [defaults, setDefaults] = useState<EditorDefaults>({ llm_model: '', llm_temperature: '', llm_max_tokens: '', storage_mode: 'both' });
   const [models, setModels] = useState<Array<{ id: string; name?: string }>>([]);
   const [sourceTypeOptions, setSourceTypeOptions] = useState<Option[]>([]);
-  const [executionModeOptions, setExecutionModeOptions] = useState<Option[]>([]);
   const [storageModeOptions, setStorageModeOptions] = useState<Option[]>([]);
   const [sections, setSections] = useState<SectionInfo[]>([]);
   const [sectionSearch, setSectionSearch] = useState('');
@@ -301,7 +286,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       setDraft(normalized);
       setMetaState(parsePromptMeta(normalized.prompt_meta_json));
       setLastPlaygroundCapture(null);
-      setFieldMappingJson(toPrettyJson(normalized.field_mapping));
       setDataConfigJson(toPrettyJson(normalized.data_config));
       setRefreshSectionsJson(toPrettyJson(normalized.refresh_sections));
       if (response.prompt_bootstrap) {
@@ -324,7 +308,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       setDefaults(response.editor?.defaults || { llm_model: '', llm_temperature: '', llm_max_tokens: '', storage_mode: 'both' });
       setModels(response.editor?.models || []);
       setSourceTypeOptions(response.editor?.source_types || []);
-      setExecutionModeOptions(response.editor?.execution_modes || []);
       setStorageModeOptions(response.editor?.storage_modes || []);
       setSections(response.editor?.sections || []);
       upsertAvailableKeys(response.editor?.available_keys || []);
@@ -402,12 +385,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     sourceTypeOptions.forEach((item) => map.set(item.value, item.label));
     return map;
   }, [sourceTypeOptions]);
-
-  const executionModeLabelMap = useMemo(() => {
-    const map = new Map<string, string>();
-    executionModeOptions.forEach((item) => map.set(item.value, item.label));
-    return map;
-  }, [executionModeOptions]);
 
   const storageModeLabelMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -693,7 +670,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       nextDraft = {
         ...draft,
         source_match: {},
-        field_mapping: parseJsonObject(fieldMappingJson) as Record<string, string>,
         data_config: parseJsonArray<Record<string, unknown>>(dataConfigJson),
         refresh_sections: parseJsonArray<number | string>(refreshSectionsJson),
         prompt_meta_json: stringifyPromptMeta(metaState),
@@ -772,7 +748,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
         </div>
         <div className="memory-rule-card__badges">
           <span className="badge badge-secondary">{sourceTypeLabelMap.get(rule.source_type) || rule.source_type}</span>
-          <span className="badge badge-secondary">{executionModeLabelMap.get(rule.execution_mode) || rule.execution_mode}</span>
         </div>
         <div className="memory-rule-card__meta">
           <span>{firstKeyLabel}{extraKeys > 0 ? ` +${extraKeys}` : ''}</span>
@@ -783,8 +758,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
   };
 
   const showAutomaticSourceHint = draft?.source_type === 'login' || draft?.source_type === 'profile_name_change';
-  const isLlmMode = draft?.execution_mode === 'llm_summarize';
-  const isDirectMode = draft?.execution_mode === 'direct_mapping';
 
   return (
     <div className="llm-memory-rules-editor-root">
@@ -869,18 +842,16 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
 
                 <Card className="memory-rule-section"><Card.Header>Where It Writes</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Memory Keys</Form.Label><CreatableSelect isMulti className="memory-rule-select" classNamePrefix="react-select" value={selectedKeyOptions} options={memoryKeyOptions} placeholder="Search or create memory keys..." onCreateOption={(inputValue) => { const code = inputValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, ''); if (!code) return; upsertAvailableKeys([{ code, label: humanizeKeyLabel(code), description: '', enabled: true }]); setDraftPatch({ memory_keys: Array.from(new Set([...(draft.memory_keys || []), code])) }); }} onChange={(values) => { const nextKeys = (values || []).map((item) => item.value); setDraftPatch({ memory_keys: nextKeys }); }} /><Form.Text className="text-muted">Selected keys become the memory spaces this rule updates. You can search existing keys or create new ones here.</Form.Text></Form.Group></Card.Body></Card>
 
-                <Card className="memory-rule-section"><Card.Header>How It Works</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Execution Mode</Form.Label><SearchableSelect options={executionModeOptions} value={draft.execution_mode} onChange={(value) => setDraftPatch({ execution_mode: value })} placeholder="Select execution mode" /><Form.Text className="text-muted">{draft.execution_mode === 'direct_mapping' ? 'Direct mapping writes stable fields straight into memory without calling the LLM.' : 'LLM summarize uses the prompt, current memory, and payload data to produce the new memory state.'}</Form.Text></Form.Group></Card.Body></Card>
-
                 <Card className="memory-rule-section"><Card.Header>Runtime Settings</Card.Header><Card.Body>
                   <Row>
                     <Col md={6}><Form.Group><Form.Label>Storage Override</Form.Label><SearchableSelect options={storageModeOptions} value={draft.storage_mode_override} onChange={(value) => setDraftPatch({ storage_mode_override: value })} placeholder="Use module default" /><Form.Text className="text-muted">Module default: {storageModeLabelMap.get(defaults.storage_mode) || defaults.storage_mode}</Form.Text></Form.Group></Col>
-                    {isLlmMode ? <Col md={6}><Form.Group><Form.Label>LLM Model</Form.Label><SearchableSelect options={modelOptions} value={draft.llm_model} onChange={(value) => setDraftPatch({ llm_model: value })} placeholder="Use module default" /><Form.Text className="text-muted">Default model: {defaults.llm_model || 'Not configured'}</Form.Text></Form.Group></Col> : null}
+                    <Col md={6}><Form.Group><Form.Label>LLM Model</Form.Label><SearchableSelect options={modelOptions} value={draft.llm_model} onChange={(value) => setDraftPatch({ llm_model: value })} placeholder="Use module default" /><Form.Text className="text-muted">Default model: {defaults.llm_model || 'Not configured'}</Form.Text></Form.Group></Col>
                   </Row>
-                  {isLlmMode ? <Row><Col md={6}><Form.Group><Form.Label>Temperature</Form.Label><Form.Control value={draft.llm_temperature} onChange={(event) => setDraftPatch({ llm_temperature: event.target.value })} placeholder={effectiveTemperature} /><Form.Text className="text-muted">Leave blank to inherit the module default ({effectiveTemperature}).</Form.Text></Form.Group></Col><Col md={6}><Form.Group className="mb-0"><Form.Label>Max Tokens</Form.Label><Form.Control value={draft.llm_max_tokens} onChange={(event) => setDraftPatch({ llm_max_tokens: event.target.value })} placeholder={effectiveMaxTokens} /><Form.Text className="text-muted">Leave blank to inherit the module default ({effectiveMaxTokens}).</Form.Text></Form.Group></Col></Row> : null}
+                  <Row><Col md={6}><Form.Group><Form.Label>Temperature</Form.Label><Form.Control value={draft.llm_temperature} onChange={(event) => setDraftPatch({ llm_temperature: event.target.value })} placeholder={effectiveTemperature} /><Form.Text className="text-muted">Leave blank to inherit the module default ({effectiveTemperature}).</Form.Text></Form.Group></Col><Col md={6}><Form.Group className="mb-0"><Form.Label>Max Tokens</Form.Label><Form.Control value={draft.llm_max_tokens} onChange={(event) => setDraftPatch({ llm_max_tokens: event.target.value })} placeholder={effectiveMaxTokens} /><Form.Text className="text-muted">Leave blank to inherit the module default ({effectiveMaxTokens}).</Form.Text></Form.Group></Col></Row>
                 </Card.Body></Card>
 
-                {isDirectMode ? <Card className="memory-rule-section"><Card.Header>Direct Mapping</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Field Mapping</Form.Label><Form.Text className="text-muted mb-2">Use a JSON object like <code>{"{\"preferred_name\":\"{{first_name}}\",\"city\":\"{{city}}\"}"}</code>. Each key becomes a memory field, and each <code>{'{{value}}'}</code> placeholder is replaced from submitted data. A fuller example is documented in the global memory user guide.</Form.Text><JsonMonacoEditor value={fieldMappingJson} minHeight={220} expectObject onChange={setFieldMappingJson} /></Form.Group></Card.Body></Card> : null}
-                {isLlmMode ? <><Card className="memory-rule-section"><Card.Header>LLM Summarization Inputs</Card.Header><Card.Body><div className="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><div className="font-weight-bold">Data Config</div><div className="text-muted small">Reuse the shared data-config builder to pull extra values into the prompt context.</div></div><Button size="sm" variant={draft.data_config.length > 0 ? 'warning' : 'outline-secondary'} onClick={openDataConfigModal}>{getDataConfigLabel()}</Button></div>{draft.data_config.length > 0 ? <div className="mt-3 small text-muted">{draft.data_config.length} data config item{draft.data_config.length > 1 ? 's' : ''} configured.</div> : <div className="mt-3 small text-muted">No extra data sources configured yet.</div>}</Card.Body></Card><Card className="memory-rule-section"><Card.Header><div className="d-flex align-items-center">Prompt<InfoPopover title="Available Prompt Variables" placement="left" buttonClassName="ml-2" ariaLabel="Available prompt variables help">{memoryPromptInterpolationDocs.map((line) => <div key={line} className="small mb-2">{line}</div>)}</InfoPopover></div></Card.Header><Card.Body><PromptToolbar activeVersion={activeVersion} dirty={isDirty} disabled={!promptDescriptor || promptLoading} changeNote={promptChangeNote} onChangeNote={handleChangeNote} onOpenVersions={() => setShowVersions(true)} onOpenCompare={() => { const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft'; setDiffState({ initialLeftKey: activeKey, initialRightKey: 'draft' }); setShowDiff(true); }} onOpenPlayground={() => setShowPlayground(true)} onOpenDatasets={() => setShowDatasets(true)} onOpenBuilder={() => setShowBuilder(true)} /><PromptEditor value={draft.prompt_template} language="markdown" onChange={syncPromptTemplate} minHeight={260} /></Card.Body></Card></> : null}
+                <Card className="memory-rule-section"><Card.Header>Data Config</Card.Header><Card.Body><div className="d-flex justify-content-between align-items-center flex-wrap gap-2"><div><div className="font-weight-bold">Data Config</div><div className="text-muted small">Reuse the shared data-config builder to pull extra values into the prompt context.</div></div><Button size="sm" variant={draft.data_config.length > 0 ? 'warning' : 'outline-secondary'} onClick={openDataConfigModal}>{getDataConfigLabel()}</Button></div>{draft.data_config.length > 0 ? <div className="mt-3 small text-muted">{draft.data_config.length} data config item{draft.data_config.length > 1 ? 's' : ''} configured.</div> : <div className="mt-3 small text-muted">No extra data sources configured yet.</div>}</Card.Body></Card>
+                <Card className="memory-rule-section"><Card.Header><div className="d-flex align-items-center">Prompt<InfoPopover title="Available Prompt Variables" placement="left" buttonClassName="ml-2" ariaLabel="Available prompt variables help">{memoryPromptInterpolationDocs.map((line) => <div key={line} className="small mb-2">{line}</div>)}</InfoPopover></div></Card.Header><Card.Body><PromptToolbar activeVersion={activeVersion} dirty={isDirty} disabled={!promptDescriptor || promptLoading} changeNote={promptChangeNote} onChangeNote={handleChangeNote} onOpenVersions={() => setShowVersions(true)} onOpenCompare={() => { const activeKey = activeVersion ? `v:${activeVersion.id}` : 'draft'; setDiffState({ initialLeftKey: activeKey, initialRightKey: 'draft' }); setShowDiff(true); }} onOpenPlayground={() => setShowPlayground(true)} onOpenDatasets={() => setShowDatasets(true)} onOpenBuilder={() => setShowBuilder(true)} /><PromptEditor value={draft.prompt_template} language="markdown" onChange={syncPromptTemplate} minHeight={260} /></Card.Body></Card>
 
                 <Card className="memory-rule-section"><Card.Header>Advanced</Card.Header><Card.Body><Form.Group><Form.Label>Refresh Sections</Form.Label><Dropdown><Dropdown.Toggle size="sm" variant="outline-secondary" className="w-100 text-left d-flex justify-content-between align-items-center"><span className="text-truncate">{getSelectedSectionIds().length === 0 ? 'Select sections...' : `${getSelectedSectionIds().length} section${getSelectedSectionIds().length > 1 ? 's' : ''} selected`}</span></Dropdown.Toggle><Dropdown.Menu className="w-100 sections-dropdown-menu" style={{ maxHeight: '250px', overflowY: 'auto' }}><div className="px-2 pb-2"><Form.Control size="sm" type="text" placeholder="Search sections..." value={sectionSearch} onChange={(event) => setSectionSearch(event.target.value)} onClick={(event) => event.stopPropagation()} /></div>{filteredSections.length === 0 ? <Dropdown.ItemText className="text-muted small">No sections found</Dropdown.ItemText> : filteredSections.map((section) => (<Dropdown.Item key={section.id} as="button" className="small py-1" active={getSelectedSectionIds().includes(Number(section.id))} onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSection(Number(section.id)); }}><Form.Check type="checkbox" checked={getSelectedSectionIds().includes(Number(section.id))} onChange={() => undefined} label={<span>{section.name} <small className="text-muted">({section.id})</small></span>} className="mb-0" /></Dropdown.Item>))}</Dropdown.Menu></Dropdown>{getSelectedSectionIds().length > 0 ? <div className="mt-2">{getSelectedSectionIds().map((id) => { const section = sections.find((item) => Number(item.id) === id); return <Badge key={id} variant="info" className="mr-1 mb-1 cursor-pointer" onClick={() => toggleSection(id)}>{section?.name || id} <i className="fas fa-times ml-1"></i></Badge>; })}</div> : null}<Form.Text className="text-muted">Sections to refresh after a successful memory update.</Form.Text></Form.Group></Card.Body></Card>
               </Card.Body>
@@ -889,7 +860,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
         </Col>
       </Row>
 
-      {promptDescriptor && draft && isLlmMode ? <>
+      {promptDescriptor && draft ? <>
         <PromptVersionsModal show={showVersions} onHide={() => setShowVersions(false)} versions={versions} activeVersionId={activeVersion?.id || null} disabled={!promptDescriptor} onUseVersion={handleUseVersion} onCompareVersion={openDiffWithVersion} />
         <PromptDiffModal show={showDiff} onHide={() => setShowDiff(false)} api={api} descriptor={promptDescriptor} versions={versions} draftContent={draft.prompt_template} initialLeftKey={diffState.initialLeftKey} initialRightKey={diffState.initialRightKey} />
         <PromptPlaygroundModal show={showPlayground} onHide={() => setShowPlayground(false)} api={api} descriptor={promptDescriptor} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} playgroundRuntimeType={promptBootstrap?.playground_runtime_type || 'script'} models={promptBootstrap?.models || []} variablesSchema={effectiveVariablesSchema} promptValue={draft.prompt_template} disabled={!promptDescriptor || (promptBootstrap?.playground_runtime_type || 'script') === 'none'} defaultModel={defaultPromptModel} resolveRuntimeOverrides={() => promptRuntimeOverrides} onApplyDraft={handleBuilderApply} onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: { variables: Record<string, unknown>; messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; runtimeOverrides: Record<string, unknown>; response: PromptPlaygroundResponse; }) => { const firstRun = response.runs?.[0]; setLastPlaygroundCapture({ variables, messageHistory, runtimeOverrides, runRef: firstRun ? { id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null, id_llmConversations: firstRun.id_llmConversations ?? null, id_llmMessages_request: firstRun.id_llmMessages_request ?? null, id_llmMessages_response: firstRun.id_llmMessages_response ?? null } : null }); }} />

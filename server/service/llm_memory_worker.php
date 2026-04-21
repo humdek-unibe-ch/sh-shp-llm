@@ -206,7 +206,6 @@ try {
 
     llm_memory_worker_log('normalized payload prepared', array(
         'rule_id' => (int)($rule['id'] ?? 0),
-        'execution_mode' => (string)($rule['execution_mode'] ?? ''),
         'source_type' => (string)($normalized_payload['source_type'] ?? ''),
         'trigger_type' => (string)($normalized_payload['trigger_type'] ?? ''),
         'user_id' => (int)($normalized_payload['user_id'] ?? 0),

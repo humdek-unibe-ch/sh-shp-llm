@@ -47,16 +47,12 @@ Open the `LLM Memory` page and go to the `Rules` tab.
 A rule defines:
 - when memory should update
 - which source event it listens to
-- whether it uses `llm_summarize` or `direct_mapping`
+- the LLM prompt that controls how submitted data is merged into existing memory
 - which memory key it writes to
 
-Choose the execution mode like this:
-- `llm_summarize`: best for free text, surveys, or richer user input
-- `direct_mapping`: best for stable field-to-field facts without an LLM call
+### Writing The Prompt
 
-### LLM Summarize Prompt
-
-When using `llm_summarize`, you only need to write the **instructions** for the LLM. The system automatically injects:
+You only need to write the **instructions** for the LLM. The system automatically injects:
 - the user's current memory state
 - the submitted form data (all field values)
 - any extra Data Config results you configured
@@ -76,34 +72,9 @@ You can still reference interpolation variables if you want fine-grained control
 - `{{hobbies}}`, `{{email}}`, etc. -- any submitted form field by name
 - `{{memory_key}}`, `{{source_type}}`, `{{trigger_type}}` -- event metadata
 
-### Direct Mapping Example
+### Memory Key Scoping
 
-`direct_mapping` uses a JSON object.
-
-The format is:
-
-```json
-{
-  "memory_field_name": "{{submitted_field_name}}"
-}
-```
-
-Example:
-
-```json
-{
-  "preferred_name": "{{first_name}}",
-  "city": "{{city}}",
-  "favorite_topic": "{{topic}}"
-}
-```
-
-This means:
-- the memory field `preferred_name` gets the submitted value from `first_name`
-- the memory field `city` gets the submitted value from `city`
-- the memory field `favorite_topic` gets the submitted value from `topic`
-
-Use this mode when you want a simple deterministic mapping without an LLM summary step.
+When multiple rules write to the same memory key, each rule's LLM call sees the full memory for that key. The system prompt instructs the LLM to only modify facts related to the current submission and preserve all other existing facts unchanged. This keeps memory consistent even when different rules contribute different topics to the same key.
 
 ## Step 3: Connect A Trigger
 
@@ -187,11 +158,10 @@ Recommended default:
 
 1. Enable global memory in `LLM Konfiguration`.
 2. Open `LLM Memory`.
-3. Create one or more rules.
-4. Use `llm_summarize` for complex text and `direct_mapping` for stable fields.
-5. Add `llm_memory_update` to forms or surveys that should update memory.
-6. Load memory later with `data_config` wherever you want the LLM to use it.
-7. Review memory writes and user state in the `Users` tab.
+3. Create one or more rules with a prompt that describes what to extract.
+4. Add `llm_memory_update` to forms or surveys that should update memory.
+5. Load memory later with `data_config` wherever you want the LLM to use it.
+6. Review memory writes and user state in the `Users` tab.
 
 ## Troubleshooting
 
@@ -211,4 +181,3 @@ If memory is not visible in prompts, check:
 
 For deeper implementation details, see:
 - `README.md` section `Global User Memory`
-- `global_memory.md`

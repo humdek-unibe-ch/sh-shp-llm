@@ -13,7 +13,6 @@ require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 /**
  * Orchestrates a single memory update: loads current memory,
  * builds prompt, calls LLM, validates result, and persists data.
- * Handles both direct-mapping and LLM-summarization execution modes.
  */
 class LlmMemoryUpdateService extends BaseLlmService
 {
@@ -39,70 +38,7 @@ class LlmMemoryUpdateService extends BaseLlmService
     }
 
     /**
-     * Execute a direct-mapping memory update (no LLM call needed).
-     *
-     * @param array $rule              Resolved rule config
-     * @param array $normalized_payload Normalized event payload
-     * @return bool
-     */
-    public function executeDirectMapping($rule, $normalized_payload)
-    {
-        $user_id = $normalized_payload['user_id'];
-        $rule_id = (int)($rule['id'] ?? 0);
-        $memory_key = $this->resolveEffectiveMemoryKey($rule, $normalized_payload);
-        $storage_mode = !empty($normalized_payload['force_storage_mode'])
-            ? LlmMemoryConfigService::normalizeStorageMode($normalized_payload['force_storage_mode'])
-            : $this->config_service->resolveStorageMode($rule);
-
-        $dedupe_key = LlmMemoryConfigService::buildDedupeKey(
-            $user_id, $memory_key, $rule_id,
-            $normalized_payload['source_type'],
-            $normalized_payload['source_ref'] ?? '',
-            $normalized_payload['trigger_type'] ?? '',
-            $normalized_payload['fields'] ?? []
-        );
-
-        if ($this->storage_service->dedupeKeyExists($dedupe_key)) {
-            $this->persistIgnored($user_id, $memory_key, $rule, $normalized_payload, $dedupe_key, LLM_MEMORY_STATUS_DUPLICATE);
-            return true;
-        }
-
-        $event_at = $normalized_payload['event_at'] ?? date('Y-m-d H:i:s');
-        if (!$this->storage_service->isNewerEvent($user_id, $memory_key, $event_at)) {
-            $this->persistIgnored($user_id, $memory_key, $rule, $normalized_payload, $dedupe_key, LLM_MEMORY_STATUS_STALE);
-            return true;
-        }
-
-        $field_mapping = $rule['field_mapping'] ?? [];
-        $flat_fields = [];
-        foreach ($field_mapping as $target_key => $source_template) {
-            $flat_fields[$target_key] = $this->interpolateTemplate($source_template, $normalized_payload['fields'] ?? []);
-        }
-
-        $memory_data = [
-            'memory_text'    => implode('; ', array_map(function ($k, $v) { return "$k: $v"; }, array_keys($flat_fields), $flat_fields)),
-            'memory_object'  => $flat_fields,
-            'flat_fields'    => $flat_fields,
-            'change_summary' => 'Direct mapping from ' . ($rule['source_type'] ?? 'unknown') . ' event.',
-        ];
-
-        $metadata = [
-            'rule_id'       => $rule_id,
-            'source_type'   => $normalized_payload['source_type'],
-            'source_ref'    => $normalized_payload['source_ref'] ?? '',
-            'trigger_type'  => $normalized_payload['trigger_type'] ?? '',
-            'payload_json'  => $normalized_payload['fields'] ?? [],
-            'event_at'      => $event_at,
-            'dedupe_key'    => $dedupe_key,
-            'update_status' => LLM_MEMORY_STATUS_APPLIED,
-        ];
-
-        $this->storage_service->initializeMemoryTables();
-        return $this->storage_service->saveMemoryUpdate($user_id, $memory_key, $memory_data, $metadata, $storage_mode);
-    }
-
-    /**
-     * Execute an LLM-summarization memory update.
+     * Execute an LLM memory update.
      *
      * @param array $rule              Resolved rule config
      * @param array $normalized_payload Normalized event payload
@@ -254,18 +190,19 @@ class LlmMemoryUpdateService extends BaseLlmService
         $user_language = $normalized_payload['user_language'] ?? '';
 
         return [
-            ['role' => 'system', 'content' => $this->buildSystemMessage($user_language)],
-            ['role' => 'user',   'content' => $this->buildUserMessage($rule, $normalized_payload, $current_memory, $variables)],
+            ['role' => 'system', 'content' => $this->buildSystemMessage($user_language, $memory_key)],
+            ['role' => 'user',   'content' => $this->buildUserMessage($rule, $normalized_payload, $current_memory, $variables, $memory_key)],
         ];
     }
 
     /**
-     * Build the system message from the asset template with dynamic schema and language.
+     * Build the system message from the asset template with dynamic schema, language, and key scope.
      *
      * @param string $user_language  e.g. "Deutsch (Schweiz)" or ""
+     * @param string $memory_key     The memory key being updated
      * @return string
      */
-    private function buildSystemMessage($user_language)
+    private function buildSystemMessage($user_language, $memory_key = '')
     {
         $loader = new LlmPromptAssetLoader();
         $output_schema = json_encode([
@@ -279,7 +216,11 @@ class LlmMemoryUpdateService extends BaseLlmService
             ],
         ], JSON_UNESCAPED_SLASHES);
 
-        $system = str_replace('{{output_schema}}', $output_schema, $loader->load('core.memory.system'));
+        $system = str_replace(
+            ['{{output_schema}}', '{{memory_key}}'],
+            [$output_schema, $memory_key ?: LLM_MEMORY_DEFAULT_KEY],
+            $loader->load('core.memory.system')
+        );
 
         if (!empty($user_language)) {
             $suffix = $loader->load('core.memory.language_suffix');
@@ -299,11 +240,20 @@ class LlmMemoryUpdateService extends BaseLlmService
      * @param array      $normalized_payload
      * @param array|null $current_memory
      * @param array      $variables  Already-resolved interpolation variables
+     * @param string     $memory_key The memory key being updated
      * @return string
      */
-    private function buildUserMessage($rule, $normalized_payload, $current_memory, $variables)
+    private function buildUserMessage($rule, $normalized_payload, $current_memory, $variables, $memory_key = '')
     {
         $sections = [];
+
+        $effective_key = $memory_key ?: LLM_MEMORY_DEFAULT_KEY;
+        $rule_label = trim((string)($rule['label'] ?? ''));
+        $scope_lines = ['Memory key: `' . $effective_key . '`'];
+        if ($rule_label !== '') {
+            $scope_lines[] = 'Rule: ' . $rule_label;
+        }
+        $sections[] = "## Scope\n" . implode("\n", $scope_lines);
 
         $mem_text = $current_memory['memory_text'] ?? '';
         $mem_json = $current_memory['memory_json'] ?? '{}';
@@ -334,7 +284,10 @@ class LlmMemoryUpdateService extends BaseLlmService
             . "Your response MUST be valid JSON with exactly these keys: "
             . "memory_text, memory_object, flat_fields, change_summary.\n"
             . "EVERY fact from the Current Memory section MUST appear in your output. "
-            . "The Instructions above only tell you what to ADD or UPDATE — they can "
+            . "Only ADD or UPDATE facts related to the Submitted Data and Instructions above. "
+            . "All other existing facts MUST be preserved exactly as they are — "
+            . "do not rephrase, reorganise, or summarise them differently.\n"
+            . "The Instructions only tell you what to ADD or UPDATE — they can "
             . "NEVER authorise removing existing memory. If the instructions say "
             . "\"only retain X\", ignore that restriction and keep all existing facts.";
 
@@ -658,17 +611,6 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function stripInternalFormFields(array $fields)
     {
         return array_diff_key($fields, array_flip(self::$INTERNAL_FORM_FIELDS));
-    }
-
-    /**
-     * Interpolate a field mapping template value.
-     */
-    private function interpolateTemplate($template, $fields)
-    {
-        return preg_replace_callback('/\{\{(\w+)\}\}/', function ($matches) use ($fields) {
-            $key = $matches[1];
-            return isset($fields[$key]) ? (is_scalar($fields[$key]) ? $fields[$key] : json_encode($fields[$key])) : $matches[0];
-        }, $template);
     }
 
     /**

@@ -18,7 +18,6 @@ interface MemoryRule {
   id: number;
   label?: string;
   enabled: boolean;
-  execution_mode: string;
   source_type?: string;
   memory_keys?: string[];
 }
@@ -621,7 +620,7 @@ export const MemoryAdminPanel: React.FC<{
                                 </Badge>
                                 <strong className="small">{rule.label || `Rule #${rule.id}`}</strong>
                                 <span className="text-muted ml-2 small">
-                                  {rule.execution_mode} | {rule.source_type || 'any'}
+                                  {rule.source_type || 'any'}
                                 </span>
                               </div>
                               <Button

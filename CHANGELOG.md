@@ -10,7 +10,7 @@ A centralized memory system that stores user-specific facts across all LLM inter
 
 - Enable memory and choose storage mode (`record`, `log`, or `both`) from the LLM Settings page.
 - Create memory rules that trigger from form submissions, login, or profile changes.
-- Rules use either `llm_summarize` (LLM extracts key facts) or `direct_mapping` (field-to-field copy).
+- Rules use LLM summarization to extract and merge key facts from submitted data into user memory.
 - Admin writes only the intent (e.g. "Extract hobbies from the form") -- the system auto-injects current memory, submitted data, user language, and Data Config context.
 - Memory content is written in the user's language automatically.
 - Infinite loop protection: memory update jobs are blocked when the form source is the memory table itself.

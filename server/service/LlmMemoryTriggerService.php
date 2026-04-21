@@ -298,7 +298,6 @@ class LlmMemoryTriggerService extends BaseLlmService
 
         $this->appendWorkerLog('enqueueMemoryUpdate prepared', array(
             'rule_id' => (int)($rule['id'] ?? 0),
-            'execution_mode' => (string)($rule['execution_mode'] ?? ''),
             'user_id' => (int)($normalized_payload['user_id'] ?? 0),
             'source_type' => (string)($normalized_payload['source_type'] ?? ''),
             'memory_key_override' => (string)($normalized_payload['memory_key_override'] ?? ''),
@@ -306,18 +305,8 @@ class LlmMemoryTriggerService extends BaseLlmService
             'field_keys' => array_keys((array)($normalized_payload['fields'] ?? array())),
         ));
 
-        if ($rule['execution_mode'] === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {
-            $this->appendWorkerLog('enqueueMemoryUpdate executing direct mapping sync', array(
-                'rule_id' => (int)($rule['id'] ?? 0),
-            ));
-            require_once __DIR__ . '/LlmMemoryUpdateService.php';
-            $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
-            $update_service->executeDirectMapping($rule, $normalized_payload);
-            return;
-        }
-
         if (!$async) {
-            $this->appendWorkerLog('enqueueMemoryUpdate executing summarization sync', array(
+            $this->appendWorkerLog('enqueueMemoryUpdate executing sync', array(
                 'rule_id' => (int)($rule['id'] ?? 0),
             ));
             require_once __DIR__ . '/LlmMemoryUpdateService.php';
@@ -442,15 +431,7 @@ class LlmMemoryTriggerService extends BaseLlmService
             'user_language_locale'   => $worker_args['user_language_locale'] ?? '',
         ];
 
-        if (($rule['execution_mode'] ?? '') === LLM_MEMORY_EXECUTION_DIRECT_MAPPING) {
-            $this->appendWorkerLog('executeFallbackSync running direct mapping', array(
-                'rule_id' => (int)($rule['id'] ?? 0),
-            ));
-            $update_service->executeDirectMapping($rule, $normalized);
-            return;
-        }
-
-        $this->appendWorkerLog('executeFallbackSync running summarization', array(
+        $this->appendWorkerLog('executeFallbackSync running', array(
             'rule_id' => (int)($rule['id'] ?? 0),
         ));
         $update_service->executeLlmSummarization($rule, $normalized);
@@ -490,14 +471,6 @@ class LlmMemoryTriggerService extends BaseLlmService
     {
         if (!is_array($rule_overrides) || empty($rule_overrides)) {
             return $rule;
-        }
-
-        if (!empty($rule_overrides['execution_mode'])) {
-            $rule['execution_mode'] = $rule_overrides['execution_mode'];
-        }
-
-        if (!empty($rule_overrides['field_mapping']) && is_array($rule_overrides['field_mapping'])) {
-            $rule['field_mapping'] = $rule_overrides['field_mapping'];
         }
 
         return $rule;

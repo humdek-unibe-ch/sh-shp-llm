@@ -208,7 +208,6 @@ Memory rules are stored in the normalized `llm_memory_rules` table and edited th
   },
   "trigger_types_json": ["finished"],
   "storage_mode_override": "both",
-  "execution_mode": "llm_summarize",
   "llm_model": "",
   "llm_temperature": 0.2,
   "llm_max_tokens": 1200
@@ -220,35 +219,16 @@ Prompt Lab ownership is derived from the rule row itself:
 - `owner_id = <rule id>`
 - `prompt_slot = memory_rule`
 
-#### Execution modes
+#### Auto-injected context
 
-- `llm_summarize`: send the event payload to the async memory worker and let the prompt decide what to keep
-- `direct_mapping`: write stable facts directly from submitted fields without calling the LLM
-
-#### Auto-injected context (llm_summarize mode)
-
-When a rule uses `llm_summarize`, the system automatically injects the following into the LLM call:
+The system automatically injects the following into the LLM call:
 - **Current memory** -- the user's existing memory_text and memory_json
 - **Submitted data** -- all form field values or event payload
 - **Data Config results** -- any extra data sources configured on the rule
 - **User language** -- detected from the session; the LLM writes memory in the user's language
+- **Memory key scope** -- the LLM is told which key is being updated and instructed to only modify facts related to the current submission
 
 The admin prompt (from Prompt Lab or the default) only needs to contain instructions, e.g. "Extract the user's hobbies from the form data." The system prompt handles merge/append/replace logic and JSON output format.
-
-Direct-mapping example:
-
-```json
-{
-  "type": "llm_memory_update",
-  "memory_rule_key": "onboarding_direct_fields",
-  "execution_mode": "direct_mapping",
-  "field_mapping": {
-    "preferred_name": "{{first_name}}",
-    "main_goal": "{{goal}}",
-    "last_onboarding_step": "{{step_name}}"
-  }
-}
-```
 
 #### Ordering and dedupe behavior
 
@@ -270,7 +250,7 @@ The runtime guarantees:
 2. Add a form action
 3. Select job type `llm_memory_update`
 4. Optionally select specific rule keys (blank = auto-match by `source_type`)
-5. Optionally override execution mode, field mapping, storage mode, or prompt version
+5. Optionally override storage mode or prompt version
 
 Form-action job config example:
 
@@ -280,8 +260,6 @@ Form-action job config example:
   "memory_rule_keys": "sleep_form_finished",
   "run_async": true,
   "force_storage_mode": "",
-  "execution_mode": "",
-  "field_mapping": "",
   "prompt_version_override": 0
 }
 ```
@@ -303,12 +281,7 @@ When `memory_rule_keys` is set, only the listed rules fire. When empty, rules ar
   "key": "login_tracker",
   "label": "Login Activity",
   "enabled": true,
-  "source_type": "login",
-  "execution_mode": "direct_mapping",
-  "field_mapping": {
-    "last_login_time": "{{login_time}}",
-    "last_known_name": "{{user_name}}"
-  }
+  "source_type": "login"
 }
 ```
 
@@ -348,10 +321,7 @@ This works in `conversation_context`, LLM script prompts, `llmResponse` template
 2. Open the dedicated `LLM Memory` page.
 3. Create one or more rules in the `Rules` tab.
 4. Edit the rule prompt in Prompt Lab from that page.
-5. Choose the execution mode per rule:
-   - `llm_summarize` for free text, complex surveys, and conversational input
-   - `direct_mapping` for simple field-to-field writes (no LLM call)
-6. For core forms and surveys, add a `llm_memory_update` form action and select the rule key.
+5. For core forms and surveys, add a `llm_memory_update` form action and select the rule key.
 7. For `llmChat` without data saving, configure `memory_rule_keys` on the section.
 8. Load memory explicitly through `data_config` in prompts or content (see above).
 9. Use the dedicated memory page tabs to:

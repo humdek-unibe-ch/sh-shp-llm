@@ -566,8 +566,6 @@ interface MemoryRule {
   source_match?: Record<string, unknown>;
   trigger_types?: string[];
   storage_mode_override?: string;
-  execution_mode: string;
-  field_mapping?: Record<string, string>;
   prompt_binding?: Record<string, string>;
   prompt_template?: string;
   llm_model?: string;
@@ -618,11 +616,9 @@ interface MemoryRuleRecord {
   enabled: boolean;
   source_type: string;
   memory_keys: string[];
-  execution_mode: string;
   trigger_types?: string[];
   storage_mode_override: string;
   source_match: Record<string, unknown>;
-  field_mapping: Record<string, string>;
   data_config: Array<Record<string, unknown>>;
   llm_model: string;
   llm_temperature: string;
@@ -681,7 +677,6 @@ interface MemoryRulesBootstrapResponse {
     defaults: MemoryRuleEditorDefaults;
     models: Array<{ id: string; name?: string }>;
     source_types: MemoryRuleEditorOption[];
-    execution_modes: MemoryRuleEditorOption[];
     storage_modes: MemoryRuleEditorOption[];
     sections: MemoryRuleEditorSection[];
   };
