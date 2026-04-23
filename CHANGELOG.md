@@ -2,10 +2,36 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.2.0] - 2026-04-17 Pre-release
+## [1.2.0] - 2026-04-23 - Not released yet
 
 ### Added
 
+- **Mobile parity for `llmFormRecord` and `llmFormLog`.** LLM form styles
+  render natively in the SelfHelp mobile app (v4.1.0+). All four result
+  panel modes (`default`, `card`, `collapse`, `modal`), all four placements
+  (`top`, `bottom`, `left`, `right`), regenerate / retry / manual-feedback
+  actions, and the "show previous result" behaviour work on mobile exactly
+  like they do on the web.
+- **Record id round-trip for LLM forms.** Every LLM response (submit,
+  regenerate, retry, generate-feedback) now carries `record_id` inside
+  `llm_meta`, and the current record id is exposed on both the web config
+  payload (`currentRecordId`) and the mobile style output
+  (`current_record_id`). This makes regenerate / retry reliable even on a
+  fresh page load where no form has been submitted yet in the current
+  session.
+- **Previous result survives page reloads.** `LlmFormModel::getPreviousLlmResult()`
+  and `getPreviousLlmMeta()` now fall back to a direct `dataTables` lookup
+  when the cached entry record does not yet have the LLM columns populated.
+  Users now see the last generated LLM response whenever they reopen the
+  form, on both web and mobile.
+- **Mobile output for LLM form styles.** `LlmFormView::output_content_mobile()`
+  extends the core `FormUserInputView` mobile payload with the dynamic
+  values the native mobile app needs to render the LLM result panel:
+  `llm_previous_result`, `llm_previous_meta`, `current_record_id`,
+  `section_id`, and `user_language`. All static config fields (`llm_enabled`,
+  `llm_model`, `llm_result_placement`, `llm_result_panel`, etc.) are still
+  included via the parent's `get_db_fields()` call, so no changes are
+  required on the web side.
 - **Global User Memory.** Centralized, per-user memory that stores stable
   facts across all LLM interactions.
   - Enable memory and choose storage mode (`record`, `log`, or `both`) from
@@ -83,6 +109,17 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Fixed
 
+- **LLM form regenerate button now works.** The regenerate / retry actions
+  previously needed a `record_id` that the backend never returned in the
+  response, so the client stayed disabled after save. The server now always
+  responds with `llm_meta.record_id`, and both the React `LlmFormPanel` and
+  the Angular `LlmFormStyleComponent` seed their `record_id` from the
+  initial config so the button works immediately on page load.
+- **Previous LLM response displays after navigation.** On both web and
+  mobile the last generated response was missing when the user navigated
+  away and came back to an LLM form. The model now falls back to a direct
+  `dataTables` lookup when the cached entry record does not yet have the
+  LLM columns, so the previous result and its metadata always reappear.
 - **Playground works for memory rules.** Running a memory-rule prompt
   through the playground no longer fails with
   `SQLSTATE[23000] ... fk_llmConversations_llm_scripts` /

@@ -38,6 +38,10 @@ export interface LlmFormConfig {
   previousMeta: LlmResultMeta | null;
   userLanguage: string;
   sectionId: number;
+  /** Current saved record id for the logged-in user, or null if the
+   *  form has not been submitted yet. Used to seed regenerate / retry
+   *  actions on first load. */
+  currentRecordId?: string | number | null;
 }
 
 /** Metadata attached to each LLM generation result for audit and display. */
@@ -50,6 +54,10 @@ export interface LlmResultMeta {
   status: 'success' | 'error';
   language: string;
   error?: string;
+  /** Record id that the result was saved against. Returned by the PHP
+   *  controller so the client can use it for subsequent regenerate /
+   *  retry calls. */
+  record_id?: string | number;
 }
 
 /** Full response envelope returned by the PHP controller after LLM form submission. */

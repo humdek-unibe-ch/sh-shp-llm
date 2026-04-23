@@ -97,7 +97,11 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [feedbackButtonEnabled, setFeedbackButtonEnabled] = useState(false);
   const [feedbackButtonHost, setFeedbackButtonHost] = useState<HTMLElement | null>(null);
 
-  const recordIdRef = useRef<string | null>(null);
+  const recordIdRef = useRef<string | null>(
+    config.currentRecordId !== undefined && config.currentRecordId !== null
+      ? String(config.currentRecordId)
+      : null
+  );
   const requestInFlightRef = useRef(false);
   const disabledElementsRef = useRef<HTMLElement[]>([]);
   const isManualMode = config.manualFeedbackEnabled;
@@ -154,6 +158,9 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, []);
 
   const updateResultFromResponse = useCallback((data: LlmFormResult, fallbackError: string) => {
+    if (data?.llm_meta?.record_id !== undefined && data.llm_meta.record_id !== null) {
+      recordIdRef.current = String(data.llm_meta.record_id);
+    }
     if (data.success) {
       setResult(data.llm_result);
       setMeta(data.llm_meta);
@@ -178,10 +185,16 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         try {
           const data = await postForm(form.action || window.location.href, formData);
 
+          const submittedRecordId = (formData.get('selected_record_id') as string) || null;
+          const responseRecordId =
+            data?.llm_meta?.record_id !== undefined && data.llm_meta.record_id !== null
+              ? String(data.llm_meta.record_id)
+              : null;
+
           if (data.manual_feedback_mode) {
             if (data.success) {
               showFormAlert(formContainer, 'success', config.llmShowErrors ? 'Form saved successfully.' : 'Saved.');
-              recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+              recordIdRef.current = responseRecordId || submittedRecordId || recordIdRef.current;
               return;
             }
             if (data.form_errors && config.llmShowErrors) {
@@ -191,7 +204,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
           }
 
           if (data.success) {
-            recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+            recordIdRef.current = responseRecordId || submittedRecordId || recordIdRef.current;
             showFormAlert(formContainer, 'success', 'Saved.');
           }
           updateResultFromResponse(data, 'LLM generation failed');

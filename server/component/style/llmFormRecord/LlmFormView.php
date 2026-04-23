@@ -39,6 +39,28 @@ class LlmFormView extends FormUserInputView
     }
 
     /**
+     * Mobile output: extends the core FormUserInputView mobile payload with
+     * dynamic LLM data (previous result, previous meta, section id, user
+     * language). All static config fields (`llm_enabled`, `llm_model`,
+     * `llm_result_placement`, etc.) are already included by the parent via
+     * `get_db_fields()`.
+     */
+    public function output_content_mobile()
+    {
+        $style = parent::output_content_mobile();
+
+        $previous_result = $this->model->getPreviousLlmResult();
+        $previous_meta = $this->model->getPreviousLlmMeta();
+
+        $style['llm_previous_result'] = array('content' => $previous_result);
+        $style['llm_previous_meta'] = array('content' => $previous_meta);
+        $style['current_record_id'] = array('content' => $this->model->getCurrentRecordId());
+        $style['section_id'] = $this->model->get_section_id();
+        $style['user_language'] = $this->model->getUserLanguage();
+        return $style;
+    }
+
+    /**
      * Get CSS includes (loads the LLM form CSS bundle).
      */
     public function get_css_includes($local = array())

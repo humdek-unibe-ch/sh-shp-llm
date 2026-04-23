@@ -248,6 +248,11 @@ class LlmFormModel extends FormUserInputModel
 
     /**
      * Get the previous LLM result from the stored record data.
+     * Falls back to a direct `dataTables` lookup when the entry record
+     * cached on the model does not yet include the LLM result column
+     * (the parent's `reload_children()` runs before the LLM save in the
+     * same request, so a freshly-saved result is only visible on the
+     * next page load).
      *
      * @return string|null The previous LLM result or null
      */
@@ -258,14 +263,19 @@ class LlmFormModel extends FormUserInputModel
         }
         $field_name = $this->getLlmResultFieldName();
         $entry_data = $this->get_entry_record_data();
-        if (is_array($entry_data) && isset($entry_data[$field_name])) {
+        if (is_array($entry_data) && array_key_exists($field_name, $entry_data) && $entry_data[$field_name] !== null && $entry_data[$field_name] !== '') {
             return $entry_data[$field_name];
+        }
+        $record = $this->loadLatestUserRecord();
+        if (is_array($record) && array_key_exists($field_name, $record) && $record[$field_name] !== null && $record[$field_name] !== '') {
+            return $record[$field_name];
         }
         return null;
     }
 
     /**
-     * Get the previous LLM result metadata.
+     * Get the previous LLM result metadata. Falls back to a direct
+     * `dataTables` lookup for the same reason as `getPreviousLlmResult()`.
      *
      * @return array|null Parsed metadata or null
      */
@@ -278,9 +288,72 @@ class LlmFormModel extends FormUserInputModel
         $entry_data = $this->get_entry_record_data();
         if (is_array($entry_data) && isset($entry_data[$field_name])) {
             $meta = json_decode($entry_data[$field_name], true);
+            if (is_array($meta)) {
+                return $meta;
+            }
+        }
+        $record = $this->loadLatestUserRecord();
+        if (is_array($record) && isset($record[$field_name])) {
+            $meta = json_decode($record[$field_name], true);
             return is_array($meta) ? $meta : null;
         }
         return null;
+    }
+
+    /**
+     * Return the current record id for the logged-in user, or null if no
+     * record exists yet. Used by the frontend to seed regenerate / retry
+     * actions on first load.
+     *
+     * @return int|string|null
+     */
+    public function getCurrentRecordId()
+    {
+        $entry_data = $this->get_entry_record_data();
+        if (is_array($entry_data)) {
+            if (isset($entry_data[ENTRY_RECORD_ID]) && $entry_data[ENTRY_RECORD_ID]) {
+                return $entry_data[ENTRY_RECORD_ID];
+            }
+            if (isset($entry_data['record_id']) && $entry_data['record_id']) {
+                return $entry_data['record_id'];
+            }
+        }
+        $record = $this->loadLatestUserRecord();
+        if (is_array($record)) {
+            return $record[ENTRY_RECORD_ID] ?? $record['record_id'] ?? null;
+        }
+        return null;
+    }
+
+    /**
+     * Directly load the latest data record for the current user from the
+     * form's `dataTables` storage. Bypasses the model's cached
+     * `entry_record`, which may not yet reflect writes made later in the
+     * same request.
+     *
+     * @return array|null
+     */
+    private function loadLatestUserRecord()
+    {
+        $user_id = $_SESSION['id_user'] ?? null;
+        if (!$user_id) {
+            return null;
+        }
+        $services = $this->get_services();
+        if (!$services) {
+            return null;
+        }
+        $user_input = $services->get_user_input();
+        if (!$user_input) {
+            return null;
+        }
+        $table_name = sprintf('%010d', $this->section_id);
+        $form_id = $user_input->get_dataTable_id($table_name);
+        if (!$form_id) {
+            return null;
+        }
+        $data = $user_input->get_data($form_id, 'ORDER BY record_id DESC', true, $user_id, true);
+        return is_array($data) && !empty($data) ? $data : null;
     }
 
     /**
@@ -329,6 +402,7 @@ class LlmFormModel extends FormUserInputModel
             'previousMeta' => $this->getPreviousLlmMeta(),
             'userLanguage' => $this->getUserLanguage(),
             'sectionId' => $this->section_id,
+            'currentRecordId' => $this->getCurrentRecordId(),
         ];
     }
 
