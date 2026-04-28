@@ -359,6 +359,7 @@ interface InputComponentProps {
   checked?: boolean;
 }
 
+/** InputComponent React component. */
 const InputComponent: React.FC<InputComponentProps> = ({ type, checked, ...props }) => {
   if (type === 'checkbox') {
     return (
@@ -411,4 +412,5 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   );
 };
 
+/** Default export for this module. */
 export default MarkdownRenderer;

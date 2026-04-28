@@ -6,9 +6,22 @@
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
+/**
+ * LLM Prompt Execution Profile Service
+ *
+ * Manages execution profiles stored in `llm_prompt_execution_profiles`.
+ * Each profile defines how a prompt interacts with the LLM: which model
+ * parameters to use, whether the prompt runs in chat/script/form mode,
+ * and optional schema validation or system context overrides.
+ *
+ * Profiles can be auto-bootstrapped from templates on first access.
+ *
+ * @package LLM Plugin
+ * @see LlmPromptPlaygroundService For profile usage during execution
+ */
 class LlmPromptExecutionProfileService extends BaseLlmService
 {
-    /** @var LlmPromptAssetLoader */
+    /** @var LlmPromptAssetLoader Loads profile templates from disk */
     private $prompt_assets;
 
     public function __construct($services)
@@ -30,6 +43,10 @@ class LlmPromptExecutionProfileService extends BaseLlmService
 
         if ($owner_type === LLM_PROMPT_OWNER_SCRIPT || $prompt_slot === 'script') {
             return 'script_runtime';
+        }
+
+        if ($owner_type === LLM_PROMPT_OWNER_MEMORY_RULE) {
+            return 'memory_runtime';
         }
 
         $slot_profile = $this->resolveExecutionProfileByPromptSlot($descriptor);
@@ -80,6 +97,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             return 'form';
         }
         if ($profile === 'script_runtime') {
+            return 'script';
+        }
+        if ($profile === 'memory_runtime') {
             return 'script';
         }
 
@@ -204,6 +224,14 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'max_tokens',
                 'data_config',
                 'test_variables'
+            );
+        }
+
+        if ($profile === 'memory_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens'
             );
         }
 
@@ -389,6 +417,12 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         return array();
     }
 
+    /**
+     * Look up the style name for a given section ID.
+     *
+     * @param int $section_id Section ID.
+     * @return string Style name, or empty string.
+     */
     public function resolveSectionStyleName($section_id)
     {
         if ($section_id <= 0) {
@@ -407,6 +441,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         return strtolower((string)($row['name'] ?? ''));
     }
 
+    /** @return float|null Normalize a value to float, or null for empty/null. */
     private function normalizeNumber($value)
     {
         if ($value === null || $value === '') {
@@ -416,6 +451,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         return (float)$value;
     }
 
+    /** @return int|null Normalize a value to integer, or null for empty/null. */
     private function normalizeInt($value)
     {
         if ($value === null || $value === '') {
@@ -425,6 +461,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         return (int)$value;
     }
 
+    /** @return string|null Convert a value to '1'/'0' boolean string, or null. */
     private function toBoolString($value)
     {
         if ($value === null || $value === '') {
@@ -434,6 +471,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
         return ((string)$value === '1' || $value === true) ? '1' : '0';
     }
 
+    /** @return mixed|null Decode a JSON string, returning null on empty or failure. */
     private function decodeJsonValue($value)
     {
         if (!is_string($value) || trim($value) === '') {

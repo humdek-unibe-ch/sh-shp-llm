@@ -25,6 +25,7 @@ class LlmStrictConversationService
     private $llm_service;
     private $prompt_assets;
 
+    /** @param LlmService $llm_service Core LLM service for API calls and conversation management. */
     public function __construct($llm_service)
     {
         $this->llm_service = $llm_service;

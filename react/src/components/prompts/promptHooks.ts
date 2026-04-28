@@ -1,7 +1,18 @@
+/**
+ * Prompt Lab React hooks.
+ *
+ * Provides `usePromptBootstrap` for loading and refreshing Prompt Lab
+ * bootstrap data (versions, variables, profiles, datasets) from the
+ * PHP backend. Handles auto-reload on descriptor changes and exposes
+ * a manual refresh trigger.
+ *
+ * @module components/prompts/promptHooks
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { createPromptLabApi } from './promptApi';
 import type { PromptBootstrapData, PromptDescriptor } from './promptTypes';
 
+/** Options for the usePromptBootstrap hook. */
 interface UsePromptBootstrapOptions {
   api: ReturnType<typeof createPromptLabApi>;
   descriptor: PromptDescriptor;
@@ -11,6 +22,13 @@ interface UsePromptBootstrapOptions {
   enabled?: boolean;
 }
 
+/**
+ * Loads Prompt Lab bootstrap data and auto-refreshes on descriptor changes.
+ *
+ * Returns the current bootstrap payload, loading/error state, and a
+ * manual `refresh()` trigger. Skips auto-reload immediately after a
+ * local update to avoid overwriting optimistic state.
+ */
 export function usePromptBootstrap({
   api,
   descriptor,
@@ -25,9 +43,15 @@ export function usePromptBootstrap({
     runtimeOverrides,
   });
   const descriptorRef = useRef(descriptor);
-  const [bootstrap, setBootstrap] = useState<PromptBootstrapData | null>(null);
+  const [bootstrap, setBootstrapRaw] = useState<PromptBootstrapData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const skipNextAutoReloadRef = useRef(false);
+
+  const setBootstrap = useCallback((next: PromptBootstrapData | null) => {
+    skipNextAutoReloadRef.current = true;
+    setBootstrapRaw(next);
+  }, []);
 
   useEffect(() => {
     latestStateRef.current = {
@@ -42,8 +66,9 @@ export function usePromptBootstrap({
   }, [descriptor]);
 
   const reload = useCallback(async () => {
-    if (!enabled || !descriptor.ownerId) {
-      setBootstrap(null);
+    const hasOwnerIdentity = descriptor.ownerId > 0;
+    if (!enabled || !hasOwnerIdentity) {
+      setBootstrapRaw(null);
       return null;
     }
 
@@ -56,7 +81,7 @@ export function usePromptBootstrap({
         latestStateRef.current.currentMeta,
         latestStateRef.current.runtimeOverrides,
       );
-      setBootstrap(next);
+      setBootstrapRaw(next);
       return next;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load prompt state';
@@ -69,6 +94,11 @@ export function usePromptBootstrap({
 
   useEffect(() => {
     if (!enabled) {
+      return;
+    }
+
+    if (skipNextAutoReloadRef.current) {
+      skipNextAutoReloadRef.current = false;
       return;
     }
 

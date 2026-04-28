@@ -9,35 +9,47 @@ require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
 
 /**
- * Controller for the LLM admin console component.
- * Handles AJAX-style requests for admin filters, conversations and messages.
+ * Controller for the LLM Admin Console module.
+ *
+ * Handles all AJAX requests from the React-based admin console UI
+ * for moderating and inspecting LLM conversations. Supports filtering,
+ * pagination, message inspection, and moderation actions (block/unblock/delete).
+ *
+ * Actions are dispatched via the `action` GET/POST parameter. All responses
+ * are returned as JSON through LlmJsonResponseTrait.
+ *
+ * @package LLM Plugin
+ * @see ModuleLlmAdminConsoleModel For data retrieval logic
  */
 class ModuleLlmAdminConsoleController extends BaseController
 {
     use LlmJsonResponseTrait;
+
     /**
-     * Constructor.
-     *
-     * @param object $model
-     *  The model instance of the component.
+     * @param ModuleLlmAdminConsoleModel $model Model providing admin data operations
      */
     public function __construct($model)
     {
         parent::__construct($model);
-
-        // Handle incoming requests immediately (GET/POST action based)
         $this->handleRequest();
     }
 
     /**
-     * Route incoming requests based on action parameter.
+     * Dispatch incoming request to the appropriate handler based on `action` parameter.
+     *
+     * Supported actions:
+     * - admin_filters: Retrieve available filter options (users, sections, scripts)
+     * - admin_conversations: Paginated, filterable conversation list
+     * - admin_messages: Full message history for a single conversation
+     * - admin_delete_conversation: Soft-delete a conversation (POST)
+     * - admin_block_conversation: Block a conversation with optional reason (POST)
+     * - admin_unblock_conversation: Remove block from a conversation (POST)
      */
     private function handleRequest()
     {
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
-
         if (!$action) {
-            return; // No special handling required; continue with normal rendering
+            return;
         }
 
         switch ($action) {
@@ -66,7 +78,10 @@ class ModuleLlmAdminConsoleController extends BaseController
     }
 
     /**
-     * Handle admin filters request (users and sections).
+     * Return the set of available filter options for the admin conversation list.
+     *
+     * Provides users, sections, and scripts so the React UI can populate
+     * its filter dropdowns without a separate configuration endpoint.
      */
     private function handleAdminFilters()
     {
@@ -79,13 +94,16 @@ class ModuleLlmAdminConsoleController extends BaseController
     }
 
     /**
-     * Handle admin conversations request with pagination and filters.
+     * Return a paginated, filterable list of conversations for admin review.
+     *
+     * Accepts optional GET parameters: user_id, section_id, script_id, q (search),
+     * date_from, date_to, page, per_page (max 100).
      */
     private function handleAdminConversations()
     {
         $page = (int)($_GET['page'] ?? 1);
         $per_page = (int)($_GET['per_page'] ?? $this->model->getAdminPageSize());
-        $per_page = min($per_page > 0 ? $per_page : 50, 100); // sensible defaults, cap at 100
+        $per_page = min($per_page > 0 ? $per_page : 50, 100);
 
         $filters = [];
         if (!empty($_GET['user_id'])) {
@@ -116,12 +134,16 @@ class ModuleLlmAdminConsoleController extends BaseController
     }
 
     /**
-     * Handle admin conversation messages request.
+     * Return the full message history for a specific conversation.
+     *
+     * Includes all messages (validated and unvalidated) with raw_response,
+     * sent_context, reasoning, and request_payload for admin inspection.
+     *
+     * Requires GET parameter: conversation_id.
      */
     private function handleAdminMessages()
     {
         $conversation_id = $_GET['conversation_id'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
@@ -129,12 +151,10 @@ class ModuleLlmAdminConsoleController extends BaseController
 
         try {
             $result = $this->model->getAdminConversationMessages($conversation_id);
-
             if ($result === null) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;
             }
-
             $this->sendJsonResponse($result);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -142,24 +162,22 @@ class ModuleLlmAdminConsoleController extends BaseController
     }
 
     /**
-     * Handle admin delete conversation request.
-     * Soft deletes the conversation (sets deleted flag).
+     * Soft-delete a conversation and all its messages (POST).
+     *
+     * Requires POST parameter: conversation_id.
+     * Logs the admin user who performed the deletion.
      */
     private function handleAdminDeleteConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
         }
 
         try {
-            // Get admin user ID if available
             $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            
             $result = $this->model->adminDeleteConversation($conversation_id, $admin_user_id);
-
             if ($result) {
                 $this->sendJsonResponse(['success' => true, 'message' => 'Conversation deleted successfully']);
             } else {
@@ -171,25 +189,23 @@ class ModuleLlmAdminConsoleController extends BaseController
     }
 
     /**
-     * Handle admin block conversation request.
-     * Blocks the conversation to prevent further messages.
+     * Block a conversation with an optional reason (POST).
+     *
+     * Blocked conversations prevent the user from sending further messages.
+     * Requires POST parameter: conversation_id. Optional: reason.
      */
     private function handleAdminBlockConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
         $reason = $_POST['reason'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
         }
 
         try {
-            // Get admin user ID if available
             $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            
             $result = $this->model->adminBlockConversation($conversation_id, $reason, $admin_user_id);
-
             if ($result) {
                 $this->sendJsonResponse(['success' => true, 'message' => 'Conversation blocked successfully']);
             } else {
@@ -201,24 +217,22 @@ class ModuleLlmAdminConsoleController extends BaseController
     }
 
     /**
-     * Handle admin unblock conversation request.
-     * Unblocks a previously blocked conversation.
+     * Remove block status from a conversation (POST).
+     *
+     * Allows the user to resume sending messages in the conversation.
+     * Requires POST parameter: conversation_id.
      */
     private function handleAdminUnblockConversation()
     {
         $conversation_id = $_POST['conversation_id'] ?? null;
-
         if (!$conversation_id) {
             $this->sendJsonResponse(['error' => 'Conversation ID required'], 400);
             return;
         }
 
         try {
-            // Get admin user ID if available
             $admin_user_id = isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null;
-            
             $result = $this->model->adminUnblockConversation($conversation_id, $admin_user_id);
-
             if ($result) {
                 $this->sendJsonResponse(['success' => true, 'message' => 'Conversation unblocked successfully']);
             } else {
@@ -228,7 +242,5 @@ class ModuleLlmAdminConsoleController extends BaseController
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }
     }
-
 }
 ?>
-

@@ -1,3 +1,11 @@
+/**
+ * Dataset Move Cases Modal — move selected test cases to another dataset.
+ *
+ * Presents a dataset selector and confirmation before bulk-moving
+ * cases via the API.
+ *
+ * @module components/datasets/DatasetMoveCasesModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Button, Form, Modal } from 'react-bootstrap';
@@ -13,6 +21,7 @@ interface DatasetMoveCasesModalProps {
   disabled?: boolean;
 }
 
+/** Modal dialog for dataset move cases modal. */
 export const DatasetMoveCasesModal: React.FC<DatasetMoveCasesModalProps> = ({
   show,
   sourceDataset,

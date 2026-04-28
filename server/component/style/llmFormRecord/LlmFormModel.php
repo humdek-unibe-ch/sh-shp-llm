@@ -79,11 +79,17 @@ class LlmFormModel extends FormUserInputModel
 
     /* Public Getters *********************************************************/
 
+    /** @return bool Whether LLM generation is enabled for this form. */
     public function isLlmEnabled()
     {
         return $this->llm_enabled === '1';
     }
 
+    /**
+     * Get the LLM model identifier. Falls back to LLM_DEFAULT_MODEL constant.
+     *
+     * @return string Scoped model identifier (e.g. "server/model-name").
+     */
     public function getLlmModel()
     {
         if (!empty($this->llm_model)) {
@@ -92,111 +98,133 @@ class LlmFormModel extends FormUserInputModel
         return defined('LLM_DEFAULT_MODEL') ? LLM_DEFAULT_MODEL : 'qwen3-vl-8b-instruct';
     }
 
+    /** @return float LLM temperature value (0.0–2.0). */
     public function getLlmTemperature()
     {
         return floatval($this->llm_temperature);
     }
 
+    /** @return int Maximum token count for LLM response generation. */
     public function getLlmMaxTokens()
     {
         return intval($this->llm_max_tokens);
     }
 
+    /** @return string System prompt / context template with optional `{{field}}` placeholders. */
     public function getLlmContext()
     {
         return $this->llm_context;
     }
 
+    /** @return bool Whether the previous LLM result is shown before regeneration. */
     public function isShowPreviousResult()
     {
         return $this->llm_show_previous_result === '1';
     }
 
+    /** @return string DataTable column name where the LLM result text is stored. */
     public function getLlmResultFieldName()
     {
         return $this->llm_result_field_name;
     }
 
+    /** @return string DataTable column name where the LLM result metadata JSON is stored. */
     public function getLlmResultMetaFieldName()
     {
         return $this->llm_result_meta_field_name;
     }
 
+    /** @return string Result panel placement relative to the form ('top'|'bottom'|'left'|'right'). */
     public function getLlmResultPlacement()
     {
         return $this->llm_result_placement;
     }
 
+    /** @return string Result panel display mode ('default'|'card'|'modal'|'collapse'). */
     public function getLlmResultPanel()
     {
         return $this->llm_result_panel;
     }
 
+    /** @return string Title text displayed at the top of the result panel. */
     public function getLlmResultTitle()
     {
         return $this->llm_result_title;
     }
 
+    /** @return bool Whether the user can close/dismiss the result panel. */
     public function isLlmResultClosable()
     {
         return $this->llm_result_closable === '1';
     }
 
+    /** @return string CSS class(es) applied to the result panel container. */
     public function getLlmResultCss()
     {
         return $this->llm_result_css;
     }
 
+    /** @return string Mobile-specific CSS class(es) for the result panel. */
     public function getLlmResultCssMobile()
     {
         return $this->llm_result_css_mobile;
     }
 
+    /** @return bool Whether LLM error messages are shown to the user. */
     public function isShowErrors()
     {
         return $this->llm_show_errors === '1';
     }
 
+    /** @return bool Whether the retry button is available after an LLM error. */
     public function isRetryEnabled()
     {
         return $this->llm_retry_enabled === '1';
     }
 
+    /** @return string Label text for the retry button. */
     public function getRetryLabel()
     {
         return $this->llm_retry_label;
     }
 
+    /** @return bool Whether the regenerate button is shown after successful results. */
     public function isRegenerateEnabled()
     {
         return $this->llm_regenerate_enabled === '1';
     }
 
+    /** @return string Label text for the regenerate button. */
     public function getRegenerateLabel()
     {
         return $this->llm_regenerate_label;
     }
 
+    /** @return string Text shown while the LLM is generating a response (loading indicator). */
     public function getGeneratingText()
     {
         return $this->llm_generating_text;
     }
 
+    /** @return bool Whether to render compact (small) action buttons. */
     public function isUseSmallButtons()
     {
         return $this->use_small_buttons === '1';
     }
 
+    /** @return bool Whether the manual feedback mode is available (skip LLM, enter feedback directly). */
     public function isManualFeedbackEnabled()
     {
         return $this->llm_manual_feedback_enabled === '1';
     }
 
+    /** @return string Label text for the manual feedback button. */
     public function getFeedbackButtonLabel()
     {
         return $this->llm_feedback_button_label;
     }
 
+    /** @return string Bootstrap color class for the feedback button (e.g. 'primary', 'secondary'). */
     public function getFeedbackButtonColor()
     {
         return $this->llm_feedback_button_color;
@@ -220,6 +248,11 @@ class LlmFormModel extends FormUserInputModel
 
     /**
      * Get the previous LLM result from the stored record data.
+     * Falls back to a direct `dataTables` lookup when the entry record
+     * cached on the model does not yet include the LLM result column
+     * (the parent's `reload_children()` runs before the LLM save in the
+     * same request, so a freshly-saved result is only visible on the
+     * next page load).
      *
      * @return string|null The previous LLM result or null
      */
@@ -230,14 +263,19 @@ class LlmFormModel extends FormUserInputModel
         }
         $field_name = $this->getLlmResultFieldName();
         $entry_data = $this->get_entry_record_data();
-        if (is_array($entry_data) && isset($entry_data[$field_name])) {
+        if (is_array($entry_data) && array_key_exists($field_name, $entry_data) && $entry_data[$field_name] !== null && $entry_data[$field_name] !== '') {
             return $entry_data[$field_name];
+        }
+        $record = $this->loadLatestUserRecord();
+        if (is_array($record) && array_key_exists($field_name, $record) && $record[$field_name] !== null && $record[$field_name] !== '') {
+            return $record[$field_name];
         }
         return null;
     }
 
     /**
-     * Get the previous LLM result metadata.
+     * Get the previous LLM result metadata. Falls back to a direct
+     * `dataTables` lookup for the same reason as `getPreviousLlmResult()`.
      *
      * @return array|null Parsed metadata or null
      */
@@ -250,9 +288,72 @@ class LlmFormModel extends FormUserInputModel
         $entry_data = $this->get_entry_record_data();
         if (is_array($entry_data) && isset($entry_data[$field_name])) {
             $meta = json_decode($entry_data[$field_name], true);
+            if (is_array($meta)) {
+                return $meta;
+            }
+        }
+        $record = $this->loadLatestUserRecord();
+        if (is_array($record) && isset($record[$field_name])) {
+            $meta = json_decode($record[$field_name], true);
             return is_array($meta) ? $meta : null;
         }
         return null;
+    }
+
+    /**
+     * Return the current record id for the logged-in user, or null if no
+     * record exists yet. Used by the frontend to seed regenerate / retry
+     * actions on first load.
+     *
+     * @return int|string|null
+     */
+    public function getCurrentRecordId()
+    {
+        $entry_data = $this->get_entry_record_data();
+        if (is_array($entry_data)) {
+            if (isset($entry_data[ENTRY_RECORD_ID]) && $entry_data[ENTRY_RECORD_ID]) {
+                return $entry_data[ENTRY_RECORD_ID];
+            }
+            if (isset($entry_data['record_id']) && $entry_data['record_id']) {
+                return $entry_data['record_id'];
+            }
+        }
+        $record = $this->loadLatestUserRecord();
+        if (is_array($record)) {
+            return $record[ENTRY_RECORD_ID] ?? $record['record_id'] ?? null;
+        }
+        return null;
+    }
+
+    /**
+     * Directly load the latest data record for the current user from the
+     * form's `dataTables` storage. Bypasses the model's cached
+     * `entry_record`, which may not yet reflect writes made later in the
+     * same request.
+     *
+     * @return array|null
+     */
+    private function loadLatestUserRecord()
+    {
+        $user_id = $_SESSION['id_user'] ?? null;
+        if (!$user_id) {
+            return null;
+        }
+        $services = $this->get_services();
+        if (!$services) {
+            return null;
+        }
+        $user_input = $services->get_user_input();
+        if (!$user_input) {
+            return null;
+        }
+        $table_name = sprintf('%010d', $this->section_id);
+        $form_id = $user_input->get_dataTable_id($table_name);
+        if (!$form_id) {
+            return null;
+        }
+        $data = $user_input->get_data($form_id, 'ORDER BY record_id DESC', true, $user_id, true);
+        return is_array($data) && !empty($data) ? $data : null;
     }
 
     /**
@@ -301,6 +402,7 @@ class LlmFormModel extends FormUserInputModel
             'previousMeta' => $this->getPreviousLlmMeta(),
             'userLanguage' => $this->getUserLanguage(),
             'sectionId' => $this->section_id,
+            'currentRecordId' => $this->getCurrentRecordId(),
         ];
     }
 

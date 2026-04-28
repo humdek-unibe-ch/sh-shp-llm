@@ -1,3 +1,15 @@
+/**
+ * Prompt Editor — code-mirror / Monaco-based text editor for prompt templates.
+ *
+ * Provides syntax highlighting, auto-resize, and an optional read-only mode.
+ * Falls back to a plain `<textarea>` when Monaco is unavailable. Supports
+ * both markdown and JSON language modes.
+ *
+ * Used as the primary text input across the Prompt Lab, Scripts Manager,
+ * and JSON editors.
+ *
+ * @module components/prompts/PromptEditor
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { Form } from 'react-bootstrap';
 
@@ -17,6 +29,7 @@ interface PromptEditorProps {
   className?: string;
 }
 
+/** PromptEditor component. */
 export const PromptEditor: React.FC<PromptEditorProps> = ({
   value,
   onChange,

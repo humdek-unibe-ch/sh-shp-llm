@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
 require_once __DIR__ . "/../../../../../component/style/BaseStyleComponent.php";
+require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 /**
  * View for the LLM Scripts module.
@@ -20,33 +21,48 @@ class ModuleLlmScriptView extends BaseView
         parent::__construct($model, null);
     }
 
+    /** Render the scripts admin page with admin layout and React mount point. */
     public function output_content()
     {
+        $menuItems = LlmAdminLayoutHelper::getMenuItems(
+            $this->model->get_services(),
+            LLM_SCRIPTS_PAGE_KEYWORD
+        );
+
         $config = $this->getReactConfig();
         $dataConfigBuilder = new BaseStyleComponent("dataConfigBuilder", array(
             "value" => "",
             "name" => "data_config"
         ));
+
+        ob_start();
         require __DIR__ . "/tpl/module_llm_scripts.php";
+        $pageContent = ob_get_clean();
+
+        include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
+    /** @return array Empty; scripts module not available on mobile. */
     public function output_content_mobile()
     {
         return [];
     }
 
+    /** @return array CSS file paths for admin layout and scripts styles. */
     public function get_css_includes($local = array())
     {
         if (empty($local)) {
             $git_version = shell_exec("git describe --tags");
             $version = $git_version ? rtrim($git_version) : 'dev';
             $local = array(
+                __DIR__ . "/../../../css/ext/llm-admin-layout.css?v=" . $version,
                 __DIR__ . "/../../../css/ext/llm-scripts.css?v=" . $version,
             );
         }
         return parent::get_css_includes($local);
     }
 
+    /** @return array JS file paths for the scripts UMD bundle. */
     public function get_js_includes($local = array())
     {
         if (empty($local)) {
@@ -76,6 +92,7 @@ class ModuleLlmScriptView extends BaseView
         ]);
     }
 
+    /** @return string CSRF token from session. */
     private function resolveCsrfToken()
     {
         if (!empty($_SESSION['csrf_token'])) {

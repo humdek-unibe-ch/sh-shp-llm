@@ -7,12 +7,35 @@ require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
+/**
+ * LLM Dataset AI Import Parser Service
+ *
+ * Uses LLM calls to parse unstructured or semi-structured data (CSV, JSON,
+ * text) into standardized dataset test cases. The LLM acts as an intelligent
+ * parser that understands column semantics and maps them to the expected
+ * input/output schema.
+ *
+ * Creates a dedicated conversation for each import session so the parsing
+ * history is auditable through the admin console.
+ *
+ * @package LLM Plugin
+ * @see LlmDatasetAiImportMapperService For post-parse normalization
+ */
 class LlmDatasetAiImportParserService extends BaseLlmService
 {
+    /** @var LlmService Core LLM service for API calls */
     private $llm_service;
+
+    /** @var LlmPromptAssetLoader Loads prompt templates from disk */
     private $prompt_assets;
+
+    /** @var LlmDatasetAiImportMapperService Post-parse normalization */
     private $mapper_service;
 
+    /**
+     * @param object                          $services       SelfHelp services container.
+     * @param LlmDatasetAiImportMapperService $mapper_service Post-parse normalization service.
+     */
     public function __construct($services, $mapper_service)
     {
         parent::__construct($services);
@@ -21,6 +44,20 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         $this->mapper_service = $mapper_service;
     }
 
+    /**
+     * Use an LLM to parse raw pasted text into structured dataset test cases.
+     *
+     * Sends the text to the LLM with a specialized parser prompt, decodes the response,
+     * normalizes via the mapper service, and returns the structured result.
+     *
+     * @param array       $descriptor         Owner descriptor.
+     * @param string      $execution_profile  Target execution profile code.
+     * @param string      $raw_text           Pasted CSV/JSON/text to parse.
+     * @param string|null $selected_model     Override model, or null for default.
+     * @param array       $runtime_overrides  Runtime parameter overrides.
+     * @return array{mapping: array, cases: array, warnings: string[], model: string, ...}
+     * @throws Exception If text is empty or parser returns no usable cases.
+     */
     public function parseCasesFromText($descriptor, $execution_profile, $raw_text, $selected_model = null, $runtime_overrides = array())
     {
         $raw_text = trim((string)$raw_text);
@@ -108,6 +145,15 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         );
     }
 
+    /**
+     * Decode the LLM parser response, attempting repair via a second LLM call on failure.
+     *
+     * @param string $content    Raw LLM response content.
+     * @param string $model_name Model used for repair call.
+     * @param int    $max_tokens Max tokens for repair call.
+     * @return array Decoded parser payload with 'cases' and optional 'mapping'.
+     * @throws Exception If JSON cannot be decoded even after repair.
+     */
     private function decodeParserResponse($content, $model_name, $max_tokens)
     {
         if (!is_string($content) || trim($content) === '') {
@@ -129,6 +175,12 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         throw new Exception('Parser returned invalid JSON. Preview: ' . $preview);
     }
 
+    /**
+     * Try all JSON candidates extracted from raw text and return the first valid parser payload.
+     *
+     * @param string $raw Raw text potentially containing JSON.
+     * @return array|null Decoded payload, or null if none valid.
+     */
     private function decodeCandidatePayload($raw)
     {
         $candidates = $this->collectJsonCandidates((string)$raw);
@@ -142,6 +194,12 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         return null;
     }
 
+    /**
+     * Extract all possible JSON fragments from raw text: full text, code-fence blocks, balanced fragments.
+     *
+     * @param string $raw Raw LLM response text.
+     * @return string[] Unique non-empty candidate JSON strings.
+     */
     private function collectJsonCandidates($raw)
     {
         $raw = trim((string)$raw);
@@ -172,6 +230,12 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         })));
     }
 
+    /**
+     * Extract the first balanced JSON object or array from text by tracking brace/bracket depth.
+     *
+     * @param string $text Text containing a JSON fragment.
+     * @return string|null Extracted JSON string, or null if no balanced fragment found.
+     */
     private function extractBalancedJsonFragment($text)
     {
         $text = (string)$text;
@@ -227,6 +291,12 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         return null;
     }
 
+    /**
+     * Attempt to JSON-decode a candidate string, also trying trailing-comma removal as a fallback.
+     *
+     * @param string $candidate JSON candidate string.
+     * @return array|null Decoded array if it looks like a parser payload, or null.
+     */
     private function tryDecodeArrayPayload($candidate)
     {
         $candidate = trim((string)$candidate);
@@ -250,6 +320,12 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         return null;
     }
 
+    /**
+     * Check if a decoded array has the expected parser payload keys (cases, mapping, column_mapping).
+     *
+     * @param mixed $decoded Decoded JSON value.
+     * @return bool True if it contains expected parser keys.
+     */
     private function looksLikeParserPayload($decoded)
     {
         if (!is_array($decoded)) {
@@ -261,6 +337,14 @@ class LlmDatasetAiImportParserService extends BaseLlmService
             || array_key_exists('column_mapping', $decoded);
     }
 
+    /**
+     * Attempt to repair malformed JSON by sending it through a repair-focused LLM call.
+     *
+     * @param string $content    Malformed JSON content.
+     * @param string $model_name LLM model for the repair call.
+     * @param int    $max_tokens Max tokens for the repair response.
+     * @return string Repaired response content.
+     */
     private function repairParserJsonResponse($content, $model_name, $max_tokens)
     {
         $repair_system = $this->prompt_assets->load('core.dataset_import.repair_json');
@@ -280,6 +364,16 @@ class LlmDatasetAiImportParserService extends BaseLlmService
         return (string)($repair_response['content'] ?? '');
     }
 
+    /**
+     * Retrieve or create a dedicated conversation for dataset import parsing sessions.
+     *
+     * @param int    $user_id    Current user ID.
+     * @param string $model_name LLM model identifier.
+     * @param float  $temperature Model temperature.
+     * @param int    $max_tokens  Max response tokens.
+     * @param int    $section_id  Owner section/script ID.
+     * @return int Conversation ID.
+     */
     private function getOrCreateDatasetImportConversation($user_id, $model_name, $temperature, $max_tokens, $section_id)
     {
         $title = '[Dataset Import Parser] Section ' . ($section_id ?: 0);

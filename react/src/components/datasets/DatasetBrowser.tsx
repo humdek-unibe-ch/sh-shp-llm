@@ -1,3 +1,12 @@
+/**
+ * Dataset Browser — top-level container for browsing and managing datasets.
+ *
+ * Provides dataset list, case table, search, create/edit, AI import, and
+ * evaluation run access. Orchestrates child modals and delegates API
+ * calls through the dataset API client.
+ *
+ * @module components/datasets/DatasetBrowser
+ */
 import React from 'react';
 import { Button, Form } from 'react-bootstrap';
 import Select from 'react-select';
@@ -30,6 +39,7 @@ interface DatasetBrowserProps {
   loading?: boolean;
 }
 
+/** DatasetBrowser component. */
 export const DatasetBrowser: React.FC<DatasetBrowserProps> = ({
   datasets,
   selectedDatasetId,

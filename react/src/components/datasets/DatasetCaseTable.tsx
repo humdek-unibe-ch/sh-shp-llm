@@ -1,7 +1,16 @@
+/**
+ * Dataset Case Table — renders individual test cases within a dataset.
+ *
+ * Shows input/output summaries, expected labels, selection checkboxes,
+ * and per-case actions (edit, preview, history, delete, move).
+ *
+ * @module components/datasets/DatasetCaseTable
+ */
 import React from 'react';
 import { Badge, Button, Table } from 'react-bootstrap';
 import type { PromptDatasetCase } from './datasetTypes';
 
+/** parseInputPreview utility. */
 function parseInputPreview(inputPayloadJson?: string): string {
   if (!inputPayloadJson) return '';
   try {
@@ -21,6 +30,7 @@ function parseInputPreview(inputPayloadJson?: string): string {
   return '';
 }
 
+/** parseSafetyLabel utility. */
 function parseSafetyLabel(expectedLabelsJson?: string | null): string {
   if (!expectedLabelsJson) return 'safe';
   try {
@@ -48,6 +58,7 @@ interface DatasetCaseTableProps {
   onDelete: (datasetCase: PromptDatasetCase) => void;
 }
 
+/** Table component for dataset case table. */
 export const DatasetCaseTable: React.FC<DatasetCaseTableProps> = ({
   cases,
   loading = false,

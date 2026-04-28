@@ -1,31 +1,44 @@
+/**
+ * Evaluation Case Table — per-case results for an evaluation run.
+ *
+ * Renders each test case with its input summary, actual output,
+ * expected output, score, pass/fail badge, and an expand button
+ * for detailed inspection.
+ *
+ * @module components/evaluations/EvaluationCaseTable
+ */
 import React from 'react';
 import { Badge, Button, Table } from 'react-bootstrap';
 import type { PromptEvalRunCase } from './evaluationTypes';
 
+/** scoreBadgeVariant function. */
 function scoreBadgeVariant(passed?: number | null): 'success' | 'danger' | 'secondary' {
   if (passed === 1) return 'success';
   if (passed === 0) return 'danger';
   return 'secondary';
 }
 
+/** caseBadgeVariant function. */
 function caseBadgeVariant(status?: string): 'success' | 'danger' | 'warning' {
   if (status === 'failed') return 'danger';
   if (status === 'pending_review') return 'warning';
   return 'success';
 }
 
+/** caseStatusLabel function. */
 function caseStatusLabel(status?: string): string {
   if (status === 'failed') return 'Fail';
   if (status === 'pending_review') return 'Pending';
   return 'Pass';
 }
 
+/** Table component for evaluation case table. */
 export const EvaluationCaseTable: React.FC<{
   cases: PromptEvalRunCase[];
   onInspect: (runCase: PromptEvalRunCase) => void;
   onDeleteEvaluation?: (runCase: PromptEvalRunCase) => void;
-  deletingRunId?: number | null;
-}> = ({ cases, onInspect, onDeleteEvaluation, deletingRunId = null }) => (
+  deletingRunCaseId?: number | null;
+}> = ({ cases, onInspect, onDeleteEvaluation, deletingRunCaseId = null }) => (
   <div className="table-responsive mt-3">
     <Table hover size="sm" className="mb-0 prompt-lab-table">
       <thead>
@@ -87,10 +100,10 @@ export const EvaluationCaseTable: React.FC<{
                     <Button
                       size="sm"
                       variant="outline-danger"
-                      disabled={deletingRunId != null && deletingRunId === Number(item.id_llm_eval_runs || 0)}
+                      disabled={deletingRunCaseId != null && deletingRunCaseId === runCaseId}
                       onClick={() => onDeleteEvaluation(item)}
                     >
-                      {deletingRunId != null && deletingRunId === Number(item.id_llm_eval_runs || 0) ? 'Deleting...' : 'Delete'}
+                      {deletingRunCaseId != null && deletingRunCaseId === runCaseId ? 'Deleting...' : 'Delete'}
                     </Button>
                   )}
                 </div>

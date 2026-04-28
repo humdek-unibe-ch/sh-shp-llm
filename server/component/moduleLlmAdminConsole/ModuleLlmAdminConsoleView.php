@@ -5,6 +5,7 @@
 ?>
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
+require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
 
 /**
  * The view class for the LLM admin console component.
@@ -25,29 +26,44 @@ class ModuleLlmAdminConsoleView extends BaseView
         parent::__construct($model, null);
     }
 
+    /** Render the admin console page with React mount point and admin layout. */
     public function output_content()
     {
+        $menuItems = LlmAdminLayoutHelper::getMenuItems(
+            $this->model->get_services(),
+            LLM_ADMIN_PAGE_KEYWORD
+        );
+
         $config = $this->getReactConfig();
+
+        ob_start();
         include __DIR__ . '/tpl/module_llm_admin_console.php';
+        $pageContent = ob_get_clean();
+
+        include LlmAdminLayoutHelper::getLayoutTemplatePath();
     }
 
+    /** @return array Empty; admin console not available on mobile. */
     public function output_content_mobile()
     {
         return [];
     }
 
+    /** @return array CSS file paths for admin layout and console styles. */
     public function get_css_includes($local = array())
     {
         if (empty($local)) {
             $git_version = shell_exec("git describe --tags");
             $version = $git_version ? rtrim($git_version) : 'dev';
                 $local = array(
+                    __DIR__ . "/../../../css/ext/llm-admin-layout.css?v=" . $version,
                     __DIR__ . "/../../../css/ext/llm-admin.css?v=" . $version,
                 );
         }
         return parent::get_css_includes($local);
     }
 
+    /** @return array JS file paths for the admin console UMD bundle. */
     public function get_js_includes($local = array())
     {
         if (empty($local)) {

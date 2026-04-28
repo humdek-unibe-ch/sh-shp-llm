@@ -1,8 +1,17 @@
+/**
+ * Dataset Case Preview Modal — read-only JSON preview of a test case.
+ *
+ * Renders the full input/output payloads and expected labels through
+ * JsonInspector for quick inspection without opening the edit form.
+ *
+ * @module components/datasets/DatasetCasePreviewModal
+ */
 import React from 'react';
 import { Button, Modal } from 'react-bootstrap';
 import { JsonInspector } from '../shared/JsonInspector';
 import type { PromptDatasetCase } from './datasetTypes';
 
+/** parseJsonSafe utility. */
 function parseJsonSafe(value: unknown): unknown {
   if (typeof value !== 'string' || value.trim() === '') {
     return {};
@@ -14,6 +23,7 @@ function parseJsonSafe(value: unknown): unknown {
   }
 }
 
+/** sanitizeScalar function. */
 function sanitizeScalar(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value.trim();
@@ -25,6 +35,7 @@ function sanitizeScalar(value: unknown): string {
   }
 }
 
+/** extractPlaceholders function. */
 function extractPlaceholders(template: string): string[] {
   const keys = new Set<string>();
   const regex = /\{\{(\w+)\}\}/g;
@@ -38,6 +49,7 @@ function extractPlaceholders(template: string): string[] {
   return Array.from(keys);
 }
 
+/** interpolateTemplate function. */
 function interpolateTemplate(template: string, values: Record<string, unknown>): string {
   return (template || '').replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     const value = sanitizeScalar(values[key]);
@@ -45,6 +57,7 @@ function interpolateTemplate(template: string, values: Record<string, unknown>):
   });
 }
 
+/** toScalarMap function. */
 function toScalarMap(values: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (!values || typeof values !== 'object' || Array.isArray(values)) {
@@ -59,6 +72,7 @@ function toScalarMap(values: unknown): Record<string, string> {
   return out;
 }
 
+/** buildFormUserPrompt function. */
 function buildFormUserPrompt(values: Record<string, string>): string {
   const lines: string[] = [];
   Object.entries(values).forEach(([key, value]) => {
@@ -69,6 +83,7 @@ function buildFormUserPrompt(values: Record<string, string>): string {
   return lines.join('\n');
 }
 
+/** buildReplayPreview function. */
 function buildReplayPreview(inputPayload: Record<string, unknown>, promptTemplate: string): Record<string, unknown> {
   const executionProfile = String(inputPayload.execution_profile || '');
   const runtimeOverrides = (inputPayload.runtime_overrides && typeof inputPayload.runtime_overrides === 'object')
@@ -129,6 +144,7 @@ function buildReplayPreview(inputPayload: Record<string, unknown>, promptTemplat
   };
 }
 
+/** Modal dialog for dataset case preview modal. */
 export const DatasetCasePreviewModal: React.FC<{
   datasetCase: PromptDatasetCase | null;
   promptTemplate?: string;

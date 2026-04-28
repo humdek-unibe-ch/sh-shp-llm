@@ -1,3 +1,12 @@
+/**
+ * Prompt Builder Workspace — interactive LLM-assisted prompt authoring.
+ *
+ * Renders a split view: instruction input + model selector on the left,
+ * generated/refined prompt preview on the right. Supports iterative
+ * refinement, example imports, and applying the result to the parent editor.
+ *
+ * @module components/prompts/PromptBuilderWorkspace
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Button, Form, Spinner } from 'react-bootstrap';
@@ -38,6 +47,7 @@ const selectMenuStyles = {
   }),
 };
 
+/** buildEffectiveModels function. */
 function buildEffectiveModels(models: PromptModel[], defaultModel?: string | null): PromptModel[] {
   const normalized = Array.isArray(models) ? models.filter((item) => item?.id) : [];
   if (defaultModel && !normalized.some((item) => item.id === defaultModel)) {
@@ -46,12 +56,14 @@ function buildEffectiveModels(models: PromptModel[], defaultModel?: string | nul
   return normalized;
 }
 
+/** summarizeExample function. */
 function summarizeExample(example: PromptBuilderExample): string {
   const title = String(example.title || example.case_key || `Case ${example.case_id}`);
   const dataset = String(example.dataset_name || 'dataset');
   return `${title} (${dataset})`;
 }
 
+/** parseJsonSafe utility. */
 function parseJsonSafe(value: unknown): unknown {
   if (typeof value !== 'string' || value.trim() === '') {
     return null;
@@ -63,6 +75,7 @@ function parseJsonSafe(value: unknown): unknown {
   }
 }
 
+/** normalizeText function. */
 function normalizeText(value: unknown): string {
   if (typeof value !== 'string') {
     return '';
@@ -70,6 +83,7 @@ function normalizeText(value: unknown): string {
   return value.replace(/\r\n|\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** extractTextFromValue function. */
 function extractTextFromValue(value: unknown): string {
   if (typeof value === 'string') {
     return normalizeText(value);
@@ -111,12 +125,14 @@ function extractTextFromValue(value: unknown): string {
   return '';
 }
 
+/** extractExampleInputPreview function. */
 function extractExampleInputPreview(example: PromptBuilderExample): string {
   const payload = parseJsonSafe(example.input_payload_json);
   const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null;
   return extractTextFromValue(record?.variables ?? record?.form_data ?? payload);
 }
 
+/** extractExampleApprovedPreview function. */
 function extractExampleApprovedPreview(example: PromptBuilderExample): string {
   const normalized = parseJsonSafe(example.normalized_output_json);
   const outputPayload = parseJsonSafe(example.output_payload_json);
@@ -124,6 +140,7 @@ function extractExampleApprovedPreview(example: PromptBuilderExample): string {
   return extractTextFromValue(normalized) || extractTextFromValue(outputPayload) || extractTextFromValue(expected);
 }
 
+/** truncatePreview function. */
 function truncatePreview(value: string, maxLength = 220): string {
   const text = normalizeText(value);
   if (text.length <= maxLength) {
@@ -132,6 +149,7 @@ function truncatePreview(value: string, maxLength = 220): string {
   return `${text.slice(0, maxLength).trim()}...`;
 }
 
+/** PromptBuilderWorkspace component. */
 export const PromptBuilderWorkspace: React.FC<PromptBuilderWorkspaceProps> = ({
   show,
   api,

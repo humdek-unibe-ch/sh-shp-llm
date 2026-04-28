@@ -1,3 +1,11 @@
+/**
+ * Prompt Datasets Modal — manage evaluation datasets linked to a prompt.
+ *
+ * Allows creating, browsing, and selecting datasets. From here admins
+ * can launch AI import, manual case entry, and evaluation runs.
+ *
+ * @module components/prompts/PromptDatasetsModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Col, Modal, Row, Table } from 'react-bootstrap';
 import { createDatasetApi } from '../datasets/datasetApi';
@@ -52,6 +60,7 @@ function parseJsonSafe<T>(value: unknown, fallback: T): T {
   try { return (JSON.parse(value) as T) ?? fallback; } catch { return fallback; }
 }
 
+/** Modal dialog for prompt datasets modal. */
 export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   show,
   onHide,
@@ -101,6 +110,7 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
   const [selectedEvalCase, setSelectedEvalCase] = useState<PromptEvalRunCase | null>(null);
   const [savingHumanKey, setSavingHumanKey] = useState<string | null>(null);
   const [deletingEvalRunId, setDeletingEvalRunId] = useState<number | null>(null);
+  const [deletingEvalRunCaseId, setDeletingEvalRunCaseId] = useState<number | null>(null);
   const [deletingAllEvals, setDeletingAllEvals] = useState(false);
   const [hasAnyEvaluations, setHasAnyEvaluations] = useState(false);
   const [humanDrafts, setHumanDrafts] = useState<Record<string, { numeric: string; label: string; passed: string; reason: string }>>({});
@@ -573,6 +583,45 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
     }
   };
 
+  const handleDeleteEvaluationRunCase = async (runCaseId: number) => {
+    if (!selectedDatasetId || runCaseId <= 0) return;
+    const performDelete = async () => {
+      setDeletingEvalRunCaseId(runCaseId);
+      setError(null);
+      try {
+        const response = await evaluationApi.deleteEvalRunCase(descriptor, selectedDatasetId, runCaseId);
+        await refreshLatestEvaluation();
+        if (response?.run_deleted) {
+          setSuccess(`Deleted evaluation case #${runCaseId} (last case — parent run #${response.run_id} removed).`);
+        } else {
+          setSuccess(`Deleted evaluation case #${runCaseId}.`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete evaluation case');
+      } finally {
+        setDeletingEvalRunCaseId(null);
+      }
+    };
+
+    const message = `Delete this evaluation case (#${runCaseId})? Only this single case and its scores are removed — other cases in the same run stay intact.`;
+    const jquery = (window as any).$ || (window as any).jQuery;
+    if (typeof jquery?.confirm === 'function') {
+      jquery.confirm({
+        title: 'Delete evaluation case?',
+        content: message,
+        type: 'red',
+        buttons: {
+          confirm: { text: 'Delete', btnClass: 'btn-danger', action: () => { void performDelete(); } },
+          cancel: { text: 'Cancel', action: () => {} },
+        },
+      });
+      return;
+    }
+    if (window.confirm(message)) {
+      await performDelete();
+    }
+  };
+
   const handleDeleteAllEvaluations = async () => {
     if (!selectedDatasetId) return;
     const performDeleteAll = async () => {
@@ -715,12 +764,12 @@ export const PromptDatasetsModal: React.FC<PromptDatasetsModalProps> = ({
                   baselineSummary={baselineSummary}
                   onInspectCase={setSelectedEvalCase}
                   onDeleteCaseEvaluation={(runCase) => {
-                    const runId = Number(runCase.id_llm_eval_runs || evalResult?.run?.id || 0);
-                    if (runId > 0) {
-                      void handleDeleteEvaluationRun(runId);
+                    const runCaseId = Number(runCase.run_case_id || runCase.id || 0);
+                    if (runCaseId > 0) {
+                      void handleDeleteEvaluationRunCase(runCaseId);
                     }
                   }}
-                  deletingRunId={deletingEvalRunId}
+                  deletingRunCaseId={deletingEvalRunCaseId}
                   headerActions={
                     <>
                       {hasAnyEvaluations && (

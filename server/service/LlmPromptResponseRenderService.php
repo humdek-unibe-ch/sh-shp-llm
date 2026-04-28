@@ -5,6 +5,15 @@
 
 require_once __DIR__ . '/LlmResponseService.php';
 
+/**
+ * LLM Prompt Response Render Service
+ *
+ * Normalizes raw LLM responses into a structured format suitable for
+ * the Prompt Lab playground UI. Detects JSON content, extracts reasoning
+ * tokens, and maps model metadata into a consistent response envelope.
+ *
+ * @package LLM Plugin
+ */
 class LlmPromptResponseRenderService
 {
     /**
@@ -39,15 +48,24 @@ class LlmPromptResponseRenderService
     }
 }
 
+/**
+ * Minimal stub implementing the model-name interface expected by
+ * LlmResponseService. Used by the render service when no real
+ * component model is available (e.g., during playground execution).
+ *
+ * @package LLM Plugin
+ */
 class LlmPromptRenderModelStub
 {
     private $model_name;
 
+    /** @param string|null $model_name LLM model name for capability detection. */
     public function __construct($model_name = null)
     {
         $this->model_name = $model_name ?: 'unknown';
     }
 
+    /** @return string The configured LLM model name. */
     public function getConfiguredModel()
     {
         return $this->model_name;

@@ -37,21 +37,35 @@ const MIC_CONSTRAINTS_FALLBACKS: MediaStreamConstraints[] = [
   { audio: true },
 ];
 
+/** Options for the useSpeechToText hook. */
 interface UseSpeechToTextOptions {
+  /** Whether the speech feature is enabled in the chat configuration. */
   enabled: boolean;
+  /** Whisper model identifier used for server-side transcription. */
   model: string;
+  /** CMS section ID sent with the transcription request for context. */
   sectionId?: number;
+  /** Callback invoked with the transcribed text once processing completes. */
   onTranscription: (text: string) => void;
 }
 
+/** Return value of the useSpeechToText hook. */
 interface UseSpeechToTextReturn {
+  /** True when the browser supports MediaRecorder and a microphone is available. */
   isAvailable: boolean;
+  /** True while actively recording audio. */
   isRecording: boolean;
+  /** True while the audio is being uploaded and transcribed server-side. */
   isProcessing: boolean;
+  /** Human-readable error message, or null when no error. */
   error: string | null;
+  /** Reset the error state. */
   clearError: () => void;
+  /** Begin microphone capture; requests permission on first call. */
   startRecording: () => Promise<void>;
+  /** Stop recording and trigger upload + transcription. */
   stopRecording: () => void;
+  /** Convenience toggle: starts if not recording, stops if recording. */
   toggleRecording: () => void;
 }
 
@@ -64,6 +78,7 @@ function getPreferredAudioMimeType(): string {
   return '';
 }
 
+/** mimeToExtension function. */
 function mimeToExtension(mimeType: string): string {
   const base = mimeType.split(';')[0].trim().toLowerCase();
   if (base === 'audio/mp4') return 'm4a';
@@ -89,6 +104,16 @@ async function requestMicrophoneStream(): Promise<MediaStream> {
   throw lastError || new Error('No supported microphone constraints');
 }
 
+/**
+ * React hook providing a full speech-to-text pipeline.
+ *
+ * Records compressed audio via MediaRecorder, auto-stops on silence
+ * detection (or max duration), uploads the blob to the PHP backend,
+ * and returns the Whisper transcription through the `onTranscription`
+ * callback.
+ *
+ * Handles microphone permission, codec negotiation, and error states.
+ */
 export function useSpeechToText({
   enabled,
   model,

@@ -521,6 +521,190 @@ interface AdminActionResponse {
   message?: string;
 }
 
+// Memory admin response types
+interface MemoryOverviewResponse {
+  enabled: boolean;
+  storage_mode: string;
+  current_table: string;
+  history_table: string;
+  rules_count: number;
+  enabled_rules: number;
+  total_entries: number;
+  unique_users: number;
+  unique_keys: string[];
+  sources_count?: number;
+  latest_activity_at?: string | null;
+  rules: MemoryRule[];
+  recent_activity?: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+interface MemoryConfigField {
+  name: string;
+  type: string;
+  label: string;
+  help: string;
+  value: string;
+  options?: { value: string; label: string }[];
+}
+
+interface MemoryConfigResponse {
+  settings: {
+    label: string;
+    fields: MemoryConfigField[];
+  };
+  acl: { select: boolean; update: boolean };
+  error?: string;
+}
+
+interface MemoryRule {
+  id: number;
+  label?: string;
+  enabled: boolean;
+  memory_keys?: string[];
+  source_type?: string;
+  source_match?: Record<string, unknown>;
+  trigger_types?: string[];
+  storage_mode_override?: string;
+  prompt_binding?: Record<string, string>;
+  prompt_template?: string;
+  llm_model?: string;
+  llm_temperature?: string;
+  llm_max_tokens?: string;
+}
+
+interface MemoryUserEntry {
+  user_id: number;
+  user_name?: string;
+  user_email?: string;
+  memory_count: number;
+  last_updated: string | null;
+  memory_keys: string[];
+}
+
+interface MemoryUsersResponse {
+  items: MemoryUserEntry[];
+  total: number;
+  page: number;
+  per_page: number;
+  error?: string;
+}
+
+interface MemoryUserDetailResponse {
+  memory: Record<string, unknown> | null;
+  memory_keys: string[];
+  error?: string;
+}
+
+interface MemoryHistoryEntry {
+  [key: string]: unknown;
+}
+
+interface MemoryHistoryResponse {
+  history: MemoryHistoryEntry[];
+  error?: string;
+}
+
+interface MemoryRebuildResponse {
+  rebuilt_keys?: string[];
+  error?: string;
+}
+
+interface MemoryRuleRecord {
+  id: number;
+  label?: string;
+  enabled: boolean;
+  source_type: string;
+  memory_keys: string[];
+  trigger_types?: string[];
+  storage_mode_override: string;
+  source_match: Record<string, unknown>;
+  data_config: Array<Record<string, unknown>>;
+  llm_model: string;
+  llm_temperature: string;
+  llm_max_tokens: string;
+  refresh_sections: Array<number | string>;
+  prompt_template?: string;
+  prompt_meta_json?: string;
+  sources_count?: number;
+}
+
+interface MemoryRulesResponse {
+  rules: MemoryRuleRecord[];
+  error?: string;
+}
+
+interface MemoryRuleEditorKey {
+  code: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+}
+
+interface MemoryRuleEditorDefaults {
+  llm_model: string;
+  llm_temperature: string;
+  llm_max_tokens: string;
+  storage_mode: string;
+}
+
+interface MemoryRuleEditorOption {
+  value: string;
+  label: string;
+}
+
+interface MemoryKeyRecord {
+  code: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+  is_default?: boolean;
+  rules_count?: number;
+  current_rows?: number;
+  history_rows?: number;
+  can_delete?: boolean;
+}
+
+interface MemoryRuleEditorSection {
+  id: number;
+  name: string;
+}
+
+interface MemoryRulesBootstrapResponse {
+  rules: MemoryRuleRecord[];
+  editor: {
+    available_keys: MemoryRuleEditorKey[];
+    defaults: MemoryRuleEditorDefaults;
+    models: Array<{ id: string; name?: string }>;
+    source_types: MemoryRuleEditorOption[];
+    storage_modes: MemoryRuleEditorOption[];
+    sections: MemoryRuleEditorSection[];
+  };
+  error?: string;
+}
+
+interface MemoryRuleResponse {
+  rule: MemoryRuleRecord;
+  prompt_bootstrap?: import('../components/prompts/promptTypes').PromptBootstrapData;
+  error?: string;
+}
+
+interface MemoryKeysResponse {
+  keys: MemoryKeyRecord[];
+  error?: string;
+}
+
+interface MemoryActivityResponse {
+  items: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+interface MemorySourcesResponse {
+  sources: Array<Record<string, unknown>>;
+  error?: string;
+}
+
+/** API client for admin api. */
 export const adminApi = {
   async getFilters() {
     return apiGet<AdminFiltersResponse>('admin_filters');
@@ -590,7 +774,173 @@ export const adminApi = {
     formData.append('action', 'admin_unblock_conversation');
     formData.append('conversation_id', conversationId);
     return apiPost<AdminActionResponse>(formData);
-  }
+  },
+
+};
+
+/** API client for memory api. */
+export const memoryApi = {
+  async getOverview(): Promise<MemoryOverviewResponse> {
+    return apiGet<MemoryOverviewResponse>('overview');
+  },
+
+  async getConfig(): Promise<MemoryConfigResponse> {
+    return apiGet<MemoryConfigResponse>('memory_config_get');
+  },
+
+  async saveConfig(fields: Record<string, string>): Promise<{ success?: boolean; saved?: string[]; error?: string }> {
+    const response = await fetch(window.location.pathname + '?action=memory_config_save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({ fields }),
+      credentials: 'same-origin'
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      if (data && typeof data === 'object' && 'error' in data) {
+        throw new Error(data.error);
+      }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return data;
+  },
+
+  async getRules(): Promise<MemoryRulesResponse> {
+    return apiGet<MemoryRulesResponse>('rules_list');
+  },
+
+  async getRulesBootstrap(): Promise<MemoryRulesBootstrapResponse> {
+    return apiGet<MemoryRulesBootstrapResponse>('rules_bootstrap');
+  },
+
+  async getRule(ruleId: number): Promise<MemoryRuleResponse> {
+    return apiGet<MemoryRuleResponse>('rule_get', { rule_id: String(ruleId) });
+  },
+
+  async createRule(rule: Record<string, unknown>, promptTemplate = '', promptMetaJson = '{}', promptChangeNote = ''): Promise<MemoryRuleResponse> {
+    const formData = new FormData();
+    formData.append('action', 'rule_create');
+    formData.append('rule_json', JSON.stringify(rule));
+    formData.append('prompt_template', promptTemplate);
+    formData.append('prompt_meta_json', promptMetaJson);
+    if (promptChangeNote) {
+      formData.append('prompt_change_note', promptChangeNote);
+    }
+    return apiPost<MemoryRuleResponse>(formData);
+  },
+
+  async updateRule(ruleId: number, rule: Record<string, unknown>, promptTemplate?: string, promptMetaJson?: string, promptChangeNote?: string): Promise<MemoryRuleResponse> {
+    const formData = new FormData();
+    formData.append('action', 'rule_update');
+    formData.append('rule_id', String(ruleId));
+    formData.append('rule_json', JSON.stringify(rule));
+    if (promptTemplate !== undefined) {
+      formData.append('prompt_template', promptTemplate);
+    }
+    if (promptMetaJson !== undefined) {
+      formData.append('prompt_meta_json', promptMetaJson);
+    }
+    if (promptChangeNote) {
+      formData.append('prompt_change_note', promptChangeNote);
+    }
+    return apiPost<MemoryRuleResponse>(formData);
+  },
+
+  async deleteRule(ruleId: number) {
+    const formData = new FormData();
+    formData.append('action', 'rule_delete');
+    formData.append('rule_id', String(ruleId));
+    return apiPost<{ deleted: boolean; error?: string }>(formData);
+  },
+
+  async duplicateRule(ruleId: number): Promise<MemoryRuleResponse> {
+    const formData = new FormData();
+    formData.append('action', 'rule_duplicate');
+    formData.append('rule_id', String(ruleId));
+    return apiPost<MemoryRuleResponse>(formData);
+  },
+
+  async getSources(): Promise<MemorySourcesResponse> {
+    return apiGet<MemorySourcesResponse>('sources');
+  },
+
+  async getMemoryKeys(): Promise<MemoryKeysResponse> {
+    return apiGet<MemoryKeysResponse>('memory_keys');
+  },
+
+  async deleteMemoryKey(keyCode: string): Promise<{ deleted?: boolean; error?: string }> {
+    const formData = new FormData();
+    formData.append('action', 'memory_key_delete');
+    formData.append('key_code', keyCode);
+    return apiPost<{ deleted?: boolean; error?: string }>(formData);
+  },
+
+  async getMemoryActivity(limit = 25): Promise<MemoryActivityResponse> {
+    return apiGet<MemoryActivityResponse>('memory_activity', { limit: String(limit) });
+  },
+
+  async getUsers(params: { page?: number; per_page?: number; q?: string }): Promise<MemoryUsersResponse> {
+    const cleanParams: Record<string, string> = {};
+    if (params.page) cleanParams.page = String(params.page);
+    if (params.per_page) cleanParams.per_page = String(params.per_page);
+    if (params.q) cleanParams.q = params.q;
+    return apiGet<MemoryUsersResponse>('memory_users', cleanParams);
+  },
+
+  async getUserDetail(userId: string, memoryKey?: string): Promise<MemoryUserDetailResponse> {
+    const params: Record<string, string> = { user_id: userId };
+    if (memoryKey) params.memory_key = memoryKey;
+    return apiGet<MemoryUserDetailResponse>('memory_user_detail', params);
+  },
+
+  async getUserHistory(userId: string, memoryKey?: string, limit?: number, offset?: number): Promise<MemoryHistoryResponse> {
+    const params: Record<string, string> = { user_id: userId };
+    if (memoryKey) params.memory_key = memoryKey;
+    if (limit) params.limit = String(limit);
+    if (offset) params.offset = String(offset);
+    return apiGet<MemoryHistoryResponse>('memory_user_history', params);
+  },
+
+  async rerunRule(userId: string, ruleId: number, payload?: Record<string, unknown>): Promise<AdminActionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'memory_rerun_rule');
+    formData.append('user_id', userId);
+    formData.append('rule_id', String(ruleId));
+    if (payload) formData.append('manual_payload_json', JSON.stringify(payload));
+    return apiPost<AdminActionResponse>(formData);
+  },
+
+  async rebuild(userId: string, payload?: Record<string, unknown>): Promise<MemoryRebuildResponse> {
+    const formData = new FormData();
+    formData.append('action', 'memory_rebuild');
+    formData.append('user_id', userId);
+    if (payload) formData.append('payload', JSON.stringify(payload));
+    return apiPost<MemoryRebuildResponse>(formData);
+  },
+
+  async edit(userId: string, memoryKey: string, memoryText: string, memoryJson: string): Promise<AdminActionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'memory_edit');
+    formData.append('user_id', userId);
+    formData.append('memory_key', memoryKey);
+    formData.append('memory_text', memoryText);
+    formData.append('memory_json', memoryJson);
+    return apiPost<AdminActionResponse>(formData);
+  },
+
+  async delete(userId: string, memoryKey: string): Promise<AdminActionResponse> {
+    const formData = new FormData();
+    formData.append('action', 'memory_delete');
+    formData.append('user_id', userId);
+    formData.append('memory_key', memoryKey);
+    return apiPost<AdminActionResponse>(formData);
+  },
 };
 
 // ============================================================================

@@ -23,6 +23,7 @@ interface LlmResultDisplayProps {
   onRegenerate?: () => void;
 }
 
+/** LlmResultDisplay component. */
 export const LlmResultDisplay: React.FC<LlmResultDisplayProps> = ({
   config,
   result,

@@ -97,6 +97,14 @@ class LlmFormController extends FormUserInputController
 
         $result = $this->callLlmWithData($model, $form_data);
 
+        $section_id = $model->get_section_id();
+        $table_name = sprintf('%010d', $section_id);
+        $record = $this->loadRecordData($model, $table_name, $user_id, $_POST[SELECTED_RECORD_ID] ?? null);
+        if ($result['success'] && !empty($record)) {
+            $this->saveLlmResultToRecord($model, $table_name, $record, $result);
+        }
+        $result = $this->attachRecordIdToResult($result, $record);
+
         $this->sendJsonResponse($result);
     }
 
@@ -132,6 +140,7 @@ class LlmFormController extends FormUserInputController
         if ($result['success']) {
             $this->saveLlmResultToRecord($model, $table_name, $form_data, $result);
         }
+        $result = $this->attachRecordIdToResult($result, $form_data);
 
         $this->sendJsonResponse($result);
     }
@@ -149,6 +158,7 @@ class LlmFormController extends FormUserInputController
 
         $result = $this->callLlmWithData($model, $form_data);
 
+        $record = null;
         if ($result['success']) {
             $record = $this->loadRecordData($model, $table_name, $user_id, $_POST[SELECTED_RECORD_ID] ?? null);
             if (!empty($record)) {
@@ -157,8 +167,30 @@ class LlmFormController extends FormUserInputController
                 error_log("LLM Form: No record found to save LLM result into. table=$table_name, user=$user_id");
             }
         }
+        $result = $this->attachRecordIdToResult($result, $record);
 
         $this->sendJsonResponse($result);
+    }
+
+    /**
+     * Attach the current data record id to the LLM response meta so the
+     * client can use it for subsequent regenerate / retry actions. Falls
+     * back to the latest record for the user when `$record` is empty.
+     */
+    private function attachRecordIdToResult($result, $record)
+    {
+        $record_id = null;
+        if (is_array($record)) {
+            $record_id = $record[ENTRY_RECORD_ID] ?? $record['record_id'] ?? null;
+        }
+        if (!$record_id) {
+            return $result;
+        }
+        if (!isset($result['llm_meta']) || !is_array($result['llm_meta'])) {
+            $result['llm_meta'] = [];
+        }
+        $result['llm_meta']['record_id'] = $record_id;
+        return $result;
     }
 
     /**

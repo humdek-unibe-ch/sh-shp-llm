@@ -1,3 +1,12 @@
+/**
+ * Prompt Builder Example Import Modal — import dataset cases as builder examples.
+ *
+ * Lets the admin select from existing dataset cases and import them as
+ * input/output examples for the Prompt Builder, improving the quality
+ * of LLM-generated prompts.
+ *
+ * @module components/prompts/PromptBuilderExampleImportModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Modal, Table } from 'react-bootstrap';
 import { JsonInspector } from '../shared/JsonInspector';
@@ -13,6 +22,7 @@ interface PromptBuilderExampleImportModalProps {
   onImport: (examples: PromptBuilderExample[]) => void;
 }
 
+/** parseJsonSafe utility. */
 function parseJsonSafe(value: unknown): unknown {
   if (typeof value !== 'string' || value.trim() === '') {
     return null;
@@ -24,6 +34,7 @@ function parseJsonSafe(value: unknown): unknown {
   }
 }
 
+/** extractOutputPreview function. */
 function extractOutputPreview(example: PromptBuilderExample): unknown {
   const normalized = parseJsonSafe(example.normalized_output_json);
   if (normalized) {
@@ -32,6 +43,7 @@ function extractOutputPreview(example: PromptBuilderExample): unknown {
   return parseJsonSafe(example.output_payload_json);
 }
 
+/** normalizeText function. */
 function normalizeText(value: unknown): string {
   if (typeof value !== 'string') {
     return '';
@@ -39,6 +51,7 @@ function normalizeText(value: unknown): string {
   return value.replace(/\r\n|\r/g, '\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** extractTextFromValue function. */
 function extractTextFromValue(value: unknown): string {
   if (typeof value === 'string') {
     return normalizeText(value);
@@ -80,12 +93,14 @@ function extractTextFromValue(value: unknown): string {
   return '';
 }
 
+/** extractInputPreview function. */
 function extractInputPreview(example: PromptBuilderExample): string {
   const payload = parseJsonSafe(example.input_payload_json);
   const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null;
   return extractTextFromValue(record?.variables ?? record?.form_data ?? payload);
 }
 
+/** extractApprovedResponsePreview function. */
 function extractApprovedResponsePreview(example: PromptBuilderExample): string {
   const normalized = parseJsonSafe(example.normalized_output_json);
   const outputPayload = parseJsonSafe(example.output_payload_json);
@@ -93,10 +108,12 @@ function extractApprovedResponsePreview(example: PromptBuilderExample): string {
   return extractTextFromValue(normalized) || extractTextFromValue(outputPayload) || extractTextFromValue(expected);
 }
 
+/** extractExpectedResponsePreview function. */
 function extractExpectedResponsePreview(example: PromptBuilderExample): string {
   return extractTextFromValue(parseJsonSafe(example.expected_output_json));
 }
 
+/** truncatePreview function. */
 function truncatePreview(value: string, maxLength = 200): string {
   const text = normalizeText(value);
   if (text.length <= maxLength) {
@@ -105,6 +122,7 @@ function truncatePreview(value: string, maxLength = 200): string {
   return `${text.slice(0, maxLength).trim()}...`;
 }
 
+/** Modal dialog for prompt builder example import modal. */
 export const PromptBuilderExampleImportModal: React.FC<PromptBuilderExampleImportModalProps> = ({
   show,
   onHide,

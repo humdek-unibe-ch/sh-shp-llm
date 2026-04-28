@@ -1,13 +1,25 @@
 <?php
-/**
- * LLM API Formatter Service
- * Handles message formatting and API conversion for LLM chat
- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-// Include utility classes
 require_once __DIR__ . "/LlmFileUtility.php";
 require_once __DIR__ . "/base/BaseLlmService.php";
 
+/**
+ * LLM API Formatter Service
+ *
+ * Converts internal message representations into provider-compatible API
+ * payloads. Handles multimodal content (text + image + audio) by detecting
+ * model capabilities and constructing the appropriate content-part arrays.
+ *
+ * Also responsible for inlining file attachments as base64 data URIs when
+ * the target model supports vision or audio input.
+ *
+ * @package LLM Plugin
+ * @see LlmContextService For the context builder that feeds into this formatter
+ * @see LlmModelCapabilities For model feature detection
+ */
 class LlmApiFormatterService extends BaseLlmService
 {
     private $model;

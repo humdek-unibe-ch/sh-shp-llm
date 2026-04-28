@@ -3,6 +3,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+/**
+ * LLM Prompt Variable Service
+ *
+ * Stateless utility for detecting, substituting, and validating
+ * `{{variable}}` placeholders in prompt templates. Used by the
+ * playground and evaluation systems to bind runtime values into
+ * prompt text before LLM execution.
+ *
+ * @package LLM Plugin
+ */
 class LlmPromptVariableService
 {
     /**

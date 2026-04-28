@@ -41,6 +41,11 @@ class ModuleLlmAdminConsoleModel extends BaseModel
         $this->page_fields = $this->getPageFields();
     }
 
+    /**
+     * Load page-level configuration fields via the stored procedure.
+     *
+     * @return array|null Page field values keyed by field name.
+     */
     private function getPageFields()
     {
         return $this->services->get_db()->query_db_first(
@@ -53,31 +58,37 @@ class ModuleLlmAdminConsoleModel extends BaseModel
         );
     }
 
+    /** @return int Current session user ID. */
     public function getUserId()
     {
         return $this->user_id;
     }
 
+    /** @return string Admin page size (rows per page), defaults to '50'. */
     public function getAdminPageSize()
     {
         return $this->page_fields['admin_page_size'] ?? '50';
     }
 
+    /** @return string Auto-refresh interval in seconds, defaults to '300'. */
     public function getRefreshInterval()
     {
         return $this->page_fields['admin_refresh_interval'] ?? '300';
     }
 
+    /** @return string Default admin view tab name, defaults to 'conversations'. */
     public function getDefaultView()
     {
         return $this->page_fields['admin_default_view'] ?? 'conversations';
     }
 
+    /** @return bool Whether filter controls are enabled in the admin console. */
     public function getShowFilters()
     {
         return ($this->page_fields['admin_show_filters'] ?? '1') === '1';
     }
 
+    /** @return LlmAdminService Admin service instance for conversation/message queries. */
     public function getLlmAdminService()
     {
         return $this->llm_admin_service;

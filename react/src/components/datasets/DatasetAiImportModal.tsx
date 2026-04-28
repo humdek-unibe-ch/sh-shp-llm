@@ -1,7 +1,17 @@
+/**
+ * Dataset AI Import Modal — LLM-assisted import of test cases.
+ *
+ * Allows pasting raw data (CSV, JSON, text), sending it to the LLM
+ * for parsing, reviewing/editing parsed candidates, and batch-importing
+ * them into the dataset.
+ *
+ * @module components/datasets/DatasetAiImportModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
-import { Alert, Button, Form, Modal, OverlayTrigger, Popover, Spinner, Table } from 'react-bootstrap';
+import { Alert, Button, Form, Modal, Spinner, Table } from 'react-bootstrap';
 import { JsonInspector } from '../shared/JsonInspector';
+import { InfoPopover } from '../shared/InfoPopover';
 import { JsonMonacoEditor } from '../shared/JsonMonacoEditor';
 import type { PromptDescriptor, PromptExecutionProfile, PromptModel } from '../prompts/promptTypes';
 import type { createDatasetApi } from './datasetApi';
@@ -23,6 +33,7 @@ interface DatasetAiImportModalProps {
   onImported: (count: number) => void;
 }
 
+/** safeJsonStringify function. */
 function safeJsonStringify(value: unknown): string {
   try {
     return JSON.stringify(value ?? {}, null, 2);
@@ -31,6 +42,7 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
+/** parseJsonObject utility. */
 function parseJsonObject(value: string): Record<string, unknown> {
   const parsed = JSON.parse(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -39,6 +51,7 @@ function parseJsonObject(value: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+/** normalizeDraft function. */
 function normalizeDraft(draft: PromptAiImportCaseDraft): PromptAiImportCaseDraft {
   return {
     title: String(draft.title || 'Imported Case'),
@@ -61,6 +74,7 @@ function normalizeDraft(draft: PromptAiImportCaseDraft): PromptAiImportCaseDraft
   };
 }
 
+/** validateDraft function. */
 function validateDraft(draft: PromptAiImportCaseDraft): string[] {
   const errors: string[] = [];
   if (!draft.title || draft.title.trim() === '') {
@@ -72,6 +86,7 @@ function validateDraft(draft: PromptAiImportCaseDraft): string[] {
   return errors;
 }
 
+/** Modal dialog for dataset ai import modal. */
 export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
   show,
   onHide,
@@ -133,36 +148,6 @@ export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
     }
     return 'Paste examples from Excel/Sheets/CSV/TSV or free text blocks. Include clear input fields, expected output, and notes where possible.';
   }, [executionProfile, placeholderKeys]);
-
-  const helpPopover = (
-    <Popover id="dataset-ai-import-help-popover">
-      <Popover.Title as="h3">AI Import Guidance</Popover.Title>
-      <Popover.Content>
-        <div className="small">
-          <div className="mb-2">
-            <strong>How import works:</strong> pasted text is parsed by LLM, normalized into dataset cases, reviewed by you, then imported on explicit approval.
-          </div>
-          <div className="mb-2">
-            <strong>Form runtime:</strong> name fields to match prompt placeholders used in your context (for example <code>{'{{student_support}}'}</code>).
-            {placeholderKeys.length > 0 && (
-              <div className="mt-1">
-                Detected placeholders now: {placeholderKeys.map((key) => `{{${key}}}`).join(', ')}
-              </div>
-            )}
-          </div>
-          <div className="mb-2">
-            <strong>If no matching variables are available:</strong> replay can fall back to generic user text <code>Form submission</code> for form runtime.
-          </div>
-          <div className="mb-2">
-            <strong>Chat runtime:</strong> provide role/content conversation examples; message history is the primary replay input.
-          </div>
-          <div>
-            <strong>Script runtime:</strong> provide key/value inputs that map to script variables.
-          </div>
-        </div>
-      </Popover.Content>
-    </Popover>
-  );
 
   useEffect(() => {
     if (!show) {
@@ -337,11 +322,35 @@ export const DatasetAiImportModal: React.FC<DatasetAiImportModalProps> = ({
             <Form.Group>
               <div className="d-flex align-items-center justify-content-between mb-1">
                 <Form.Label className="small mb-0">Paste Cases (tabular or free text)</Form.Label>
-                <OverlayTrigger trigger={['hover', 'focus', 'click']} placement="left" overlay={helpPopover} rootClose>
-                  <Button size="sm" variant="link" className="p-0 text-info" aria-label="Import guidance">
-                    <i className="fas fa-info-circle"></i>
-                  </Button>
-                </OverlayTrigger>
+                <InfoPopover
+                  title="AI Import Guidance"
+                  placement="left"
+                  buttonClassName="text-info"
+                  ariaLabel="Import guidance"
+                >
+                  <div className="small">
+                    <div className="mb-2">
+                      <strong>How import works:</strong> pasted text is parsed by LLM, normalized into dataset cases, reviewed by you, then imported on explicit approval.
+                    </div>
+                    <div className="mb-2">
+                      <strong>Form runtime:</strong> name fields to match prompt placeholders used in your context (for example <code>{'{{student_support}}'}</code>).
+                      {placeholderKeys.length > 0 && (
+                        <div className="mt-1">
+                          Detected placeholders now: {placeholderKeys.map((key) => `{{${key}}}`).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mb-2">
+                      <strong>If no matching variables are available:</strong> replay can fall back to generic user text <code>Form submission</code> for form runtime.
+                    </div>
+                    <div className="mb-2">
+                      <strong>Chat runtime:</strong> provide role/content conversation examples; message history is the primary replay input.
+                    </div>
+                    <div>
+                      <strong>Script runtime:</strong> provide key/value inputs that map to script variables.
+                    </div>
+                  </div>
+                </InfoPopover>
               </div>
               <Form.Control
                 as="textarea"

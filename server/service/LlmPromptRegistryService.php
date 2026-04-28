@@ -8,9 +8,23 @@ require_once __DIR__ . '/LlmPromptVariableService.php';
 require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 require_once __DIR__ . '/LlmService.php';
 
+/**
+ * LLM Prompt Registry Service
+ *
+ * Central registry for managed prompts. Handles prompt CRUD, versioning,
+ * publication workflow, and ownership. Each prompt can have multiple
+ * versions with only one active (published) at a time.
+ *
+ * Prompts are linked to sections or scripts via owner_type/owner_id,
+ * enabling automatic context binding during execution.
+ *
+ * @package LLM Plugin
+ * @see LlmPromptPlaygroundService For prompt execution
+ * @see LlmPromptVariableService For template variable detection
+ */
 class LlmPromptRegistryService extends BaseLlmService
 {
-    /** @var Transaction */
+    /** @var Transaction Transaction service for audit logging */
     private $transaction;
 
     /** @var LlmPromptVariableService */
@@ -242,6 +256,54 @@ class LlmPromptRegistryService extends BaseLlmService
     }
 
     /**
+     * Resolve the active prompt version for an owner, falling back to any
+     * locale stream that has an active version when the requested locale
+     * does not.
+     *
+     * @param array $descriptor
+     * @return array|null
+     */
+    public function resolveActiveVersionForOwner($descriptor)
+    {
+        $entry = $this->findEntry($descriptor);
+        if (!$entry || empty($entry['id'])) {
+            return null;
+        }
+
+        $preferred_language = isset($descriptor['id_languages']) ? (int)$descriptor['id_languages'] : null;
+        if ($preferred_language) {
+            $locale = $this->findLocale((int)$entry['id'], $preferred_language);
+            if ($locale && !empty($locale['active_version_id'])) {
+                return $this->getVersion((int)$locale['active_version_id']);
+            }
+        }
+
+        $fallback_locale = $this->db->query_db_first(
+            "SELECT *
+             FROM llm_prompt_locales
+             WHERE id_llm_prompt_entries = :entry_id
+               AND active_version_id IS NOT NULL
+             ORDER BY CASE
+                 WHEN :preferred_language IS NOT NULL AND id_languages = :preferred_language THEN 0
+                 WHEN id_languages IS NULL THEN 1
+                 ELSE 2
+             END,
+             id DESC
+             LIMIT 1",
+            array(
+                ':entry_id' => (int)$entry['id'],
+                ':preferred_language' => $preferred_language ?: null,
+            )
+        );
+
+        if ($fallback_locale && !empty($fallback_locale['active_version_id'])) {
+            return $this->getVersion((int)$fallback_locale['active_version_id']);
+        }
+
+        return null;
+    }
+
+    /**
      * Persist a fast summary row for a prompt lab run.
      *
      * @param array $payload
@@ -277,6 +339,12 @@ class LlmPromptRegistryService extends BaseLlmService
         return isset($_SESSION['cms_language']) ? (int)$_SESSION['cms_language'] : 1;
     }
 
+    /**
+     * Look up an existing prompt registry entry by owner type, ID, and slot.
+     *
+     * @param array $descriptor {owner_type, owner_id, prompt_slot}.
+     * @return array|null Entry row, or null if not found.
+     */
     private function findEntry($descriptor)
     {
         $owner_type_id = $this->db->get_lookup_id_by_code(
@@ -301,6 +369,12 @@ class LlmPromptRegistryService extends BaseLlmService
         );
     }
 
+    /**
+     * Create a new prompt registry entry and log the transaction.
+     *
+     * @param array $descriptor {owner_type, owner_id, prompt_slot, title?}.
+     * @return array Newly created entry row.
+     */
     private function createEntry($descriptor)
     {
         $owner_type_id = $this->db->get_lookup_id_by_code(
@@ -330,6 +404,13 @@ class LlmPromptRegistryService extends BaseLlmService
         return $this->db->select_by_uid('llm_prompt_entries', $entry_id);
     }
 
+    /**
+     * Find a locale stream for a given entry and language (NULL = language-agnostic).
+     *
+     * @param int      $entry_id    Prompt entry ID.
+     * @param int|null $language_id Language ID, or null for default.
+     * @return array|null Locale row, or null.
+     */
     private function findLocale($entry_id, $language_id)
     {
         $language_id = $language_id ?: null;
@@ -351,6 +432,13 @@ class LlmPromptRegistryService extends BaseLlmService
         );
     }
 
+    /**
+     * Create a new locale stream for a prompt entry and log the transaction.
+     *
+     * @param int      $entry_id    Prompt entry ID.
+     * @param int|null $language_id Language ID, or null for language-agnostic.
+     * @return array Newly created locale row.
+     */
     private function createLocale($entry_id, $language_id)
     {
         $locale_id = $this->db->insert('llm_prompt_locales', array(
@@ -373,6 +461,21 @@ class LlmPromptRegistryService extends BaseLlmService
         return $this->db->select_by_uid('llm_prompt_locales', $locale_id);
     }
 
+    /**
+     * Create a new prompt version if the template or config changed, otherwise update the locale timestamp.
+     *
+     * Compares the SHA-256 hash of active_content and config_json with the current active version
+     * and only creates a new version row when there is an actual change.
+     *
+     * @param array       $descriptor     Owner descriptor.
+     * @param array       $entry          Prompt entry row.
+     * @param array       $locale         Prompt locale row.
+     * @param string      $active_content Raw prompt template text.
+     * @param string|null $meta_json      JSON meta with variables schema, tags, pendingChangeNote.
+     * @param array       $runtime_values Runtime overrides (model, temperature, etc.).
+     * @param bool        $allow_empty    If true, creates versions even for empty content.
+     * @return array{entry: array, locale: array, version: array|null, created: bool}
+     */
     private function ensureVersionSnapshot($descriptor, $entry, $locale, $active_content, $meta_json, $runtime_values, $allow_empty = false)
     {
         $active_content = is_string($active_content) ? $active_content : '';
@@ -472,6 +575,12 @@ class LlmPromptRegistryService extends BaseLlmService
         );
     }
 
+    /**
+     * Generate a human-readable default title for a prompt entry from its descriptor.
+     *
+     * @param array $descriptor Owner descriptor with title, owner_type, prompt_slot.
+     * @return string Title string.
+     */
     private function buildDefaultTitle($descriptor)
     {
         if (!empty($descriptor['title'])) {
@@ -485,6 +594,12 @@ class LlmPromptRegistryService extends BaseLlmService
         return ucfirst(str_replace('_', ' ', $descriptor['prompt_slot'] ?? 'Prompt'));
     }
 
+    /**
+     * Safely decode a meta JSON string into an associative array.
+     *
+     * @param string|null $meta_json JSON string.
+     * @return array Decoded array, or empty array on failure.
+     */
     private function decodeMeta($meta_json)
     {
         if (!is_string($meta_json) || trim($meta_json) === '') {
@@ -499,6 +614,16 @@ class LlmPromptRegistryService extends BaseLlmService
         return $decoded;
     }
 
+    /**
+     * Rebuild the CMS field meta JSON, injecting prompt registry IDs and clearing pending change notes.
+     *
+     * @param string|null $meta_json  Current meta JSON from the CMS field.
+     * @param int         $entry_id   Prompt entry ID.
+     * @param int         $locale_id  Prompt locale ID.
+     * @param int|null    $version_id Active version ID.
+     * @param int|null    $version_no Active version number.
+     * @return string Updated JSON string.
+     */
     private function buildFieldMeta($meta_json, $entry_id, $locale_id, $version_id, $version_no)
     {
         $meta = $this->decodeMeta($meta_json);
@@ -516,6 +641,13 @@ class LlmPromptRegistryService extends BaseLlmService
         return json_encode($meta, JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * Resolve the variables schema from the active version, falling back to auto-detection from content.
+     *
+     * @param array|null $active_version Active prompt version row.
+     * @param string     $active_content Raw prompt template text.
+     * @return array Variables schema array.
+     */
     private function getVariablesSchema($active_version, $active_content)
     {
         if (!empty($active_version['variables_schema_json'])) {
@@ -528,12 +660,19 @@ class LlmPromptRegistryService extends BaseLlmService
         return $this->variable_service->buildAutoSchema($active_content);
     }
 
+    /** @return array List of available LLM models from the provider service. */
     private function getAvailableModels()
     {
         $service = new LlmService($this->services);
         return $service->getAvailableModels();
     }
 
+    /**
+     * Encode a value as JSON with unescaped slashes, returning null for null input.
+     *
+     * @param mixed $value Value to encode.
+     * @return string|null JSON string, or null.
+     */
     private function encodeJson($value)
     {
         if ($value === null) {

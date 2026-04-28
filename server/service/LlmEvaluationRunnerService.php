@@ -11,15 +11,44 @@ require_once __DIR__ . '/LlmEvaluationScoringService.php';
 require_once __DIR__ . '/LlmEvaluationAggregationService.php';
 require_once __DIR__ . '/LlmPromptRegistryService.php';
 
+/**
+ * LLM Evaluation Runner Service
+ *
+ * Orchestrates evaluation runs against datasets. For each test case in a
+ * dataset, the runner:
+ * 1. Replays the prompt through the LLM using LlmDatasetReplayService
+ * 2. Scores the response using the configured evaluation definitions
+ * 3. Aggregates per-case scores into run-level summary statistics
+ * 4. Persists all results for comparison and regression tracking
+ *
+ * Supports baseline comparisons by linking runs and computing delta metrics.
+ *
+ * @package LLM Plugin
+ * @see LlmEvaluationService Facade that exposes these methods
+ * @see LlmEvaluationScoringService For per-case scoring logic
+ * @see LlmEvaluationAggregationService For summary computation
+ */
 class LlmEvaluationRunnerService extends BaseLlmService
 {
+    /** @var LlmDatasetService Dataset CRUD and case retrieval */
     private $dataset_service;
+
+    /** @var LlmDatasetReplayService Replays prompts through the LLM */
     private $replay_service;
+
+    /** @var LlmEvaluationDefinitionService Scoring criteria management */
     private $definition_service;
+
+    /** @var LlmEvaluationScoringService Per-case scoring engine */
     private $scoring_service;
+
+    /** @var LlmEvaluationAggregationService Run-level summary computation */
     private $aggregation_service;
+
+    /** @var LlmPromptRegistryService Prompt registry for context resolution */
     private $registry_service;
 
+    /** @param object $services SelfHelp services container. */
     public function __construct($services)
     {
         parent::__construct($services);
@@ -31,6 +60,22 @@ class LlmEvaluationRunnerService extends BaseLlmService
         $this->registry_service = new LlmPromptRegistryService($services);
     }
 
+    /**
+     * Execute a full evaluation run against a dataset: replays all cases, scores each, and aggregates results.
+     *
+     * @param array $payload {
+     *     @type int    $dataset_id          Required. Target dataset ID.
+     *     @type array  $descriptor          Prompt owner descriptor.
+     *     @type array  $selected_models     Model names for multi-model comparison.
+     *     @type array  $eval_definition_ids Evaluation definition IDs (falls back to defaults).
+     *     @type string $target_type         'draft', 'version', or 'active_version'.
+     *     @type string $draft_prompt        Prompt text (for 'draft' target).
+     *     @type int    $target_version_id   Prompt version ID (for 'version' target).
+     *     @type array  $runtime_overrides   Runtime parameter overrides.
+     * }
+     * @return array{run: array, cases: array} Completed run record and per-case results.
+     * @throws Exception On missing dataset, empty cases, or LLM failure.
+     */
     public function runDatasetEval($payload)
     {
         $dataset_id = (int)($payload['dataset_id'] ?? 0);
@@ -138,6 +183,12 @@ class LlmEvaluationRunnerService extends BaseLlmService
         }
     }
 
+    /**
+     * Retrieve a single evaluation run by ID, with decoded summary and target_ref.
+     *
+     * @param int $run_id Run primary key.
+     * @return array|null Run row or null if not found.
+     */
     public function getEvalRun($run_id)
     {
         $row = $this->db->query_db_first(
@@ -158,6 +209,12 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $row;
     }
 
+    /**
+     * List all per-case results for an evaluation run, with scores, previews, and status.
+     *
+     * @param int $run_id Run primary key.
+     * @return array List of run-case records with decoded payloads and computed status.
+     */
     public function listEvalRunCases($run_id)
     {
         $cases = $this->db->query_db(
@@ -189,6 +246,13 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $cases;
     }
 
+    /**
+     * Re-aggregate and persist the summary for an existing run (e.g. after human review scores change).
+     *
+     * @param int $run_id Run primary key.
+     * @return array Updated run record.
+     * @throws Exception If run not found.
+     */
     public function refreshRunSummary($run_id)
     {
         $run = $this->getEvalRun($run_id);
@@ -207,6 +271,14 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $this->getEvalRun($run_id);
     }
 
+    /**
+     * List evaluation runs for a dataset, ordered by newest first.
+     *
+     * @param int $dataset_id Dataset primary key.
+     * @param int $limit      Max results (clamped to 1–100).
+     * @return array Run rows with decoded summary and target_ref.
+     * @throws Exception If dataset_id invalid.
+     */
     public function listEvalRuns($dataset_id, $limit = 20)
     {
         $dataset_id = (int)$dataset_id;
@@ -235,6 +307,14 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $rows;
     }
 
+    /**
+     * Delete a single evaluation run and its cascading data.
+     *
+     * @param int $run_id     Run primary key.
+     * @param int $dataset_id Optional dataset scope check (0 = skip).
+     * @return array{deleted: bool, deleted_count: int, dataset_id?: int}
+     * @throws Exception If run doesn't belong to the specified dataset.
+     */
     public function deleteEvalRun($run_id, $dataset_id = 0)
     {
         $run_id = (int)$run_id;
@@ -258,6 +338,82 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return array('deleted' => true, 'deleted_count' => 1, 'dataset_id' => (int)($run['id_llm_eval_datasets'] ?? 0));
     }
 
+    /**
+     * Delete a single evaluation run-case row (one target case within a run). Its associated
+     * scores are removed automatically by the `fk_eval_scores_run_case` cascade.
+     *
+     * If the parent run has no remaining cases after the delete, the run itself is also removed
+     * so empty runs do not clutter the dashboard.
+     *
+     * @param int $run_case_id Primary key in `llm_eval_run_cases`.
+     * @param int $dataset_id  Optional dataset scope check (0 = skip).
+     * @return array{deleted: bool, deleted_count: int, run_id: int, run_deleted: bool, dataset_id: int}
+     * @throws Exception If the case does not belong to the specified dataset.
+     */
+    public function deleteEvalRunCase($run_case_id, $dataset_id = 0)
+    {
+        $run_case_id = (int)$run_case_id;
+        $dataset_id = (int)$dataset_id;
+        if ($run_case_id <= 0) {
+            throw new Exception('run_case_id is required');
+        }
+
+        $row = $this->db->query_db_first(
+            "SELECT rc.id, rc.id_llm_eval_runs, r.id_llm_eval_datasets
+             FROM llm_eval_run_cases rc
+             INNER JOIN llm_eval_runs r ON r.id = rc.id_llm_eval_runs
+             WHERE rc.id = :run_case_id",
+            array(':run_case_id' => $run_case_id)
+        );
+        if (!$row) {
+            return array(
+                'deleted' => true,
+                'deleted_count' => 0,
+                'run_id' => 0,
+                'run_deleted' => false,
+                'dataset_id' => $dataset_id
+            );
+        }
+
+        $parent_run_id = (int)$row['id_llm_eval_runs'];
+        $parent_dataset_id = (int)$row['id_llm_eval_datasets'];
+        if ($dataset_id > 0 && $parent_dataset_id !== $dataset_id) {
+            throw new Exception('Evaluation case does not belong to selected dataset');
+        }
+
+        $this->db->remove_by_ids('llm_eval_run_cases', array('id' => $run_case_id));
+        $this->addPluginTransaction('delete', 'llm_eval_run_cases', $run_case_id, 'LLM evaluation run-case deleted');
+
+        // If this was the last case in the parent run, drop the (now empty) run row too so
+        // the UI does not display an orphan "Run #N" with zero cases.
+        $run_deleted = false;
+        $remaining = $this->db->query_db_first(
+            "SELECT COUNT(*) AS cnt FROM llm_eval_run_cases WHERE id_llm_eval_runs = :run_id",
+            array(':run_id' => $parent_run_id)
+        );
+        $remaining_count = (int)($remaining['cnt'] ?? 0);
+        if ($remaining_count === 0) {
+            $this->db->remove_by_ids('llm_eval_runs', array('id' => $parent_run_id));
+            $this->addPluginTransaction('delete', 'llm_eval_runs', $parent_run_id, 'LLM evaluation run deleted (last case removed)');
+            $run_deleted = true;
+        }
+
+        return array(
+            'deleted' => true,
+            'deleted_count' => 1,
+            'run_id' => $parent_run_id,
+            'run_deleted' => $run_deleted,
+            'dataset_id' => $parent_dataset_id
+        );
+    }
+
+    /**
+     * Delete all evaluation runs associated with a dataset (bulk cleanup).
+     *
+     * @param int $dataset_id Dataset primary key.
+     * @return array{deleted: bool, deleted_count: int, dataset_id: int}
+     * @throws Exception If dataset_id invalid.
+     */
     public function deleteEvalRunsForDataset($dataset_id)
     {
         $dataset_id = (int)$dataset_id;
@@ -288,6 +444,15 @@ class LlmEvaluationRunnerService extends BaseLlmService
         );
     }
 
+    /**
+     * Link a baseline run to a target run for comparison, merging baseline metrics into the run summary.
+     *
+     * @param int   $run_id           Target run to annotate.
+     * @param int   $baseline_run_id  Baseline run for comparison.
+     * @param array $baseline_summary Additional baseline metrics to merge into summary.
+     * @return array Updated run record.
+     * @throws Exception If either run not found.
+     */
     public function linkBaselineRun($run_id, $baseline_run_id, $baseline_summary = array())
     {
         $run = $this->getEvalRun($run_id);
@@ -319,6 +484,12 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $this->getEvalRun($run_id);
     }
 
+    /**
+     * Batch-load scores for run cases, grouped by run_case ID.
+     *
+     * @param int[] $run_case_ids Run case primary keys.
+     * @return array<int, array> Map of run_case_id => score rows.
+     */
     private function loadRunCaseScores($run_case_ids)
     {
         $run_case_ids = array_values(array_filter(array_map('intval', (array)$run_case_ids)));
@@ -342,6 +513,12 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $grouped;
     }
 
+    /**
+     * Ensure the human_review evaluation definition is included in the definition set.
+     *
+     * @param array $definitions Current definition rows.
+     * @return array Definitions with human_review appended if missing.
+     */
     private function appendHumanReviewDefinition($definitions)
     {
         $definitions = is_array($definitions) ? array_values($definitions) : array();
@@ -361,6 +538,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $definitions;
     }
 
+    /** @return mixed Decoded JSON value, or fallback on failure. */
     private function decodeJsonValue($value, $fallback)
     {
         if (!is_string($value) || trim($value) === '') {
@@ -370,6 +548,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $decoded !== null ? $decoded : $fallback;
     }
 
+    /** @return string 'failed', 'pending_review', or 'passed' based on score outcomes. */
     private function deriveCaseStatus($scores)
     {
         $has_pending = false;
@@ -384,6 +563,14 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $has_pending ? 'pending_review' : 'passed';
     }
 
+    /**
+     * Resolve the target prompt (draft, versioned, or active) for an evaluation run.
+     *
+     * @param array $payload    Run payload with target_type, draft_prompt, target_version_id.
+     * @param array $descriptor Prompt owner descriptor.
+     * @return array{target_type: string, target_ref: array, draft_prompt: string}
+     * @throws Exception If resolved prompt is empty.
+     */
     private function resolveTargetPrompt($payload, $descriptor)
     {
         $target_type = (string)($payload['target_type'] ?? 'draft');
@@ -411,6 +598,14 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return array('target_type' => $target_type, 'target_ref' => $target_ref, 'draft_prompt' => $draft_prompt);
     }
 
+    /**
+     * Resolve a lookup code to its numeric ID, throwing on failure.
+     *
+     * @param string $type_code   Lookup type category.
+     * @param string $lookup_code Lookup code.
+     * @return int Lookup ID.
+     * @throws Exception If lookup not found.
+     */
     private function lookupId($type_code, $lookup_code)
     {
         $lookup_id = $this->db->get_lookup_id_by_code($type_code, $lookup_code);
@@ -420,6 +615,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $lookup_id;
     }
 
+    /** @return string Short human-readable preview from the input payload (max ~220 chars). */
     private function buildInputPreview($input_payload)
     {
         if (!is_array($input_payload)) {
@@ -466,6 +662,12 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return '';
     }
 
+    /**
+     * Extract a compact list of [{key, value}] pairs from the input payload for UI display (max 4 fields).
+     *
+     * @param array|null $input_payload Decoded input payload.
+     * @return array<int, array{key: string, value: string}>
+     */
     private function buildInputFields($input_payload)
     {
         if (!is_array($input_payload)) {
@@ -494,6 +696,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return $fields;
     }
 
+    /** @return string Scalar or JSON-encoded value for preview, or empty string. */
     private function flattenInputValue($value)
     {
         if ($value === null) {
@@ -508,6 +711,7 @@ class LlmEvaluationRunnerService extends BaseLlmService
         return '';
     }
 
+    /** @return string Truncated text with '...' suffix if exceeding max_len. */
     private function truncateText($text, $max_len)
     {
         $text = trim((string)$text);

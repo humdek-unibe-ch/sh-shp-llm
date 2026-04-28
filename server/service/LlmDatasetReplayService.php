@@ -7,9 +7,25 @@ require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmPromptPlaygroundService.php';
 require_once __DIR__ . '/LlmPromptRuntimeValueService.php';
 
+/**
+ * LLM Dataset Replay Service
+ *
+ * Replays prompt templates through the LLM for each test case in a dataset.
+ * Substitutes test-case variables into the prompt, executes it via the
+ * playground service, and returns raw LLM output for scoring.
+ *
+ * Used by the evaluation runner to generate actual outputs that are then
+ * compared against expected results.
+ *
+ * @package LLM Plugin
+ * @see LlmEvaluationRunnerService For orchestration context
+ */
 class LlmDatasetReplayService extends BaseLlmService
 {
+    /** @var LlmPromptPlaygroundService Handles prompt execution */
     private $playground_service;
+
+    /** @var LlmPromptRuntimeValueService Resolves runtime variable bindings */
     private $runtime_value_service;
 
     public function __construct($services)
@@ -19,6 +35,14 @@ class LlmDatasetReplayService extends BaseLlmService
         $this->runtime_value_service = new LlmPromptRuntimeValueService($services);
     }
 
+    /**
+     * Replay a dataset case through the playground to get a fresh LLM response.
+     *
+     * @param array $dataset_case Case row with input_payload_json, expected output, etc.
+     * @param array $target       Target prompt info (target_type, draft_prompt, target_version_id).
+     * @param array $options      Additional options (selected_models, runtime_overrides).
+     * @return array Playground run result with rendered content and metadata.
+     */
     public function replayCase($dataset_case, $target, $options = array())
     {
         $input_payload = $this->decodePayload($dataset_case['input_payload_json'] ?? '{}');
@@ -39,6 +63,21 @@ class LlmDatasetReplayService extends BaseLlmService
             $variables = $input_payload['form_data'];
         }
 
+        $playground_options = array(
+            'run_mode' => LLM_PROMPT_RUN_MODE_DATASET_EVAL,
+            'target_version_id' => !empty($target['target_ref']['prompt_version_id']) ? (int)$target['target_ref']['prompt_version_id'] : null
+        );
+        // Memory rule cases carry a pre-parsed `memory_context` so the
+        // playground can reassemble the original memory-worker prompt (system
+        // message + structured user message) and splice the draft Instructions
+        // block. Without it, the script runtime would send only the raw
+        // interpolated admin instructions and the LLM would answer with
+        // "information is incomplete" because the Current Memory / Submitted
+        // Data sections are missing.
+        if (is_array($input_payload['memory_context'] ?? null)) {
+            $playground_options['memory_context'] = $input_payload['memory_context'];
+        }
+
         return $this->playground_service->run(
             $descriptor,
             (string)($target['draft_prompt'] ?? ''),
@@ -46,13 +85,11 @@ class LlmDatasetReplayService extends BaseLlmService
             $variables,
             is_array($input_payload['message_history'] ?? null) ? $input_payload['message_history'] : array(),
             is_array($options['selected_models'] ?? null) ? $options['selected_models'] : array(),
-            array(
-                'run_mode' => LLM_PROMPT_RUN_MODE_DATASET_EVAL,
-                'target_version_id' => !empty($target['target_ref']['prompt_version_id']) ? (int)$target['target_ref']['prompt_version_id'] : null
-            )
+            $playground_options
         );
     }
 
+    /** Safely decode a JSON string to array, returning empty array on failure. */
     private function decodePayload($value)
     {
         if (!is_string($value) || trim($value) === '') {

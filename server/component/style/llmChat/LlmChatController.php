@@ -421,6 +421,10 @@ class LlmChatController extends BaseController
 
             if ($this->model->isDataSavingEnabled()) {
                 $this->saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id);
+            } else {
+                // Direct memory dispatch is a fallback only when the canonical
+                // UserInput/form-action pipeline is unavailable.
+                $this->dispatchMemoryUpdateIfEnabled($form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id);
             }
 
             if ($this->model->isProgressTrackingEnabled()) {
@@ -1277,6 +1281,47 @@ class LlmChatController extends BaseController
 
     /**
      * Save form data to SelfHelp UserInput system
+     */
+    /**
+     * Dispatch a memory update from this chat form submission if the memory system is enabled.
+     * When data saving is disabled on this section, this is the only memory trigger path;
+     * otherwise form-actions on the saved data can also trigger memory updates.
+     */
+    private function dispatchMemoryUpdateIfEnabled($form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id)
+    {
+        try {
+            require_once __DIR__ . "/../../../service/LlmMemoryConfigService.php";
+            require_once __DIR__ . "/../../../service/LlmMemoryTriggerService.php";
+
+            $config_service = new LlmMemoryConfigService($this->services);
+            if (!$config_service->isMemoryEnabled()) {
+                return;
+            }
+
+            $trigger_service = new LlmMemoryTriggerService($this->services, $config_service);
+            $normalized = $trigger_service->normalizeLlmChatFormPayload(
+                $form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id
+            );
+
+            $rule_ids = $this->model->getMemoryRuleIds();
+            if (!empty($rule_ids)) {
+                $trigger_service->dispatchForRuleIds($rule_ids, $normalized);
+            } else {
+                $trigger_service->dispatchMemoryUpdate($normalized);
+            }
+        } catch (Exception $e) {
+            error_log('LLM memory dispatch error in chat form: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Persist form-mode field values into the dataTables system via UserInput.
+     *
+     * @param array $form_values     Key-value pairs from the LLM-generated form response.
+     * @param int   $user_id         User ID.
+     * @param int   $message_id      LLM message ID linked to this form submission.
+     * @param int   $conversation_id Conversation ID.
+     * @return int|false Saved record ID, or false on failure.
      */
     private function saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id)
     {

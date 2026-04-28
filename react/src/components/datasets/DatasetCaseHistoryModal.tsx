@@ -1,3 +1,11 @@
+/**
+ * Dataset Case History Modal — view version history for a test case.
+ *
+ * Shows a timestamped list of case revisions with input/output diffs
+ * rendered via JsonInspector.
+ *
+ * @module components/datasets/DatasetCaseHistoryModal
+ */
 import React from 'react';
 import { Badge, Button, Modal, Table } from 'react-bootstrap';
 import { JsonInspector } from '../shared/JsonInspector';
@@ -13,6 +21,7 @@ interface DatasetCaseHistoryModalProps {
   onInspect?: (runCase: PromptEvalRunCase) => void;
 }
 
+/** statusVariant function. */
 function statusVariant(status?: string): 'success' | 'danger' | 'warning' | 'secondary' {
   if (status === 'failed') return 'danger';
   if (status === 'pending_review') return 'warning';
@@ -20,6 +29,7 @@ function statusVariant(status?: string): 'success' | 'danger' | 'warning' | 'sec
   return 'secondary';
 }
 
+/** Modal dialog for dataset case history modal. */
 export const DatasetCaseHistoryModal: React.FC<DatasetCaseHistoryModalProps> = ({
   show,
   datasetCase,

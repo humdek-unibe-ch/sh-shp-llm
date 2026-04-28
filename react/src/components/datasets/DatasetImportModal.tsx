@@ -1,3 +1,12 @@
+/**
+ * Dataset Import Modal — manual structured import of test cases.
+ *
+ * Provides a source-type selector (JSON, CSV) and a text/file input area
+ * for importing cases without LLM assistance. Validates and previews
+ * before persisting.
+ *
+ * @module components/datasets/DatasetImportModal
+ */
 import React, { useEffect, useState } from 'react';
 import Select from 'react-select';
 import { Button, Form, Modal, Spinner, Table } from 'react-bootstrap';
@@ -5,6 +14,7 @@ import type { PromptDescriptor, PromptExecutionProfile } from '../prompts/prompt
 import type { createDatasetApi } from './datasetApi';
 import type { PromptImportCandidate, PromptImportSourceType } from './datasetTypes';
 
+/** shortText function. */
 function shortText(value: string, max = 140): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= max) {
@@ -13,6 +23,7 @@ function shortText(value: string, max = 140): string {
   return `${normalized.slice(0, max)}...`;
 }
 
+/** candidatePreview function. */
 function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
   if (candidate.preview_text) {
     return shortText(candidate.preview_text, 140);
@@ -26,10 +37,12 @@ function candidatePreview(sourceType: PromptImportSourceType, candidate: PromptI
   return shortText(candidate.content || '', 140) || '(empty message)';
 }
 
+/** candidateAssistantPreview function. */
 function candidateAssistantPreview(candidate: PromptImportCandidate): string {
   return shortText(candidate.assistant_preview || candidate.response_content || '', 140);
 }
 
+/** candidateMeta function. */
 function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImportCandidate): string {
   if (sourceType === 'script_run') {
     return `Script #${candidate.id} | model: ${candidate.model || 'default'}`;
@@ -58,14 +71,50 @@ function candidateMeta(sourceType: PromptImportSourceType, candidate: PromptImpo
   return parts.length > 0 ? parts.join(' | ') : 'No linked IDs';
 }
 
+/** sourceExecutionProfile function. */
 function sourceExecutionProfile(sourceType: PromptImportSourceType, fallback: PromptExecutionProfile): string {
   if (sourceType === 'form_submission') return 'form_runtime';
   if (sourceType === 'conversation_message') {
+    if (fallback === 'memory_runtime') return 'memory_runtime';
     if (fallback === 'form_runtime' || fallback === 'script_runtime' || fallback === 'text_only') return 'chat_runtime';
     return fallback;
   }
   if (sourceType === 'script_run') return 'script_runtime';
   return fallback;
+}
+
+/**
+ * Build the list of import source options that make sense for a given owner
+ * descriptor. Memory rules, for example, cannot yield form-submission or
+ * script-fixture cases, so those options are hidden to avoid confusion.
+ */
+function getSourceOptionsForDescriptor(descriptor: PromptDescriptor): Array<{ value: PromptImportSourceType; label: string }> {
+  if (descriptor.ownerType === 'llm_memory_rule') {
+    return [
+      { value: 'conversation_message', label: 'From memory executions (conversations)' },
+      { value: 'playground_run', label: 'From playground runs' },
+    ];
+  }
+  if (descriptor.ownerType === 'llm_script') {
+    return [
+      { value: 'playground_run', label: 'From playground runs' },
+      { value: 'conversation_message', label: 'From conversations' },
+      { value: 'script_run', label: 'From scripts' },
+    ];
+  }
+  return [
+    { value: 'playground_run', label: 'From playground runs' },
+    { value: 'form_submission', label: 'From form submissions' },
+    { value: 'conversation_message', label: 'From conversations' },
+    { value: 'script_run', label: 'From scripts' },
+  ];
+}
+
+function defaultSourceForDescriptor(descriptor: PromptDescriptor): PromptImportSourceType {
+  if (descriptor.ownerType === 'llm_memory_rule') {
+    return 'conversation_message';
+  }
+  return 'playground_run';
 }
 
 interface DatasetImportModalProps {
@@ -79,6 +128,7 @@ interface DatasetImportModalProps {
   onImported: (count: number) => void;
 }
 
+/** Modal dialog for dataset import modal. */
 export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   show,
   onHide,
@@ -89,19 +139,22 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   resolveRuntimeOverrides,
   onImported,
 }) => {
-  const [sourceType, setSourceType] = useState<PromptImportSourceType>('playground_run');
+  const sourceOptions = React.useMemo(() => getSourceOptionsForDescriptor(descriptor), [descriptor]);
+  const [sourceType, setSourceType] = useState<PromptImportSourceType>(() => defaultSourceForDescriptor(descriptor));
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<PromptImportCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const sourceOptions = [
-    { value: 'playground_run', label: 'From playground runs' },
-    { value: 'form_submission', label: 'From form submissions' },
-    { value: 'conversation_message', label: 'From conversations' },
-    { value: 'script_run', label: 'From scripts' },
-  ];
+
+  useEffect(() => {
+    if (!sourceOptions.find((option) => option.value === sourceType)) {
+      setSourceType(defaultSourceForDescriptor(descriptor));
+    }
+  }, [descriptor, sourceOptions, sourceType]);
+
   const selectedSourceOption = sourceOptions.find((option) => option.value === sourceType) || sourceOptions[0];
+  const isMemoryOwner = descriptor.ownerType === 'llm_memory_rule';
 
   const filteredCandidates = candidates.filter((candidate) => {
     const term = search.trim().toLowerCase();
@@ -186,6 +239,22 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
           <div className="alert alert-info py-2 small mb-2">
             Conversation imports for scripts auto-derive variables from the message text.
             Prefer structured messages (JSON or key:value lines) for best replay accuracy.
+          </div>
+        )}
+        {isMemoryOwner && sourceType === 'conversation_message' && (
+          <div className="alert alert-info py-2 small mb-2">
+            These are the actual memory update conversations triggered by forms,
+            login, or other memory rules. Conversation titles starting with
+            <code className="mx-1">__memory_update__</code>
+            are the LLM calls that wrote to user memory. Import them to replay
+            the same input against prompt changes.
+          </div>
+        )}
+        {isMemoryOwner && sourceType === 'playground_run' && (
+          <div className="alert alert-info py-2 small mb-2">
+            Only genuine playground tests and multi-model comparisons are listed.
+            Prompt-builder runs (Build with AI) and dataset-evaluation runs are
+            excluded so this list reflects real test cases.
           </div>
         )}
 

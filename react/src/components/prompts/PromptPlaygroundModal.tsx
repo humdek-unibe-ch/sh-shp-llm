@@ -1,3 +1,12 @@
+/**
+ * Prompt Playground Modal — interactive test execution environment.
+ *
+ * Allows the admin to run the current prompt draft against one or more
+ * models with variable inputs, view the raw/rendered response, save
+ * runs as dataset test cases, and compare multi-model outputs side by side.
+ *
+ * @module components/prompts/PromptPlaygroundModal
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
@@ -40,6 +49,7 @@ interface PromptPlaygroundModalProps {
   }) => void;
 }
 
+/** buildEffectiveModels function. */
 function buildEffectiveModels(models: PromptModel[], defaultModel?: string | null): PromptModel[] {
   const normalized = Array.isArray(models) ? models.filter((item) => item?.id) : [];
   if (defaultModel && !normalized.some((item) => item.id === defaultModel)) {
@@ -48,6 +58,7 @@ function buildEffectiveModels(models: PromptModel[], defaultModel?: string | nul
   return normalized;
 }
 
+/** parseJsonObject utility. */
 function parseJsonObject(value: string): Record<string, unknown> {
   if (!value.trim()) {
     return {};
@@ -57,6 +68,7 @@ function parseJsonObject(value: string): Record<string, unknown> {
   return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
 }
 
+/** normalizeInitialValues function. */
 function normalizeInitialValues(schema: PromptVariableDefinition[], currentValues: Record<string, unknown>) {
   const next: Record<string, unknown> = { ...currentValues };
   if (!schema.length) {
@@ -68,6 +80,7 @@ function normalizeInitialValues(schema: PromptVariableDefinition[], currentValue
   return next;
 }
 
+/** detectVariablesFromPrompt function. */
 function detectVariablesFromPrompt(prompt: string): PromptVariableDefinition[] {
   const matches = Array.from(prompt.matchAll(/\{\{(\w+)\}\}/g)).map((entry) => entry[1]);
   const unique = Array.from(new Set(matches));
@@ -79,6 +92,7 @@ function detectVariablesFromPrompt(prompt: string): PromptVariableDefinition[] {
   }));
 }
 
+/** mergeVariableSchemas function. */
 function mergeVariableSchemas(
   baseSchema: PromptVariableDefinition[],
   detectedSchema: PromptVariableDefinition[],
@@ -93,6 +107,7 @@ function mergeVariableSchemas(
   return Array.from(map.values());
 }
 
+/** deriveVariableSchemaFromValues function. */
 function deriveVariableSchemaFromValues(values: Record<string, unknown>): PromptVariableDefinition[] {
   return Object.keys(values || {}).map((name) => ({
     name,
@@ -102,6 +117,7 @@ function deriveVariableSchemaFromValues(values: Record<string, unknown>): Prompt
   }));
 }
 
+/** stableStringify function. */
 function stableStringify(value: unknown): string {
   try {
     return JSON.stringify(value ?? null);
@@ -110,6 +126,7 @@ function stableStringify(value: unknown): string {
   }
 }
 
+/** tryParseJsonObject utility. */
 function tryParseJsonObject(value: string): Record<string, unknown> | null {
   try {
     const parsed = parseJsonObject(value);
@@ -119,10 +136,12 @@ function tryParseJsonObject(value: string): Record<string, unknown> | null {
   }
 }
 
+/** isValidMessageRole function. */
 function isValidMessageRole(role: string): role is PromptMessage['role'] {
   return role === 'system' || role === 'user' || role === 'assistant';
 }
 
+/** normalizeMessageHistory function. */
 function normalizeMessageHistory(messages: unknown): PromptMessage[] {
   if (!Array.isArray(messages)) {
     return [];
@@ -143,6 +162,7 @@ function normalizeMessageHistory(messages: unknown): PromptMessage[] {
     .filter((item): item is PromptMessage => item !== null);
 }
 
+/** Fetch or retrieve build raw payload data. */
 function buildRawPayload(
   isChatRuntime: boolean,
   variables: Record<string, unknown>,
@@ -164,6 +184,7 @@ const messageRoleOptions = [
   { value: 'system', label: 'system' },
 ];
 
+/** Modal dialog for prompt playground modal. */
 export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   show,
   onHide,

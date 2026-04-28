@@ -284,4 +284,5 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
   );
 };
 
+/** Default export for this module. */
 export default FloatingChat;

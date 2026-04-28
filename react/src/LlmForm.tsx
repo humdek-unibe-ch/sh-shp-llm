@@ -15,6 +15,7 @@ import type { LlmFormConfig } from './types/form';
 
 const LLM_FORM_INIT_KEY = '__llmFormInitialized';
 
+/** parseLlmFormConfig utility. */
 function parseLlmFormConfig(container: HTMLElement): LlmFormConfig | null {
   const raw = container.getAttribute('data-llm-config');
   if (!raw) return null;
@@ -25,6 +26,7 @@ function parseLlmFormConfig(container: HTMLElement): LlmFormConfig | null {
   }
 }
 
+/** initializeLlmForm function. */
 function initializeLlmForm(container: HTMLElement): void {
   if (container.dataset.llmInitialized === '1') return;
 
@@ -59,6 +61,7 @@ function initializeLlmForm(container: HTMLElement): void {
   );
 }
 
+/** initializeAllLlmForms function. */
 function initializeAllLlmForms(): void {
   const containers = document.querySelectorAll('.llm-form-root[data-llm-config]');
   if (containers.length === 0) return;

@@ -13,6 +13,7 @@ interface LoadingIndicatorProps {
   text?: string;
 }
 
+/** Fetch or retrieve loading indicator data. */
 export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({ text = 'Loading...' }) => {
   return (
     <div className="llm-loading-indicator d-flex align-items-center justify-content-center p-2 bg-light border-top">
@@ -24,4 +25,5 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({ text = 'Load
   );
 };
 
+/** Default export for this module. */
 export default LoadingIndicator;

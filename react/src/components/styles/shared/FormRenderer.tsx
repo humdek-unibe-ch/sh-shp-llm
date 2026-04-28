@@ -581,5 +581,6 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
   );
 };
 
+/** Default export for this module. */
 export default FormRenderer;
 

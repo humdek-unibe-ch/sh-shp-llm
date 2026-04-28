@@ -1,7 +1,14 @@
 /**
- * TypeScript types for LLM Form styles.
+ * TypeScript types for LLM Form styles (llmFormRecord / llmFormLog).
+ *
+ * Covers the configuration passed from the PHP view via `data-config`,
+ * the result metadata returned after LLM generation, and the full
+ * response envelope used by the form panel.
+ *
+ * @module types/form
  */
 
+/** Configuration object parsed from the `data-config` attribute on the form root. */
 export interface LlmFormConfig {
   llmEnabled: boolean;
   llmModel: string;
@@ -31,8 +38,13 @@ export interface LlmFormConfig {
   previousMeta: LlmResultMeta | null;
   userLanguage: string;
   sectionId: number;
+  /** Current saved record id for the logged-in user, or null if the
+   *  form has not been submitted yet. Used to seed regenerate / retry
+   *  actions on first load. */
+  currentRecordId?: string | number | null;
 }
 
+/** Metadata attached to each LLM generation result for audit and display. */
 export interface LlmResultMeta {
   model: string;
   temperature: number;
@@ -42,8 +54,13 @@ export interface LlmResultMeta {
   status: 'success' | 'error';
   language: string;
   error?: string;
+  /** Record id that the result was saved against. Returned by the PHP
+   *  controller so the client can use it for subsequent regenerate /
+   *  retry calls. */
+  record_id?: string | number;
 }
 
+/** Full response envelope returned by the PHP controller after LLM form submission. */
 export interface LlmFormResult {
   success: boolean;
   llm_result: string;

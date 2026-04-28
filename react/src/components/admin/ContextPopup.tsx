@@ -33,6 +33,7 @@ interface NormalizedContext {
   metadata: Record<string, unknown> | null;
 }
 
+/** ContextPopup component. */
 export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHide }) => {
   const [copied, setCopied] = useState(false);
   const [copyType, setCopyType] = useState<'raw' | 'formatted'>('formatted');

@@ -621,4 +621,55 @@ abstract class BaseLlmService
             $message
         );
     }
+
+    /**
+     * Locate the PHP CLI binary using multiple strategies.
+     * Shared across all services that spawn background PHP processes.
+     *
+     * @return string Path to php binary
+     */
+    public static function resolvePhpCliBinary()
+    {
+        $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        $bin_name = $is_win ? 'php.exe' : 'php';
+
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
+            return PHP_BINARY;
+        }
+
+        if (!$is_win) {
+            foreach (['command -v php', 'which php'] as $lookup_cmd) {
+                $which = @shell_exec($lookup_cmd . ' 2>/dev/null');
+                if ($which) {
+                    $which = trim($which);
+                    if ($which !== '' && file_exists($which)) {
+                        return $which;
+                    }
+                }
+            }
+        } else {
+            $where = @shell_exec('where php 2>NUL');
+            if ($where) {
+                $first_line = trim(strtok($where, "\n"));
+                if ($first_line !== '' && file_exists($first_line)) {
+                    return $first_line;
+                }
+            }
+        }
+
+        $ext_dir = ini_get('extension_dir');
+        if ($ext_dir) {
+            $php_dir = dirname(rtrim($ext_dir, '/\\'));
+            $candidate = $php_dir . DIRECTORY_SEPARATOR . $bin_name;
+            if (file_exists($candidate)) {
+                return $candidate;
+            }
+            $candidate2 = dirname($php_dir) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $bin_name;
+            if (file_exists($candidate2)) {
+                return $candidate2;
+            }
+        }
+
+        return $bin_name;
+    }
 }

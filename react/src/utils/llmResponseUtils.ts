@@ -1,6 +1,12 @@
 /**
- * LLM Response parsing and validation utilities
- * Extracted from types/index.ts to separate concerns
+ * LLM Response parsing and validation utilities.
+ *
+ * Handles detection, parsing, and normalization of structured LLM
+ * responses (JSON envelopes with text blocks, form definitions, media,
+ * and safety assessments). Includes truncation detection, schema
+ * validation, and migration from legacy response formats.
+ *
+ * @module utils/llmResponseUtils
  */
 
 import type {

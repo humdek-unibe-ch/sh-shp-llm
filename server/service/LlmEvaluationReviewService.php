@@ -6,16 +6,33 @@
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmEvaluationDefinitionService.php';
 
+/**
+ * LLM Evaluation Review Service
+ *
+ * Handles human review scoring for evaluation run cases. Allows admins
+ * to manually score LLM outputs that require subjective assessment,
+ * persisting scores in `llm_eval_scores` with the human_review type.
+ *
+ * @package LLM Plugin
+ */
 class LlmEvaluationReviewService extends BaseLlmService
 {
     private $definition_service;
 
+    /** @param object $services SelfHelp services container. */
     public function __construct($services)
     {
         parent::__construct($services);
         $this->definition_service = new LlmEvaluationDefinitionService($services);
     }
 
+    /**
+     * Save or update a human reviewer's score for an evaluation run case.
+     *
+     * @param array $payload {id_llm_eval_run_cases, id_llm_eval_definitions, score_value_numeric, score_value_label, passed, details}.
+     * @return array Updated score row.
+     * @throws Exception If run_case_id or definition_id is invalid.
+     */
     public function saveHumanScore($payload)
     {
         $run_case_id = (int)($payload['id_llm_eval_run_cases'] ?? 0);

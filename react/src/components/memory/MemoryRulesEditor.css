@@ -1,0 +1,219 @@
+.llm-memory-rules-editor-root .memory-rule-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.llm-memory-rules-editor-root .memory-rule-subtitle {
+  font-size: 0.75rem;
+}
+
+.memory-filter-field {
+  position: relative;
+  width: 100%;
+}
+
+.memory-filter-field .memory-filter-field__input {
+  padding-right: 2.25rem;
+}
+
+.memory-filter-field .memory-filter-field__clear {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #6b7280;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.memory-filter-field .memory-filter-field__clear:hover {
+  background: #eef2f7;
+  color: #1f2937;
+}
+
+.llm-memory-rules-editor-root .card-header .btn,
+.llm-memory-rules-editor-root .prompt-toolbar .btn {
+  white-space: nowrap;
+}
+
+.llm-memory-rules-editor-root .json-monaco-editor,
+.llm-memory-rules-editor-root .prompt-editor {
+  border-radius: 0.25rem;
+}
+
+.llm-memory-rules-editor-root .prompt-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.llm-memory-rules-editor-root .card {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+
+.llm-memory-rules-editor-root .memory-rule-sidebar .card-body {
+  padding: 1rem;
+}
+
+.llm-memory-rules-editor-root .memory-rule-card {
+  width: 100%;
+  border: 1px solid #d9dee7;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.llm-memory-rules-editor-root .memory-rule-card:hover {
+  border-color: #9fc4ff;
+  box-shadow: 0 8px 18px rgba(20, 73, 160, 0.08);
+}
+
+.llm-memory-rules-editor-root .memory-rule-card.is-active {
+  border-color: #0d6efd;
+  background: #f3f8ff;
+  box-shadow: 0 10px 22px rgba(13, 110, 253, 0.12);
+}
+
+.llm-memory-rules-editor-root .memory-rule-card__header,
+.llm-memory-rules-editor-root .memory-rule-card__meta,
+.llm-memory-rules-editor-root .memory-rule-card__badges {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.llm-memory-rules-editor-root .memory-rule-card__title {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.llm-memory-rules-editor-root .memory-rule-card__slug {
+  font-size: 0.77rem;
+  color: #6c757d;
+  margin-top: 0.15rem;
+}
+
+.llm-memory-rules-editor-root .memory-rule-card__badges {
+  margin-top: 0.7rem;
+}
+
+.llm-memory-rules-editor-root .memory-rule-card__meta {
+  margin-top: 0.75rem;
+  font-size: 0.78rem;
+  color: #5b6472;
+}
+
+.llm-memory-rules-editor-root .memory-rule-editor > .card-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.memory-sources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.memory-source-card {
+  height: 100%;
+}
+
+.memory-source-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.memory-source-card__meta {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.memory-source-card__rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.memory-source-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.llm-memory-rules-editor-root .memory-rule-section {
+  border: 1px solid #e2e8f0;
+}
+
+.llm-memory-rules-editor-root .memory-rule-section > .card-header {
+  font-weight: 700;
+  background: #f8fafc;
+}
+
+.llm-memory-rules-editor-root .memory-rule-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.llm-memory-rules-editor-root .memory-rule-select .react-select__control {
+  min-height: 38px;
+  border-color: #ced4da;
+}
+
+.llm-memory-rules-editor-root .memory-rule-select .react-select__value-container {
+  padding: 2px 8px;
+}
+
+.llm-memory-rules-editor-root .memory-rule-select .react-select__menu {
+  z-index: 20;
+}
+
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:hover,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:focus,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:active,
+.llm-memory-rules-editor-root .searchable-select.show > .dropdown-toggle.btn-outline-secondary,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:not(:disabled):not(.disabled):active {
+  background: #fff !important;
+  color: #495057 !important;
+  border-color: #ced4da !important;
+  box-shadow: none !important;
+}
+
+.llm-memory-rules-editor-root .searchable-select.show > .dropdown-toggle.btn-outline-secondary,
+.llm-memory-rules-editor-root .searchable-select > .dropdown-toggle.btn-outline-secondary:focus {
+  border-color: #adb5bd !important;
+}
+
+.llm-memory-rules-editor-root .searchable-select .dropdown-menu {
+  background: #fff;
+}
+
+.llm-memory-rules-editor-root .searchable-select .dropdown-item.active,
+.llm-memory-rules-editor-root .searchable-select .dropdown-item:active {
+  background-color: #0d6efd;
+  color: #fff;
+}
+
+@media (max-width: 991.98px) {
+  .llm-memory-rules-editor-root .prompt-toolbar {
+    position: static;
+  }
+
+  .llm-memory-rules-editor-root .memory-rule-checkbox-grid {
+    grid-template-columns: 1fr;
+  }
+}

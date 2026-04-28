@@ -6,11 +6,22 @@
 require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
+/**
+ * LLM Prompt Standard Service
+ *
+ * Provides standard scaffold templates, default expected-label
+ * definitions, and profile-aware prompt assembly for the Prompt
+ * Builder and evaluation systems. Acts as the source of truth for
+ * the canonical prompt structure and safety/quality labels.
+ *
+ * @package LLM Plugin
+ */
 class LlmPromptStandardService
 {
-    /** @var LlmPromptExecutionProfileService */
+    /** @var LlmPromptExecutionProfileService Profile resolution */
     private $profile_service;
-    /** @var LlmPromptAssetLoader */
+
+    /** @var LlmPromptAssetLoader Loads scaffold templates from disk */
     private $prompt_assets;
 
     public function __construct($services)
@@ -19,6 +30,7 @@ class LlmPromptStandardService
         $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
+    /** @return array Default expected label schema with safety and quality sections. */
     public function getDefaultExpectedLabels()
     {
         return array(
@@ -28,6 +40,12 @@ class LlmPromptStandardService
         );
     }
 
+    /**
+     * Merge provided expected labels with defaults, ensuring safety section exists.
+     *
+     * @param array|null $expected_labels Existing labels to normalize.
+     * @return array Normalized labels with defaults applied.
+     */
     public function normalizeExpectedLabels($expected_labels = null)
     {
         $normalized = is_array($expected_labels) ? $expected_labels : array();
@@ -41,6 +59,12 @@ class LlmPromptStandardService
         return $normalized;
     }
 
+    /**
+     * Build the prompt contract payload describing required sections and style rules for the descriptor.
+     *
+     * @param array $descriptor Owner descriptor with owner_type, prompt_slot.
+     * @return array Contract payload with section_order and rules.
+     */
     public function buildPromptContractPayload($descriptor = array())
     {
         $execution_profile = '';
@@ -73,6 +97,15 @@ class LlmPromptStandardService
         );
     }
 
+    /**
+     * Generate a human-readable scaffold guidance text for prompt writing based on contract sections.
+     *
+     * @param array       $descriptor        Owner descriptor.
+     * @param array|null  $section_order     Explicit section order, or null to derive from contract.
+     * @param string      $owner_label       Label for the prompt owner (e.g. 'llmChat').
+     * @param string      $execution_profile Execution profile code.
+     * @return string Formatted guidance text.
+     */
     public function buildPromptScaffoldGuidance($descriptor = array(), $section_order = null, $owner_label = '', $execution_profile = '')
     {
         $contract = $section_order ?: $this->buildPromptContractPayload($descriptor)['section_order'];

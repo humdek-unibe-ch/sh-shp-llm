@@ -1,0 +1,30 @@
+.info-popover-trigger {
+  line-height: 1;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.info-popover-trigger:hover,
+.info-popover-trigger:focus,
+.info-popover-trigger.is-active {
+  color: #0d6efd !important;
+  text-decoration: none;
+}
+
+.info-popover-overlay {
+  max-width: 420px;
+  border-color: #d9dee7;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+}
+
+.info-popover-overlay .popover-header {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.info-popover-overlay .popover-body {
+  color: #475569;
+  line-height: 1.5;
+}

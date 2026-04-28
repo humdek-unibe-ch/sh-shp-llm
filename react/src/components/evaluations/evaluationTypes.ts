@@ -1,3 +1,18 @@
+/**
+ * Evaluation Type Definitions
+ * ===========================
+ *
+ * Types for the prompt evaluation system. Evaluations score LLM outputs
+ * against expected results using programmatic checks, LLM judges, or
+ * human review. Results are stored per-run with per-case scoring.
+ *
+ * Corresponds to `llm_eval_definitions`, `llm_eval_runs`, and
+ * `llm_eval_run_cases` DB tables.
+ *
+ * @module components/evaluations/evaluationTypes
+ */
+
+/** Scoring criteria definition (e.g., "JSON validity", "Safety check"). */
 export interface PromptEvalDefinition {
   id: number;
   name: string;
@@ -6,6 +21,7 @@ export interface PromptEvalDefinition {
   config_json?: string | null;
 }
 
+/** A single score entry from an evaluation (numeric, label, or pass/fail). */
 export interface PromptEvalScore {
   id?: number;
   id_llm_eval_definitions?: number;
@@ -18,6 +34,7 @@ export interface PromptEvalScore {
   details?: Record<string, unknown> | null;
 }
 
+/** A single evaluated test case within an evaluation run, with input, output, and scores. */
 export interface PromptEvalRunCase {
   run_case_id?: number;
   id_llm_eval_runs?: number;
@@ -44,6 +61,7 @@ export interface PromptEvalRunCase {
   scores: PromptEvalScore[];
 }
 
+/** Complete results of an evaluation run including summary statistics and per-case data. */
 export interface PromptEvalRunResult {
   run: {
     id: number;

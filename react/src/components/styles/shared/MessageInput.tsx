@@ -548,6 +548,7 @@ interface AttachmentItemProps {
   fileConfig: LlmChatConfig['fileConfig'];
 }
 
+/** AttachmentItem React component. */
 const AttachmentItem: React.FC<AttachmentItemProps & { config: LlmChatConfig }> = ({ item, onRemove, fileConfig, config }) => {
   const extension = getFileExtension(item.file.name);
   const isImage = isImageExtension(extension, fileConfig.allowedImageExtensions);
@@ -597,4 +598,5 @@ const AttachmentItem: React.FC<AttachmentItemProps & { config: LlmChatConfig }> 
   );
 };
 
+/** Default export for this module. */
 export default MessageInput;

@@ -10,6 +10,8 @@ require_once __DIR__ . "/../service/LlmService.php";
 require_once __DIR__ . "/../service/LlmScriptService.php";
 require_once __DIR__ . "/../service/LlmPromptRegistryService.php";
 require_once __DIR__ . "/../service/LlmPromptExecutionProfileService.php";
+require_once __DIR__ . "/../service/LlmMemoryConfigService.php";
+require_once __DIR__ . "/../service/LlmMemoryTriggerService.php";
 
 /**
  * The class to define the hooks for the LLM plugin.
@@ -362,51 +364,6 @@ class LlmHooks extends BaseHooks
         return $this->returnSelectAudioModelField($args, 1);
     }
 
-    /**
-     * Build the LLM admin panel with quick links.
-     */
-    private function outputLlmPanel()
-    {
-        return new BaseStyleComponent("card", array(
-            "type" => "secondary",
-            "is_expanded" => true,
-            "is_collapsible" => true,
-            "title" => "LLM Panel",
-            "children" => array(
-                new BaseStyleComponent("button", array(
-                    "label" => "LLM Conversations",
-                    "url" => $this->get_link_url(LLM_ADMIN_PAGE_KEYWORD),
-                    "type" => "secondary",
-                    "css" => "btn-sm mr-3"
-                )),
-                new BaseStyleComponent("button", array(
-                    "label" => "LLM Scripts",
-                    "url" => $this->get_link_url(LLM_SCRIPTS_PAGE_KEYWORD),
-                    "type" => "secondary",
-                    "css" => "btn-sm"
-                ))
-            )
-        ));
-    }
-
-    /**
-     * Add LLM panel into CMS field rendering.
-     */
-    public function outputFieldPanel($args)
-    {
-        $field = $this->get_param_by_name($args, 'field');
-        $res = $this->execute_private_method($args);
-        if ($field['name'] == 'llm_panel') {
-            $panel = $this->outputLlmPanel();
-            if ($panel && $res) {
-                $children = $res->get_view()->get_children();
-                $children[] = $panel;
-                $res->get_view()->set_children($children);
-            }
-        }
-        return $res;
-    }
-
     /* =========================================================================
      * LLM SCRIPT JOB INTEGRATION HOOKS
      * ========================================================================= */
@@ -485,13 +442,7 @@ class LlmHooks extends BaseHooks
             return $this->execute_llm_script_from_job($args, $script_info);
         }
 
-        // PHP_BINARY returns httpd when running as Apache module;
-        // detect the CLI binary via multiple strategies
-        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
-            $php_bin = PHP_BINARY;
-        } else {
-            $php_bin = $this->find_php_cli_binary();
-        }
+        $php_bin = BaseLlmService::resolvePhpCliBinary();
 
         $is_absolute = ($php_bin[0] === '/' || (strlen($php_bin) > 1 && $php_bin[1] === ':'));
         if ($is_absolute && !file_exists($php_bin)) {
@@ -534,74 +485,6 @@ class LlmHooks extends BaseHooks
         }
 
         return true;
-    }
-
-    /**
-     * Locate the PHP CLI binary when running under a web SAPI (Apache/FPM).
-     * Tries multiple strategies: `which`, common paths, phpinfo-based hints.
-     *
-     * @return string Path to php CLI binary, or 'php' as last-resort fallback
-     */
-    private function find_php_cli_binary()
-    {
-        $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
-        $bin_name = $is_win ? 'php.exe' : 'php';
-
-        // Strategy 1: `which php` / `where php` (most reliable on Linux)
-        if (!$is_win) {
-            foreach (['command -v php', 'which php'] as $lookup_cmd) {
-                $which = @shell_exec($lookup_cmd . ' 2>/dev/null');
-                if ($which) {
-                    $which = trim($which);
-                    if ($which !== '' && file_exists($which)) {
-                        return $which;
-                    }
-                }
-            }
-        } else {
-            $where = @shell_exec('where php 2>NUL');
-            if ($where) {
-                $first_line = trim(strtok($where, "\n"));
-                if ($first_line !== '' && file_exists($first_line)) {
-                    return $first_line;
-                }
-            }
-        }
-
-        // Strategy 2: derive from extension_dir (works on Windows / some Linux)
-        $ext_dir = ini_get('extension_dir');
-        if ($ext_dir) {
-            $php_dir = dirname(rtrim($ext_dir, '/\\'));
-            $candidate = $php_dir . DIRECTORY_SEPARATOR . $bin_name;
-            if (file_exists($candidate)) {
-                return $candidate;
-            }
-            // On some Linux, extension_dir is /usr/lib/php/YYYYMMDD;
-            // go one level higher: /usr/lib/php/ -> try /usr/bin/php
-            $candidate2 = dirname($php_dir) . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . $bin_name;
-            if (file_exists($candidate2)) {
-                return $candidate2;
-            }
-        }
-
-        // Strategy 3: well-known Linux/macOS paths (incl. ondrej/php PPA layout)
-        if (!$is_win) {
-            $ver = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
-            $common_paths = [
-                '/usr/bin/php',
-                '/usr/bin/php' . $ver,
-                '/usr/bin/php' . PHP_MAJOR_VERSION,
-                '/usr/local/bin/php',
-                '/usr/local/bin/php' . $ver,
-            ];
-            foreach ($common_paths as $path) {
-                if (file_exists($path)) {
-                    return $path;
-                }
-            }
-        }
-
-        return $bin_name;
     }
 
     /**
@@ -759,6 +642,7 @@ class LlmHooks extends BaseHooks
     {
         $res = $this->execute_private_method($args);
         $res[] = LLM_SCRIPTS_PAGE_KEYWORD;
+        $res[] = LLM_MEMORY_PAGE_KEYWORD;
         return $res;
     }
 
@@ -774,6 +658,14 @@ class LlmHooks extends BaseHooks
 
     /**
      * Output select LLM result placement field (edit mode).
+     */
+    /**
+     * Build a CMS select component for LLM result placement (top/bottom/left/right).
+     *
+     * @param string $value    Current placement value.
+     * @param string $name     Form field name attribute.
+     * @param int    $disabled 1 to disable editing, 0 for editable.
+     * @return BaseStyleComponent Select component.
      */
     private function outputSelectLlmResultPlacementField($value, $name, $disabled)
     {
@@ -792,6 +684,13 @@ class LlmHooks extends BaseHooks
         ));
     }
 
+    /**
+     * Hook handler that injects the result-placement select into the CMS field output.
+     *
+     * @param array $args     Hook arguments with field metadata.
+     * @param int   $disabled 1 for view mode, 0 for edit mode.
+     * @return mixed Modified component tree with placement select appended.
+     */
     private function returnSelectLlmResultPlacementField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
@@ -814,11 +713,13 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /** @return mixed CMS edit-mode output for the LLM result placement field. */
     public function outputFieldLlmResultPlacementEdit($args)
     {
         return $this->returnSelectLlmResultPlacementField($args, 0);
     }
 
+    /** @return mixed CMS view-mode output for the LLM result placement field. */
     public function outputFieldLlmResultPlacementView($args)
     {
         return $this->returnSelectLlmResultPlacementField($args, 1);
@@ -826,6 +727,14 @@ class LlmHooks extends BaseHooks
 
     /**
      * Output select LLM result panel type field (edit mode).
+     */
+    /**
+     * Build a CMS select component for LLM result panel type (default/card/modal/collapse).
+     *
+     * @param string $value    Current panel value.
+     * @param string $name     Form field name attribute.
+     * @param int    $disabled 1 to disable editing, 0 for editable.
+     * @return BaseStyleComponent Select component.
      */
     private function outputSelectLlmResultPanelField($value, $name, $disabled)
     {
@@ -844,6 +753,13 @@ class LlmHooks extends BaseHooks
         ));
     }
 
+    /**
+     * Hook handler that injects the result-panel select into the CMS field output.
+     *
+     * @param array $args     Hook arguments with field metadata.
+     * @param int   $disabled 1 for view mode, 0 for edit mode.
+     * @return mixed Modified component tree with panel select appended.
+     */
     private function returnSelectLlmResultPanelField($args, $disabled)
     {
         $field = $this->get_param_by_name($args, 'field');
@@ -866,11 +782,13 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /** @return mixed CMS edit-mode output for the LLM result panel field. */
     public function outputFieldLlmResultPanelEdit($args)
     {
         return $this->returnSelectLlmResultPanelField($args, 0);
     }
 
+    /** @return mixed CMS view-mode output for the LLM result panel field. */
     public function outputFieldLlmResultPanelView($args)
     {
         return $this->returnSelectLlmResultPanelField($args, 1);
@@ -998,11 +916,6 @@ class LlmHooks extends BaseHooks
             return $res;
         }
 
-        $relation = $this->get_param_by_name($args, 'relation');
-        if ($relation !== RELATION_SECTION_FIELD) {
-            return $res;
-        }
-
         $field_id = (int)$this->get_param_by_name($args, 'id');
         if ($field_id <= 0) {
             return $res;
@@ -1016,7 +929,31 @@ class LlmHooks extends BaseHooks
             array(':id' => $field_id)
         );
 
-        if (!$field_info || ($field_info['type'] ?? '') !== 'llm_prompt') {
+        if (!$field_info) {
+            return $res;
+        }
+
+        $field_type = $field_info['type'] ?? '';
+        if ($field_type === 'llm_prompt') {
+            return $this->syncStyleFieldPromptOnCmsSave($args, $res, $field_id, $field_info);
+        }
+
+        return $res;
+    }
+
+    /**
+     * Sync a normal llm_prompt field save into prompt-lab version history.
+     *
+     * @param array $args
+     * @param mixed $res
+     * @param int $field_id
+     * @param array $field_info
+     * @return mixed
+     */
+    private function syncStyleFieldPromptOnCmsSave($args, $res, $field_id, $field_info)
+    {
+        $relation = $this->get_param_by_name($args, 'relation');
+        if ($relation !== RELATION_SECTION_FIELD) {
             return $res;
         }
 
@@ -1145,6 +1082,37 @@ class LlmHooks extends BaseHooks
         return $result;
     }
 
+    /**
+     * Persist CMS field content without re-entering CmsModel::update_db hooks.
+     *
+     * @param object $cms_model
+     * @param int $field_id
+     * @param int $language_id
+     * @param int $gender_id
+     * @param string $relation
+     * @param string $content
+     * @param string|null $meta
+     * @return void
+     */
+    private function persistCmsFieldContent($cms_model, $field_id, $language_id, $gender_id, $relation, $content, $meta = null)
+    {
+        if ($relation === RELATION_SECTION_FIELD) {
+            $cms_model->update_section_fields_db($field_id, $language_id, $gender_id, $content, null, $meta);
+            return;
+        }
+
+        if ($relation === RELATION_PAGE_FIELD) {
+            $insert = array(
+                'content' => $content,
+                'id_fields' => $field_id,
+                'id_languages' => $language_id,
+                'id_pages' => $cms_model->get_active_page_id()
+            );
+            $update = array('content' => $content);
+            $this->db->insert('pages_fields_translation', $insert, $update);
+        }
+    }
+
     /* LLM API Keys Manager Hooks *********************************************/
 
     /**
@@ -1259,6 +1227,466 @@ class LlmHooks extends BaseHooks
 
         return $res;
     }
+
+    /**
+     * Output select memory storage mode field.
+     */
+    /**
+     * Build a CMS select component for the memory storage mode, loading options from lookups.
+     *
+     * @param string $value    Current storage mode lookup code.
+     * @param string $name     Form field name attribute.
+     * @param int    $disabled 1 to disable editing, 0 for editable.
+     * @return BaseStyleComponent Select component with storage mode options.
+     */
+    private function outputSelectMemoryStorageModeField($value, $name, $disabled)
+    {
+        try {
+            $lookups = $this->db->query_db(
+                "SELECT lookup_code, lookup_value, lookup_description FROM lookups WHERE type_code = ? ORDER BY lookup_value",
+                array('llmMemoryStorageMode')
+            );
+            $items = array();
+            foreach ($lookups as $row) {
+                $items[] = array(
+                    'value' => $row['lookup_code'],
+                    'text' => $row['lookup_value'] . ' - ' . $row['lookup_description']
+                );
+            }
+        } catch (Exception $e) {
+            $items = array(
+                array('value' => 'memory_storage_both', 'text' => 'both'),
+                array('value' => 'memory_storage_record', 'text' => 'record'),
+                array('value' => 'memory_storage_log', 'text' => 'log'),
+            );
+        }
+
+        return new BaseStyleComponent("select", array(
+            "value" => $value ?: 'memory_storage_both',
+            "name" => $name,
+            "is_required" => 0,
+            "disabled" => $disabled,
+            "items" => $items
+        ));
+    }
+
+    /**
+     * Hook handler that injects the memory storage mode select into the CMS field output.
+     *
+     * @param array $args     Hook arguments with field metadata.
+     * @param int   $disabled 1 for view mode, 0 for edit mode.
+     * @return mixed Modified component tree with storage mode select appended.
+     */
+    private function returnSelectMemoryStorageModeField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        if ($field['name'] === 'llm_memory_storage_mode') {
+            $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+            $selectField = $this->outputSelectMemoryStorageModeField($field['content'], $field_name_prefix . "[content]", $disabled);
+
+            if ($selectField && $res) {
+                $children = $res->get_view()->get_children();
+                $children[] = $selectField;
+                $res->get_view()->set_children($children);
+            }
+        }
+
+        return $res;
+    }
+
+    /** @return mixed CMS edit-mode output for the memory storage mode field. */
+    public function outputFieldMemoryStorageModeEdit($args)
+    {
+        return $this->returnSelectMemoryStorageModeField($args, 0);
+    }
+
+    /** @return mixed CMS view-mode output for the memory storage mode field. */
+    public function outputFieldMemoryStorageModeView($args)
+    {
+        return $this->returnSelectMemoryStorageModeField($args, 1);
+    }
+
+    /* =========================================================================
+     * LLM MEMORY JOB INTEGRATION HOOKS
+     * ========================================================================= */
+
+    /**
+     * Execute LLM memory update task when job_type is llm_memory_update.
+     * Hook on Task::execute_task (priority 12).
+     *
+     * @param array $args Hook arguments
+     * @return bool
+     */
+    public function execute_memory_task($args)
+    {
+        if (($args['task_info']['config']['type'] ?? '') !== ACTION_JOB_TYPE_LLM_MEMORY_UPDATE) {
+            return $this->execute_private_method($args);
+        }
+
+        $config = $args['task_info']['config'];
+        $user_id = $args['user']['id_users'] ?? null;
+
+        if (!$user_id) {
+            $this->transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_MEMORY,
+                null, null, null, false,
+                "LLM Memory task: No user ID in job args; " . json_encode($args)
+            );
+            return false;
+        }
+
+        // UserInput::save_data builds $form_data with the table name in
+        // `form_name` and the inserted/updated record id inside
+        // `form_fields[ENTRY_RECORD_ID]`. Older code paths still occasionally
+        // populate `table_name` / `record_id` at the top level, so accept both.
+        $form_fields = $config['form_data']['form_fields'] ?? [];
+        $form_table = (string)(
+            $config['form_data']['table_name']
+            ?? $config['form_data']['form_name']
+            ?? ''
+        );
+        $record_id = $config['form_data']['record_id']
+            ?? ($form_fields[ENTRY_RECORD_ID] ?? null);
+
+        if ($form_table !== '') {
+            $memory_config = new LlmMemoryConfigService($this->services);
+            $blocked_tables = [
+                $memory_config->getCurrentTableName(),
+                $memory_config->getHistoryTableName(),
+            ];
+            if (in_array($form_table, $blocked_tables, true)) {
+                $this->transaction->add_transaction(
+                    transactionTypes_insert,
+                    TRANSACTION_BY_LLM_MEMORY,
+                    $user_id, null, null, false,
+                    "LLM Memory task BLOCKED: form table is a memory table (infinite loop prevention); table=" . $form_table
+                );
+                return true;
+            }
+        }
+
+        $rule_ids = $config['memory_rule_id'] ?? $config['memory_rule_ids'] ?? [];
+        if (!is_array($rule_ids)) {
+            $rule_ids = array_filter(array_map('trim', explode(',', (string)$rule_ids)));
+        }
+        $rule_ids = array_values(array_filter(array_map('intval', $rule_ids)));
+
+        $run_async = !empty($config['run_async']);
+
+        $trigger_service = new LlmMemoryTriggerService($this->services);
+        $normalized = $trigger_service->normalizeFormActionPayload([
+            'form_fields'  => $form_fields,
+            'form_name'    => $config['form_data']['form_name'] ?? $form_table,
+            'table_name'   => $form_table,
+            'trigger_type' => $config['trigger_type'] ?? 'finished',
+            'record_id'    => $record_id,
+        ], $user_id);
+
+        if (!empty($config['memory_key_override'])) {
+            $normalized['memory_key_override'] = $config['memory_key_override'];
+        }
+        if (!empty($config['force_storage_mode'])) {
+            $normalized['force_storage_mode'] = $config['force_storage_mode'];
+        }
+
+        if (!empty($rule_ids)) {
+            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async);
+        } else {
+            $this->transaction->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_MEMORY,
+                null,
+                null,
+                null,
+                false,
+                "LLM Memory task skipped: no explicit rule configured; " . json_encode($config)
+            );
+            return true;
+        }
+
+        if (defined('DEBUG') && DEBUG) {
+            error_log('LLM Memory task: dispatched rules: ' . implode(', ', $dispatched) . ' for user ' . $user_id);
+        }
+
+        return true;
+    }
+
+    /**
+     * Add llm_memory_update option to jobConfig JSON schema.
+     * Hook on JobConfigView::get_json_schema (priority 12).
+     */
+    public function get_memory_json_schema($args)
+    {
+        $res = (string)$this->execute_private_method($args);
+        $res = json_decode($res, true);
+
+        $config_service = new LlmMemoryConfigService($this->services);
+        $rules = $config_service->getRules();
+
+        $rule_titles = array();
+        $rule_ids = array();
+        foreach ($rules as $rule) {
+            if (($rule['source_type'] ?? '') !== LLM_MEMORY_SOURCE_FORM_ACTION) {
+                continue;
+            }
+            $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
+            $rule_titles[] = $label . (!empty($rule['enabled']) ? '' : ' (disabled)');
+            $rule_ids[] = (string)(int)($rule['id'] ?? 0);
+        }
+        $default_rule_id = !empty($rule_ids) ? $rule_ids[0] : '';
+
+        $dep = array(
+            "job_type" => array(ACTION_JOB_TYPE_LLM_MEMORY_UPDATE)
+        );
+
+        $memory_rule_field = array(
+            "type" => "string",
+            "enum" => $rule_ids,
+            "options" => array(
+                "grid_columns" => 12,
+                "dependencies" => $dep,
+                "enum_titles" => $rule_titles
+            ),
+            "default" => $default_rule_id,
+            "title" => "Memory Rule",
+            "description" => "Choose which memory rule this action should run."
+        );
+
+        $run_async_field = array(
+            "type" => "boolean",
+            "format" => "checkbox",
+            "default" => true,
+            "options" => array("grid_columns" => 12, "dependencies" => $dep),
+            "title" => "Run async",
+            "description" => "When checked, LLM summarization runs in a background worker."
+        );
+
+        $res['definitions']['job_ref']['properties']['job_type']['enum'][] = ACTION_JOB_TYPE_LLM_MEMORY_UPDATE;
+        $res['definitions']['job_ref']['properties']['job_type']['options']['enum_titles'][] = "LLM Memory Update";
+        $res['definitions']['job_ref']['properties']['memory_rule_id'] = $memory_rule_field;
+        $res['definitions']['job_ref']['properties']['run_async'] = $run_async_field;
+
+        return json_encode($res);
+    }
+
+    /**
+     * Build task config for LLM memory update jobs.
+     * Hook on UserInput::get_task_config (priority 12).
+     */
+    public function get_memory_task_config($args)
+    {
+        $job = $args['job'];
+        if (($job['job_type'] ?? '') !== ACTION_JOB_TYPE_LLM_MEMORY_UPDATE) {
+            return $this->execute_private_method($args);
+        }
+
+        $description = !empty($job['job_name'])
+            ? $job['job_name']
+            : 'LLM Memory Update (form: ' . ($args['form_data']['form_name'] ?? 'unknown') . ')';
+
+        return array(
+            "type" => $job[ACTION_JOB_TYPE],
+            "description" => $description,
+            "memory_rule_id" => (string)($job['memory_rule_id'] ?? ''),
+            "memory_key_override" => $job['memory_key_override'] ?? '',
+            "force_storage_mode" => $job['force_storage_mode'] ?? '',
+            "run_async" => !array_key_exists('run_async', $job) || !empty($job['run_async']),
+            "trigger_type" => $job['trigger_type'] ?? 'finished',
+            "form_data" => $args['form_data'],
+            "id_users" => $_SESSION['id_user'] ?? null
+        );
+    }
+
+    /**
+     * Return jobTypes_task for llm_memory_update job type.
+     * Hook on UserInput::get_job_type (priority 12).
+     */
+    public function get_memory_job_type($args)
+    {
+        $res = $this->execute_private_method($args);
+        if (($args['job']['job_type'] ?? '') === ACTION_JOB_TYPE_LLM_MEMORY_UPDATE) {
+            return jobTypes_task;
+        }
+        return $res;
+    }
+
+    /* =========================================================================
+     * LOGIN / PROFILE MEMORY TRIGGER HOOKS
+     * ========================================================================= */
+
+    /**
+     * Trigger memory update after successful login.
+     * Hook on Login::update_timestamp (hook_overwrite_return, priority 20).
+     * Wraps the original method: runs it first, then dispatches memory update
+     * only if the user session exists (indicating successful login).
+     */
+    public function onLoginMemoryTrigger($args)
+    {
+        $user_id = $_SESSION['id_user'] ?? null;
+        $res = $this->execute_private_method($args);
+        if ($res === false) {
+            return $res;
+        }
+
+        try {
+            if (!$user_id) {
+                return $res;
+            }
+
+            $config_service = new LlmMemoryConfigService($this->services);
+            if (!$config_service->isMemoryEnabled()) {
+                return $res;
+            }
+
+            $trigger_service = new LlmMemoryTriggerService($this->services, $config_service);
+            $login_at = date('Y-m-d H:i:s');
+            $profile = $this->buildLoginMemoryProfile($user_id);
+            $normalized = $trigger_service->normalizeLoginPayload($user_id, $profile, $login_at);
+            $trigger_service->dispatchMemoryUpdate($normalized);
+        } catch (Exception $e) {
+            error_log('LLM Memory: login trigger failed: ' . $e->getMessage());
+        }
+
+        return $res;
+    }
+
+    /**
+     * Build a stable profile snapshot for login-triggered memory updates.
+     * Excludes the system-provided last_login field because the rule prompt
+     * should infer prior login timing from memory/history instead.
+     *
+     * @param int $user_id
+     * @return array
+     */
+    private function buildLoginMemoryProfile($user_id)
+    {
+        $profile = array();
+
+        try {
+            $user = $this->db->query_db_first(
+                "SELECT * FROM view_users WHERE id = :id LIMIT 1",
+                array(':id' => $user_id)
+            );
+
+            if (!$user) {
+                $user = $this->db->query_db_first(
+                    "SELECT id, name, email, blocked FROM users WHERE id = :id LIMIT 1",
+                    array(':id' => $user_id)
+                );
+            }
+
+            if (!is_array($user)) {
+                return $profile;
+            }
+
+            $profile = array(
+                'user_name' => (string)($user['name'] ?? ''),
+                'email' => (string)($user['email'] ?? ''),
+                'user_code' => (string)($user['code'] ?? ''),
+                'status' => (string)($user['status'] ?? ''),
+                'status_description' => (string)($user['description'] ?? ''),
+                'groups' => (string)($user['groups'] ?? ''),
+                'user_type' => (string)($user['user_type'] ?? ''),
+                'user_type_code' => (string)($user['user_type_code'] ?? ''),
+                'blocked' => isset($user['blocked']) ? (string)$user['blocked'] : '',
+                'user_activity_count' => isset($user['user_activity']) ? (string)$user['user_activity'] : '',
+                'distinct_url_count' => isset($user['ac']) ? (string)$user['ac'] : '',
+            );
+
+            $profile_snapshot = $user;
+            unset($profile_snapshot['last_login']);
+            $profile['profile_json'] = json_encode($profile_snapshot, JSON_UNESCAPED_SLASHES);
+        } catch (Exception $e) {
+            error_log('LLM Memory: failed to build login profile: ' . $e->getMessage());
+        }
+
+        return $profile;
+    }
+
+    /**
+     * Trigger memory update after profile name change.
+     * Hook on ProfileModel::change_user_name (hook_overwrite_return, priority 20).
+     * Captures the old name before running the original method and dispatches
+     * only after a confirmed successful rename.
+     */
+    public function onProfileNameChangeMemoryTrigger($args)
+    {
+        $old_name = '';
+        try {
+            $old_name = $this->db->fetch_user_name() ?: '';
+        } catch (Exception $e) {
+            // best-effort only
+        }
+
+        $res = $this->execute_private_method($args);
+        if ($res !== true) {
+            return $res;
+        }
+
+        try {
+            $config_service = new LlmMemoryConfigService($this->services);
+            if (!$config_service->isMemoryEnabled()) {
+                return $res;
+            }
+
+            $user_id = (int)($_SESSION['id_user'] ?? 0);
+            if ($user_id <= 0) {
+                return $res;
+            }
+
+            $new_name = (string)($args['original_parameters'][0] ?? '');
+
+            $trigger_service = new LlmMemoryTriggerService($this->services, $config_service);
+            $normalized = $trigger_service->normalizeProfileNamePayload($user_id, $old_name, $new_name);
+            $trigger_service->dispatchMemoryUpdate($normalized);
+        } catch (Exception $e) {
+            error_log('LLM Memory: profile name change trigger failed: ' . $e->getMessage());
+        }
+
+        return $res;
+    }
+
+    /**
+     * Clean LLM-owned user data when core user input cleanup runs.
+     * Hook on UserModel::clean_user_data (hook_overwrite_return, priority 20).
+     *
+     * Core cleanup already removes user activity, scheduled jobs, and all dataRows.
+     * This hook removes the remaining LLM-specific user artifacts that live
+     * outside the generic dataRows tables.
+     */
+    public function onCleanUserDataLlmCleanup($args)
+    {
+        $uid = (int)($args['uid'] ?? 0);
+        $res = $this->execute_private_method($args);
+        if ($res === false || $uid <= 0) {
+            return $res;
+        }
+
+        try {
+            $this->db->begin_transaction();
+
+            $cleanup_ok = true;
+            $cleanup_ok &= $this->db->remove_by_fk('refresh_events', 'id_users', $uid);
+            $cleanup_ok &= $this->db->remove_by_fk('llmConversations', 'id_users', $uid);
+
+            if (!$cleanup_ok) {
+                $this->db->rollback();
+                error_log('LLM cleanup after clean_user_data failed for user ' . $uid);
+                return false;
+            }
+
+            $this->db->commit();
+            return true;
+        } catch (Exception $e) {
+            $this->db->rollback();
+            error_log('LLM cleanup after clean_user_data exception for user ' . $uid . ': ' . $e->getMessage());
+            return false;
+        }
+    }
+
 
 }
 ?>

@@ -1,3 +1,11 @@
+/**
+ * Evaluation Summary Cards — high-level metrics for an evaluation run.
+ *
+ * Displays pass/fail counts, average scores, per-definition breakdowns,
+ * and optional baseline delta badges in a responsive card grid.
+ *
+ * @module components/evaluations/EvaluationSummaryCards
+ */
 import React from 'react';
 import { Badge } from 'react-bootstrap';
 import type { PromptEvalRunResult } from './evaluationTypes';
@@ -13,6 +21,7 @@ interface EvaluationSummaryCardsProps {
   } | null;
 }
 
+/** EvaluationSummaryCards component. */
 export const EvaluationSummaryCards: React.FC<EvaluationSummaryCardsProps> = ({ summary, baselineSummary }) => (
   <div className="d-flex flex-wrap">
     <Badge variant="secondary" className="mr-2 mb-2">Dataset Cases: {summary.dataset_case_count ?? summary.total_cases ?? 0}</Badge>

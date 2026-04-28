@@ -3,15 +3,40 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+/**
+ * LLM Dataset AI Import Mapper Service
+ *
+ * Normalizes and maps the output of the AI import parser into the standard
+ * dataset case schema. Handles column mapping, field normalization,
+ * input/output payload construction, and expected label extraction.
+ *
+ * This is a pure-logic service (no DB access) that transforms parsed data
+ * into structures compatible with LlmDatasetService::addCase().
+ *
+ * @package LLM Plugin
+ * @see LlmDatasetAiImportParserService For the LLM-powered parsing step
+ * @see LlmDatasetBatchImportService For bulk import orchestration
+ */
 class LlmDatasetAiImportMapperService
 {
+    /** @var LlmDatasetService For metadata lookups and normalization helpers */
     private $dataset_service;
 
+    /** @param LlmDatasetService $dataset_service Dataset service for metadata lookups. */
     public function __construct($dataset_service)
     {
         $this->dataset_service = $dataset_service;
     }
 
+    /**
+     * Normalize a full AI-parsed import payload into standard dataset case structures.
+     *
+     * @param array  $payload            Parsed output with 'cases' and optional 'mapping'.
+     * @param array  $descriptor         Owner descriptor for the target prompt.
+     * @param string $execution_profile  Target execution profile code.
+     * @param array  $runtime_overrides  Runtime parameter overrides.
+     * @return array{mapping: array, cases: array, warnings: string[]}
+     */
     public function normalizeParsedPayload($payload, $descriptor, $execution_profile, $runtime_overrides = array())
     {
         $payload = is_array($payload) ? $payload : array();
@@ -44,6 +69,15 @@ class LlmDatasetAiImportMapperService
         );
     }
 
+    /**
+     * Normalize one parsed row into a dataset case payload ready for addCase().
+     *
+     * @param array  $row                Raw parsed case row.
+     * @param array  $descriptor         Owner descriptor.
+     * @param string $execution_profile  Execution profile code.
+     * @param array  $runtime_overrides  Runtime overrides.
+     * @return array|null Normalized case payload, or null if row has no material.
+     */
     public function normalizeSingleRow($row, $descriptor, $execution_profile, $runtime_overrides = array())
     {
         $row = is_array($row) ? $row : array();
@@ -94,6 +128,12 @@ class LlmDatasetAiImportMapperService
         );
     }
 
+    /**
+     * Extract template variables from a parsed row, checking nested input_payload, variables, inputs, then individual keys.
+     *
+     * @param array $row Parsed case row.
+     * @return array Key-value pairs of template variables.
+     */
     private function normalizeVariables($row)
     {
         if (is_array($row['input_payload']['variables'] ?? null)) {
@@ -130,6 +170,12 @@ class LlmDatasetAiImportMapperService
         return $variables;
     }
 
+    /**
+     * Extract expected output from a parsed row, checking structured and text-based keys.
+     *
+     * @param array $row Parsed case row.
+     * @return array{assistant_text: string}|null Structured expected output, or null.
+     */
     private function normalizeExpectedOutput($row)
     {
         if (is_array($row['expected_output'] ?? null)) {
@@ -152,6 +198,12 @@ class LlmDatasetAiImportMapperService
         return array('assistant_text' => $text);
     }
 
+    /**
+     * Deduplicate and trim a list of tag strings.
+     *
+     * @param array $tags Raw tag values.
+     * @return string[] Unique, non-empty trimmed tags.
+     */
     private function normalizeTags($tags)
     {
         if (!is_array($tags)) {
@@ -169,6 +221,12 @@ class LlmDatasetAiImportMapperService
         return array_values(array_unique($normalized));
     }
 
+    /**
+     * Normalize a message history array via the dataset service's normalizer.
+     *
+     * @param array $messages Raw message objects.
+     * @return array Normalized message array.
+     */
     private function normalizeMessages($messages)
     {
         if (!is_array($messages)) {
@@ -178,6 +236,16 @@ class LlmDatasetAiImportMapperService
         return $this->dataset_service->normalizeMessages($messages);
     }
 
+    /**
+     * Re-map imported variables to match the prompt template's placeholders for form_runtime profiles.
+     *
+     * Uses alias matching and fuzzy scoring to find the best variable-to-placeholder mapping.
+     *
+     * @param array  $variables         Raw variable key-value pairs.
+     * @param array  $descriptor        Owner descriptor for template resolution.
+     * @param string $execution_profile Execution profile code.
+     * @return array Mapped variables aligned to template placeholders.
+     */
     private function mapVariablesForExecutionProfile($variables, $descriptor, $execution_profile)
     {
         $variables = is_array($variables) ? $variables : array();
@@ -209,6 +277,13 @@ class LlmDatasetAiImportMapperService
         return !empty($mapped) ? $mapped : $variables;
     }
 
+    /**
+     * Find the best matching variable value for a placeholder using aliases then fuzzy scoring.
+     *
+     * @param string $placeholder Template placeholder name.
+     * @param array  $variables   Available variable key-value pairs.
+     * @return string|null Best matching value, or null.
+     */
     private function resolveBestVariableMatch($placeholder, $variables)
     {
         $placeholder = strtolower(trim((string)$placeholder));
@@ -257,6 +332,13 @@ class LlmDatasetAiImportMapperService
         return null;
     }
 
+    /**
+     * Score similarity between a placeholder and a candidate key using token overlap and substring matching.
+     *
+     * @param string $placeholder   Normalized placeholder name.
+     * @param string $candidate_key Normalized candidate variable key.
+     * @return int Score: 100 for exact match, token overlap count, 1 for substring match, 0 for no match.
+     */
     private function scoreKeySimilarity($placeholder, $candidate_key)
     {
         if ($placeholder === $candidate_key) {
@@ -280,6 +362,12 @@ class LlmDatasetAiImportMapperService
         return $overlap;
     }
 
+    /**
+     * Return the first non-empty scalar (or JSON-encoded) value from an associative array.
+     *
+     * @param array $values Key-value pairs.
+     * @return string First non-empty value as string, or empty string.
+     */
     private function firstNonEmptyScalarValue($values)
     {
         foreach ((array)$values as $value) {

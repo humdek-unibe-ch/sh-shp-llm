@@ -40,6 +40,7 @@ class ModuleLlmScriptController extends BaseController
         $this->handleRequest();
     }
 
+    /** Route the incoming AJAX request to the appropriate handler based on 'action' parameter. */
     private function handleRequest()
     {
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
@@ -96,6 +97,7 @@ class ModuleLlmScriptController extends BaseController
         return $this->acl->$method($_SESSION['id_user'], $this->page_id);
     }
 
+    /** Return all LLM scripts as JSON; requires select access. */
     private function handleList()
     {
         if (!$this->checkAccess('select')) {
@@ -110,6 +112,7 @@ class ModuleLlmScriptController extends BaseController
         }
     }
 
+    /** Return a single LLM script by ID; requires select access. */
     private function handleGet()
     {
         if (!$this->checkAccess('select')) {
@@ -133,6 +136,7 @@ class ModuleLlmScriptController extends BaseController
         }
     }
 
+    /** Create a new LLM script with default values; requires insert access. */
     private function handleCreate()
     {
         if (!$this->checkAccess('insert')) {
@@ -152,6 +156,7 @@ class ModuleLlmScriptController extends BaseController
         }
     }
 
+    /** Update an existing LLM script from POST data; requires update access. */
     private function handleUpdate()
     {
         if (!$this->checkAccess('update')) {
@@ -192,6 +197,7 @@ class ModuleLlmScriptController extends BaseController
         }
     }
 
+    /** Delete an LLM script by ID; requires delete access. */
     private function handleDelete()
     {
         if (!$this->checkAccess('delete')) {
@@ -215,6 +221,7 @@ class ModuleLlmScriptController extends BaseController
         }
     }
 
+    /** Execute a script test run with provided variables and return the LLM response. */
     private function handleTest()
     {
         if (!$this->checkAccess('update')) {

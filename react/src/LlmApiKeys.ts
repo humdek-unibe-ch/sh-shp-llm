@@ -19,11 +19,13 @@ interface ServerEntry {
   api_key: string;
 }
 
+/** maskKey function. */
 function maskKey(key: string): string {
   if (!key || key.length < 8) return '********';
   return key.substring(0, 4) + '****' + key.substring(key.length - 4);
 }
 
+/** initApiKeysManager function. */
 function initApiKeysManager(container: HTMLElement): void {
   const textarea = container.querySelector<HTMLTextAreaElement>('.llm-api-keys-value');
   const listEl = container.querySelector<HTMLElement>('.llm-api-keys-list');
@@ -32,11 +34,13 @@ function initApiKeysManager(container: HTMLElement): void {
 
   const isDisabled = container.dataset.disabled === '1';
 
+  /** Fetch or retrieve get data data. */
   function getData(): ServerEntry[] {
     try { return JSON.parse(textarea!.value) || []; }
     catch { return []; }
   }
 
+  /** setData function. */
   function setData(data: ServerEntry[]): void {
     textarea!.value = JSON.stringify(data);
     // CMS UI dirty-state tracking listens to change/input on form fields.
@@ -48,6 +52,7 @@ function initApiKeysManager(container: HTMLElement): void {
     render();
   }
 
+  /** Render render. */
   function render(): void {
     const data = getData();
     listEl!.innerHTML = '';
@@ -115,6 +120,7 @@ function initApiKeysManager(container: HTMLElement): void {
     });
   }
 
+  /** showForm function. */
   function showForm(entry: Partial<ServerEntry>, onSave: (e: ServerEntry) => void): void {
     const overlay = document.createElement('div');
     overlay.className = 'llm-apk-card llm-apk-form';
@@ -124,6 +130,7 @@ function initApiKeysManager(container: HTMLElement): void {
     title.textContent = entry.name ? 'Edit Server' : 'Add Server';
     overlay.appendChild(title);
 
+    /** makeField function. */
     function makeField(label: string, cls: string, placeholder: string, value: string): HTMLDivElement {
       const group = document.createElement('div');
       group.className = 'form-group mb-2';
@@ -173,6 +180,7 @@ function initApiKeysManager(container: HTMLElement): void {
     overlay.querySelector<HTMLInputElement>('.llm-f-name')!.focus();
   }
 
+  /** editEntry function. */
   function editEntry(idx: number): void {
     const data = getData();
     listEl!.querySelectorAll('.llm-apk-form').forEach(f => f.remove());
@@ -182,6 +190,7 @@ function initApiKeysManager(container: HTMLElement): void {
     });
   }
 
+  /** deleteEntry function. */
   function deleteEntry(idx: number): void {
     const doDelete = () => {
       const data = getData();
@@ -221,6 +230,7 @@ function initApiKeysManager(container: HTMLElement): void {
   render();
 }
 
+/** initAll function. */
 function initAll(): void {
   document.querySelectorAll<HTMLElement>('.llm-api-keys-manager').forEach(el => {
     if (el.dataset.initialized === '1') return;

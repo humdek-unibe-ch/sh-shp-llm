@@ -8,13 +8,27 @@ require_once __DIR__ . '/LlmService.php';
 require_once __DIR__ . '/LlmPromptStandardService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
+/**
+ * LLM Prompt Builder Service
+ *
+ * Uses LLM calls to auto-generate or improve prompt text for the Prompt
+ * Builder UI. Analyses the user's intent, existing prompt, and target
+ * profile to produce scaffolded system-prompt content with variable
+ * placeholders and schema guidance.
+ *
+ * @package LLM Plugin
+ * @see LlmPromptRegistryService For prompt CRUD that stores the result
+ * @see LlmPromptStandardService For scaffold templates and default labels
+ */
 class LlmPromptBuilderService extends BaseLlmService
 {
-    /** @var LlmService */
+    /** @var LlmService Core LLM service for generation calls */
     private $llm_service;
-    /** @var LlmPromptAssetLoader */
+
+    /** @var LlmPromptAssetLoader Loads builder prompt templates */
     private $prompt_assets;
-    /** @var LlmPromptStandardService */
+
+    /** @var LlmPromptStandardService Provides scaffold and default values */
     private $standard_service;
 
     public function __construct($services)
@@ -113,6 +127,12 @@ class LlmPromptBuilderService extends BaseLlmService
         );
     }
 
+    /**
+     * Normalize dataset example cases into a uniform structure for the prompt builder context.
+     *
+     * @param array $examples Raw example rows from dataset cases.
+     * @return array Normalized examples with student_input, approved/expected_response, tags, etc.
+     */
     private function normalizeExamplesForBuilder($examples)
     {
         $normalized = array();
@@ -138,6 +158,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return $normalized;
     }
 
+    /**
+     * Extract the student/user input text from an example's input_payload_json, trying variables then form_data.
+     *
+     * @param array $example Dataset case row.
+     * @return string Extracted input text, or empty string.
+     */
     private function extractExampleStudentInput($example)
     {
         $payload = $this->decodeJsonAssoc($example['input_payload_json'] ?? null);
@@ -158,6 +184,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return $this->extractTextFromPayloadValue($payload);
     }
 
+    /**
+     * Extract the approved (human-reviewed) response text from an example, falling back to expected output.
+     *
+     * @param array $example Dataset case row.
+     * @return string Approved response text, or empty string.
+     */
     private function extractExampleApprovedResponse($example)
     {
         $normalized_output = $this->decodeJsonAssoc($example['normalized_output_json'] ?? null);
@@ -175,6 +207,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return $this->extractExampleExpectedResponse($example);
     }
 
+    /**
+     * Extract the expected response text from an example's expected_output_json.
+     *
+     * @param array $example Dataset case row.
+     * @return string Expected response text, or empty string.
+     */
     private function extractExampleExpectedResponse($example)
     {
         $expected_output = $this->decodeJsonAssoc($example['expected_output_json'] ?? null);
@@ -192,6 +230,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return $this->extractTextFromPayloadValue($expected_output);
     }
 
+    /**
+     * Decode a JSON string into an associative array; returns null on failure.
+     *
+     * @param string|null $value JSON string.
+     * @return array|null Decoded associative array, or null.
+     */
     private function decodeJsonAssoc($value)
     {
         if (!is_string($value) || trim($value) === '') {
@@ -206,6 +250,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return $decoded;
     }
 
+    /**
+     * Decode a JSON string into a flat list of non-empty trimmed strings.
+     *
+     * @param string|null $value JSON-encoded array of strings.
+     * @return string[] Decoded list, or empty array on failure.
+     */
     private function decodeJsonList($value)
     {
         if (!is_string($value) || trim($value) === '') {
@@ -224,6 +274,12 @@ class LlmPromptBuilderService extends BaseLlmService
         }));
     }
 
+    /**
+     * Extract readable text from an LLM output payload, trying standard keys then parsed_response text_blocks.
+     *
+     * @param array|null $payload Decoded output payload.
+     * @return string Extracted text, or empty string.
+     */
     private function extractTextFromOutputPayload($payload)
     {
         if (!is_array($payload)) {
@@ -252,6 +308,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return $this->extractTextFromPayloadValue($payload);
     }
 
+    /**
+     * Recursively extract the first non-empty text from a payload value, checking priority keys first.
+     *
+     * @param mixed $value String, associative array, or nested payload.
+     * @return string First found text, or empty string.
+     */
     private function extractTextFromPayloadValue($value)
     {
         if (is_string($value)) {
@@ -295,6 +357,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return '';
     }
 
+    /**
+     * Normalize whitespace in example text: collapse spaces/tabs, limit consecutive newlines, trim.
+     *
+     * @param string $value Raw text.
+     * @return string Cleaned text.
+     */
     private function cleanExampleText($value)
     {
         $text = trim((string)$value);
@@ -309,6 +377,12 @@ class LlmPromptBuilderService extends BaseLlmService
         return trim((string)$text);
     }
 
+    /**
+     * Parse the LLM's builder response (possibly wrapped in markdown code fences) into a structured result.
+     *
+     * @param string|null $content Raw LLM response content.
+     * @return array{prompt_template: string, variables: array, notes: string[], change_summary: string}|null
+     */
     private function decodeBuilderResponse($content)
     {
         if (!is_string($content) || trim($content) === '') {
@@ -343,6 +417,17 @@ class LlmPromptBuilderService extends BaseLlmService
         );
     }
 
+    /**
+     * Retrieve or create a dedicated conversation record for the prompt builder session.
+     *
+     * @param int         $user_id    Current user ID.
+     * @param string      $model_name LLM model identifier.
+     * @param float       $temperature Model temperature.
+     * @param int         $max_tokens  Max response tokens.
+     * @param int|null    $section_id  CMS section ID (null for script-level).
+     * @param string|null $prompt_slot Prompt slot name (e.g., 'system_prompt').
+     * @return int Conversation ID.
+     */
     private function getOrCreatePromptBuilderConversation($user_id, $model_name, $temperature, $max_tokens, $section_id, $prompt_slot)
     {
         $title = '[Prompt Builder] ' . ($prompt_slot ?: 'prompt');

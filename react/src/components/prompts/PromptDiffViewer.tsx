@@ -1,3 +1,11 @@
+/**
+ * Prompt Diff Viewer — Monaco-based side-by-side diff rendering.
+ *
+ * Uses Monaco's `createDiffEditor` for rich inline diffs. Falls back
+ * to a plain text comparison when Monaco is not loaded.
+ *
+ * @module components/prompts/PromptDiffViewer
+ */
 import React, { useEffect, useRef, useState } from 'react';
 
 declare const monaco: any;
@@ -12,6 +20,7 @@ interface PromptDiffViewerProps {
   onRightContentChange?: (value: string) => void;
 }
 
+/** PromptDiffViewer component. */
 export const PromptDiffViewer: React.FC<PromptDiffViewerProps> = ({
   leftContent,
   rightContent,

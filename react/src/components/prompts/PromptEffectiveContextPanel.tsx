@@ -1,3 +1,11 @@
+/**
+ * Prompt Effective Context Panel — inspects the full API context sent to the LLM.
+ *
+ * Shows the assembled system message, conversation history, and runtime
+ * values as a collapsible JSON tree. Useful for debugging prompt behaviour.
+ *
+ * @module components/prompts/PromptEffectiveContextPanel
+ */
 import React, { useState } from 'react';
 import { Badge, Button } from 'react-bootstrap';
 import { JsonInspector } from '../shared/JsonInspector';
@@ -9,6 +17,7 @@ interface PromptEffectiveContextPanelProps {
   colorIndex?: number;
 }
 
+/** stringify function. */
 function stringify(value: unknown): string {
   if (typeof value === 'string') {
     return value;
@@ -21,6 +30,7 @@ function stringify(value: unknown): string {
   }
 }
 
+/** Panel component for prompt effective context panel. */
 export const PromptEffectiveContextPanel: React.FC<PromptEffectiveContextPanelProps> = ({
   effectiveContext,
   title = 'Effective Context',

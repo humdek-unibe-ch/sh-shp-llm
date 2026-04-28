@@ -64,6 +64,7 @@ function isValidated(message: Message): boolean {
   return true;
 }
 
+/** AdminMessageList component. */
 export const AdminMessageList: React.FC<AdminMessageListProps> = ({
   messages,
   formatDate,
@@ -85,8 +86,8 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
           parseStructuredResponse(message.content) !== null ||
           parseFormDefinition(message.content) !== null
         );
-        const preferJsonInspector = !canRenderStructured &&
-          (parsedJsonContent !== null || shouldRenderAsJsonInspector(message.content));
+        const preferJsonInspector = parsedJsonContent !== null ||
+          (!canRenderStructured && shouldRenderAsJsonInspector(message.content));
         
         const previousAssistantFormDef = isUser
           ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)

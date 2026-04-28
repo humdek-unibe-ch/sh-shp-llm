@@ -1,3 +1,13 @@
+/**
+ * LLM Form Panel — renders the LLM-enhanced form interface.
+ *
+ * Manages the chat-style interaction for form-mode LLM components:
+ * sends user input, receives structured JSON responses that populate
+ * form fields, and renders results through a portal into the parent
+ * SelfHelp form section.
+ *
+ * @module components/styles/form/LlmFormPanel
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LlmFormConfig, LlmFormResult, LlmResultMeta } from '../../../types/form';
@@ -9,10 +19,12 @@ interface LlmFormPanelProps {
   formName: string;
 }
 
+/** Fetch or retrieve get main form data. */
 function getMainForm(container: HTMLElement): HTMLFormElement | null {
   return container.querySelector('form.selfHelp-form') as HTMLFormElement | null;
 }
 
+/** syncEditorValuesToForm function. */
 function syncEditorValuesToForm(form: HTMLFormElement): void {
   const textareas = form.querySelectorAll('textarea');
   textareas.forEach((ta) => {
@@ -27,6 +39,7 @@ function syncEditorValuesToForm(form: HTMLFormElement): void {
   });
 }
 
+/** hasMeaningfulValue function. */
 function hasMeaningfulValue(value: FormDataEntryValue | null | undefined): boolean {
   if (value === null || value === undefined) return false;
   const raw = String(value).trim();
@@ -34,6 +47,7 @@ function hasMeaningfulValue(value: FormDataEntryValue | null | undefined): boole
   return raw.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim() !== '';
 }
 
+/** areContextFieldsFilled function. */
 function areContextFieldsFilled(form: HTMLFormElement, contextFieldKeys: string[]): boolean {
   if (!contextFieldKeys || contextFieldKeys.length === 0) return true;
 
@@ -50,6 +64,7 @@ function areContextFieldsFilled(form: HTMLFormElement, contextFieldKeys: string[
   return true;
 }
 
+/** showFormAlert function. */
 function showFormAlert(container: HTMLElement, type: string, message: string): void {
   const existing = container.querySelector('.llm-form-alert');
   if (existing) existing.remove();
@@ -70,6 +85,7 @@ function showFormAlert(container: HTMLElement, type: string, message: string): v
   }, 5000);
 }
 
+/** Panel component for llm form panel. */
 export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContainer, formName }) => {
   const hasPreviousResult = config.llmShowPreviousResult && !!config.previousResult;
   const [result, setResult] = useState<string | null>(hasPreviousResult ? config.previousResult : null);
@@ -81,7 +97,11 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   const [feedbackButtonEnabled, setFeedbackButtonEnabled] = useState(false);
   const [feedbackButtonHost, setFeedbackButtonHost] = useState<HTMLElement | null>(null);
 
-  const recordIdRef = useRef<string | null>(null);
+  const recordIdRef = useRef<string | null>(
+    config.currentRecordId !== undefined && config.currentRecordId !== null
+      ? String(config.currentRecordId)
+      : null
+  );
   const requestInFlightRef = useRef(false);
   const disabledElementsRef = useRef<HTMLElement[]>([]);
   const isManualMode = config.manualFeedbackEnabled;
@@ -138,6 +158,9 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, []);
 
   const updateResultFromResponse = useCallback((data: LlmFormResult, fallbackError: string) => {
+    if (data?.llm_meta?.record_id !== undefined && data.llm_meta.record_id !== null) {
+      recordIdRef.current = String(data.llm_meta.record_id);
+    }
     if (data.success) {
       setResult(data.llm_result);
       setMeta(data.llm_meta);
@@ -162,10 +185,16 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
         try {
           const data = await postForm(form.action || window.location.href, formData);
 
+          const submittedRecordId = (formData.get('selected_record_id') as string) || null;
+          const responseRecordId =
+            data?.llm_meta?.record_id !== undefined && data.llm_meta.record_id !== null
+              ? String(data.llm_meta.record_id)
+              : null;
+
           if (data.manual_feedback_mode) {
             if (data.success) {
               showFormAlert(formContainer, 'success', config.llmShowErrors ? 'Form saved successfully.' : 'Saved.');
-              recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+              recordIdRef.current = responseRecordId || submittedRecordId || recordIdRef.current;
               return;
             }
             if (data.form_errors && config.llmShowErrors) {
@@ -175,7 +204,7 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
           }
 
           if (data.success) {
-            recordIdRef.current = (formData.get('SELECTED_RECORD_ID') as string) || null;
+            recordIdRef.current = responseRecordId || submittedRecordId || recordIdRef.current;
             showFormAlert(formContainer, 'success', 'Saved.');
           }
           updateResultFromResponse(data, 'LLM generation failed');

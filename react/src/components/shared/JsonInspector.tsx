@@ -1,8 +1,21 @@
+/**
+ * JsonInspector — interactive tree/raw toggle viewer for JSON data.
+ *
+ * Renders arbitrary JSON values as a collapsible tree with syntax
+ * highlighting. Supports auto-detection of nested JSON strings
+ * (double-encoded), raw-mode toggle, and clipboard copy.
+ *
+ * Used in the admin console to inspect LLM message payloads,
+ * contexts, and raw API responses.
+ *
+ * @module components/shared/JsonInspector
+ */
 import React, { useMemo, useState } from 'react';
 import { normalizeEscapedText } from '../../utils/text';
 import { parseJsonCandidate } from '../../utils/jsonInspector';
 import './JsonInspector.css';
 
+/** Props for the top-level JsonInspector component. */
 interface JsonInspectorProps {
   value: unknown;
   className?: string;
@@ -11,6 +24,7 @@ interface JsonInspectorProps {
   maxAutoParseDepth?: number;
 }
 
+/** JsonValueNode function. */
 function JsonValueNode({
   label,
   value,
@@ -82,6 +96,7 @@ function JsonValueNode({
   );
 }
 
+/** JsonInspector component. */
 export const JsonInspector: React.FC<JsonInspectorProps> = ({
   value,
   className = '',
@@ -152,6 +167,7 @@ export const JsonInspector: React.FC<JsonInspectorProps> = ({
   );
 };
 
+/** normalizeGeneratedPromptTemplate function. */
 export function normalizeGeneratedPromptTemplate(value: unknown): string {
   const parsed = parseJsonCandidate(value, 3);
   if (parsed.kind === 'empty') {

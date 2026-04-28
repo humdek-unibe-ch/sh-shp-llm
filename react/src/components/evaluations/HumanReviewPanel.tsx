@@ -1,3 +1,11 @@
+/**
+ * Human Review Panel — manual scoring interface for evaluation cases.
+ *
+ * Displays the case output and provides score inputs, notes, and
+ * submit/skip buttons for cases that require human judgment.
+ *
+ * @module components/evaluations/HumanReviewPanel
+ */
 import React from 'react';
 import { Button, Form } from 'react-bootstrap';
 
@@ -15,6 +23,7 @@ interface HumanReviewPanelProps {
   onSave: () => void;
 }
 
+/** Panel component for human review panel. */
 export const HumanReviewPanel: React.FC<HumanReviewPanelProps> = ({
   draft,
   disabled = false,
