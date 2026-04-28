@@ -25,14 +25,23 @@ class LlmFormView extends FormUserInputView
     /**
      * Render the LLM form component.
      * Outputs the standard form plus an LLM React container div.
+     *
+     * In CMS editing mode we bypass the parent FormUserInputView render path
+     * because it returns early when the form `name` field is empty, which
+     * suppresses the `.section-children-ui-cms` wrapper that the CMS UI relies
+     * on to attach the "Add new section" placeholder. Calling
+     * `output_children()` directly mirrors how the `div` style behaves in CMS
+     * edit mode and ensures `llmFormRecord` / `llmFormLog` always expose their
+     * children area, regardless of whether a form name has been configured.
      */
     public function output_content()
     {
-        if (
-            (method_exists($this->model, 'is_cms_page') && $this->model->is_cms_page()) &&
-            (method_exists($this->model, 'is_cms_page_editing') && $this->model->is_cms_page_editing())
-        ) {
-            parent::output_content();
+        $is_cms_editing =
+            method_exists($this->model, 'is_cms_page') && $this->model->is_cms_page() &&
+            method_exists($this->model, 'is_cms_page_editing') && $this->model->is_cms_page_editing();
+
+        if ($is_cms_editing) {
+            $this->output_children();
             return;
         }
         include __DIR__ . '/tpl/llm_form.php';

@@ -2,6 +2,21 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.2.1] - 2026-04-28
+
+### Fixed
+
+- **CMS edit mode children placeholder for `llmFormRecord` and `llmFormLog`.**
+  In the new CMS UI, the children area of the LLM form styles was hidden even
+  though the styles register the `children` field. The previous CMS edit
+  branch in `LlmFormView::output_content()` deferred to
+  `FormUserInputView::output_content()`, which returns early when the form
+  `name` field is empty and therefore never emits the
+  `.section-children-ui-cms` wrapper that `cms_ui.js` relies on to attach the
+  "Add new section" placeholder. CMS edit mode now bypasses the form render
+  and calls `output_children()` directly, so child sections can be added to
+  LLM form styles in the same way as the `div` style.
+
 ## [1.2.0] - 2026-04-23
 
 ### Added
