@@ -2,7 +2,7 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.2.0] - 2026-04-23 - Not released yet
+## [1.2.0] - 2026-04-23
 
 ### Added
 
