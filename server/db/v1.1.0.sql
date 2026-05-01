@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS `llm_prompt_entries` (
     CONSTRAINT `fk_llm_prompt_entries_owner_type` FOREIGN KEY (`id_llm_prompt_owner_types`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_llm_prompt_entries_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_llm_prompt_entries_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_prompt_locales` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS `llm_prompt_locales` (
     CONSTRAINT `fk_llm_prompt_locales_language` FOREIGN KEY (`id_languages`) REFERENCES `languages` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_llm_prompt_locales_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_llm_prompt_locales_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_prompt_versions` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -341,7 +341,7 @@ CREATE TABLE IF NOT EXISTS `llm_prompt_versions` (
     CONSTRAINT `fk_llm_prompt_versions_locale` FOREIGN KEY (`id_llm_prompt_locales`) REFERENCES `llm_prompt_locales` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_llm_prompt_versions_based_on` FOREIGN KEY (`based_on_version_id`) REFERENCES `llm_prompt_versions` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_llm_prompt_versions_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Keep this FK outside CREATE TABLE because `llm_prompt_locales` and
 -- `llm_prompt_versions` reference each other, so one side must be added after
@@ -376,7 +376,7 @@ CREATE TABLE IF NOT EXISTS `llm_prompt_playground_runs` (
     CONSTRAINT `fk_prompt_runs_response_message` FOREIGN KEY (`id_llmMessages_response`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_prompt_runs_run_mode` FOREIGN KEY (`id_lookups_run_mode`) REFERENCES `lookups` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_prompt_runs_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 SET @has_llm_scripts_prompt_entry_column := (
     SELECT COUNT(*)
@@ -520,7 +520,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_datasets` (
     CONSTRAINT `fk_eval_datasets_profile` FOREIGN KEY (`id_lookups_execution_profile`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_eval_datasets_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_datasets_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_eval_cases` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -550,7 +550,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_cases` (
     CONSTRAINT `fk_eval_case_source_type` FOREIGN KEY (`id_lookups_source_type`) REFERENCES `lookups` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_case_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_case_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_eval_dataset_case_links` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -574,7 +574,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_dataset_case_links` (
     CONSTRAINT `fk_eval_case_link_promoted_dataset` FOREIGN KEY (`promoted_from_dataset_id`) REFERENCES `llm_eval_datasets` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_case_link_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_case_link_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_eval_definitions` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -593,7 +593,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_definitions` (
     CONSTRAINT `fk_eval_definition_type` FOREIGN KEY (`id_lookups_eval_type`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_eval_definition_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_definition_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_eval_runs` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -615,7 +615,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_runs` (
     CONSTRAINT `fk_eval_runs_mode` FOREIGN KEY (`id_lookups_run_mode`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_eval_runs_status` FOREIGN KEY (`id_lookups_status`) REFERENCES `lookups` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `fk_eval_runs_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_eval_run_cases` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -635,7 +635,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_run_cases` (
     CONSTRAINT `fk_eval_run_cases_conversation` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_run_cases_request_message` FOREIGN KEY (`id_llmMessages_request`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_eval_run_cases_response_message` FOREIGN KEY (`id_llmMessages_response`) REFERENCES `llmMessages` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_eval_scores` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -655,7 +655,7 @@ CREATE TABLE IF NOT EXISTS `llm_eval_scores` (
     CONSTRAINT `fk_eval_scores_run_case` FOREIGN KEY (`id_llm_eval_run_cases`) REFERENCES `llm_eval_run_cases` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_eval_scores_definition` FOREIGN KEY (`id_llm_eval_definitions`) REFERENCES `llm_eval_definitions` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_eval_scores_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- Re-apply critical unique keys and indexes so rerunning v1.1.0 converges an
 -- interrupted or partially applied schema on the intended prompt-lab layout.

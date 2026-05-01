@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS `llm_scripts` (
     `refresh_sections` TEXT DEFAULT NULL COMMENT 'JSON array of section IDs to refresh after async execution',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 
 -- create LLM conversations table
@@ -265,7 +265,7 @@ CREATE TABLE IF NOT EXISTS `llmConversations` (
     CONSTRAINT `fk_llmConversations_users` FOREIGN KEY (`id_users`) REFERENCES `users` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_llmConversations_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE SET NULL,  -- NOTE: ON DELETE SET NULL is used because sections can be deleted
    CONSTRAINT `fk_llmConversations_llm_scripts` FOREIGN KEY (`id_llm_scripts`) REFERENCES `llm_scripts` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- create LLM messages table - Industry Standard Schema
 -- NOTE: All LLM calls are synchronous HTTP POST requests
@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS `llmMessages` (
     KEY `idx_dataRows` (`id_dataRows`),
     KEY `idx_validated` (`is_validated`),
 CONSTRAINT `fk_llmMessages_llmConversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- add transaction logging for LLM plugin
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
@@ -511,7 +511,7 @@ CREATE TABLE IF NOT EXISTS `llmConversationProgress` (
     KEY `idx_section` (`id_sections`),
     CONSTRAINT `fk_llmConversationProgress_conversations` FOREIGN KEY (`id_llmConversations`) REFERENCES `llmConversations` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_llmConversationProgress_sections` FOREIGN KEY (`id_sections`) REFERENCES `sections` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 -- =====================================================
 -- STRUCTURED RESPONSE MODE FEATURE

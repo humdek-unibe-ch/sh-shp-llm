@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS `llm_memory_rules` (
     KEY `idx_llm_memory_rule_enabled` (`enabled`),
     CONSTRAINT `fk_llm_memory_rules_user_created` FOREIGN KEY (`id_users_created`) REFERENCES `users` (`id`) ON DELETE SET NULL,
     CONSTRAINT `fk_llm_memory_rules_user_updated` FOREIGN KEY (`id_users_updated`) REFERENCES `users` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_memory_keys` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS `llm_memory_keys` (
     UNIQUE KEY `uniq_llm_memory_keys_code` (`key_code`),
     KEY `idx_llm_memory_keys_enabled` (`enabled`),
     KEY `idx_llm_memory_keys_sort_order` (`sort_order`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE IF NOT EXISTS `llm_memory_rule_keys` (
     `id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS `llm_memory_rule_keys` (
     KEY `idx_llm_memory_rule_keys_key` (`id_llm_memory_keys`),
     CONSTRAINT `fk_llm_memory_rule_keys_rule` FOREIGN KEY (`id_llm_memory_rules`) REFERENCES `llm_memory_rules` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_llm_memory_rule_keys_key` FOREIGN KEY (`id_llm_memory_keys`) REFERENCES `llm_memory_keys` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 INSERT IGNORE INTO `llm_memory_keys` (`key_code`, `label`, `description`, `enabled`, `sort_order`)
 VALUES ('global', 'Global', 'Default shared memory space.', 1, 0);
