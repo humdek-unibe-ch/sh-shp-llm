@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . '/LlmResponseService.php';
+require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 /**
  * LLM Context Service
@@ -100,6 +101,14 @@ class LlmContextService
             $danger_config
         );
 
+        // v1.3.0: when authors disabled the hint suggestion buttons on the
+        // llmChat style, append a system instruction that tells the model
+        // to skip `content.suggestions` (the React layer remaps these to
+        // `next_step.suggestions` for rendering). This complements the
+        // React-side hide so we don't waste tokens generating buttons that
+        // never reach the user.
+        $context_messages = $this->applySuppressSuggestionsContext($context_messages);
+
         // Apply additional modes on top of structured response
         if ($this->model->isFloatingButtonEnabled()) {
             return $this->floating_mode_service->buildFloatingModeContext($context_messages);
@@ -153,6 +162,47 @@ class LlmContextService
             'enabled' => true,
             'keywords' => array_values($keywords)
         ];
+    }
+
+    /**
+     * Append the "no quick-reply suggestions" instruction when the chat
+     * disables `enable_hint_suggestions`.
+     *
+     * The asset key `core.response.suppress_suggestions` (see
+     * `assets/prompts/core/response/suppress-suggestions.md`) tells the
+     * model to leave `content.suggestions` empty / absent so we neither
+     * pay tokens for them nor confuse the user with phantom "tap one of
+     * the options below" copy. (The React layer remaps the schema's
+     * `content.suggestions` into `next_step.suggestions` for rendering;
+     * both layers honour this flag.)
+     *
+     * No-op when the model implementation does not declare the getter
+     * (e.g. when running through Prompt Lab runtimes that mimic
+     * `LlmChatModel`), or when suggestions remain enabled.
+     *
+     * @param array $context_messages
+     * @return array
+     */
+    private function applySuppressSuggestionsContext(array $context_messages)
+    {
+        if (!method_exists($this->model, 'isHintSuggestionsEnabled')) {
+            return $context_messages;
+        }
+        if ($this->model->isHintSuggestionsEnabled()) {
+            return $context_messages;
+        }
+        try {
+            $loader = new LlmPromptAssetLoader();
+            $instruction = $loader->load('core.response.suppress_suggestions');
+        } catch (\Throwable $e) {
+            // Asset missing in tests / partial installs: silently skip.
+            return $context_messages;
+        }
+        $context_messages[] = [
+            'role' => 'system',
+            'content' => $instruction,
+        ];
+        return $context_messages;
     }
 
     /**

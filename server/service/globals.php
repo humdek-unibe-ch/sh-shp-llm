@@ -86,6 +86,30 @@ define('LLM_PROMPT_META_KEY', 'prompt');
 define('LLM_PROMPT_RUN_MODE_DATASET_EVAL', 'dataset_eval');
 
 /* =========================================================================
+ * CONVERSATION SOURCE TYPES (v1.3.0+)
+ *
+ * `llmConversations.id_llm_conversation_sources` is a foreign key to
+ * `lookups.id` where `lookup_value` is one of these codes. The chat
+ * sidebar (LlmService::getUserConversations) filters out anything that
+ * is not 'chat' (or NULL, for legacy rows that pre-date v1.3.0).
+ *
+ * When adding a new producer that writes to `llmConversations`:
+ *   1. Add its lookup row in `db/v{next}.sql` under type_code
+ *      'llmConversationSourceType'.
+ *   2. Add the matching `LLM_CONV_SOURCE_*` constant here.
+ *   3. Pass that constant to `LlmService::createConversation()`.
+ * ========================================================================= */
+
+define('LLM_CONV_SOURCE_CHAT',           'chat');
+define('LLM_CONV_SOURCE_PLAYGROUND',     'playground');
+define('LLM_CONV_SOURCE_BUILDER',        'builder');
+define('LLM_CONV_SOURCE_MEMORY',         'memory');
+define('LLM_CONV_SOURCE_DATASET_EVAL',   'dataset_eval');
+define('LLM_CONV_SOURCE_FORM',           'form');
+define('LLM_CONV_SOURCE_SCRIPT',         'script');
+define('LLM_CONV_SOURCE_DATASET_IMPORT', 'dataset_import');
+
+/* =========================================================================
  * EVALUATION TYPES
  * Scoring strategies used by the evaluation runner.
  * ========================================================================= */

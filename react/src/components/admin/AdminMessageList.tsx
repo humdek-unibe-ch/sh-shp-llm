@@ -81,13 +81,25 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
         const isLastMessage = index === messages.length - 1;
         const nextMessage = index < messages.length - 1 ? messages[index + 1] : undefined;
         const validated = isValidated(message);
-        const parsedJsonContent = tryParseLabeledJsonContent(message.content);
+        // v1.3.0: Renderable structured responses (proper text_blocks, forms,
+        // media, suggestions) ALWAYS win over the JSON tree fallback. The
+        // tree was previously selected even when the response would render
+        // as readable text because `tryParseLabeledJsonContent` matches any
+        // valid JSON envelope. The JSON inspector now only kicks in for
+        // user messages with structured payloads (e.g. context dumps) or
+        // for assistant messages that are JSON but not a renderable
+        // structured response (raw debug payloads, malformed envelopes).
         const canRenderStructured = !isUser && (
           parseStructuredResponse(message.content) !== null ||
           parseFormDefinition(message.content) !== null
         );
-        const preferJsonInspector = parsedJsonContent !== null ||
-          (!canRenderStructured && shouldRenderAsJsonInspector(message.content));
+        const parsedJsonContent = canRenderStructured
+          ? null
+          : tryParseLabeledJsonContent(message.content);
+        const preferJsonInspector = !canRenderStructured && (
+          parsedJsonContent !== null ||
+          shouldRenderAsJsonInspector(message.content)
+        );
         
         const previousAssistantFormDef = isUser
           ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)

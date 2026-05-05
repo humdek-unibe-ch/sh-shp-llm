@@ -686,7 +686,7 @@ class LlmMemoryUpdateService extends BaseLlmService
         }
 
         return $this->llm_service->createConversation(
-            $user_id, $title, $effective_model, null, null, null
+            $user_id, $title, $effective_model, null, null, null, LLM_CONV_SOURCE_MEMORY
         );
     }
 

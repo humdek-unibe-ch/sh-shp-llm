@@ -406,7 +406,8 @@ class LlmDatasetAiImportParserService extends BaseLlmService
             $model_name,
             $temperature,
             $max_tokens,
-            $section_id ?: null
+            $section_id ?: null,
+            LLM_CONV_SOURCE_DATASET_IMPORT
         );
     }
 }

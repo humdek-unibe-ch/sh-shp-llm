@@ -28,6 +28,7 @@ class LlmPromptAssetRegistry
             'core.response.safety_detection' => 'core/response/safety-detection.md',
             'core.response.progress_tracking' => 'core/response/progress-tracking.md',
             'core.response.retry_prompt' => 'core/response/retry-prompt.md',
+            'core.response.suppress_suggestions' => 'core/response/suppress-suggestions.md',
             'core.playground.language_suffix' => 'core/playground/language-suffix.md',
             'core.prompt_execution.default_chat_prompt' => 'core/playground/default-chat-prompt.md',
             'core.chat.media_rendering_instructions' => 'core/chat/media-rendering-instructions.md',

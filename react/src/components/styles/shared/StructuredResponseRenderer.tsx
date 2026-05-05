@@ -42,6 +42,13 @@ interface StructuredResponseRendererProps {
   onSuggestionClick?: (suggestion: string) => void;
   /** User-submitted form values (for historical forms in admin view) */
   submittedFormValues?: Record<string, string | string[]>;
+  /**
+   * v1.3.0+: Whether to render the `next_step.suggestions` quick-reply buttons.
+   * Defaults to `true`. When `false` we skip the entire NextStep section even
+   * if the model emitted suggestions (the backend instruction also tells the
+   * model not to produce them, but we hide them defensively here).
+   */
+  showSuggestions?: boolean;
 }
 
 /**
@@ -198,7 +205,8 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
   onFormSubmit,
   isFormSubmitting = false,
   onSuggestionClick,
-  submittedFormValues
+  submittedFormValues,
+  showSuggestions = true
 }) => {
   const { content, meta } = response;
   const { text_blocks, forms, media, next_step } = content;
@@ -295,8 +303,12 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
         </div>
       )}
 
-      {/* Next step suggestions - show on last message (interactive) or historical (read-only) */}
-      {next_step && (
+      {/* Next step suggestions - show on last message (interactive) or historical (read-only).
+          v1.3.0+: gated on showSuggestions (defaults true). When the chat
+          author disables `enable_hint_suggestions` we drop the entire
+          NextStep block (including the prompt sentence) so the bubble
+          ends naturally instead of with a dangling "Next:" label. */}
+      {showSuggestions && next_step && (
         <NextStepRenderer
           nextStep={next_step}
           onSuggestionClick={isLastMessage ? onSuggestionClick : undefined}

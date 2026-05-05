@@ -53,15 +53,68 @@ class LlmHooks extends BaseHooks
             $normalizedValue = $llmService->normalizeModelIdentifier($value);
 
             $items = array();
+            $itemValues = array();
             foreach ($models as $model) {
+                $itemId = $model['id'] ?? '';
                 $items[] = array(
-                    'value' => $model['id'],
-                    'text' => $model['id']
+                    'value' => $itemId,
+                    'text' => $itemId
                 );
+                $itemValues[$itemId] = true;
+            }
+
+            // ----------------------------------------------------------------
+            // v1.3.0 defensive fix for the "saved model not selected on
+            // reload" bug seen in two production deployments.
+            //
+            // Causes observed in the wild:
+            //   - The configured LLM server is briefly unreachable and
+            //     `getAvailableModels()` returns an empty array, so the
+            //     dropdown has no item to match the saved value against.
+            //   - The legacy single-server setup stored a raw model id
+            //     (e.g. "qwen3-vl-8b-instruct") and the live server now
+            //     returns scoped ids (e.g. "GPUStack :: qwen3-vl-...").
+            //     `normalizeModelIdentifier()` cannot rewrite the legacy
+            //     value because the lookup happens against the live list,
+            //     so the option still has no matching <option> element.
+            //   - Conversely, an admin manually saved a scoped value while
+            //     the live list temporarily exposed only the raw form.
+            //
+            // Resolution: ALWAYS make the saved value selectable by adding
+            // it to the items array if it is missing, and also add the
+            // raw form (when scoped) so the matching select widget can
+            // pick whichever exists in `value`. This guarantees the
+            // dropdown renders the saved value as the active option even
+            // if the model list is empty or stale.
+            // ----------------------------------------------------------------
+            $candidateValues = array();
+            if (!empty($normalizedValue)) {
+                $candidateValues[] = $normalizedValue;
+            }
+            if (!empty($value) && $value !== $normalizedValue) {
+                $candidateValues[] = $value;
+            }
+            foreach ($candidateValues as $candidate) {
+                if ($candidate !== '' && !isset($itemValues[$candidate])) {
+                    array_unshift($items, array(
+                        'value' => $candidate,
+                        'text' => $candidate . ' (current)'
+                    ));
+                    $itemValues[$candidate] = true;
+                }
+            }
+
+            // Pick whichever form of the saved value actually exists in
+            // the items array so the <option selected> attribute matches.
+            $selectedValue = '';
+            if (!empty($normalizedValue) && isset($itemValues[$normalizedValue])) {
+                $selectedValue = $normalizedValue;
+            } elseif (!empty($value) && isset($itemValues[$value])) {
+                $selectedValue = $value;
             }
 
             return new BaseStyleComponent("select", array(
-                "value" => $normalizedValue,
+                "value" => $selectedValue,
                 "name" => $name,
                 "max" => 10,
                 "live_search" => 1,
@@ -70,7 +123,14 @@ class LlmHooks extends BaseHooks
                 "items" => $items
             ));
         } catch (Exception $e) {
-            // Fallback in case of error
+            // Fallback in case of error: still surface the saved value as
+            // a single selectable item so the admin sees what was saved
+            // even if the model list cannot be fetched.
+            $items = array();
+            if (!empty($value)) {
+                $items[] = array('value' => $value, 'text' => $value . ' (current)');
+            }
+            $items[] = array('value' => '', 'text' => 'Error loading models: ' . $e->getMessage());
             return new BaseStyleComponent("select", array(
                 "value" => $value,
                 "name" => $name,
@@ -78,9 +138,7 @@ class LlmHooks extends BaseHooks
                 "live_search" => 0,
                 "is_required" => 0,
                 "disabled" => $disabled,
-                "items" => array(
-                    array('value' => '', 'text' => 'Error loading models: ' . $e->getMessage())
-                )
+                "items" => $items
             ));
         }
     }
@@ -277,15 +335,46 @@ class LlmHooks extends BaseHooks
             $items = array(
                 array('value' => '', 'text' => '-- Select Audio Model --')
             );
+            $itemValues = array('' => true);
             foreach ($models as $model) {
+                $itemId = $model['id'] ?? '';
                 $items[] = array(
-                    'value' => $model['id'],
-                    'text' => $model['id']
+                    'value' => $itemId,
+                    'text' => $itemId
                 );
+                $itemValues[$itemId] = true;
+            }
+
+            // v1.3.0 defensive fix (mirrors outputSelectLlmModelField):
+            // surface the saved value as a selectable item even if the
+            // live audio-model list is empty / stale, so the dropdown
+            // correctly highlights the saved value on reload.
+            $candidateValues = array();
+            if (!empty($normalizedValue)) {
+                $candidateValues[] = $normalizedValue;
+            }
+            if (!empty($value) && $value !== $normalizedValue) {
+                $candidateValues[] = $value;
+            }
+            foreach ($candidateValues as $candidate) {
+                if ($candidate !== '' && !isset($itemValues[$candidate])) {
+                    $items[] = array(
+                        'value' => $candidate,
+                        'text' => $candidate . ' (current)'
+                    );
+                    $itemValues[$candidate] = true;
+                }
+            }
+
+            $selectedValue = '';
+            if (!empty($normalizedValue) && isset($itemValues[$normalizedValue])) {
+                $selectedValue = $normalizedValue;
+            } elseif (!empty($value) && isset($itemValues[$value])) {
+                $selectedValue = $value;
             }
 
             return new BaseStyleComponent("select", array(
-                "value" => $normalizedValue,
+                "value" => $selectedValue,
                 "name" => $name,
                 "max" => 10,
                 "live_search" => 1,
@@ -294,7 +383,15 @@ class LlmHooks extends BaseHooks
                 "items" => $items
             ));
         } catch (Exception $e) {
-            // Fallback in case of error
+            // Fallback in case of error: keep the saved value selectable
+            // so the admin sees what was configured.
+            $items = array(
+                array('value' => '', 'text' => '-- Select Audio Model --'),
+            );
+            if (!empty($value)) {
+                $items[] = array('value' => $value, 'text' => $value . ' (current)');
+            }
+            $items[] = array('value' => 'faster-whisper-large-v3', 'text' => 'faster-whisper-large-v3');
             return new BaseStyleComponent("select", array(
                 "value" => $value,
                 "name" => $name,
@@ -302,10 +399,7 @@ class LlmHooks extends BaseHooks
                 "live_search" => 0,
                 "is_required" => 0,
                 "disabled" => $disabled,
-                "items" => array(
-                    array('value' => '', 'text' => '-- Select Audio Model --'),
-                    array('value' => 'faster-whisper-large-v3', 'text' => 'faster-whisper-large-v3')
-                )
+                "items" => $items
             ));
         }
     }

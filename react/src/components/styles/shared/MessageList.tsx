@@ -266,12 +266,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
             )
           ) : structuredResponse ? (
             // Structured response: render with StructuredResponseRenderer
+            // v1.3.0+: defer to `config.enableHintSuggestions` (defaults true)
+            // so authors can hide quick-reply buttons via the
+            // `enable_hint_suggestions` checkbox on the chat style.
             <StructuredResponseRenderer
               response={structuredResponse}
               isLastMessage={isLastMessage}
               onFormSubmit={onFormSubmit}
               isFormSubmitting={isFormSubmitting}
               onSuggestionClick={onSuggestionClick}
+              showSuggestions={config.enableHintSuggestions !== false}
             />
           ) : formDefinition && isHistoricalForm ? (
             // Historical form: show with user's selections

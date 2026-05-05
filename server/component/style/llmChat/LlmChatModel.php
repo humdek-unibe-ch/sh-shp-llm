@@ -362,6 +362,28 @@ class LlmChatModel extends StyleModel
     /** @return string Label for the "Continue" button shown after LLM responses. */
     public function getContinueButtonLabel() { return $this->get_db_field('continue_button_label', 'Continue'); }
 
+    // ===== Hint / Quick-reply Suggestions =====
+
+    /**
+     * Whether the LLM is allowed to emit and the React UI is allowed to render
+     * the structured-response quick-reply suggestion buttons.
+     *
+     * The model emits suggestions at `content.suggestions` (array of objects
+     * with a `text` property). The React layer remaps them into
+     * `next_step.suggestions` for rendering — both layers respect this flag.
+     *
+     * Defaults to enabled so chats configured before v1.3.0 keep their
+     * existing behaviour. When disabled, two things happen:
+     *   1. `LlmContextService` appends the
+     *      `core.response.suppress_suggestions` system prompt telling the
+     *      model to leave `content.suggestions` empty (saves output tokens).
+     *   2. The React `StructuredResponseRenderer` skips the suggestion
+     *      buttons even if a legacy/cached response still contains any.
+     *
+     * @return bool
+     */
+    public function isHintSuggestionsEnabled() { return $this->get_db_field('enable_hint_suggestions', '1') === '1'; }
+
     // ===== Progress Tracking =====
 
     /** @return bool Whether topic-based progress tracking is active. */
@@ -526,6 +548,7 @@ class LlmChatModel extends StyleModel
             'progressBarLabel' => $this->getProgressBarLabel(),
             'progressCompleteMessage' => $this->getProgressCompleteMessage(),
             'progressShowTopics' => $this->shouldShowProgressTopics(),
+            'enableHintSuggestions' => $this->isHintSuggestionsEnabled(),
             'chatColors' => $this->getChatColors()
         ];
     }

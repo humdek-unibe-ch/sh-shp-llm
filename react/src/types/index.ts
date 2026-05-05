@@ -272,6 +272,15 @@ export interface LlmChatConfig {
   /** Whether to show the topic list */
   progressShowTopics: boolean;
 
+  // ===== Hint / Quick-reply Suggestions (v1.3.0+) =====
+  /**
+   * Whether to render the AI's `next_step.suggestions` quick-reply buttons.
+   * Defaults to `true` for backward compatibility. When `false`, the chat
+   * skips the suggestion bar AND the backend system prompt tells the model
+   * not to emit suggestions in the first place (`assets/prompts/core/response/suppress-suggestions.md`).
+   */
+  enableHintSuggestions?: boolean;
+
   // ===== Speech-to-Text Configuration =====
   /** Whether speech-to-text input is enabled */
   enableSpeechToText: boolean;
@@ -403,6 +412,8 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   progressBarLabel: 'Progress',
   progressCompleteMessage: 'Great job! You have covered all topics.',
   progressShowTopics: false,
+  // Hint / quick-reply suggestions default to enabled (legacy behaviour)
+  enableHintSuggestions: true,
   // Speech-to-text defaults
   enableSpeechToText: false,
   speechToTextModel: '',

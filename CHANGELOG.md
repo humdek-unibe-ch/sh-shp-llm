@@ -2,6 +2,105 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.3.0] - 2026-05-05
+
+### Added
+
+- **`enable_hint_suggestions` toggle on the `llmChat` style** (defaults to
+  enabled). When disabled, two things happen in lockstep:
+  1. The React `StructuredResponseRenderer` skips the entire `next_step`
+     block, so the AI's quick-reply buttons never render — even on
+     historical/cached responses.
+  2. The backend appends the new
+     `core.response.suppress_suggestions` prompt asset to the system
+     context, instructing the model to leave `content.suggestions` empty
+     so we do not pay for unused output tokens.
+
+  Use this for guided / linear flows where free-form replies feel more
+  natural than "tap one of the buttons below" prompts. See
+  `doc/prompt-assets.md` for the full template reference.
+- **`llmConversationSourceType` lookup family + new
+  `llmConversations.id_llm_conversation_sources` foreign-key column.** Every
+  back-end producer that writes into `llmConversations` now tags its rows
+  with one of: `chat`, `playground`, `builder`, `memory`, `dataset_eval`,
+  `form`, `script`, `dataset_import`. The chat sidebar
+  (`LlmService::getUserConversations()`) now filters to `chat` or `NULL`
+  (legacy rows), so Prompt Lab / Builder / Memory conversations no longer
+  bleed into the user-facing chat list. Existing rows are intentionally
+  not backfilled — they keep `NULL` and remain visible to chat (preserving
+  legacy behaviour). New rows written by v1.3.0 code paths populate the
+  column explicitly via the producer call sites
+  (`LlmPromptPlaygroundService`, `LlmPromptBuilderService`,
+  `LlmMemoryUpdateService`, `LlmDatasetAiImportParserService`).
+- **`assets/prompts/core/response/suppress-suggestions.md`** prompt asset,
+  registered under `core.response.suppress_suggestions`. Loaded only when
+  hint suggestions are disabled on a chat.
+- **Comprehensive `doc/prompt-assets.md` audit.** Every one of the 21
+  registered prompt assets is documented with its purpose, expected
+  placeholders, call sites, and reviewer guidance — including notes on
+  which fields the schema enforces vs. which the React layer renames.
+
+### Changed
+
+- **Default style fields backfilled on every LLM-owned style.** SelfHelp
+  styles are expected to expose `data_config`, `condition`, `debug`, `css`,
+  and `css_mobile` for a uniform authoring experience. The audit found:
+  - `llmChat` (v1.0.0) had `css` + `css_mobile`. The v1.3.0 migration adds
+    `data_config`, `condition`, `debug`.
+  - `llmFormRecord` (v1.1.0) had `css`, `css_mobile`, `data_config`,
+    `condition`. The v1.3.0 migration adds `debug`.
+  - `llmFormLog` (v1.1.0) had `css`, `css_mobile`, `data_config`,
+    `condition`. The v1.3.0 migration adds `debug`.
+  - `llmResponse` (v1.0.0) already had all five — no change.
+- **Admin conversation viewer (`module_llm/conversations`) prefers the
+  rich structured renderer.** Until v1.2.x, the admin viewer would
+  detect any JSON envelope in a message and fall back to the labeled
+  JSON tree (the screenshot the issue report referenced). The renderer
+  now evaluates renderability **first**: when a message can be rendered
+  as text blocks / forms / media / suggestions, the structured view
+  wins. The JSON tree is now reserved exclusively for messages that are
+  raw JSON without a renderable schema (debug payloads, malformed
+  envelopes, user-side context dumps).
+- **`LlmHooks::outputSelectLlmModelField()` and
+  `outputSelectAudioModelField()` now defensively include the saved value
+  in the dropdown options.** Live deployments occasionally observed the
+  saved default model not pre-selecting on reload because
+  `LlmService::getAvailableModels()` returned a partial list (timeout,
+  upstream API blip, scoping mismatch between `qwen3-vl-8b-instruct` and
+  `bfh/qwen3-vl-8b-instruct`). The CMS edit form now appends both the
+  normalized and the raw saved identifier as fallback items so the field
+  always re-mounts with the previously configured value selected. The
+  bug is impossible to reproduce locally; this is a belt-and-braces fix.
+
+### Fixed
+
+- **Prompt Lab conversations leaking into the chat sidebar.** When the
+  same user opened the playground (`/admin/module_llm/prompts/...`) for
+  a section that also had an `llmChat` style, the playground's
+  conversation row would later appear in the chat sidebar tagged with
+  the playground section keyword (e.g. `Section 78 conversation_context`).
+  With the new `id_llm_conversation_sources` column, the chat query
+  filters out everything that is not `chat` or legacy (`NULL`).
+- **Schema-instruction template drift.** The
+  `core.response.schema.instruction` template's "FIELD SPECIFICATIONS"
+  section was double-checked against
+  `LlmResponseService::getResponseSchema()`. Field paths agree
+  (`content.suggestions` is the canonical location; the React layer
+  remaps to `next_step.suggestions` at render time).
+
+### Migration
+
+Apply `server/db/v1.3.0.sql`. The migration is idempotent (uses
+`INSERT IGNORE`, `add_table_column`, `add_index`, `add_foreign_key`)
+and performs no destructive operations on existing rows.
+
+After applying, **rebuild the React UMD bundles** (`cd react && npm run
+build`). The new `enableHintSuggestions` config field flows from
+`LlmChatModel::getChatConfig()` through `MessageList` into
+`StructuredResponseRenderer`; without the rebuild the React layer simply
+defaults to "show suggestions", which is the legacy behaviour and
+therefore safe.
+
 ## [1.2.1] - 2026-04-28
 
 ### Fixed

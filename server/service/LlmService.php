@@ -152,16 +152,27 @@ class LlmService extends BaseLlmService
 
     /**
      * Create a new conversation
-     * 
+     *
+     * The optional `$source_type` parameter (added in v1.3.0) tags the
+     * conversation with a `llmConversationSourceType` lookup so that the
+     * user-facing chat sidebar — which reads via `getUserConversations()` —
+     * can hide rows produced by back-end-only flows (Prompt Lab playground,
+     * builder, memory worker, dataset eval, etc.).
+     *
+     * Pass `LLM_CONV_SOURCE_CHAT` (or omit) for user-visible chat
+     * conversations. Pass one of the other `LLM_CONV_SOURCE_*` constants
+     * declared in `globals.php` for back-end producers.
+     *
      * @param int $user_id User ID
      * @param string|null $title Conversation title
      * @param string|null $model Model name
      * @param float|null $temperature Temperature setting
      * @param int|null $max_tokens Max tokens setting
      * @param int|null $section_id Section ID for multi-section pages
+     * @param string|null $source_type One of the `llmConversationSourceType` lookup_codes (e.g. 'chat', 'playground', 'builder', 'memory'). Defaults to `chat` when omitted.
      * @return int New conversation ID
      */
-    public function createConversation($user_id, $title = null, $model = null, $temperature = null, $max_tokens = null, $section_id = null)
+    public function createConversation($user_id, $title = null, $model = null, $temperature = null, $max_tokens = null, $section_id = null, $source_type = null)
     {
         $config = $this->getLlmConfig();
         $modelValue = $model ?: $config['llm_default_model'];
@@ -175,6 +186,14 @@ class LlmService extends BaseLlmService
             'temperature' => LlmValidator::temperature($temperature, $config['llm_temperature']),
             'max_tokens' => LlmValidator::maxTokens($max_tokens, $config['llm_max_tokens'])
         ];
+
+        // Tag the conversation with its producer so `getUserConversations`
+        // can filter chat vs. back-end conversations. Falls back to NULL
+        // when the lookup is missing (legacy databases without v1.3.0).
+        $source_lookup_id = $this->resolveConversationSourceLookupId($source_type ?: LLM_CONV_SOURCE_CHAT);
+        if ($source_lookup_id) {
+            $data['id_llm_conversation_sources'] = $source_lookup_id;
+        }
 
         $conversation_id = $this->db->insert('llmConversations', $data);
 
@@ -317,17 +336,18 @@ class LlmService extends BaseLlmService
 
     /**
      * Get or create a conversation for a specific model
-     * 
+     *
      * Returns the most recent conversation for the model, or creates a new one if none exists.
-     * 
+     *
      * @param int $user_id User ID
      * @param string $model Model name
      * @param float|null $temperature Temperature setting
      * @param int|null $max_tokens Max tokens setting
      * @param int|null $section_id Section ID
+     * @param string|null $source_type Conversation source tag (see createConversation()). Defaults to chat.
      * @return int Conversation ID
      */
-    public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null)
+    public function getOrCreateConversationForModel($user_id, $model, $temperature = null, $max_tokens = null, $section_id = null, $source_type = null)
     {
         $config = $this->getLlmConfig();
         $model = $this->normalizeModelIdentifierForStorage($model, $config);
@@ -340,7 +360,7 @@ class LlmService extends BaseLlmService
         }
 
         // No existing conversation found, create a new one
-        return $this->createConversation($user_id, null, $model, $temperature, $max_tokens, $section_id);
+        return $this->createConversation($user_id, null, $model, $temperature, $max_tokens, $section_id, $source_type);
     }
 
     /**
@@ -366,7 +386,14 @@ class LlmService extends BaseLlmService
         if ($section_id) {
             $cache_params['section_id'] = $section_id;
         }
-        
+        // The chat-only filter changes the result set, so fold the chat
+        // source lookup id into the cache key. Otherwise admin tools that
+        // share the same user_id could see stale cross-source data.
+        $chat_source_id = $this->resolveConversationSourceLookupId(LLM_CONV_SOURCE_CHAT);
+        if ($chat_source_id) {
+            $cache_params['chat_only'] = (int)$chat_source_id;
+        }
+
         $cached = $this->cacheManager->get(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
 
         if ($cached !== false) {
@@ -377,6 +404,15 @@ class LlmService extends BaseLlmService
                 FROM llmConversations
                 WHERE id_users = :id_user AND deleted = 0";
         $params = [':id_user' => $user_id];
+
+        // Hide back-end-only producers (playground, builder, memory, ...)
+        // from the user-facing chat sidebar. Rows tagged 'chat' OR with a
+        // NULL source (legacy / pre-v1.3.0) are included for backward
+        // compatibility — see CHANGELOG v1.3.0 / `id_llm_conversation_sources`.
+        if ($chat_source_id) {
+            $sql .= " AND (id_llm_conversation_sources IS NULL OR id_llm_conversation_sources = :chat_source_id)";
+            $params[':chat_source_id'] = $chat_source_id;
+        }
 
         if ($model) {
             $parsed = $this->parseScopedModelId($model);
@@ -402,6 +438,37 @@ class LlmService extends BaseLlmService
 
         $this->cacheManager->set(LLM_CACHE_USER_CONVERSATIONS, $user_id, $conversations, $cache_params);
         return $conversations;
+    }
+
+    /**
+     * Resolve a `llmConversationSourceType` lookup_code to its lookup id.
+     *
+     * Returns `null` if the lookup row is missing (e.g. a database that has
+     * not yet run the v1.3.0 migration). Callers must treat `null` as
+     * "do not write the column" so legacy schemas keep working.
+     *
+     * Results are memoised for the lifetime of the request to avoid
+     * hitting the lookup cache on every conversation insert.
+     *
+     * @param string $source_code One of the LLM_CONV_SOURCE_* constants.
+     * @return int|null
+     */
+    private function resolveConversationSourceLookupId($source_code)
+    {
+        static $cache = [];
+        if (empty($source_code)) {
+            return null;
+        }
+        if (array_key_exists($source_code, $cache)) {
+            return $cache[$source_code];
+        }
+        try {
+            $id = $this->db->get_lookup_id_by_value('llmConversationSourceType', $source_code);
+        } catch (\Throwable $e) {
+            $id = null;
+        }
+        $cache[$source_code] = $id ? (int)$id : null;
+        return $cache[$source_code];
     }
 
     /**
