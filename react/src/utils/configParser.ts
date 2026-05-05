@@ -13,7 +13,7 @@
  * @module utils/configParser
  */
 
-import type { LlmChatConfig, FileConfig, FloatingButtonPosition, ChatColors } from '../types';
+import type { LlmChatConfig, FileConfig, FloatingButtonPosition, ChatAppearance } from '../types';
 import { DEFAULT_FILE_CONFIG, DEFAULT_CONFIG } from '../types';
 
 /**
@@ -162,9 +162,13 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     removeFileTitle: str(ds, 'removeFileTitle', jsonConfig, 'removeFileTitle', D.removeFileTitle!),
     conversationBlockedMessage: str(ds, 'conversationBlockedMessage', jsonConfig, 'conversationBlockedMessage', D.conversationBlockedMessage!),
 
-    // Chat colors
-    chatColors: (jsonConfig.chatColors && typeof jsonConfig.chatColors === 'object'
-      ? jsonConfig.chatColors
-      : undefined) as ChatColors | undefined,
+    // Chat appearance (v1.3.0+: unified colours + icons + image overrides).
+    // PHP serialises a complete tree (defaults merged with author overrides),
+    // so we just pass it through. When the JSON config is missing the key
+    // entirely (admin viewer / standalone harnesses), `undefined` triggers
+    // the React fallback to FontAwesome / default colours.
+    chatAppearance: (jsonConfig.chatAppearance && typeof jsonConfig.chatAppearance === 'object'
+      ? jsonConfig.chatAppearance
+      : undefined) as ChatAppearance | undefined,
   } as LlmChatConfig;
 }

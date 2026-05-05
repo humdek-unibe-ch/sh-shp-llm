@@ -6,6 +6,51 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Added
 
+- **Unified `llm_chat_appearance` JSON field on the `llmChat` style.**
+  Replaces the legacy `llm_chat_colors` field (and the short-lived
+  `llm_chat_icons` field that was prototyped earlier in this release).
+  One field now controls the bubble's full visual identity per side
+  (`user` / `ai`):
+  - `bg`, `text`, `border` — bubble palette (unchanged keys from the
+    previous `llm_chat_colors` field).
+  - `icon` — FontAwesome class for the **web** avatar (e.g. `fa-user`,
+    `fa-robot`). Both `fa-user` shorthand and full `fas fa-user` syntax
+    are accepted.
+  - `iconMobile` — Ionic icon name for the **mobile** avatar (e.g.
+    `person-circle`, `chatbubble-ellipses`).
+  - `iconImage` — custom avatar URL/path. **Wins over `icon` and
+    `iconMobile` on every platform when set.** Absolute URLs / `data:`
+    / `blob:` pass through; paths starting with `/` are normalised
+    against `BASE_PATH` server-side; `{{interpolation}}` resolves
+    before normalisation so per-user dynamic avatars work without any
+    conditional logic.
+  - The default value stored on the `styles_fields` row is a complete
+    tree, so the chat looks polished even when authors never open the
+    field. The PHP side merges author overrides on top of this floor,
+    so partial JSON like `{"user":{"bg":"#fff"}}` still produces a
+    fully-resolved config for the React + mobile layers.
+  - Help text on the field includes a paste-ready JSON example with
+    every key populated; authors can copy-paste and tweak rather than
+    typing the schema from scratch.
+  - **Clever FontAwesome fallback.** The React layer probes for
+    FontAwesome at first mount (hidden `<i className="fas fa-check">`,
+    `getComputedStyle().fontFamily` check, cached on `window`); if the
+    font is missing AND no `iconImage` is configured, the renderer
+    falls back to a coloured letter avatar (`U` / `AI`) so the bubble
+    layout never breaks. Pages that load FontAwesome behave exactly
+    as before.
+  - Mobile parity is preserved by `LlmChatView::output_content_mobile()`
+    serialising the merged tree under `style.llm_chat_appearance.content`;
+    the SelfHelp mobile app v4.0.4+ reads it via
+    `LlmChatStyleComponent.loadChatAppearance()` and applies the same
+    image > Ionic-icon > letter-fallback resolution priority.
+  - **No backward-compat shim, per the v1.3.0 spec.** The legacy
+    `llm_chat_colors` field is dropped from `fields` and
+    `styles_fields`; authors who customised colours on a pre-v1.3.0
+    install need to re-paste the JSON into `llm_chat_appearance`. The
+    `bg` / `text` / `border` keys are unchanged.
+  - See `doc/chat-appearance.md` for the full reference, mobile
+    rendering rules, interpolation examples and migration notes.
 - **`enable_hint_suggestions` toggle on the `llmChat` style** (defaults to
   enabled). When disabled, two things happen in lockstep:
   1. The React `StructuredResponseRenderer` skips the entire `next_step`

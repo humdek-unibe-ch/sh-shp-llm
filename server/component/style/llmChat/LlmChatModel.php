@@ -549,23 +549,114 @@ class LlmChatModel extends StyleModel
             'progressCompleteMessage' => $this->getProgressCompleteMessage(),
             'progressShowTopics' => $this->shouldShowProgressTopics(),
             'enableHintSuggestions' => $this->isHintSuggestionsEnabled(),
-            'chatColors' => $this->getChatColors()
+            'chatAppearance' => $this->getChatAppearance()
         ];
     }
 
     /**
-     * Get chat color palette from the database field.
+     * Default chat bubble appearance tree.
+     *
+     * This is the single source of truth used both as the v1.3.0
+     * SQL `default_value` (kept in sync manually) and as the merge
+     * floor for `getChatAppearance()` so partial JSON in the field
+     * still produces a complete tree for the front-end.
+     *
+     * @return array Per-side keys: bg, text, border, icon (FontAwesome),
+     *               iconMobile (Ionic), iconImage (custom URL).
      */
-    public function getChatColors()
+    public static function getDefaultChatAppearance()
     {
-        $default = '{}';
-        $raw = $this->get_db_field('llm_chat_colors', $default);
-        if (empty($raw)) return array();
-        if (is_string($raw)) {
-            $decoded = json_decode($raw, true);
-            return is_array($decoded) ? $decoded : array();
+        return array(
+            'user' => array(
+                'bg'         => '#DCF8C6',
+                'text'       => '#1b5e20',
+                'border'     => '#a5d6a7',
+                'icon'       => 'fa-user',
+                'iconMobile' => 'person-circle',
+                'iconImage'  => ''
+            ),
+            'ai' => array(
+                'bg'         => '#F3E5F5',
+                'text'       => '#4a148c',
+                'border'     => '#ce93d8',
+                'icon'       => 'fa-robot',
+                'iconMobile' => 'chatbubble-ellipses',
+                'iconImage'  => ''
+            )
+        );
+    }
+
+    /**
+     * Build the unified chat appearance tree for the front-end.
+     *
+     * Reads the `llm_chat_appearance` JSON field, merges it on top of
+     * `getDefaultChatAppearance()` (per-side, per-key) so partial
+     * overrides work, and normalises every non-empty `iconImage`:
+     *   * Absolute http(s) / data: / blob: URLs pass through verbatim.
+     *   * Paths starting with `/` get `BASE_PATH` prepended so they
+     *     resolve correctly on sub-directory installs.
+     *   * Empty strings are kept empty so the React + mobile renderers
+     *     fall through to the FontAwesome / Ionic icon for that side.
+     *
+     * `{{interpolation}}` is already resolved by `StyleModel` before
+     * `get_db_field()` returns the value, so authors can drop dynamic
+     * URLs straight into the JSON
+     * (e.g. `{"user":{"iconImage":"{{user_avatar}}"}}`).
+     *
+     * @return array Shape `['user' => [...], 'ai' => [...]]`, fully merged with defaults.
+     */
+    public function getChatAppearance()
+    {
+        $defaults = self::getDefaultChatAppearance();
+
+        $raw = $this->get_db_field('llm_chat_appearance', '');
+        if ($raw === '' || $raw === null) {
+            return $defaults;
         }
-        return is_array($raw) ? $raw : array();
+
+        $decoded = is_array($raw) ? $raw : json_decode((string)$raw, true);
+        if (!is_array($decoded)) {
+            return $defaults;
+        }
+
+        $out = array();
+        foreach ($defaults as $role => $defaultEntry) {
+            $override = (isset($decoded[$role]) && is_array($decoded[$role])) ? $decoded[$role] : array();
+            $merged = $defaultEntry;
+            foreach ($defaultEntry as $key => $_default) {
+                if (isset($override[$key]) && $override[$key] !== '') {
+                    $merged[$key] = $override[$key];
+                } elseif (array_key_exists($key, $override) && $override[$key] === '') {
+                    $merged[$key] = '';
+                }
+            }
+            if (!empty($merged['iconImage'])) {
+                $merged['iconImage'] = $this->normalizeIconUrl((string)$merged['iconImage']);
+            }
+            $out[$role] = $merged;
+        }
+        return $out;
+    }
+
+    /**
+     * Normalise a configured icon image URL/path.
+     *
+     * @param string $url Already-interpolated value from the JSON field.
+     * @return string The URL exactly as it should be emitted in `<img src>`.
+     */
+    private function normalizeIconUrl($url)
+    {
+        if ($url === '') {
+            return $url;
+        }
+        if (preg_match('~^(https?:|data:|blob:)~i', $url)) {
+            return $url;
+        }
+        if ($url[0] === '/') {
+            $base = defined('BASE_PATH') ? BASE_PATH : '';
+            return rtrim($base, '/') . $url;
+        }
+        return $url;
     }
 
     // ===== UI Generation Helpers =====

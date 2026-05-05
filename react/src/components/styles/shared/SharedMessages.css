@@ -170,6 +170,47 @@
   color: var(--llm-user-avatar-text);
 }
 
+/* ===== Custom avatar images (v1.3.0+) =====
+   Authors can replace the icon with an image via `iconImage` on the
+   `llm_chat_appearance` JSON. The image fills the 36×36 round avatar
+   slot regardless of source aspect ratio thanks to `object-fit: cover`,
+   and inherits the slot's border-radius so it stays a clean
+   circle / rounded square. */
+.message-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border-radius: inherit;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* When an image is rendered the FontAwesome inset-shadow tint can leak
+   through transparent PNG corners; remove it so the artwork wins. */
+.message-avatar:has(.message-avatar-img) {
+  box-shadow: none;
+  background: transparent;
+}
+
+/* ===== Letter avatar fallback (v1.3.0+) =====
+   Last-resort avatar when neither a custom image nor FontAwesome is
+   available (FA detection ran and reported the font missing). Uses the
+   same palette as the FontAwesome icon so the bubble layout stays
+   consistent. */
+.message-avatar-letter {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--llm-ai-avatar-text);
+}
+
+.message-wrapper.user .message-avatar-letter {
+  color: var(--llm-user-avatar-text);
+}
+
 @keyframes messageSlideIn {
   from {
     opacity: 0;

@@ -192,20 +192,47 @@ export interface FileValidationResult {
 // ============================================================================
 
 /**
- * Color definition for a single chat participant (user or AI)
+ * Unified appearance configuration for one side of the chat (user or AI).
+ *
+ * v1.3.0+ collapses the legacy `llm_chat_colors` / `llm_chat_icons` JSON
+ * fields into a single `llm_chat_appearance` field whose merged value is
+ * exposed under `LlmChatConfig.chatAppearance`. Every side carries the
+ * full set of keys — `LlmChatModel::getChatAppearance()` merges the
+ * author-provided JSON over a defaults tree before serialising, so the
+ * front-end can read each key unconditionally.
+ *
+ * Resolution priority for the avatar (web AND mobile):
+ *   1. `iconImage` set → render `<img>` (always wins, both platforms).
+ *   2. Web → `<i className="fas {icon}">`. If FontAwesome is missing
+ *      at runtime, the renderer falls back to a coloured letter.
+ *      Mobile → `<ion-icon name="{iconMobile}">`.
+ *
+ * `iconImage` URLs are pre-resolved server-side: `{{interpolation}}` is
+ * already applied and `BASE_PATH` is prepended for absolute server paths.
+ * The frontend MUST NOT re-prefix it.
  */
-export interface ChatBubbleColor {
+export interface ChatAppearanceSide {
+  /** Bubble background colour (hex / rgb()). */
   bg: string;
+  /** Text colour. */
   text: string;
+  /** Accent border colour (left rail on AI, right rail on user). */
   border: string;
+  /** FontAwesome class for the web avatar (e.g. `fa-user`, `fa-robot`). */
+  icon: string;
+  /** Ionic icon name for the mobile avatar (e.g. `person-circle`). */
+  iconMobile: string;
+  /** Custom avatar URL. Wins over `icon`/`iconMobile` on both platforms when non-empty. */
+  iconImage: string;
 }
 
 /**
- * Chat color palette from the database
+ * Unified chat appearance config from the `llm_chat_appearance` field.
+ * Always contains both sides — defaults are filled in server-side.
  */
-export interface ChatColors {
-  user?: ChatBubbleColor;
-  ai?: ChatBubbleColor;
+export interface ChatAppearance {
+  user: ChatAppearanceSide;
+  ai: ChatAppearanceSide;
 }
 
 /**
@@ -383,9 +410,15 @@ export interface LlmChatConfig {
   /** Error message for form submission failures */
   formSubmissionError?: string;
 
-  // ===== Chat Colors =====
-  /** Custom color palette for chat bubbles */
-  chatColors?: ChatColors;
+  // ===== Chat Bubble Appearance (v1.3.0+) =====
+  /**
+   * Unified visual configuration for the user / AI bubbles. Replaces
+   * the legacy `chatColors` + `chatIcons` config from earlier v1.x
+   * releases. `LlmChatModel::getChatAppearance()` merges the author's
+   * partial JSON over a complete defaults tree, so every side carries
+   * every key (the frontend never has to defensively coalesce here).
+   */
+  chatAppearance?: ChatAppearance;
 }
 
 /**
