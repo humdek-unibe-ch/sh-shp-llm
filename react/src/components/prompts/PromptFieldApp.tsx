@@ -185,7 +185,19 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
   const effectiveVariablesSchema = variablesSchemaOverride || metaState.prompt?.variablesSchema || bootstrap?.variables_schema || [];
   const changeNote = metaState.prompt?.pendingChangeNote || '';
   const isDirty = promptValue !== (activeVersion?.template_raw || '');
-  const currentRuntimeOverrides = resolveRuntimeOverrides(bootstrap?.companion_field_names || []);
+  const companionFieldNamesKey = (bootstrap?.companion_field_names || []).join('|');
+  const currentRuntimeOverrides = useMemo(
+    () => resolveRuntimeOverrides(bootstrap?.companion_field_names || []),
+    // We key the memo on the joined field-name list so the override object
+    // is reused unless the companion list actually changes content. The
+    // resolver itself is already stable via useCallback above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [companionFieldNamesKey, resolveRuntimeOverrides],
+  );
+  const resolveRuntimeOverridesForModal = useCallback(
+    () => currentRuntimeOverrides,
+    [currentRuntimeOverrides],
+  );
   const defaultPromptModel =
     String(currentRuntimeOverrides.llm_model || '') ||
     extractActiveVersionModel(activeVersion?.config_json) ||
@@ -373,7 +385,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         promptValue={promptValue}
         disabled={disabled || (bootstrap?.playground_runtime_type || 'none') === 'none'}
         defaultModel={defaultPromptModel}
-        resolveRuntimeOverrides={() => currentRuntimeOverrides}
+        resolveRuntimeOverrides={resolveRuntimeOverridesForModal}
         onApplyDraft={handleBuilderApply}
         onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
           variables: Record<string, unknown>;
@@ -410,7 +422,7 @@ export const PromptFieldApp: React.FC<PromptFieldAppProps> = ({
         promptValue={promptValue}
         disabled={disabled}
         defaultModel={defaultPromptModel}
-        resolveRuntimeOverrides={() => currentRuntimeOverrides}
+        resolveRuntimeOverrides={resolveRuntimeOverridesForModal}
         lastPlaygroundCapture={lastPlaygroundCapture}
       />
 

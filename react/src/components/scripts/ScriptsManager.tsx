@@ -241,6 +241,26 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     form.test_variables,
   ]);
 
+  // Stable callbacks for child editors and playground modals so unstable
+  // identities never trigger Monaco re-creation or modal re-initialization.
+  const handleScriptChange = useCallback((value: string) => {
+    setForm((prev) => ({ ...prev, script: value }));
+  }, []);
+
+  const handleTestVariablesChange = useCallback((value: string) => {
+    setForm((prev) => ({ ...prev, test_variables: value }));
+  }, []);
+
+  const resolveRuntimeOverridesCallback = useCallback(
+    () => promptRuntimeOverrides,
+    [promptRuntimeOverrides],
+  );
+
+  const resolveInitialVariablesCallback = useCallback(
+    () => parseJsonObject(form.test_variables),
+    [form.test_variables],
+  );
+
   const {
     bootstrap: promptBootstrap,
     loading: promptLoading,
@@ -791,7 +811,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
             <Card.Body className="p-0">
               <PromptEditor
                 value={form.script}
-                onChange={(value) => setForm((prev) => ({ ...prev, script: value }))}
+                onChange={handleScriptChange}
                 editorMode="monaco"
                 minHeight={560}
                 placeholder="Write the script prompt template here"
@@ -982,7 +1002,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
             <Card.Body className="p-0">
               <JsonMonacoEditor
                 value={form.test_variables || '{\n  \n}'}
-                onChange={(value) => setForm((prev) => ({ ...prev, test_variables: value }))}
+                onChange={handleTestVariablesChange}
                 expectObject
                 minHeight={220}
               />
@@ -1024,8 +1044,8 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         promptValue={form.script}
         disabled={promptDisabled}
         defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
-        resolveRuntimeOverrides={() => promptRuntimeOverrides}
-        resolveInitialVariables={() => parseJsonObject(form.test_variables)}
+        resolveRuntimeOverrides={resolveRuntimeOverridesCallback}
+        resolveInitialVariables={resolveInitialVariablesCallback}
         onApplyDraft={handleBuilderApply}
         onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: {
           variables: Record<string, unknown>;
@@ -1062,7 +1082,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         promptValue={form.script}
         disabled={promptDisabled}
         defaultModel={form.model || defaults?.default_model || models[0]?.id || null}
-        resolveRuntimeOverrides={() => promptRuntimeOverrides}
+        resolveRuntimeOverrides={resolveRuntimeOverridesCallback}
         lastPlaygroundCapture={lastPlaygroundCapture}
       />
 

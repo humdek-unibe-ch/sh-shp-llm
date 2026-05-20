@@ -7,7 +7,7 @@
  *
  * @module components/prompts/PromptPlaygroundModal
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Select from 'react-select';
 import { Alert, Badge, Button, Col, Form, Modal, Row, Spinner } from 'react-bootstrap';
 import { PromptBuilderWorkspace } from './PromptBuilderWorkspace';
@@ -209,20 +209,18 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
     }),
   };
   const effectiveModels = useMemo(() => buildEffectiveModels(models, defaultModel), [defaultModel, models]);
-  const initialRuntimeValues = useMemo(() => resolveInitialVariables?.() || {}, [resolveInitialVariables]);
   const [localPromptValue, setLocalPromptValue] = useState(promptValue);
   const [localVariablesSchema, setLocalVariablesSchema] = useState<PromptVariableDefinition[]>(variablesSchema || []);
+  const [valueDerivedSchema, setValueDerivedSchema] = useState<PromptVariableDefinition[]>([]);
   const detectedVariables = useMemo(() => detectVariablesFromPrompt(localPromptValue), [localPromptValue]);
-  const valueDerivedSchema = useMemo(() => deriveVariableSchemaFromValues(initialRuntimeValues), [initialRuntimeValues]);
   const effectiveSchema = useMemo(() => {
     const merged = mergeVariableSchemas(localVariablesSchema || [], detectedVariables);
     return mergeVariableSchemas(merged, valueDerivedSchema);
   }, [detectedVariables, localVariablesSchema, valueDerivedSchema]);
-  const initialVariables = useMemo(() => normalizeInitialValues(effectiveSchema, initialRuntimeValues), [effectiveSchema, initialRuntimeValues]);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [variables, setVariables] = useState<Record<string, unknown>>(initialVariables);
+  const [variables, setVariables] = useState<Record<string, unknown>>({});
   const [useRawJson, setUseRawJson] = useState(false);
-  const [rawJson, setRawJson] = useState(JSON.stringify(initialVariables, null, 2));
+  const [rawJson, setRawJson] = useState('{}');
   const [messageHistory, setMessageHistory] = useState<PromptMessage[]>([
     { role: 'user', content: 'Test this prompt in playground mode.' },
   ]);
@@ -235,32 +233,67 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
   const isChatRuntime = playgroundRuntimeType === 'chat'
     || (playgroundRuntimeType === 'none' && executionProfile === 'chat_runtime');
 
+  // Snapshot the latest "opening" props in a ref so the reset effect can read
+  // them without subscribing — the reset must only fire on an explicit
+  // false→true transition of `show`, never on a parent rerender that
+  // happens while the modal is already open.
+  const openSnapshotRef = useRef({
+    defaultModel,
+    effectiveModels,
+    isChatRuntime,
+    promptValue,
+    variablesSchema,
+    resolveInitialVariables,
+  });
+  openSnapshotRef.current = {
+    defaultModel,
+    effectiveModels,
+    isChatRuntime,
+    promptValue,
+    variablesSchema,
+    resolveInitialVariables,
+  };
+
+  const wasOpenRef = useRef(false);
   useEffect(() => {
     if (!show) {
+      wasOpenRef.current = false;
       return;
     }
 
-    const initialModel = defaultModel || effectiveModels[0]?.id || '';
+    if (wasOpenRef.current) {
+      // Already initialized for this open session — do not stomp on the
+      // user's local edits because the parent happened to rerender (for
+      // example after onRunComplete fires and the parent captures state).
+      return;
+    }
+    wasOpenRef.current = true;
+
+    const snapshot = openSnapshotRef.current;
+    const freshInitialRuntimeValues = snapshot.resolveInitialVariables?.() || {};
+    const initialModel = snapshot.defaultModel || snapshot.effectiveModels[0]?.id || '';
+    const nextValueDerivedSchema = deriveVariableSchemaFromValues(freshInitialRuntimeValues);
     const promptSchema = mergeVariableSchemas(
-      mergeVariableSchemas(variablesSchema || [], detectVariablesFromPrompt(promptValue)),
-      valueDerivedSchema,
+      mergeVariableSchemas(snapshot.variablesSchema || [], detectVariablesFromPrompt(snapshot.promptValue)),
+      nextValueDerivedSchema,
     );
-    const promptVariables = normalizeInitialValues(promptSchema, initialRuntimeValues);
+    const promptVariables = normalizeInitialValues(promptSchema, freshInitialRuntimeValues);
     const defaultMessages = [{ role: 'user', content: 'Test this prompt in playground mode.' } as PromptMessage];
 
     setSelectedModels(initialModel ? [initialModel] : []);
-    setLocalPromptValue(promptValue);
-    setLocalVariablesSchema(variablesSchema || []);
+    setLocalPromptValue(snapshot.promptValue);
+    setLocalVariablesSchema(snapshot.variablesSchema || []);
+    setValueDerivedSchema(nextValueDerivedSchema);
     setVariables(promptVariables);
     setMessageHistory(defaultMessages);
-    setRawJson(JSON.stringify(buildRawPayload(isChatRuntime, promptVariables, defaultMessages), null, 2));
+    setRawJson(JSON.stringify(buildRawPayload(snapshot.isChatRuntime, promptVariables, defaultMessages), null, 2));
     setResult(null);
     setError(null);
     setJsonSyncError(null);
     setSchemaFromJson([]);
     setUseRawJson(false);
     setShowBuilderPanel(false);
-  }, [defaultModel, effectiveModels, initialRuntimeValues, isChatRuntime, promptValue, show, valueDerivedSchema, variablesSchema]);
+  }, [show]);
 
   useEffect(() => {
     if (!show || !useRawJson) {
@@ -355,7 +388,10 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
 
     setRunning(true);
     setError(null);
-    setResult(null);
+    // Intentionally do NOT clear `result` here. Keeping the previous result
+    // visible while the new request is in flight prevents the panel from
+    // flashing blank between runs. `setResult(nextResult)` below will
+    // atomically replace the old runs once the new response arrives.
     try {
       let payloadVariables = variables;
       let payloadMessageHistory = messageHistory;
@@ -587,18 +623,26 @@ export const PromptPlaygroundModal: React.FC<PromptPlaygroundModalProps> = ({
             </div>
 
             {result?.runs?.length ? (
-              result.runs.map((run, index) => (
-                <div key={`${run.model}-${index}`} className="mb-3">
-                  <PromptResultPanel run={run} colorIndex={index} />
-                  {!sharedEffectiveContext && (
-                    <PromptEffectiveContextPanel
-                      effectiveContext={run.effective_context}
-                      title={`Effective Context (${run.model})`}
-                      colorIndex={index}
-                    />
-                  )}
-                </div>
-              ))
+              <>
+                {running && (
+                  <div className="border rounded bg-light text-muted small py-2 px-3 mb-2 d-flex align-items-center">
+                    <Spinner animation="border" size="sm" className="mr-2" />
+                    Generating new result… previous result still shown.
+                  </div>
+                )}
+                {result.runs.map((run, index) => (
+                  <div key={`${run.model}-${index}`} className="mb-3">
+                    <PromptResultPanel run={run} colorIndex={index} />
+                    {!sharedEffectiveContext && (
+                      <PromptEffectiveContextPanel
+                        effectiveContext={run.effective_context}
+                        title={`Effective Context (${run.model})`}
+                        colorIndex={index}
+                      />
+                    )}
+                  </div>
+                ))}
+              </>
             ) : (
               <div className="prompt-playground-empty border rounded bg-light p-4 text-center text-muted small">
                 {running ? (

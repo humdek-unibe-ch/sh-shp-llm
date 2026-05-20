@@ -7,7 +7,7 @@
  *
  * @module components/memory/MemoryRulesEditorApp
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import CreatableSelect from 'react-select/creatable';
 import { Alert, Badge, Button, Card, Col, Dropdown, Form, Row, Spinner } from 'react-bootstrap';
 import { InfoPopover } from '../shared/InfoPopover';
@@ -425,6 +425,13 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     llm_temperature: effectiveTemperature,
     llm_max_tokens: effectiveMaxTokens,
   }), [effectiveMaxTokens, effectiveModel, effectiveTemperature]);
+
+  // Stable callback so the playground modal never sees a fresh identity on
+  // parent rerenders triggered by onRunComplete state captures.
+  const resolveRuntimeOverridesCallback = useCallback(
+    () => promptRuntimeOverrides,
+    [promptRuntimeOverrides],
+  );
 
   const { bootstrap: promptBootstrap, loading: promptLoading, error: promptError, reload: reloadPromptBootstrap, setBootstrap: setPromptBootstrap } = usePromptBootstrap({
     api,
@@ -863,8 +870,8 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
       {promptDescriptor && draft ? <>
         <PromptVersionsModal show={showVersions} onHide={() => setShowVersions(false)} versions={versions} activeVersionId={activeVersion?.id || null} disabled={!promptDescriptor} onUseVersion={handleUseVersion} onCompareVersion={openDiffWithVersion} />
         <PromptDiffModal show={showDiff} onHide={() => setShowDiff(false)} api={api} descriptor={promptDescriptor} versions={versions} draftContent={draft.prompt_template} initialLeftKey={diffState.initialLeftKey} initialRightKey={diffState.initialRightKey} />
-        <PromptPlaygroundModal show={showPlayground} onHide={() => setShowPlayground(false)} api={api} descriptor={promptDescriptor} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} playgroundRuntimeType={promptBootstrap?.playground_runtime_type || 'script'} models={promptBootstrap?.models || []} variablesSchema={effectiveVariablesSchema} promptValue={draft.prompt_template} disabled={!promptDescriptor || (promptBootstrap?.playground_runtime_type || 'script') === 'none'} defaultModel={defaultPromptModel} resolveRuntimeOverrides={() => promptRuntimeOverrides} onApplyDraft={handleBuilderApply} onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: { variables: Record<string, unknown>; messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; runtimeOverrides: Record<string, unknown>; response: PromptPlaygroundResponse; }) => { const firstRun = response.runs?.[0]; setLastPlaygroundCapture({ variables, messageHistory, runtimeOverrides, runRef: firstRun ? { id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null, id_llmConversations: firstRun.id_llmConversations ?? null, id_llmMessages_request: firstRun.id_llmMessages_request ?? null, id_llmMessages_response: firstRun.id_llmMessages_response ?? null } : null }); }} />
-        <PromptDatasetsModal show={showDatasets} onHide={() => setShowDatasets(false)} api={api} descriptor={promptDescriptor} versions={versions} activeVersionId={activeVersion?.id || null} models={promptBootstrap?.models || []} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} promptValue={draft.prompt_template} disabled={!promptDescriptor} defaultModel={defaultPromptModel} resolveRuntimeOverrides={() => promptRuntimeOverrides} lastPlaygroundCapture={lastPlaygroundCapture} />
+        <PromptPlaygroundModal show={showPlayground} onHide={() => setShowPlayground(false)} api={api} descriptor={promptDescriptor} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} playgroundRuntimeType={promptBootstrap?.playground_runtime_type || 'script'} models={promptBootstrap?.models || []} variablesSchema={effectiveVariablesSchema} promptValue={draft.prompt_template} disabled={!promptDescriptor || (promptBootstrap?.playground_runtime_type || 'script') === 'none'} defaultModel={defaultPromptModel} resolveRuntimeOverrides={resolveRuntimeOverridesCallback} onApplyDraft={handleBuilderApply} onRunComplete={({ variables, messageHistory, runtimeOverrides, response }: { variables: Record<string, unknown>; messageHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>; runtimeOverrides: Record<string, unknown>; response: PromptPlaygroundResponse; }) => { const firstRun = response.runs?.[0]; setLastPlaygroundCapture({ variables, messageHistory, runtimeOverrides, runRef: firstRun ? { id_llm_prompt_playground_runs: firstRun.id_llm_prompt_playground_runs ?? null, id_llmConversations: firstRun.id_llmConversations ?? null, id_llmMessages_request: firstRun.id_llmMessages_request ?? null, id_llmMessages_response: firstRun.id_llmMessages_response ?? null } : null }); }} />
+        <PromptDatasetsModal show={showDatasets} onHide={() => setShowDatasets(false)} api={api} descriptor={promptDescriptor} versions={versions} activeVersionId={activeVersion?.id || null} models={promptBootstrap?.models || []} executionProfile={promptBootstrap?.execution_profile || 'memory_runtime'} promptValue={draft.prompt_template} disabled={!promptDescriptor} defaultModel={defaultPromptModel} resolveRuntimeOverrides={resolveRuntimeOverridesCallback} lastPlaygroundCapture={lastPlaygroundCapture} />
         <PromptBuilderModal show={showBuilder} onHide={() => setShowBuilder(false)} api={api} descriptor={promptDescriptor} currentPrompt={draft.prompt_template} models={promptBootstrap?.models || []} defaultModel={defaultPromptModel} disabled={!promptDescriptor} onApplySuggestion={handleBuilderApply} />
       </> : null}
     </div>

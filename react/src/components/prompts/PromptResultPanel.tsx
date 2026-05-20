@@ -25,15 +25,35 @@ function colorFromIndex(index: number): string {
   return palette[index % palette.length];
 }
 
+/**
+ * Coerce a raw_content payload that may have been parsed into an object on
+ * the wire back into a markdown-displayable string. Empty/missing values
+ * resolve to '' so the markdown renderer never blows up.
+ */
+function rawContentToString(raw: unknown): string {
+  if (raw == null) {
+    return '';
+  }
+  if (typeof raw === 'string') {
+    return raw;
+  }
+  try {
+    return '```json\n' + JSON.stringify(raw, null, 2) + '\n```';
+  } catch {
+    return String(raw);
+  }
+}
+
 /** Panel component for prompt result panel. */
 export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, colorIndex = 0 }) => {
   const color = colorFromIndex(colorIndex);
   const parsedFromRun = run.parsed_response && typeof run.parsed_response === 'object'
     ? run.parsed_response
     : null;
+  const rawContentString = rawContentToString(run.raw_content);
   const parsed = parsedFromRun && isStructuredResponse(parsedFromRun)
     ? (parsedFromRun as any)
-    : parseStructuredResponse(run.raw_content);
+    : parseStructuredResponse(rawContentString);
   const normalizedStructured = parsed && isStructuredResponse(parsed)
     ? ({
       ...parsed,
@@ -41,6 +61,10 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, color
     } as any)
     : null;
   const canRenderStructured = !!normalizedStructured;
+  const markdownContent = run.display_content && run.display_content.trim() !== ''
+    ? run.display_content
+    : rawContentString;
+  const hasAnyContent = canRenderStructured || markdownContent.trim() !== '';
 
   return (
     <div
@@ -83,8 +107,13 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, color
         <div className="border rounded p-3 bg-light">
           {canRenderStructured ? (
             <StructuredResponseRenderer response={normalizedStructured as any} />
+          ) : hasAnyContent ? (
+            <MarkdownRenderer content={markdownContent} />
           ) : (
-            <MarkdownRenderer content={run.display_content || run.raw_content || ''} />
+            <div className="text-muted small">
+              <em>No content returned from the model.</em>
+              {' '}Inspect the Raw Response and Request Payload sections below for diagnostics.
+            </div>
           )}
         </div>
       </div>

@@ -2,6 +2,36 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.3.1] - 2026-05-20
+
+### Fixed
+
+- **Prompt Lab editor + playground stability.** The LLM Script Prompt and
+  Test Variables Monaco editors no longer remount on every keystroke
+  (parent callback identity was forcing `monaco.editor.create` to fire on
+  every render, blurring the field and dropping the caret). The shared
+  `PromptEditor` now keeps the latest `onChange` in a ref and only
+  rebuilds the editor when true structural inputs change (`editorMode`,
+  `language`, fallback availability).
+- **Playground result panel no longer disappears after a run completes.**
+  `PromptPlaygroundModal` previously re-initialized its entire local
+  state whenever the parent rerendered (e.g. after `onRunComplete`
+  captured the run reference), which immediately cleared the freshly
+  set `result`. Reset now only fires on a real open transition of the
+  modal; the previous run stays visible while a new one is in flight
+  and is replaced atomically.
+- **Stable parent callbacks for the playground modal.** `ScriptsManager`,
+  `PromptFieldApp`, and `MemoryRulesEditorApp` now pass memoized
+  `resolveRuntimeOverrides` / `resolveInitialVariables` callbacks, so
+  unstable arrow identities never trigger spurious modal
+  reinitialization or downstream Monaco recreation.
+- **Result panel renders gracefully on empty/error responses.**
+  `PromptResultPanel` now coerces non-string `raw_content` into a
+  JSON-formatted markdown block, prefers `display_content` when
+  populated, falls back to `raw_content` when not, and shows a clear
+  "No content returned from the model" hint instead of a blank panel
+  when both are empty.
+
 ## [1.3.0] - 2026-05-05
 
 ### Added

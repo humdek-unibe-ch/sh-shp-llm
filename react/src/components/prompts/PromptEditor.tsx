@@ -8,6 +8,14 @@
  * Used as the primary text input across the Prompt Lab, Scripts Manager,
  * and JSON editors.
  *
+ * The Monaco editor lifecycle is intentionally decoupled from parent
+ * callback identity so that an unstable `onChange` (e.g. an inline arrow
+ * passed from a parent that rerenders on every keystroke) never causes
+ * the editor instance to be torn down and recreated. Recreation would
+ * blur the field, drop the caret to position 0, and visibly thrash for
+ * the user. The editor is only recreated when true config (editorMode,
+ * language, fallback availability) changes.
+ *
  * @module components/prompts/PromptEditor
  */
 import React, { useEffect, useRef, useState } from 'react';
@@ -44,7 +52,25 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
   const editorContainerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<any>(null);
   const lastValueRef = useRef<string>(value);
+  const onChangeRef = useRef(onChange);
+  const valueRef = useRef(value);
+  const disabledRef = useRef(disabled);
   const [fallbackToTextarea, setFallbackToTextarea] = useState(editorMode !== 'monaco');
+
+  // Keep the latest onChange/value/disabled in refs so the Monaco listener
+  // can read them without forcing the editor to be recreated when the
+  // parent passes a fresh callback identity on every render.
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
 
   useEffect(() => {
     if (editorMode !== 'monaco') {
@@ -55,6 +81,10 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
     setFallbackToTextarea(false);
   }, [editorMode]);
 
+  // Mount/teardown the Monaco editor. Intentionally depends ONLY on truly
+  // structural inputs (editorMode, language, fallback toggle). Changes to
+  // `disabled`, `value`, or `onChange` are propagated via the dedicated
+  // sync effects below so the live editor instance keeps its caret/focus.
   useEffect(() => {
     if (editorMode !== 'monaco' || fallbackToTextarea || !editorContainerRef.current) {
       return;
@@ -71,8 +101,11 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
         editorRef.current.dispose();
       }
 
+      const initialValue = valueRef.current ?? '';
+      lastValueRef.current = initialValue;
+
       editorRef.current = monaco.editor.create(editorContainerRef.current, {
-        value,
+        value: initialValue,
         language,
         automaticLayout: true,
         renderLineHighlight: 'none',
@@ -81,13 +114,13 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
         fontSize: 14,
         lineNumbers: 'on',
         scrollBeyondLastLine: false,
-        readOnly: disabled,
+        readOnly: disabledRef.current,
       });
 
       editorRef.current.onDidChangeModelContent(() => {
         const nextValue = editorRef.current?.getValue?.() ?? '';
         lastValueRef.current = nextValue;
-        onChange(nextValue);
+        onChangeRef.current(nextValue);
       });
     };
 
@@ -111,8 +144,12 @@ export const PromptEditor: React.FC<PromptEditorProps> = ({
         editorRef.current = null;
       }
     };
-  }, [disabled, editorMode, fallbackToTextarea, language, onChange]);
+  }, [editorMode, fallbackToTextarea, language]);
 
+  // Mirror controlled `value` prop into the live editor without disturbing
+  // the caret when the user is the source of the change. The `lastValueRef`
+  // guard makes setValue a no-op when the value coming back from the parent
+  // matches the value we just emitted from the change listener.
   useEffect(() => {
     if (!editorRef.current) {
       return;

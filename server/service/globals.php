@@ -53,6 +53,13 @@ define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
 
 /* =========================================================================
+ * PHP CLI BINARY
+ * Used by async/background workers spawned by the LLM plugin.
+ * ========================================================================= */
+
+define('LLM_PHP_CLI_BINARY', 'C:\\wamp64\\bin\\php\\php8.3.28\\php.exe');
+
+/* =========================================================================
  * API ENDPOINTS (OpenAI-compatible paths)
  * ========================================================================= */
 

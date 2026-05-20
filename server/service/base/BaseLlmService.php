@@ -633,6 +633,23 @@ abstract class BaseLlmService
         $is_win = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
         $bin_name = $is_win ? 'php.exe' : 'php';
 
+        foreach (array(
+            defined('LLM_PHP_CLI_BINARY') ? LLM_PHP_CLI_BINARY : null,
+            getenv('SELFHELP_PHP_CLI_BINARY'),
+            getenv('PHP_CLI_BINARY'),
+            defined('SELFHELP_PHP_CLI_BINARY') ? SELFHELP_PHP_CLI_BINARY : null,
+            defined('PHP_CLI_BINARY') ? PHP_CLI_BINARY : null,
+        ) as $configured_bin) {
+            if (!is_string($configured_bin)) {
+                continue;
+            }
+
+            $configured_bin = trim($configured_bin, " \t\n\r\0\x0B\"'");
+            if ($configured_bin !== '' && file_exists($configured_bin)) {
+                return $configured_bin;
+            }
+        }
+
         if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') {
             return PHP_BINARY;
         }
