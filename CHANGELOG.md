@@ -2,6 +2,18 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.3.2] - 2026-05-20
+
+### Added
+
+- **Source record tracking for generated LLM script rows.** When an
+  `llm_script` job is triggered from a record-backed form action, the
+  generated output row now stores `linked_record_id` with the source
+  record id. The link is propagated through both synchronous and async
+  worker execution paths, so later processing can trace which record
+  produced a generated row. Non-record/manual runs keep the previous
+  behavior and do not write the field.
+
 ## [1.3.1] - 2026-05-20
 
 ### Fixed

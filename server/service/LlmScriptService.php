@@ -475,12 +475,16 @@ class LlmScriptService extends BaseLlmService
      * @param int $id_users User ID
      * @param int $id_scheduledJobs Scheduled job ID
      * @param string $generated_id Script's generated_id (used as table name)
+     * @param int|null $linked_record_id Source record id for record-triggered runs
      * @return bool Success
      */
-    public function save_llm_results($result, $id_users, $id_scheduledJobs, $generated_id)
+    public function save_llm_results($result, $id_users, $id_scheduledJobs, $generated_id, $linked_record_id = null)
     {
         if ($result['result']) {
             $result['data']['id_users'] = $id_users;
+            if ($linked_record_id !== null) {
+                $result['data']['linked_record_id'] = (int)$linked_record_id;
+            }
             foreach ($result['data'] as $key => $value) {
                 if (is_array($value)) {
                     $result['data'][$key] = json_encode($value);

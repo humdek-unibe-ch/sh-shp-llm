@@ -514,6 +514,7 @@ class LlmHooks extends BaseHooks
         $form_values = $this->user_input->get_form_values(
             $args['task_info']['config']['form_data']['form_fields']
         );
+        $linked_record_id = $this->resolveLlmScriptLinkedRecordId($args);
 
         $worker_args = [
             'script_id' => $script_info['id'],
@@ -521,6 +522,7 @@ class LlmHooks extends BaseHooks
             'id_users' => $args['user']['id_users'],
             'id_scheduledJobs' => $args['user']['id_scheduledJobs'],
             'http_host' => $_SERVER['HTTP_HOST'] ?? 'localhost',
+            'linked_record_id' => $linked_record_id,
         ];
 
         $tmp_file = tempnam(sys_get_temp_dir(), 'llm_async_');
@@ -590,6 +592,7 @@ class LlmHooks extends BaseHooks
     private function execute_llm_script_from_job($args, $script_info = null)
     {
         $scriptService = new LlmScriptService($this->services);
+        $linked_record_id = $this->resolveLlmScriptLinkedRecordId($args);
 
         if (!$script_info) {
             $script_info = $scriptService->fetch_script(
@@ -626,7 +629,8 @@ class LlmHooks extends BaseHooks
             $result,
             $args['user']['id_users'],
             $args['user']['id_scheduledJobs'],
-            $script_info['generated_id']
+            $script_info['generated_id'],
+            $linked_record_id
         );
 
         if ($save_success && $script_info['refresh_sections']) {
@@ -642,6 +646,29 @@ class LlmHooks extends BaseHooks
         }
 
         return $save_success;
+    }
+
+    /**
+     * Resolve the source record id for a record-triggered LLM script job.
+     *
+     * @param array $args Hook arguments
+     * @return int|null
+     */
+    private function resolveLlmScriptLinkedRecordId($args)
+    {
+        $form_data = $args['task_info']['config']['form_data'] ?? array();
+        $raw_record_id = $form_data['record_id'] ?? ($form_data['form_fields'][ENTRY_RECORD_ID] ?? null);
+
+        if ($raw_record_id === null || $raw_record_id === '') {
+            return null;
+        }
+
+        if (!is_numeric($raw_record_id)) {
+            return null;
+        }
+
+        $record_id = (int)$raw_record_id;
+        return $record_id > 0 ? $record_id : null;
     }
 
     /**

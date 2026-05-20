@@ -182,7 +182,10 @@ try {
         $result,
         $args['id_users'],
         $args['id_scheduledJobs'],
-        $script_info['generated_id']
+        $script_info['generated_id'],
+        isset($args['linked_record_id']) && is_numeric($args['linked_record_id'])
+            ? (int)$args['linked_record_id']
+            : null
     );
 
     if ($save_success && $script_info['refresh_sections']) {
