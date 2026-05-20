@@ -59,7 +59,7 @@ CALL add_table_column('llmConversations', 'id_llm_conversation_sources',
 
 CALL add_index('llmConversations', 'idx_llm_conversation_source', 'id_llm_conversation_sources');
 
-CALL add_foreign_key('llmConversations', 'id_llm_conversation_sources', 'lookups', 'id');
+CALL add_foreign_key('llmConversations', 'llmConversations_fk_id_llm_conversation_sources', 'id_llm_conversation_sources', 'lookups (id)');
 
 -- =====================================================
 -- 3. HINT-SUGGESTION TOGGLE FIELD
