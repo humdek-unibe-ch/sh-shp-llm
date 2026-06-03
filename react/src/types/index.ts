@@ -247,6 +247,17 @@ export type FloatingButtonPosition =
   | 'top-center';
 
 /**
+ * Floating chat shortcut configuration
+ * Represents a quick-start message shortcut that appears as a pill around the floating button
+ */
+export interface LlmChatShortcut {
+  /** Label shown on the shortcut pill */
+  label: string;
+  /** Message sent when the shortcut is clicked (uses label if empty) */
+  message: string;
+}
+
+/**
  * LLM Chat component configuration
  * Passed from PHP via data attributes on the container element
  * Matches the data attributes set in llm_chat_main.php
@@ -325,6 +336,8 @@ export interface LlmChatConfig {
   floatingButtonLabel: string;
   /** Title for the floating chat modal */
   floatingChatTitle: string;
+  /** Quick-start message shortcuts for the floating button */
+  floatingShortcuts?: LlmChatShortcut[];
   /** Whether the chat is currently in floating mode */
   isFloatingMode: boolean;
   /** Force scroll to bottom (used by floating chat when panel opens) */
@@ -454,8 +467,9 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   enableFloatingButton: false,
   floatingButtonPosition: 'bottom-right',
   floatingButtonIcon: 'fa-comments',
-  floatingButtonLabel: 'Chat',
+  floatingButtonLabel: '',
   floatingChatTitle: 'AI Assistant',
+  floatingShortcuts: [],
   isFloatingMode: false,
   forceScrollToBottom: false,
   messagePlaceholder: 'Type your message...',

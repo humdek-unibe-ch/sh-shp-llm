@@ -351,9 +351,64 @@ class LlmChatModel extends StyleModel
     /** @return string FontAwesome icon class for the floating button (e.g. 'fa-comments'). */
     public function getFloatingButtonIcon() { return $this->get_db_field('floating_button_icon', 'fa-comments'); }
     /** @return string Text label displayed on/beside the floating button. */
-    public function getFloatingButtonLabel() { return $this->get_db_field('floating_button_label', 'Chat'); }
+    public function getFloatingButtonLabel() { return $this->get_db_field('floating_button_label', ''); }
     /** @return string Title shown in the floating chat panel header. */
     public function getFloatingChatTitle() { return $this->get_db_field('floating_chat_title', 'AI Assistant'); }
+
+    /**
+     * Parse the llm_chat_shortcuts JSON field into a normalized array.
+     *
+     * Expected shape:
+     * [
+     *   {
+     *     "label": "Where was that exercise with XY again?",
+     *     "message": "Where was that exercise with XY again?"
+     *   }
+     * ]
+     *
+     * Rules:
+     * - If message is empty or missing, use label as the message.
+     * - Ignore entries without usable label text.
+     * - Empty or missing shortcuts returns empty array.
+     *
+     * @return array Normalized shortcuts array with label and message keys.
+     */
+    public function getFloatingShortcuts()
+    {
+        $raw = $this->get_db_field('llm_chat_shortcuts', '');
+        if (empty($raw)) {
+            return [];
+        }
+
+        $decoded = is_array($raw) ? $raw : json_decode((string)$raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $shortcuts = [];
+        foreach ($decoded as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $label = isset($item['label']) ? trim((string)$item['label']) : '';
+            if (empty($label)) {
+                continue;
+            }
+
+            $message = isset($item['message']) ? trim((string)$item['message']) : '';
+            if (empty($message)) {
+                $message = $label;
+            }
+
+            $shortcuts[] = [
+                'label' => $label,
+                'message' => $message
+            ];
+        }
+
+        return $shortcuts;
+    }
 
     // ===== Media Rendering =====
 
@@ -497,6 +552,7 @@ class LlmChatModel extends StyleModel
             'floatingButtonIcon' => $this->getFloatingButtonIcon(),
             'floatingButtonLabel' => $this->getFloatingButtonLabel(),
             'floatingChatTitle' => $this->getFloatingChatTitle(),
+            'floatingShortcuts' => $this->getFloatingShortcuts(),
             'messagePlaceholder' => $f('message_placeholder', 'Type your message here...'),
             'noConversationsMessage' => $f('no_conversations_message', 'No conversations yet. Start a new chat!'),
             'newConversationTitleLabel' => $f('new_conversation_title_label', 'New Conversation'),

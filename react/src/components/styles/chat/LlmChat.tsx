@@ -83,11 +83,23 @@ function useSmartScroll(containerRef: React.RefObject<HTMLDivElement>) {
 }
 
 /**
+ * Shortcut request object for safe "send exactly once" behavior
+ */
+interface ShortcutRequest {
+  id: string;
+  message: string;
+}
+
+/**
  * Props for LlmChat component
  */
 interface LlmChatProps {
   /** Component configuration from PHP backend */
   config: LlmChatConfig;
+  /** Optional shortcut request from floating chat */
+  shortcutRequest?: ShortcutRequest | null;
+  /** Callback to notify when shortcut request is consumed */
+  onShortcutRequestConsumed?: () => void;
 }
 
 /**
@@ -98,7 +110,7 @@ interface LlmChatProps {
  * 
  * @param props - Component props
  */
-export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
+export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onShortcutRequestConsumed }) => {
   
   // Create section-specific APIs
   const formApi = useMemo(
@@ -130,6 +142,9 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
 
   // Local state for progress tracking
   const [progress, setProgress] = useState<ProgressData | null>(null);
+
+  // Track consumed shortcut request IDs to prevent duplicate sends in React StrictMode
+  const consumedShortcutRequestIdsRef = useRef<Set<string>>(new Set());
   const [isProgressUpdating, setIsProgressUpdating] = useState(false);
 
   // Ref for messages container (for smooth scrolling)
@@ -202,7 +217,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     
     initializeChat();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  
+
   /**
    * Load current conversation for single-conversation mode
    */
@@ -293,6 +308,30 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config }) => {
     setError,
     forceScrollToBottom
   ]);
+
+  /**
+   * Send shortcut message if request is provided and not yet consumed
+   * This implements safe "send exactly once" behavior with request ID tracking
+   */
+  useEffect(() => {
+    if (!shortcutRequest) {
+      return;
+    }
+
+    // Check if this request was already consumed
+    if (consumedShortcutRequestIdsRef.current.has(shortcutRequest.id)) {
+      return;
+    }
+
+    // Only send if not already processing or loading
+    if (!isProcessing && !isLoading) {
+      // Mark as consumed before sending
+      consumedShortcutRequestIdsRef.current.add(shortcutRequest.id);
+      handleSendMessage(shortcutRequest.message, []);
+      // Notify parent that request was consumed
+      onShortcutRequestConsumed?.();
+    }
+  }, [shortcutRequest, isProcessing, isLoading, handleSendMessage, onShortcutRequestConsumed]);
   
   /**
    * Handle conversation creation

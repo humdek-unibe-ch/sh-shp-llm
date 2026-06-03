@@ -2,6 +2,37 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.4.0] - 2026-06-03
+
+### Added
+
+- **Floating chat shortcuts.** A new translatable `llm_chat_shortcuts` JSON field
+  on the `llmChat` style allows authors to configure quick-start message shortcuts
+  that appear as pills around the floating chat button.
+  - When floating chat is enabled and shortcuts are configured:
+    - **Web:** Shortcut pills appear on hover/focus over the floating action button.
+      Clicking a shortcut opens the chat panel and sends the configured message
+      automatically through the existing chat send flow.
+    - **Mobile:** First tap on the floating button shows the shortcut tray (if
+      shortcuts are configured). Tapping a shortcut opens the chat and sends the
+      message. Tapping the floating button again when the tray is open opens the
+      chat normally.
+  - The field accepts an array of shortcut objects with `label` (shown on the pill)
+    and `message` (sent when clicked). If `message` is empty or missing, the
+    `label` is used as the message. Entries without usable label text are ignored.
+  - The field is translatable (`display=1`) like `floating_button_label`, so
+    authors can configure different shortcuts per language in the CMS.
+  - Default value is an empty array, meaning no shortcuts are shown.
+  - The React layer normalises the JSON in `LlmChatModel::getFloatingShortcuts()`
+    and exposes it under `config.floatingShortcuts`. `FloatingChat` renders the
+    tray on hover/focus, and `LlmChat` accepts an optional `initialMessage` prop
+    to send the shortcut message exactly once on mount.
+  - **No new backend logging type, endpoint, or conversation source is needed.**
+    Shortcut sends use the existing message endpoint and are indistinguishable
+    from manual user messages in the conversation history.
+  - Existing `enable_hint_suggestions` behavior is unchanged — model-generated
+    suggestions remain separate from author-configured shortcuts.
+
 ## [1.3.2] - 2026-05-20
 
 ### Added

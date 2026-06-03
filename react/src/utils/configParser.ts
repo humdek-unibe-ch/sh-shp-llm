@@ -27,7 +27,15 @@ function str(
   jsonKey: keyof LlmChatConfig,
   fallback: string
 ): string {
-  return (container[key] as string) || (jsonConfig[jsonKey] as string) || fallback;
+  if (container[key] !== undefined) {
+    return container[key] as string;
+  }
+
+  if (jsonConfig[jsonKey] !== undefined && jsonConfig[jsonKey] !== null) {
+    return jsonConfig[jsonKey] as string;
+  }
+
+  return fallback;
 }
 
 /**
@@ -111,7 +119,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     // Floating button
     floatingButtonPosition: str(ds, 'floatingButtonPosition', jsonConfig, 'floatingButtonPosition', 'bottom-right') as FloatingButtonPosition,
     floatingButtonIcon: str(ds, 'floatingButtonIcon', jsonConfig, 'floatingButtonIcon', 'fa-comments'),
-    floatingButtonLabel: str(ds, 'floatingButtonLabel', jsonConfig, 'floatingButtonLabel', 'Chat'),
+    floatingButtonLabel: str(ds, 'floatingButtonLabel', jsonConfig, 'floatingButtonLabel', ''),
     floatingChatTitle: str(ds, 'floatingChatTitle', jsonConfig, 'floatingChatTitle', 'AI Assistant'),
 
     // Auto-start + speech
@@ -170,5 +178,10 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     chatAppearance: (jsonConfig.chatAppearance && typeof jsonConfig.chatAppearance === 'object'
       ? jsonConfig.chatAppearance
       : undefined) as ChatAppearance | undefined,
+
+    // Floating shortcuts (v1.4.0+)
+    floatingShortcuts: (jsonConfig.floatingShortcuts && Array.isArray(jsonConfig.floatingShortcuts)
+      ? jsonConfig.floatingShortcuts
+      : []),
   } as LlmChatConfig;
 }

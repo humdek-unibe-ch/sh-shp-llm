@@ -456,7 +456,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmChat'), get_field_id('enable_floating_button'), '0', 'Enable floating chat button mode. When enabled, the chat interface is hidden and a floating button appears on the page. Clicking the button opens the chat in a modal/overlay.'),
 (get_style_id('llmChat'), get_field_id('floating_button_position'), 'bottom-right', 'Position of the floating chat button on the screen.'),
 (get_style_id('llmChat'), get_field_id('floating_button_icon'), 'fa-comments', 'Font Awesome icon class for the floating button (e.g., fa-comments, fa-robot, fa-headset). Default: fa-comments'),
-(get_style_id('llmChat'), get_field_id('floating_button_label'), 'Chat', 'Text label shown on the floating button. Leave empty for icon-only button.'),
+(get_style_id('llmChat'), get_field_id('floating_button_label'), '', 'Text label shown on the floating button. Leave empty for icon-only button.'),
 (get_style_id('llmChat'), get_field_id('floating_chat_title'), 'AI Assistant', 'Title shown in the floating chat modal header.');
 
 -- Register hooks for floating position field selection

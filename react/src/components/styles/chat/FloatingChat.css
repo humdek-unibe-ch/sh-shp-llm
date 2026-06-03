@@ -56,7 +56,7 @@
 }
 
 /* Button with label - pill shape */
-.llm-float-btn:has(.llm-float-btn-label) {
+.llm-float-btn.llm-float-btn-with-label {
   width: auto;
   padding: 0 20px;
   border-radius: 28px;
@@ -794,4 +794,130 @@
 
 .llm-float-btn.has-notification {
   animation: llm-float-pulse 2s infinite;
+}
+
+/* ===== Shortcut Tray ===== */
+.llm-shortcut-tray {
+  position: fixed;
+  z-index: 1050;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid #dee2e6;
+  animation: llm-shortcut-tray-enter 0.2s ease-out;
+  max-width: 300px;
+}
+
+@keyframes llm-shortcut-tray-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Shortcut tray position classes */
+.llm-shortcut-tray-bottom-right {
+  bottom: 88px;
+  right: 24px;
+}
+
+.llm-shortcut-tray-bottom-left {
+  bottom: 88px;
+  left: 24px;
+}
+
+.llm-shortcut-tray-top-right {
+  top: 88px;
+  right: 24px;
+}
+
+.llm-shortcut-tray-top-left {
+  top: 88px;
+  left: 24px;
+}
+
+.llm-shortcut-tray-bottom-center {
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.llm-shortcut-tray-bottom-center:hover {
+  transform: translateX(-50%);
+}
+
+.llm-shortcut-tray-top-center {
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.llm-shortcut-tray-top-center:hover {
+  transform: translateX(-50%);
+}
+
+/* Shortcut pills */
+.llm-shortcut-pill {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid #dee2e6;
+  color: #495057;
+}
+
+.llm-shortcut-pill:hover {
+  background-color: #007bff;
+  color: #ffffff;
+  border-color: #007bff;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+}
+
+.llm-shortcut-pill:active {
+  transform: translateY(0);
+}
+
+/* Responsive - Mobile shortcut tray */
+@media (max-width: 576px) {
+  .llm-shortcut-tray {
+    max-width: 200px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .llm-shortcut-tray-bottom-right {
+    bottom: 72px;
+    right: 16px;
+  }
+
+  .llm-shortcut-tray-bottom-left {
+    bottom: 72px;
+    left: 16px;
+  }
+
+  .llm-shortcut-tray-top-right {
+    top: 72px;
+    right: 16px;
+  }
+
+  .llm-shortcut-tray-top-left {
+    top: 72px;
+    left: 16px;
+  }
+
+  .llm-shortcut-pill {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
 }
