@@ -150,7 +150,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       const convs = await conversationsApi.getAll();
       setConversations(convs);
 
-      // Check if auto-start should be initiated
+      // Check if auto-start should be initiated (first visit with no chats)
       const shouldAutoStart = config.autoStartConversation &&
                              convs.length === 0 &&
                              !currentConversationIdRef.current;
@@ -158,35 +158,35 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       if (shouldAutoStart) {
         try {
           setIsAutoStarting(true);
-          // Initiate auto-start conversation from client-side
           const startResult = await autoStartApi.start();
-          if (startResult.success) {
-            // Wait a moment for the auto-start to complete, then check for the conversation
-            await new Promise(resolve => setTimeout(resolve, 1000));
+          if (startResult.success && startResult.conversation) {
+            setCurrentConversation(startResult.conversation);
+            setMessages(startResult.messages || []);
+            currentConversationIdRef.current = String(startResult.conversation.id);
+            updateUrl(String(startResult.conversation.id), config);
 
-            // Check if auto-start created a conversation
+            const updatedConvs = await conversationsApi.getAll();
+            setConversations(updatedConvs);
+            return;
+          }
+
+          // Fallback for older backends that only return success
+          if (startResult.success) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
             const autoStarted = await checkAutoStartedConversation(autoStartApi);
             if (autoStarted) {
-              // Load the auto-started conversation directly
               setCurrentConversation(autoStarted.conversation);
               setMessages(autoStarted.messages);
               currentConversationIdRef.current = String(autoStarted.conversation.id);
-
-              // Update URL to reflect the auto-started conversation
               updateUrl(String(autoStarted.conversation.id), config);
 
-              // Reload conversations to include the new auto-started one
               const updatedConvs = await conversationsApi.getAll();
               setConversations(updatedConvs);
-
-              setIsLoading(false);
-              setIsAutoStarting(false);
               return;
             }
           }
         } catch (autoStartError) {
           console.debug('Auto-start failed, continuing with normal flow:', autoStartError);
-          // Continue with normal flow if auto-start fails
         } finally {
           setIsAutoStarting(false);
         }
@@ -269,11 +269,32 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       // Update URL
       updateUrl(conversationIdStr, config);
 
-      // Use loadConversations to properly load and select the new conversation
-      // This ensures the conversation list is updated and the new conversation is selected
-      await loadConversations();
+      // Seed opening message when auto-start is enabled (New Chat path)
+      if (config.autoStartConversation) {
+        try {
+          setIsAutoStarting(true);
+          const startResult = await autoStartApi.start(conversationIdStr);
+          if (startResult.success && startResult.conversation) {
+            setCurrentConversation(startResult.conversation);
+            setMessages(startResult.messages || []);
+            const updatedConvs = await conversationsApi.getAll();
+            setConversations(updatedConvs);
+            return conversationIdStr;
+          }
+        } catch (autoStartError) {
+          console.debug('Auto-start on new chat failed:', autoStartError);
+        } finally {
+          setIsAutoStarting(false);
+        }
+      }
 
-      // Clear messages for the new conversation
+      // Reload list and select the new (possibly still-empty) conversation
+      const updatedConvs = await conversationsApi.getAll();
+      setConversations(updatedConvs);
+      const created = updatedConvs.find(c => String(c.id) === conversationIdStr);
+      if (created) {
+        setCurrentConversation(created);
+      }
       setMessages([]);
 
       return conversationIdStr;
@@ -284,8 +305,8 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [config.configuredModel, conversationsApi, loadConversations]);
-  
+  }, [config, conversationsApi, autoStartApi]);
+ 
   /**
    * Delete a conversation
    */

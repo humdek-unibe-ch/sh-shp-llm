@@ -1031,7 +1031,11 @@ class LlmChatController extends BaseController
     }
 
     /**
-     * Handle start auto conversation request (client-initiated auto-start)
+     * Handle start auto conversation request (client-initiated auto-start).
+     *
+     * Supports two modes:
+     * - No conversation_id: first-visit path (create + seed when no chats exist).
+     * - With conversation_id: seed an existing empty conversation (e.g. New Chat).
      */
     private function handleStartAutoConversation()
     {
@@ -1046,33 +1050,69 @@ class LlmChatController extends BaseController
             return;
         }
 
-        // Check if conversation already exists
-        if ($this->model->getCurrentConversation()) {
-            $this->sendJsonResponse(['error' => 'Conversation already exists'], 400);
-            return;
-        }
-
-        // Check existing conversations in this section
-        if ($this->model->isConversationsListEnabled()) {
-            $section_id = $this->model->getSectionId();
-            $user_conversations = $this->llm_service->getUserConversations(
-                $user_id,
-                1,
-                $this->model->getConfiguredModel(),
-                $section_id
-            );
-            if (!empty($user_conversations)) {
-                $this->sendJsonResponse(['error' => 'Conversations already exist'], 400);
-                return;
-            }
-        }
+        $section_id = $this->model->getSectionId();
+        $conversation_id = $_GET['conversation_id'] ?? $_POST['conversation_id'] ?? null;
 
         try {
-            // Perform the auto-start conversation logic
-            $this->performAutoStartConversation();
+            if ($conversation_id) {
+                $conversation = $this->llm_service->getConversation($conversation_id, $user_id, $section_id);
+                if (!$conversation) {
+                    $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
+                    return;
+                }
 
-            // Return success - the conversation should now be available via get_auto_started
-            $this->sendJsonResponse(['success' => true]);
+                $existing_messages = $this->llm_service->getConversationMessages($conversation_id, 1);
+                if (!empty($existing_messages)) {
+                    $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
+                    $this->sendJsonResponse([
+                        'success' => true,
+                        'already_started' => true,
+                        'conversation' => $conversation,
+                        'messages' => $messages
+                    ]);
+                    return;
+                }
+
+                $this->performAutoStartConversation($conversation_id);
+            } else {
+                // First-visit path: only when the user has no active conversation yet
+                if ($this->model->getCurrentConversation()) {
+                    $this->sendJsonResponse(['error' => 'Conversation already exists'], 400);
+                    return;
+                }
+
+                if ($this->model->isConversationsListEnabled()) {
+                    $user_conversations = $this->llm_service->getUserConversations(
+                        $user_id,
+                        1,
+                        $this->model->getConfiguredModel(),
+                        $section_id
+                    );
+                    if (!empty($user_conversations)) {
+                        $this->sendJsonResponse(['error' => 'Conversations already exist'], 400);
+                        return;
+                    }
+                }
+
+                $this->performAutoStartConversation();
+            }
+
+            $session_key = 'llm_auto_started_' . $section_id;
+            $auto_started_id = $_SESSION[$session_key] ?? null;
+            if (!$auto_started_id) {
+                $this->sendJsonResponse(['error' => 'Auto-start did not create a conversation'], 500);
+                return;
+            }
+
+            $conversation = $this->llm_service->getConversation($auto_started_id, $user_id, $section_id);
+            $messages = $this->llm_service->getConversationMessages($auto_started_id, 50);
+            // Keep session for get_auto_started fallback; client primarily uses this payload.
+
+            $this->sendJsonResponse([
+                'success' => true,
+                'conversation' => $conversation,
+                'messages' => $messages ?: []
+            ]);
         } catch (Exception $e) {
             error_log('Client-initiated auto-start failed: ' . $e->getMessage());
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
@@ -1124,19 +1164,24 @@ class LlmChatController extends BaseController
     /* Auto-Start *************************************************************/
 
     /**
-     * Perform auto-start conversation
+     * Perform auto-start conversation.
+     *
+     * @param int|null $conversation_id Existing empty conversation to seed, or null to create one
+     * @throws Exception on failure (caller returns HTTP error to client)
      */
-    private function performAutoStartConversation()
+    private function performAutoStartConversation($conversation_id = null)
     {
         $user_id = $this->model->getUserId();
         if (!$user_id) {
-            return;
+            throw new Exception('User not authenticated');
         }
 
-        try {
-            $rate_data = $this->llm_service->checkRateLimit($user_id);
-            $section_id = $this->model->getSectionId();
+        $rate_data = $this->llm_service->checkRateLimit($user_id);
+        $section_id = $this->model->getSectionId();
 
+        if ($conversation_id) {
+            $conversation_id = (int) $conversation_id;
+        } else {
             $conversation_id = $this->llm_service->getOrCreateConversationForModel(
                 $user_id,
                 $this->model->getConfiguredModel(),
@@ -1145,37 +1190,33 @@ class LlmChatController extends BaseController
                 $section_id
             );
 
-            // Generate title
+            // Generate title for freshly created / first-visit conversations
             $title = 'AI Assistant - ' . date('M j, H:i');
             $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $title]);
+        }
 
-            // Get context messages
-            $context_messages = $this->context_service->buildContextMessages();
+        $context_messages = $this->context_service->buildContextMessages();
 
-            if ($this->model->isFormModeEnabled()) {
-                $this->performFormModeAutoStart($conversation_id, $user_id, $context_messages, $rate_data);
-            } else {
-                $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
+        if ($this->model->isFormModeEnabled()) {
+            $this->performFormModeAutoStart($conversation_id, $user_id, $context_messages, $rate_data);
+        } else {
+            $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
 
-                $this->llm_service->addMessage(
-                    $conversation_id,
-                    'assistant',
-                    $auto_start_message,
-                    null,
-                    $this->model->getConfiguredModel(),
-                    null,
-                    null,
-                    $context_messages
-                );
+            $this->llm_service->addMessage(
+                $conversation_id,
+                'assistant',
+                $auto_start_message,
+                null,
+                $this->model->getConfiguredModel(),
+                null,
+                null,
+                $context_messages
+            );
 
-                $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+            $this->llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
-                $session_key = 'llm_auto_started_' . $section_id;
-                $_SESSION[$session_key] = $conversation_id;
-            }
-
-        } catch (Exception $e) {
-            error_log('LLM Auto-start failed: ' . $e->getMessage());
+            $session_key = 'llm_auto_started_' . $section_id;
+            $_SESSION[$session_key] = $conversation_id;
         }
     }
 

@@ -306,7 +306,7 @@ class LlmChatModel extends StyleModel
     // ===== Feature Flags =====
 
     /** @return bool Whether the chat auto-starts a conversation when opened. */
-    public function isAutoStartConversationEnabled() { return $this->get_db_field('auto_start_conversation', '0') === '1'; }
+    public function isAutoStartConversationEnabled() { return $this->get_db_field('auto_start_conversation', '0') == '1'; }
     /** @return bool Whether strict conversation mode is enabled (topic enforcement). */
     public function isStrictConversationModeEnabled() { return $this->get_db_field('strict_conversation_mode', '0') === '1'; }
     /** @return bool True only when strict mode is enabled AND a conversation context is set. */

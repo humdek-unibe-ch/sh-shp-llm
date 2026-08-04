@@ -2,6 +2,19 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.4.1] - TBD (Work in Progress)
+
+### Fixed
+
+- **Auto-start on new chat.** With `auto_start_conversation` enabled, creating a
+  new conversation from the sidebar now seeds the prepared opening assistant
+  message (or form-mode first form). Previously auto-start only ran when the
+  user had *zero* conversations, so "New Chat" left an empty thread.
+- **Auto-start reliability.** `start_auto_conversation` now returns the created
+  conversation and messages directly, rethrows backend failures instead of
+  reporting false success, and accepts an optional `conversation_id` to seed an
+  existing empty conversation.
+
 ## [1.4.0] - 2026-06-03
 
 ### Added

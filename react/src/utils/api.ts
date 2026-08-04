@@ -438,6 +438,14 @@ interface AutoStartedResponse {
   error?: string;
 }
 
+interface AutoStartResult {
+  success: boolean;
+  error?: string;
+  already_started?: boolean;
+  conversation?: Conversation;
+  messages?: Message[];
+}
+
 /**
  * Create auto-start API with section ID support
  *
@@ -461,19 +469,28 @@ export function createAutoStartApi(sectionId?: number) {
 
     /**
      * Initiate auto-start conversation from client-side
-     * Calls: ?action=start_auto_conversation&section_id=XXX
+     * Calls: ?action=start_auto_conversation&section_id=XXX[&conversation_id=YYY]
      *
-     * @returns Promise resolving to success status
+     * @param conversationId - Optional existing empty conversation to seed (New Chat)
+     * @returns Promise resolving to success status and seeded conversation data
      */
-    async start(): Promise<{success: boolean, error?: string}> {
+    async start(conversationId?: string): Promise<AutoStartResult> {
       const params: Record<string, string> = {};
       if (sectionId !== undefined) {
         params.section_id = String(sectionId);
       }
+      if (conversationId) {
+        params.conversation_id = String(conversationId);
+      }
 
       try {
-        await apiGet<{success: boolean, error?: string}>('start_auto_conversation', params);
-        return { success: true };
+        const data = await apiGet<AutoStartResult>('start_auto_conversation', params);
+        return {
+          success: true,
+          already_started: data.already_started,
+          conversation: data.conversation,
+          messages: data.messages
+        };
       } catch (error) {
         return {
           success: false,
