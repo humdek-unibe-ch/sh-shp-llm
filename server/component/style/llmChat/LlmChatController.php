@@ -1200,7 +1200,7 @@ class LlmChatController extends BaseController
         if ($this->model->isFormModeEnabled()) {
             $this->performFormModeAutoStart($conversation_id, $user_id, $context_messages, $rate_data);
         } else {
-            $auto_start_message = $this->model->generateContextAwareAutoStartMessage();
+            $auto_start_message = $this->model->getAutoStartMessage();
 
             $this->llm_service->addMessage(
                 $conversation_id,

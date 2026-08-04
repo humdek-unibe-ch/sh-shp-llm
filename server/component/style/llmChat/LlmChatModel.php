@@ -7,7 +7,6 @@
 require_once __DIR__ . "/../../../../../../component/style/StyleModel.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
-require_once __DIR__ . "/../../../service/LlmAutoStartService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
@@ -292,15 +291,15 @@ class LlmChatModel extends StyleModel
     }
 
     /**
-     * Generate a context-aware auto-start message.
-     * Delegates to LlmAutoStartService for topic extraction and message generation.
+     * Resolve the opening assistant message for auto-start.
+     * Always uses the CMS `auto_start_message` field as authored — never
+     * mixes it with conversation-context topic extraction.
+     *
+     * @return string Auto-start message
      */
     public function generateContextAwareAutoStartMessage()
     {
-        return LlmAutoStartService::generateAutoStartMessage(
-            $this->getConversationContext(),
-            $this->getAutoStartMessage()
-        );
+        return $this->getAutoStartMessage();
     }
 
     // ===== Feature Flags =====
