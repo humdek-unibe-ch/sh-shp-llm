@@ -6,8 +6,45 @@
 /**
  * LLM Auto-Start Service
  *
- * Generates context-aware auto-start messages by analyzing conversation context.
- * Extracted from LlmChatModel to follow single-responsibility principle.
+ * Optional helper for building the opening assistant message when auto-start
+ * runs. Kept for reuse; the live llmChat path currently does NOT call it.
+ *
+ * ## Two greeting strategies
+ *
+ * 1. **CMS message only (default since v1.4.1)**  
+ *    Use `LlmChatModel::getAutoStartMessage()` and paste that string as the
+ *    first assistant message. Conversation context still goes to the model as
+ *    system context for later replies — it is just not used to rewrite the
+ *    greeting. This is what `LlmChatController::performAutoStartConversation()`
+ *    does today.
+ *
+ * 2. **Context-mixed greeting (this service)**  
+ *    Call `LlmAutoStartService::generateAutoStartMessage($context, $fallback)`
+ *    with the section conversation context and the CMS `auto_start_message` as
+ *    `$fallback`. When topics can be extracted from `$context`, the service
+ *    returns a generated opening that weaves those topics in; otherwise it
+ *    returns `$fallback` unchanged (same as pasting the CMS message).
+ *
+ * ## How to re-enable context-mixed greetings later
+ *
+ * In `LlmChatController::performAutoStartConversation()` (non form-mode branch),
+ * replace:
+ *
+ *     $auto_start_message = $this->model->getAutoStartMessage();
+ *
+ * with:
+ *
+ *     require_once __DIR__ . '/../../../service/LlmAutoStartService.php';
+ *     $auto_start_message = LlmAutoStartService::generateAutoStartMessage(
+ *         $this->model->getConversationContext(),
+ *         $this->model->getAutoStartMessage()
+ *     );
+ *
+ * Or restore the same call inside `LlmChatModel::generateContextAwareAutoStartMessage()`
+ * and use that method from the controller again.
+ *
+ * Do not delete this class while product may still want optional mixed greetings
+ * without re-implementing topic extraction.
  */
 class LlmAutoStartService
 {
@@ -25,10 +62,15 @@ class LlmAutoStartService
     ];
 
     /**
-     * Generate a context-aware auto-start message.
+     * Build an opening auto-start message, optionally mixed with context topics.
      *
-     * @param string $context Raw conversation context
-     * @param string $fallbackMessage Default message if no context
+     * - Empty / unusable context → returns `$fallbackMessage` (CMS auto_start_message).
+     * - Context with extractable topics → returns a generated, topic-aware greeting.
+     *
+     * Prefer strategy (1) in the class docblock unless mixed greetings are explicitly wanted.
+     *
+     * @param string $context Raw conversation context (markdown or JSON message list)
+     * @param string $fallbackMessage CMS `auto_start_message` (used when not mixing / no topics)
      * @return string Auto-start message
      */
     public static function generateAutoStartMessage($context, $fallbackMessage)

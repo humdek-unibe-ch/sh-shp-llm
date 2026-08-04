@@ -292,8 +292,15 @@ class LlmChatModel extends StyleModel
 
     /**
      * Resolve the opening assistant message for auto-start.
-     * Always uses the CMS `auto_start_message` field as authored — never
-     * mixes it with conversation-context topic extraction.
+     *
+     * Default (v1.4.1+): returns the CMS `auto_start_message` as authored.
+     * Conversation context is still attached as system context elsewhere; it is
+     * not mixed into this greeting.
+     *
+     * To mix context topics into the greeting again, use
+     * `LlmAutoStartService::generateAutoStartMessage()` — see the class docblock
+     * in `server/service/LlmAutoStartService.php` for the re-enable snippet.
+     * That service is intentionally kept for that reuse path.
      *
      * @return string Auto-start message
      */

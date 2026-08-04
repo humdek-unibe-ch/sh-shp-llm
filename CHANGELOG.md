@@ -32,6 +32,9 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - **Auto-start message stays as authored.** Opening messages now use the CMS
   `auto_start_message` field only. Conversation context is still sent as system
   context for replies, but it no longer rewrites/mixes the greeting text.
+  `LlmAutoStartService` is retained (documented, unused by the live path) so
+  context-mixed greetings can be re-enabled later without rewriting topic
+  extraction.
 
 ## [1.4.0] - 2026-06-03
 
