@@ -4,6 +4,21 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ## [1.4.1] - TBD (Work in Progress)
 
+### Added
+
+- **Audio embeds in chat responses.** Markdown media rendering now plays
+  audio (`.mp3`, `.wav`, `.ogg`, `.oga`, `.m4a`, `.aac`, `.flac`) the same way
+  images and videos already work:
+  - Bare audio URL on its own line → native `<audio controls>`
+  - `![audio Caption](/assets/file.mp3)` image syntax with an `audio` alt marker
+  - Structured `media[]` items with `type: "audio"` in JSON responses
+  - Updated `core.chat.media_rendering_instructions` prompt asset and docs
+  - Bare `.ogg` is treated as audio; use `.ogv` for Ogg video
+- **Reliable local media playback.** Chat media paths now honour `BASE_PATH`
+  (`/selfhelp` or `/`), bare `/assets/...` video/audio lines are promoted to
+  markdown players, and the media system prompt requires
+  `![video](...)` / `![audio](...)` so the model returns renderable markup.
+
 ### Fixed
 
 - **Auto-start on new chat.** With `auto_start_conversation` enabled, creating a
@@ -14,6 +29,9 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   conversation and messages directly, rethrows backend failures instead of
   reporting false success, and accepts an optional `conversation_id` to seed an
   existing empty conversation.
+- **Auto-start message stays as authored.** Opening messages now use the CMS
+  `auto_start_message` field only. Conversation context is still sent as system
+  context for replies, but it no longer rewrites/mixes the greeting text.
 
 ## [1.4.0] - 2026-06-03
 
