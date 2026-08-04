@@ -2,9 +2,9 @@
 
 ## Overview
 
-LLM Chat supports rendering images and videos within chat responses. This enables rich, interactive conversations with visual content from:
-- SelfHelp assets (uploaded files)
-- External URLs (public images/videos)
+LLM Chat supports rendering images, videos, and audio within chat responses. This enables rich, interactive conversations with media content from:
+- SelfHelp assets (uploaded files under `/assets/…`)
+- External URLs (public images/videos/audio)
 
 ## Configuration
 
@@ -12,7 +12,7 @@ LLM Chat supports rendering images and videos within chat responses. This enable
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `enable_media_rendering` | checkbox | Enable rendering of images and videos (default: enabled) |
+| `enable_media_rendering` | checkbox | Enable rendering of images, videos, and audio (default: enabled) |
 | `allowed_media_domains` | textarea | List of allowed external domains (one per line, empty = allow all) |
 
 ## Supported Media Types
@@ -32,9 +32,22 @@ LLM Chat supports rendering images and videos within chat responses. This enable
 |--------|-----------|-----------|
 | MP4 | .mp4 | video/mp4 |
 | WebM | .webm | video/webm |
-| OGG | .ogg | video/ogg |
+| OGV | .ogv | video/ogg |
 | MOV | .mov | video/quicktime |
 | M4V | .m4v | video/mp4 |
+
+### Audio
+
+| Format | Extension | MIME Type |
+|--------|-----------|-----------|
+| MP3 | .mp3 | audio/mpeg |
+| WAV | .wav | audio/wav |
+| OGG | .ogg, .oga | audio/ogg |
+| M4A | .m4a | audio/mp4 |
+| AAC | .aac | audio/aac |
+| FLAC | .flac | audio/flac |
+
+> Note: bare `.ogg` is treated as **audio**. Use `.ogv` for Ogg video.
 
 ## Markdown Syntax
 
@@ -62,7 +75,19 @@ Continue with the explanation...
 
 2. **Image syntax with video URL** - The system detects video extensions and renders appropriately:
 ```markdown
-![Demo video](https://example.com/video.mp4)
+![video Demo video](https://example.com/video.mp4)
+```
+
+### Audio
+
+Same patterns as video:
+
+```markdown
+Here's a short audio clip:
+
+/assets/sample-audio.wav
+
+![audio Relaxation track](/assets/sample-audio.wav)
 ```
 
 ## URL Patterns
@@ -106,6 +131,12 @@ Full URLs are supported:
 2. **Preload Metadata**: Videos load metadata for quick playback
 3. **Error Handling**: Shows error message if video fails to load
 4. **Responsive**: Videos scale to fit container (max 400px height)
+
+### Audio Features
+
+1. **Native Controls**: Play, pause, seek, volume
+2. **Preload Metadata**: Loads duration without buffering the full file
+3. **Responsive**: Player width capped for readability in chat bubbles
 
 ## Implementation
 
@@ -158,15 +189,15 @@ function resolveMediaPath(src: string): string {
 }
 ```
 
-### Video Detection
+### Video / Audio Detection
 
 ```typescript
-function isVideoUrl(url: string): boolean {
-  const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'];
-  const lowerUrl = url.toLowerCase();
-  return videoExtensions.some(ext => lowerUrl.includes(ext));
-}
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogv', '.mov', '.m4v'];
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac', '.flac'];
 ```
+
+Bare URLs and `![alt](url)` markdown both route through these detectors.
+Use an `audio` / `video` alt marker to force the player type when needed.
 
 ## Styling
 

@@ -18,6 +18,12 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
 import type { Components } from 'react-markdown';
 import { normalizeEscapedText } from '../../../utils/text';
+import {
+  isAudioUrl,
+  isVideoUrl,
+  promoteBareMediaLines,
+  resolveMediaPath
+} from '../../../utils/mediaPath';
 
 /**
  * Props for MarkdownRenderer
@@ -148,57 +154,33 @@ const PreBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
 
 /**
  * Resolve asset path to full URL
- * Handles SelfHelp assets, external URLs, and data URLs
+ * Handles SelfHelp assets (with BASE_PATH), external URLs, and data URLs
  */
-const resolveMediaPath = (src: string): string => {
-  // External URLs pass through
-  if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
-    return src;
-  }
-  
-  // Base64 data URLs pass through
-  if (src.startsWith('data:')) {
-    return src;
-  }
-  
-  // SelfHelp assets - use as-is (relative to site root)
-  if (src.startsWith('/assets/') || src.startsWith('assets/')) {
-    return src.startsWith('/') ? src : `/${src}`;
-  }
-  
-  // Relative paths - assume assets folder
-  return `/assets/${src}`;
-};
+// resolveMediaPath / isVideoUrl / isAudioUrl imported from utils/mediaPath
+
+interface PlaybackOptions {
+  controls: boolean;
+  autoPlay: boolean;
+  muted: boolean;
+  loop: boolean;
+  poster?: string;
+}
 
 /**
- * Check if URL is a video based on extension or alt text marker
- */
-const isVideoUrl = (src: string, alt?: string): boolean => {
-  // Check alt text for video marker (e.g., ![video](path.mp4))
-  if (alt?.toLowerCase().startsWith('video')) {
-    return true;
-  }
-  
-  // Check file extension
-  const videoExtensions = ['.mp4', '.webm', '.ogg', '.ogv'];
-  const lowerSrc = src.toLowerCase();
-  return videoExtensions.some(ext => lowerSrc.endsWith(ext) || lowerSrc.includes(ext + '?'));
-};
-
-/**
- * Parse video options from alt text
+ * Parse playback options from alt/title text.
  * Format: ![video:controls:autoplay:muted:loop](path)
+ *         ![audio:controls:autoplay:loop](path)
  */
-const parseVideoOptions = (alt: string): { controls: boolean; autoPlay: boolean; muted: boolean; loop: boolean; poster?: string } => {
+const parsePlaybackOptions = (alt: string): PlaybackOptions => {
   const parts = alt.toLowerCase().split(':');
-  const options = {
+  const options: PlaybackOptions = {
     controls: true,
     autoPlay: false,
     muted: false,
     loop: false,
-    poster: undefined as string | undefined
+    poster: undefined
   };
-  
+
   parts.forEach(part => {
     if (part === 'controls') options.controls = true;
     if (part === 'nocontrols') options.controls = false;
@@ -209,22 +191,32 @@ const parseVideoOptions = (alt: string): { controls: boolean; autoPlay: boolean;
       options.poster = resolveMediaPath(part.substring(7));
     }
   });
-  
+
   // Autoplay requires muted in most browsers
   if (options.autoPlay && !options.muted) {
     options.muted = true;
   }
-  
+
   return options;
+};
+
+/** Strip leading type/option tokens from alt text for captions. */
+const cleanMediaCaption = (alt: string | undefined, kind: 'video' | 'audio'): string => {
+  if (!alt) return '';
+  const pattern = kind === 'video'
+    ? /^video(?::[^\s]*)?\s*/i
+    : /^audio(?::[^\s]*)?\s*/i;
+  return alt.replace(pattern, '').trim();
 };
 
 /**
  * Video Component for embedded videos
  */
-const VideoComponent: React.FC<{ src: string; title?: string }> = ({ src, title }) => {
+const VideoComponent: React.FC<{ src: string; title?: string; alt?: string }> = ({ src, title, alt }) => {
   const resolvedSrc = resolveMediaPath(src);
-  const options = parseVideoOptions(title || '');
-  
+  const options = parsePlaybackOptions(alt || title || '');
+  const caption = cleanMediaCaption(alt, 'video') || (title && !title.toLowerCase().startsWith('video') ? title : '');
+
   return (
     <figure className="chat-media-figure my-3">
       <video
@@ -240,28 +232,58 @@ const VideoComponent: React.FC<{ src: string; title?: string }> = ({ src, title 
       >
         Your browser does not support the video tag.
       </video>
-      {title && !title.toLowerCase().startsWith('video') && (
-        <figcaption className="text-muted small mt-2 text-center">{title}</figcaption>
+      {caption && (
+        <figcaption className="text-muted small mt-2 text-center">{caption}</figcaption>
       )}
     </figure>
   );
 };
 
 /**
- * Custom link component - opens in new tab for external links
- * Also handles video URLs by rendering them as video elements
+ * Audio Component for embedded audio players
+ */
+const AudioComponent: React.FC<{ src: string; title?: string; alt?: string }> = ({ src, title, alt }) => {
+  const resolvedSrc = resolveMediaPath(src);
+  const options = parsePlaybackOptions(alt || title || '');
+  const caption = cleanMediaCaption(alt, 'audio') || (title && !title.toLowerCase().startsWith('audio') ? title : '');
+
+  return (
+    <figure className="chat-media-figure chat-audio-figure my-3">
+      <audio
+        src={resolvedSrc}
+        controls={options.controls}
+        autoPlay={options.autoPlay}
+        muted={options.muted}
+        loop={options.loop}
+        className="chat-audio"
+        preload="metadata"
+      >
+        Your browser does not support the audio element.
+      </audio>
+      {caption && (
+        <figcaption className="text-muted small mt-2 text-center">{caption}</figcaption>
+      )}
+    </figure>
+  );
+};
+
+/**
+ * Custom link component - opens in new tab for external links.
+ * Bare audio/video URLs (markdown autolinks) render as players.
  */
 const LinkComponent: React.FC<{ href?: string; children?: React.ReactNode }> = ({ href, children }) => {
-  // Check if this is a video URL - render as video instead of link
+  if (href && isAudioUrl(href)) {
+    return <AudioComponent src={href} />;
+  }
   if (href && isVideoUrl(href)) {
     return <VideoComponent src={href} />;
   }
-  
+
   const isExternal = href?.startsWith('http') || href?.startsWith('//');
-  
+
   return (
-    <a 
-      href={href} 
+    <a
+      href={href}
       target={isExternal ? '_blank' : undefined}
       rel={isExternal ? 'noopener noreferrer' : undefined}
       className="md-link"
@@ -273,41 +295,22 @@ const LinkComponent: React.FC<{ href?: string; children?: React.ReactNode }> = (
 };
 
 /**
- * Custom Image/Video Component
- * Renders images and videos with proper styling
+ * Custom Image / Video / Audio Component
+ * Renders markdown `![alt](url)` as image, or as video/audio when detected.
  */
 const MediaComponent: React.FC<{ src?: string; alt?: string; title?: string }> = ({ src, alt, title }) => {
   if (!src) return null;
-  
+
   const resolvedSrc = resolveMediaPath(src);
-  const isVideo = isVideoUrl(src, alt);
-  
-  if (isVideo) {
-    const options = parseVideoOptions(alt || '');
-    const cleanAlt = alt?.replace(/^video[:\w]*\s*/i, '') || '';
-    
-    return (
-      <figure className="chat-media-figure my-3">
-        <video
-          src={resolvedSrc}
-          controls={options.controls}
-          autoPlay={options.autoPlay}
-          muted={options.muted}
-          loop={options.loop}
-          poster={options.poster}
-          className="chat-video rounded"
-          style={{ maxWidth: '100%', maxHeight: '400px' }}
-          playsInline
-        >
-          Your browser does not support the video tag.
-        </video>
-        {cleanAlt && (
-          <figcaption className="text-muted small mt-2 text-center">{cleanAlt}</figcaption>
-        )}
-      </figure>
-    );
+
+  if (isAudioUrl(src, alt)) {
+    return <AudioComponent src={resolvedSrc} alt={alt} title={title} />;
   }
-  
+
+  if (isVideoUrl(src, alt)) {
+    return <VideoComponent src={resolvedSrc} alt={alt} title={title} />;
+  }
+
   // Regular image
   return (
     <figure className="chat-media-figure my-3">
@@ -397,7 +400,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
   className = ''
 }) => {
-  const normalized = normalizeEscapedText(content);
+  const normalized = promoteBareMediaLines(normalizeEscapedText(content));
 
   return (
     <div className={`markdown-content ${className}`}>

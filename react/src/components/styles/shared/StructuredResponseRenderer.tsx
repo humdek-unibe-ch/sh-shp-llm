@@ -6,7 +6,7 @@
  * Supports:
  * - Text blocks with different types (paragraph, heading, list, etc.)
  * - Optional forms that users can fill out or skip
- * - Media items (images, videos)
+ * - Media items (images, videos, audio)
  * - Next step suggestions
  * - Progress milestone celebrations
  * 
@@ -25,6 +25,7 @@ import type {
   FormDefinition
 } from '../../../types';
 import { structuredFormToFormDefinition } from '../../../utils/formUtils';
+import { resolveMediaPath } from '../../../utils/mediaPath';
 
 /**
  * Props for StructuredResponseRenderer
@@ -228,13 +229,15 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
       {media && media.length > 0 && (
         <div className="structured-media mb-4">
           {media.map((item, index) => {
+            const src = resolveMediaPath(item.src || '');
+
             if (item.type === 'image') {
               return (
-                <figure key={index} className="figure mb-3">
+                <figure key={index} className="figure chat-media-figure mb-3">
                   <img
-                    src={item.src}
+                    src={src}
                     alt={item.alt || ''}
-                    className="figure-img img-fluid rounded"
+                    className="figure-img img-fluid rounded chat-image"
                   />
                   {item.caption && (
                     <figcaption className="figure-caption text-center">
@@ -246,17 +249,31 @@ export const StructuredResponseRenderer: React.FC<StructuredResponseRendererProp
             }
             if (item.type === 'video') {
               return (
-                <div key={index} className="video-wrapper mb-3">
-                  <video controls className="w-100 rounded">
-                    <source src={item.src} />
+                <figure key={index} className="chat-media-figure mb-3">
+                  <video controls className="chat-video rounded w-100" playsInline>
+                    <source src={src} />
                     Your browser does not support video playback.
                   </video>
                   {item.caption && (
-                    <p className="text-center text-muted small mt-1">
+                    <figcaption className="text-center text-muted small mt-1">
                       {item.caption}
-                    </p>
+                    </figcaption>
                   )}
-                </div>
+                </figure>
+              );
+            }
+            if (item.type === 'audio') {
+              return (
+                <figure key={index} className="chat-media-figure chat-audio-figure mb-3">
+                  <audio controls className="chat-audio" preload="metadata" src={src}>
+                    Your browser does not support audio playback.
+                  </audio>
+                  {item.caption && (
+                    <figcaption className="text-center text-muted small mt-1">
+                      {item.caption}
+                    </figcaption>
+                  )}
+                </figure>
               );
             }
             return null;

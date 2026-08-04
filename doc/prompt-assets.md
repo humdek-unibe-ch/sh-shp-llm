@@ -86,10 +86,10 @@ change.
 #### `core.chat.media_rendering_instructions`
 **Path:** `core/chat/media-rendering-instructions.md`
 
-Tells the model **how to embed images and videos** in chat messages so the
+Tells the model **how to embed images, videos, and audio** in chat messages so the
 React renderer (`MarkdownRenderer`) can display them inline. Required
 because the chat panel does not interpret raw HTML — it only renders
-GitHub-flavoured Markdown plus a custom video-on-its-own-line rule.
+GitHub-flavoured Markdown plus custom video/audio-on-its-own-line rules.
 
 | Placeholder | Source |
 |---|---|

@@ -417,6 +417,17 @@
   background-color: #000;
 }
 
+.chat-audio-figure {
+  text-align: left;
+}
+
+.chat-audio {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
 /* Image/video loading placeholder */
 .chat-media-figure .alert {
   margin: 0;
@@ -868,10 +879,13 @@
   
   .chat-image,
   .chat-video,
+  .chat-audio,
   .markdown-content img,
   .message-content img,
   .markdown-content video,
-  .message-content video {
+  .message-content video,
+  .markdown-content audio,
+  .message-content audio {
     max-height: 300px;
   }
 }

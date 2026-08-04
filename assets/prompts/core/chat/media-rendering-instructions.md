@@ -1,18 +1,38 @@
 MEDIA RENDERING INSTRUCTIONS:
-When including images or videos in your responses, use these exact formats for proper rendering:
+When you show images, videos, or audio, you MUST use Markdown image syntax.
+Plain paths on their own (like /assets/video.mp4) may fail to play — always wrap them.
 
-FOR IMAGES - Use Markdown syntax:
-![Description of image](image_url)
+FOR IMAGES:
+![Short description](/assets/example.png)
 
-Example:
-![Beautiful sunset over mountains](https://example.com/sunset.jpg)
+FOR VIDEOS (required format):
+![video Short description](/assets/example.mp4)
 
-FOR VIDEOS - Place the video URL on its own line (must end in .mp4, .webm, or .ogg):
-https://example.com/video.mp4
+Supported video endings: .mp4, .webm, .ogv, .mov, .m4v
 
-IMPORTANT RULES:
-1. Never use HTML tags like <img>, <video>, <p>, <div>, etc.
-2. Always use Markdown syntax for formatting (bold: **text**, italic: *text*, headers: # text)
-3. For images, always include descriptive alt text in the brackets
-4. For videos, the URL must be on its own line and end with a video extension
-5. Images and videos will be rendered inline in the chat interface
+FOR AUDIO (required format):
+![audio Short description](/assets/example.wav)
+
+Supported audio endings: .mp3, .wav, .ogg, .oga, .m4a, .aac, .flac
+
+PATH RULES:
+1. Prefer SelfHelp asset paths starting with /assets/... (the app adds the install
+   prefix such as /selfhelp automatically when rendering).
+2. Absolute https:// URLs are also allowed inside the same Markdown form.
+3. Never output HTML tags (<img>, <video>, <audio>, <div>, <p>, etc.).
+4. Put each media item on its own paragraph for reliable rendering.
+5. Bare .ogg files are audio; use .ogv for Ogg video.
+
+CORRECT video example:
+Here is the demo video:
+
+![video Demo clip](/assets/video.mp4)
+
+CORRECT audio example:
+Here is the audio track:
+
+![audio Sample tone](/assets/sample-audio.wav)
+
+INCORRECT (do not do this):
+/assets/video.mp4
+<video src="/assets/video.mp4"></video>
