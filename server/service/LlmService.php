@@ -222,20 +222,23 @@ class LlmService extends BaseLlmService
     }
 
     /**
-     * Resolve conversation for a request: get existing or create new
+     * Resolve conversation for an interactive chat turn.
      *
-     * Handles:
-     * - Creating a new conversation if none exists
-     * - Checking concurrent conversation limits before creation
-     * - Validating existing conversation ownership
-     * - Starting a fresh conversation when the CMS/configured model no longer
-     *   matches the open conversation (never silently reuse another thread —
-     *   that mixed unrelated histories across models)
+     * Policy (section owns the model):
+     * - Callers must pass the CMS/section configured model (not a client POST value).
+     * - Missing conversation_id → always create a fresh thread with that model.
+     * - Existing thread whose stored model no longer matches the section model →
+     *   create a fresh thread (never resume another topic via getOrCreate).
+     * - Matching thread → continue it; API calls should use the row's stored model
+     *   (same as section model after normalize) for server-scoped routing.
+     *
+     * Do not use this for backend producers (forms sticky-thread, evals, memory).
+     * Those use getOrCreateConversationForModel().
      *
      * @param int $user_id
      * @param int|null $conversation_id
      * @param array $rate_data
-     * @param string $model
+     * @param string $model Section-configured model (from getConfiguredModel())
      * @param float|null $temperature
      * @param int|null $max_tokens
      * @param int|null $section_id
@@ -358,15 +361,17 @@ class LlmService extends BaseLlmService
     }
 
     /**
-     * Get or create a conversation for a specific model.
+     * Resume or create a sticky conversation for a backend producer.
      *
-     * Returns the most recent conversation for the model, or creates a new one
-     * if none exists. Chat send resolution must not use this on model switches
-     * — see resolveConversation(), which always creates a fresh thread to avoid
-     * mixing unrelated histories across models.
+     * Returns the most recent conversation for this user/model/section, or
+     * creates one. Intended for non-chat flows that want one durable thread
+     * per model (llmForm, evals, some auto-start helpers).
+     *
+     * Interactive chat must use resolveConversation() instead — resuming the
+     * latest thread there mixed unrelated topics across model switches.
      *
      * @param int $user_id User ID
-     * @param string $model Model name
+     * @param string $model Model name (usually section-configured)
      * @param float|null $temperature Temperature setting
      * @param int|null $max_tokens Max tokens setting
      * @param int|null $section_id Section ID

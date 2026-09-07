@@ -84,6 +84,13 @@ Quick steps:
 - ✅ **Testable** - Easy to unit test providers
 - ✅ **Maintainable** - Clear structure and documentation
 
+### Conversation helpers (not provider-specific)
+
+| Helper | Use when |
+|--------|----------|
+| `resolveConversation()` | Interactive chat turns; section owns model; never silently resume another topic |
+| `getOrCreateConversationForModel()` | Backend sticky threads (forms, evals, memory helpers) |
+
 ## Normalized Response Format
 
 All providers return responses in this standard format:

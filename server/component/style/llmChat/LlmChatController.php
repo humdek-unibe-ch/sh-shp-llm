@@ -292,11 +292,11 @@ class LlmChatController extends BaseController
     /* Message Handling *******************************************************/
 
     /**
-     * Resolve conversation with rate limiting: checks rate limit, resolves or creates
-     * conversation, updates title for new conversations, and updates rate limit.
+     * Resolve chat conversation from section CMS model (never from the client).
+     * Open threads whose stored model no longer matches start a new conversation.
      *
-     * @param int $user_id User ID
-     * @param string|null $conversation_id Existing conversation ID (may be null)
+     * @param int $user_id
+     * @param int|string|null $conversation_id
      * @param string|null $title_hint Text to use for auto-titling new conversations
      * @return array ['conversation_id' => int, 'is_new' => bool]
      * @throws Exception on rate limit or DB errors
@@ -497,9 +497,7 @@ class LlmChatController extends BaseController
             return;
         }
 
-        // Bind the request to this conversation's stored model so a CMS model
-        // change cannot silently call a different provider with another thread's
-        // history (or the wrong endpoint).
+        // Use the conversation's stored model (written from section config on create).
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $this->model->getSectionId();
         $conversation = $user_id
