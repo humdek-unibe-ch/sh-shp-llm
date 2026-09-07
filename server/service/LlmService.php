@@ -1252,11 +1252,14 @@ class LlmService extends BaseLlmService
         
         // Check for HTTP errors
         if ($http_code >= 400) {
+            $apiDetail = $this->extractProviderErrorMessage($raw_response);
             return [
                 'error' => true,
                 'response' => null,
                 'http_code' => $http_code,
-                'error_message' => "HTTP error {$http_code}",
+                'error_message' => $apiDetail
+                    ? "HTTP error {$http_code}: {$apiDetail}"
+                    : "HTTP error {$http_code}",
                 'raw_response' => $raw_response
             ];
         }
@@ -1281,6 +1284,37 @@ class LlmService extends BaseLlmService
             'error_message' => null,
             'raw_response' => $raw_response
         ];
+    }
+
+    /**
+     * Pull a human-readable error string from an OpenAI-compatible error body.
+     *
+     * @param string|null $raw_response
+     * @return string|null
+     */
+    private function extractProviderErrorMessage($raw_response)
+    {
+        if ($raw_response === null || $raw_response === '') {
+            return null;
+        }
+
+        $decoded = is_array($raw_response) ? $raw_response : json_decode($raw_response, true);
+        if (!is_array($decoded)) {
+            $trimmed = trim((string)$raw_response);
+            return $trimmed !== '' ? substr($trimmed, 0, 500) : null;
+        }
+
+        if (!empty($decoded['error']['message']) && is_string($decoded['error']['message'])) {
+            return $decoded['error']['message'];
+        }
+        if (!empty($decoded['error']) && is_string($decoded['error'])) {
+            return $decoded['error'];
+        }
+        if (!empty($decoded['message']) && is_string($decoded['message'])) {
+            return $decoded['message'];
+        }
+
+        return null;
     }
 
     /**
@@ -1339,9 +1373,11 @@ class LlmService extends BaseLlmService
             'stream' => false
         ];
 
-        // Merge provider-specific parameters
+        // Merge provider-specific parameters, then let the provider adapt the
+        // full payload (OpenAI → max_completion_tokens; GPUStack keeps max_tokens).
         $providerParams = $provider->getAdditionalRequestParams($payload);
         $payload = array_merge($payload, $providerParams);
+        $payload = $provider->adaptChatCompletionPayload($payload);
 
         // Get authentication headers from provider
         $headers = $provider->getAuthHeaders($server['api_key']);

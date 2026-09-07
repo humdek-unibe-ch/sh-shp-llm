@@ -19,7 +19,8 @@ $response = $llm_service->callLlmApi($messages, $model, $temperature, $maxTokens
 
 | Provider | Base URL | Provider ID | Features |
 |----------|----------|-------------|----------|
-| GPUStack (UniBE) | `https://gpustack.unibe.ch/v1` | `gpustack` | Standard OpenAI-compatible API |
+| OpenAI | `https://api.openai.com/v1` | `openai` | Remaps `max_tokens` → `max_completion_tokens` |
+| GPUStack (UniBE) | `https://gpustack.unibe.ch/v1` | `gpustack` | Standard OpenAI-compatible API (`max_tokens`) |
 | BFH Inference API | `https://inference.mlmp.ti.bfh.ch/api/v1` | `bfh` | Enhanced with reasoning content |
 
 ## File Structure

@@ -277,9 +277,34 @@ class LlmApiException extends LlmException
         ];
 
         $statusMessage = $statusMessages[$statusCode] ?? 'Unknown Error';
+        $message = "LLM API returned HTTP {$statusCode}: {$statusMessage}";
+
+        $detail = null;
+        if (is_string($rawResponse) && $rawResponse !== '') {
+            $decoded = json_decode($rawResponse, true);
+            if (is_array($decoded)) {
+                if (!empty($decoded['error']['message']) && is_string($decoded['error']['message'])) {
+                    $detail = $decoded['error']['message'];
+                } elseif (!empty($decoded['error']) && is_string($decoded['error'])) {
+                    $detail = $decoded['error'];
+                } elseif (!empty($decoded['message']) && is_string($decoded['message'])) {
+                    $detail = $decoded['message'];
+                }
+            }
+        } elseif (is_array($rawResponse)) {
+            if (!empty($rawResponse['error']['message']) && is_string($rawResponse['error']['message'])) {
+                $detail = $rawResponse['error']['message'];
+            } elseif (!empty($rawResponse['error']) && is_string($rawResponse['error'])) {
+                $detail = $rawResponse['error'];
+            }
+        }
+
+        if ($detail) {
+            $message .= ' — ' . $detail;
+        }
 
         return new self(
-            "LLM API returned HTTP {$statusCode}: {$statusMessage}",
+            $message,
             $rawResponse,
             [
                 'error_type' => 'http_error',

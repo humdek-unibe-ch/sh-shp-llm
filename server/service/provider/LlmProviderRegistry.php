@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+require_once __DIR__ . '/OpenAIProvider.php';
 require_once __DIR__ . '/GpuStackProvider.php';
 require_once __DIR__ . '/BfhProvider.php';
 
@@ -41,13 +42,15 @@ class LlmProviderRegistry
             return;
         }
 
+        // OpenAI first so api.openai.com is not left to the GPUStack default.
         self::$providers = [
+            new OpenAIProvider(),
             new GpuStackProvider(),
             new BfhProvider()
         ];
 
-        // Set default provider (GPUStack for backward compatibility)
-        self::$defaultProvider = self::$providers[0];
+        // Default for unknown OpenAI-compatible hosts (e.g. UniBE GPUStack)
+        self::$defaultProvider = self::$providers[1];
     }
 
     /**

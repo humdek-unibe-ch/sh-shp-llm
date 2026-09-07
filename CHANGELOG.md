@@ -29,6 +29,12 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   fetches and `BaseModel::execute_curl_call()` ignoring the timeout (100s
   default). Listing now uses a 5s curl timeout, parallel `curl_multi` across
   servers, a 5-minute cache, and excludes TTS ids from the chat model list.
+- **OpenAI chat HTTP 400 on `max_tokens`.** OpenAI (e.g. `gpt-5.6-luna`,
+  `gpt-6-astra`) rejects legacy `max_tokens`. Added `OpenAIProvider` (matched
+  by `api.openai.com` / Azure host) that always remaps to
+  `max_completion_tokens` via `adaptChatCompletionPayload()`. GPUStack/BFH keep
+  `max_tokens` — local OpenAI-compatible stacks still expect it for most hosted
+  models. HTTP errors also surface the provider's `error.message` when present.
 
 ### Changed
 

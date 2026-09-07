@@ -86,6 +86,19 @@ interface LlmProviderInterface
      * @return array Additional provider-specific parameters
      */
     public function getAdditionalRequestParams($standardParams);
+
+    /**
+     * Adapt a chat-completions payload for this provider's API rules.
+     *
+     * Called after the standard payload (and getAdditionalRequestParams) is
+     * built. Providers may rename/remove fields (e.g. OpenAI maps max_tokens
+     * → max_completion_tokens). Default implementations should return $payload
+     * unchanged.
+     *
+     * @param array $payload Full request payload
+     * @return array Adapted payload
+     */
+    public function adaptChatCompletionPayload(array $payload);
 }
 ?>
 

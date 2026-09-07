@@ -56,6 +56,20 @@ abstract class BaseProvider implements LlmProviderInterface
     }
 
     /**
+     * Default: leave the payload unchanged.
+     *
+     * GPUStack / BFH keep `max_tokens` (OpenAI-compatible local stacks still
+     * expect it for most hosted models). OpenAIProvider overrides this.
+     *
+     * @param array $payload
+     * @return array
+     */
+    public function adaptChatCompletionPayload(array $payload)
+    {
+        return $payload;
+    }
+
+    /**
      * Extract content from normalized response structure
      * Helper method for providers
      * 
