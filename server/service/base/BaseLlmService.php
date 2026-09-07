@@ -186,6 +186,21 @@ abstract class BaseLlmService
     }
 
     /**
+     * Public module defaults used when a style section leaves model/temp/tokens empty.
+     *
+     * @return array{model:string,temperature:string,max_tokens:string}
+     */
+    public function getModuleDefaults()
+    {
+        $config = $this->getLlmConfig();
+        return [
+            'model' => (string)($config['llm_default_model'] ?? LLM_DEFAULT_MODEL),
+            'temperature' => (string)($config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE),
+            'max_tokens' => (string)($config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS),
+        ];
+    }
+
+    /**
      * Parse the llm_api_keys JSON field into an array of server configs.
      *
      * Each entry: {name: string, base_url: string, api_key: string}

@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../../component/style/formUserInput/FormUserInputModel.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
+require_once __DIR__ . "/../../../service/LlmService.php";
 
 /**
  * Model for LLM form styles (llmFormRecord and llmFormLog).
@@ -95,19 +96,52 @@ class LlmFormModel extends FormUserInputModel
         if (!empty($this->llm_model)) {
             return $this->llm_model;
         }
-        return defined('LLM_DEFAULT_MODEL') ? LLM_DEFAULT_MODEL : 'qwen3-vl-8b-instruct';
+        try {
+            $llmService = new LlmService($this->services);
+            $defaults = $llmService->getModuleDefaults();
+            if (!empty($defaults['model'])) {
+                return $defaults['model'];
+            }
+        } catch (Exception $e) {
+            // fall through to constant
+        }
+        return defined('LLM_DEFAULT_MODEL') ? LLM_DEFAULT_MODEL : 'gpt-oss-120b';
     }
 
     /** @return float LLM temperature value (0.0–2.0). */
     public function getLlmTemperature()
     {
-        return floatval($this->llm_temperature);
+        if ($this->llm_temperature !== '' && $this->llm_temperature !== null) {
+            return floatval($this->llm_temperature);
+        }
+        try {
+            $llmService = new LlmService($this->services);
+            $defaults = $llmService->getModuleDefaults();
+            if ($defaults['temperature'] !== '') {
+                return floatval($defaults['temperature']);
+            }
+        } catch (Exception $e) {
+            // fall through
+        }
+        return floatval(defined('LLM_DEFAULT_TEMPERATURE') ? LLM_DEFAULT_TEMPERATURE : 1);
     }
 
     /** @return int Maximum token count for LLM response generation. */
     public function getLlmMaxTokens()
     {
-        return intval($this->llm_max_tokens);
+        if ($this->llm_max_tokens !== '' && $this->llm_max_tokens !== null) {
+            return intval($this->llm_max_tokens);
+        }
+        try {
+            $llmService = new LlmService($this->services);
+            $defaults = $llmService->getModuleDefaults();
+            if ($defaults['max_tokens'] !== '') {
+                return intval($defaults['max_tokens']);
+            }
+        } catch (Exception $e) {
+            // fall through
+        }
+        return intval(defined('LLM_DEFAULT_MAX_TOKENS') ? LLM_DEFAULT_MAX_TOKENS : 2048);
     }
 
     /** @return string System prompt / context template with optional `{{field}}` placeholders. */

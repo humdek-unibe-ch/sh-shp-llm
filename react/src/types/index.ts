@@ -438,7 +438,7 @@ export interface LlmChatConfig {
  * Default configuration values
  */
 export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
-  configuredModel: 'qwen3-vl-8b-instruct',
+  configuredModel: 'gpt-oss-120b',
   enableConversationsList: true,
   enableFileUploads: true,
   enableFullPageReload: false,

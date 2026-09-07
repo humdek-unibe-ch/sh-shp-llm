@@ -127,11 +127,16 @@ class LlmChatModel extends StyleModel
 
     /**
      * Get the configured model for this chat component.
-     * Falls back to global default if not configured.
+     * Prefers the section field (including styles_fields defaults), then module settings.
      */
     public function getConfiguredModel()
     {
-        return $this->get_db_field('llm_model', 'qwen3-vl-8b-instruct');
+        $configured = trim((string)$this->get_db_field('llm_model', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+        $defaults = $this->llm_service->getModuleDefaults();
+        return $defaults['model'] !== '' ? $defaults['model'] : LLM_DEFAULT_MODEL;
     }
 
     /** @return int Current session user ID. */
@@ -187,11 +192,27 @@ class LlmChatModel extends StyleModel
     /** @return int Maximum number of messages per conversation. */
     public function getMessageLimit() { return $this->get_db_field('message_limit', LLM_DEFAULT_MESSAGE_LIMIT); }
     /** @return string Scoped model identifier (e.g. "server/model-name"), empty if not set. */
-    public function getLlmModel() { return $this->get_db_field('llm_model', ''); }
+    public function getLlmModel() { return $this->getConfiguredModel(); }
     /** @return string Temperature value as string (e.g. "0.7"). */
-    public function getLlmTemperature() { return $this->get_db_field('llm_temperature', '0.7'); }
+    public function getLlmTemperature()
+    {
+        $configured = trim((string)$this->get_db_field('llm_temperature', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+        $defaults = $this->llm_service->getModuleDefaults();
+        return $defaults['temperature'] !== '' ? $defaults['temperature'] : (string)LLM_DEFAULT_TEMPERATURE;
+    }
     /** @return string Max tokens value as string (e.g. "2048"). */
-    public function getLlmMaxTokens() { return $this->get_db_field('llm_max_tokens', '2048'); }
+    public function getLlmMaxTokens()
+    {
+        $configured = trim((string)$this->get_db_field('llm_max_tokens', ''));
+        if ($configured !== '') {
+            return $configured;
+        }
+        $defaults = $this->llm_service->getModuleDefaults();
+        return $defaults['max_tokens'] !== '' ? $defaults['max_tokens'] : (string)LLM_DEFAULT_MAX_TOKENS;
+    }
     /** @return bool Whether the conversation list sidebar is shown to the user. */
     public function isConversationsListEnabled() { return $this->get_db_field('enable_conversations_list', '0') === '1'; }
     /** @return bool Whether file upload button is available in the chat input. */
