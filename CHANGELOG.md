@@ -6,6 +6,14 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Fixed
 
+- **Cross-conversation / cross-model message bleed.** Sending after a CMS
+  model change (or with no conversation id) reused the latest thread for the
+  new model via `getOrCreateConversationForModel`, so prior topics (e.g.
+  football) could be mixed into a new Anthropic chat. The React UI also
+  appended the assistant reply onto the previous conversation's messages.
+  `resolveConversation` now always creates a fresh conversation in those
+  cases; the chat UI reloads messages from the server after send; API calls
+  use the conversation's stored model.
 - **Default model not saved on LLM Configuration.** Saving Default Model on
   `/admin/module_llm` reported success but stored nothing and reloaded empty.
   Root cause: `llm_default_model` was never created on many installs because
@@ -40,19 +48,27 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   (`OpenAI :: …`). Now: strip server prefix; ask
   `provider->modelSupportsVision()`; then `LLM_VISION_MODELS` /
   `LLM_VISION_MODEL_PATTERNS`; then OpenAI and Anthropic name heuristics
-  (Claude 3+ ready for a future `AnthropicProvider`). Stock OpenAI `/models`
+  (Claude 3+ via `AnthropicProvider` heuristics). Stock OpenAI `/models`
   still has no modality metadata.
 
 ### Added
 
+- **Anthropic provider.** `AnthropicProvider` for `api.anthropic.com`:
+  Messages API (`/messages`), `x-api-key` + `anthropic-version` auth,
+  OpenAI→Anthropic payload conversion (system prompt, image_url→image),
+  response normalization (text + thinking blocks), and model listing via
+  provider headers (`GET /v1/models?limit=1000`). Register base URL as
+  `https://api.anthropic.com/v1`. Model list fetch now uses each provider's
+  `getAuthHeaders()` / `getApiUrl()` (fixes Anthropic 401 with Bearer-only).
 - **Reasoning effort field.** Shared CMS / module dropdown `llm_reasoning_effort`
   backed by `lookups` (`type_code` = `llmReasoningEffort`: default, none,
   minimal, low, medium, high, xhigh, max). Wired on `llmChat`,
   `llmFormRecord`, `llmFormLog`, and module defaults. OpenAIProvider maps to
   Chat Completions top-level `reasoning_effort` (not Responses-API
-  `reasoning.effort`, which causes HTTP 400). BaseProvider strips it for
-  GPUStack; Anthropic helper `applyAnthropicReasoningEffort()` is ready for
-  `AnthropicProvider`. Clear hooks/CMS/lookups cache after migration.
+  `reasoning.effort`, which causes HTTP 400). AnthropicProvider maps to
+  `output_config.effort` + adaptive thinking (`none` disables thinking).
+  BaseProvider strips it for GPUStack. Clear hooks/CMS/lookups cache after
+  migration.
 
 ### Changed
 

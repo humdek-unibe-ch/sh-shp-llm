@@ -106,12 +106,21 @@ interface LlmProviderInterface
      * Return true/false when the provider can decide; return null to defer to
      * shared allowlist / patterns / vendor heuristics in LlmModelCapabilities.
      * Stock OpenAI /models does not expose modalities — OpenAIProvider uses
-     * name heuristics. Future AnthropicProvider should do the same for Claude.
+     * name heuristics. AnthropicProvider decides for its own models.
      *
      * @param string $modelId Raw model id (no server prefix)
      * @return bool|null
      */
     public function modelSupportsVision($modelId);
+
+    /**
+     * Whether this provider expects `role=system` messages left intact so
+     * adaptChatCompletionPayload() can map them (e.g. Anthropic top-level
+     * `system`). When true, callLlmApi skips model-name-based system flattening.
+     *
+     * @return bool
+     */
+    public function usesTopLevelSystemPrompt();
 }
 ?>
 

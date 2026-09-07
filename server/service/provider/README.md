@@ -19,7 +19,8 @@ $response = $llm_service->callLlmApi($messages, $model, $temperature, $maxTokens
 
 | Provider | Base URL | Provider ID | Features |
 |----------|----------|-------------|----------|
-| OpenAI | `https://api.openai.com/v1` | `openai` | Remaps `max_tokens` → `max_completion_tokens`; vision via model-id heuristics |
+| OpenAI | `https://api.openai.com/v1` | `openai` | Remaps `max_tokens` → `max_completion_tokens`; vision via model-id heuristics; Chat Completions `reasoning_effort` |
+| Anthropic | `https://api.anthropic.com/v1` | `anthropic` | Messages API (`/messages`); `x-api-key` + `anthropic-version`; vision via Claude heuristics; `output_config.effort` + adaptive thinking |
 | GPUStack (UniBE) | `https://gpustack.unibe.ch/v1` | `gpustack` | Standard OpenAI-compatible API (`max_tokens`); vision via allowlist/patterns |
 | BFH Inference API | `https://inference.mlmp.ti.bfh.ch/api/v1` | `bfh` | Enhanced with reasoning content |
 
@@ -27,13 +28,17 @@ Vision detection (`LlmModelCapabilities::isVisionModel` / `LlmService::modelSupp
 stock OpenAI `GET /v1/models` has **no** modality field. Providers may implement
 `modelSupportsVision($id)` (`true`/`false`/`null`). Shared fallbacks: exact
 `LLM_VISION_MODELS`, `LLM_VISION_MODEL_PATTERNS` (`*-vl-*`, …), then OpenAI and
-Anthropic name heuristics (Claude ready for a future `AnthropicProvider`).
+Anthropic name heuristics.
 
 Reasoning effort (`llm_reasoning_effort` style/module field):
 options from `lookups` (`type_code` = `llmReasoningEffort`). Internal payload
 key `reasoning_effort`. `OpenAIProvider` → Chat Completions top-level
-`reasoning_effort` (not nested `reasoning`). `BaseProvider` strips it
-(GPUStack). Future Anthropic → `applyAnthropicReasoningEffort()`.
+`reasoning_effort` (not nested `reasoning`). `AnthropicProvider` →
+`output_config.effort` + `thinking.type=adaptive` (`none` → thinking disabled;
+`minimal` → `low`). `BaseProvider` strips it (GPUStack).
+
+Model listing uses each provider's `getApiUrl()` + `getAuthHeaders()` (required
+for Anthropic; Bearer alone returns 401).
 
 ## File Structure
 
@@ -42,22 +47,23 @@ server/service/provider/
 ├── README.md                    # This file
 ├── LlmProviderInterface.php     # Provider interface definition
 ├── BaseProvider.php             # Abstract base class
+├── OpenAIProvider.php           # OpenAI / Azure
+├── AnthropicProvider.php        # Anthropic Claude (Messages API)
 ├── GpuStackProvider.php         # GPUStack implementation
 ├── BfhProvider.php              # BFH implementation
-├── LlmProviderRegistry.php      # Provider factory & registry
-└── test_providers.php           # Test suite
+└── LlmProviderRegistry.php      # Provider factory & registry
 ```
 
 ## Testing
 
-Run the test suite to verify all providers work correctly:
+Verify providers resolve by URL:
 
 ```bash
 cd server/service/provider
-php test_providers.php
+php -r "require 'LlmProviderRegistry.php'; echo LlmProviderRegistry::getProviderForUrl('https://api.anthropic.com/v1')->getProviderId();"
 ```
 
-Expected output: All tests pass with green checkmarks ✓
+Expected: `anthropic`
 
 ## Adding a New Provider
 

@@ -62,18 +62,23 @@ class LlmModelCapabilities
      */
     public static function supportsSystemRole($model)
     {
+        $raw = self::getRawModelId($model);
+
         // If explicitly listed as not supporting system role
-        if (in_array($model, self::MODELS_WITHOUT_SYSTEM_ROLE)) {
+        if (in_array($raw, self::MODELS_WITHOUT_SYSTEM_ROLE, true)
+            || in_array($model, self::MODELS_WITHOUT_SYSTEM_ROLE, true)) {
             return false;
         }
         
         // If explicitly listed as supporting system role
-        if (in_array($model, self::MODELS_WITH_SYSTEM_ROLE)) {
+        if (in_array($raw, self::MODELS_WITH_SYSTEM_ROLE, true)
+            || in_array($model, self::MODELS_WITH_SYSTEM_ROLE, true)) {
             return true;
         }
         
-        // Default: assume system role is NOT supported for safety
-        // This ensures we don't break unknown models
+        // Default: assume system role is NOT supported for safety.
+        // Anthropic top-level `system` is handled via
+        // LlmProviderInterface::usesTopLevelSystemPrompt(), not model-name checks.
         return false;
     }
 
@@ -341,7 +346,7 @@ class LlmModelCapabilities
     }
 
     /**
-     * Anthropic Claude models that accept image input (ready for AnthropicProvider).
+     * Anthropic Claude models that accept image input (AnthropicProvider).
      *
      * Claude 3+ (and numbered Claude 4+ / sonnet|opus|haiku product names) support vision.
      * Claude 1/2 are treated as text-only.

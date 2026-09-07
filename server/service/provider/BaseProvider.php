@@ -145,6 +145,17 @@ abstract class BaseProvider implements LlmProviderInterface
     }
 
     /**
+     * Default: OpenAI-compatible hosts keep system inside messages[];
+     * LlmModelCapabilities may flatten unsupported system roles.
+     *
+     * @return bool
+     */
+    public function usesTopLevelSystemPrompt()
+    {
+        return false;
+    }
+
+    /**
      * Extract content from normalized response structure
      * Helper method for providers
      * 

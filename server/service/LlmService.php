@@ -228,16 +228,18 @@ class LlmService extends BaseLlmService
      * - Creating a new conversation if none exists
      * - Checking concurrent conversation limits before creation
      * - Validating existing conversation ownership
-     * - Creating new conversation if model changed
+     * - Starting a fresh conversation when the CMS/configured model no longer
+     *   matches the open conversation (never silently reuse another thread —
+     *   that mixed unrelated histories across models)
      *
-     * @param int $user_id User ID
-     * @param int|null $conversation_id Existing conversation ID (optional)
-     * @param array $rate_data Rate limit data from checkRateLimit
-     * @param string $model Model name
-     * @param float|null $temperature Temperature setting
-     * @param int|null $max_tokens Max tokens setting
-     * @param int|null $section_id Section ID
-     * @return array ['conversation_id' => int, 'is_new' => bool]
+     * @param int $user_id
+     * @param int|null $conversation_id
+     * @param array $rate_data
+     * @param string $model
+     * @param float|null $temperature
+     * @param int|null $max_tokens
+     * @param int|null $section_id
+     * @return array{conversation_id:int|string,is_new:bool}
      * @throws Exception If conversation not found or limit exceeded
      */
     public function resolveConversation($user_id, $conversation_id, $rate_data, $model, $temperature = null, $max_tokens = null, $section_id = null)
@@ -248,8 +250,11 @@ class LlmService extends BaseLlmService
 
         if (!$conversation_id) {
             $this->validateConcurrentConversationLimit($rate_data);
-            $conversation_id = $this->getOrCreateConversationForModel(
+            // Always start a fresh thread — do not resume the latest chat for
+            // this model (that reattached unrelated prior topics).
+            $conversation_id = $this->createConversation(
                 $user_id,
+                null,
                 $normalizedModel,
                 $temperature,
                 $max_tokens,
@@ -269,8 +274,11 @@ class LlmService extends BaseLlmService
 
             if (!$modelMatches) {
                 $this->validateConcurrentConversationLimit($rate_data);
-                $conversation_id = $this->getOrCreateConversationForModel(
+                // Model changed (e.g. UNIBE → Anthropic): new empty conversation.
+                // Never getOrCreate the previous Anthropic/OpenAI thread.
+                $conversation_id = $this->createConversation(
                     $user_id,
+                    null,
                     $normalizedModel,
                     $temperature,
                     $max_tokens,
@@ -350,9 +358,12 @@ class LlmService extends BaseLlmService
     }
 
     /**
-     * Get or create a conversation for a specific model
+     * Get or create a conversation for a specific model.
      *
-     * Returns the most recent conversation for the model, or creates a new one if none exists.
+     * Returns the most recent conversation for the model, or creates a new one
+     * if none exists. Chat send resolution must not use this on model switches
+     * — see resolveConversation(), which always creates a fresh thread to avoid
+     * mixing unrelated histories across models.
      *
      * @param int $user_id User ID
      * @param string $model Model name
@@ -952,11 +963,9 @@ class LlmService extends BaseLlmService
      */
     private function fetchModelsFromServer($server, $timeout, $prefix = false, $modelType = 'llm')
     {
-        $url = rtrim($server['base_url'], '/') . LLM_API_MODELS;
-        $headers = array(
-            'Authorization: Bearer ' . ($server['api_key'] ?? ''),
-            'Accept: application/json',
-        );
+        $provider = $this->getProviderForServer($server);
+        $url = $provider->getApiUrl($server['base_url'] ?? '', LLM_API_MODELS);
+        $headers = $provider->getAuthHeaders($server['api_key'] ?? '');
 
         $response = $this->executeModelsListCurl($url, $headers, (int)$timeout);
         if (!$response || !is_array($response) || empty($response['data'])) {
@@ -968,16 +977,33 @@ class LlmService extends BaseLlmService
 
         if ($prefix && !empty($server['name'])) {
             foreach ($models as &$model) {
-                $model['id'] = $this->buildScopedModelId(
-                    $server['name'] ?? 'Default',
-                    $model['id'] ?? '',
-                    true
-                );
+                $this->applyServerScopeToModel($model, $server['name'] ?? 'Default');
             }
             unset($model);
         }
 
         return $models;
+    }
+
+    /**
+     * Prefix model id (and display name) with the server/provider entry name.
+     *
+     * React settings use `name || id` for the dropdown label; without scoping
+     * `name`, Anthropic display_name values appear without "Anthropic :: ".
+     *
+     * @param array $model
+     * @param string $serverName
+     * @return void
+     */
+    private function applyServerScopeToModel(array &$model, $serverName)
+    {
+        $rawId = $model['id'] ?? '';
+        $model['id'] = $this->buildScopedModelId($serverName, $rawId, true);
+        if (!empty($model['name'])) {
+            $model['name'] = $this->buildScopedModelId($serverName, $model['name'], true);
+        } else {
+            $model['name'] = $model['id'];
+        }
     }
 
     /**
@@ -1002,7 +1028,9 @@ class LlmService extends BaseLlmService
         $handles = array();
 
         foreach ($servers as $index => $server) {
-            $url = rtrim($server['base_url'] ?? '', '/') . LLM_API_MODELS;
+            $provider = $this->getProviderForServer($server);
+            $url = $provider->getApiUrl($server['base_url'] ?? '', LLM_API_MODELS);
+            $headers = $provider->getAuthHeaders($server['api_key'] ?? '');
             $ch = curl_init();
             $opts = array(
                 CURLOPT_URL => $url,
@@ -1010,10 +1038,7 @@ class LlmService extends BaseLlmService
                 CURLOPT_HTTPGET => true,
                 CURLOPT_TIMEOUT => max(1, (int)$timeout),
                 CURLOPT_CONNECTTIMEOUT => max(1, min(3, (int)$timeout)),
-                CURLOPT_HTTPHEADER => array(
-                    'Authorization: Bearer ' . ($server['api_key'] ?? ''),
-                    'Accept: application/json',
-                ),
+                CURLOPT_HTTPHEADER => $headers,
             );
             if (defined('DEBUG') && DEBUG) {
                 $opts[CURLOPT_SSL_VERIFYHOST] = false;
@@ -1052,11 +1077,7 @@ class LlmService extends BaseLlmService
             $models = $this->filterModelsByType($models, $modelType);
             if ($prefix && !empty($server['name'])) {
                 foreach ($models as &$model) {
-                    $model['id'] = $this->buildScopedModelId(
-                        $server['name'] ?? 'Default',
-                        $model['id'] ?? '',
-                        true
-                    );
+                    $this->applyServerScopeToModel($model, $server['name'] ?? 'Default');
                 }
                 unset($model);
             }
@@ -1162,6 +1183,26 @@ class LlmService extends BaseLlmService
                     'meta' => $model['info']['meta'] ?? null
                 ];
             }
+
+            // Anthropic Models API: display_name + created_at (RFC3339), no owned_by
+            if (isset($model['display_name']) || isset($model['created_at'])) {
+                $created = time();
+                if (!empty($model['created_at'])) {
+                    $ts = strtotime((string)$model['created_at']);
+                    if ($ts !== false) {
+                        $created = $ts;
+                    }
+                }
+                return [
+                    'id' => $model['id'] ?? '',
+                    'name' => $model['display_name'] ?? ($model['id'] ?? ''),
+                    'created' => $created,
+                    'object' => $model['type'] ?? 'model',
+                    'owned_by' => $model['owned_by'] ?? 'anthropic',
+                    'meta' => isset($model['capabilities']) ? ['capabilities' => $model['capabilities']] : null,
+                ];
+            }
+
             return $model;
         }, $models);
     }
@@ -1381,8 +1422,14 @@ class LlmService extends BaseLlmService
             $this->db
         );
 
-        // Convert messages for model compatibility (handles system role support)
-        $converted_messages = LlmModelCapabilities::convertMessagesForModel($messages, $rawModel);
+        // Convert messages for model compatibility (handles system role support).
+        // Anthropic (and similar) keep role=system so the provider can lift it
+        // into a top-level `system` field — do not flatten by model-name heuristics.
+        if ($provider->usesTopLevelSystemPrompt()) {
+            $converted_messages = $messages;
+        } else {
+            $converted_messages = LlmModelCapabilities::convertMessagesForModel($messages, $rawModel);
+        }
 
         // Build standard payload
         $payload = [
