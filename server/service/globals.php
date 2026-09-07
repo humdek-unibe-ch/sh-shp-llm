@@ -49,6 +49,7 @@ define('LLM_DEFAULT_MODEL', 'gpt-oss-120b');
 define('LLM_DEFAULT_TEMPERATURE', 1);
 define('LLM_DEFAULT_MAX_TOKENS', 2048);
 define('LLM_DEFAULT_TIMEOUT', 30);
+define('LLM_MODELS_FETCH_TIMEOUT', 5);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
 
@@ -230,6 +231,7 @@ define('LLM_MAX_AUDIO_SIZE', 25 * 1024 * 1024); // 25 MB — OpenAI Whisper API 
 define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
 define('LLM_CACHE_CONVERSATION_MESSAGES', 'llm_conversation_messages');
 define('LLM_CACHE_RATE_LIMIT', 'llm_rate_limit');
+define('LLM_CACHE_AVAILABLE_MODELS', 'llm_available_models');
 
 /* =========================================================================
  * MODEL CAPABILITY FLAGS

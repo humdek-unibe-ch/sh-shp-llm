@@ -806,6 +806,46 @@ class LlmService extends BaseLlmService
         }
 
         $servers = $config['llm_servers'] ?? [];
+        $cacheParams = array(
+            'modelType' => (string)$modelType,
+            'v' => '2',
+            'servers' => $this->buildModelsCacheFingerprint($servers, $config),
+        );
+
+        // CMS prop pages call this for llm_model and speech_to_text_model on
+        // every render; cache avoids sequential OpenAI/GPUStack /models waits.
+        return $this->cacheManager->remember(
+            LLM_CACHE_AVAILABLE_MODELS,
+            'list',
+            function () use ($config, $servers, $modelType) {
+                return $this->fetchAvailableModelsUncached($config, $servers, $modelType);
+            },
+            $cacheParams,
+            LlmCacheManager::DEFAULT_TTL
+        );
+    }
+
+    /**
+     * Drop cached provider model lists (e.g. after API server settings change).
+     *
+     * @return void
+     */
+    public function clearAvailableModelsCache()
+    {
+        $this->cache->clear_cache(LLM_CACHE_AVAILABLE_MODELS);
+    }
+
+    /**
+     * Fetch models from all configured servers without reading the models cache.
+     *
+     * @param array $config
+     * @param array $servers
+     * @param string $modelType
+     * @return array
+     */
+    private function fetchAvailableModelsUncached($config, $servers, $modelType)
+    {
+        $listTimeout = $this->getModelsFetchTimeout($config);
 
         // Fallback: single-server legacy mode
         if (empty($servers)) {
@@ -813,22 +853,62 @@ class LlmService extends BaseLlmService
                 'name' => 'Default',
                 'base_url' => $config['llm_base_url'],
                 'api_key' => $config['llm_api_key']
-            ], $config['llm_timeout'], false, $modelType);
+            ], $listTimeout, false, $modelType);
         }
 
-        $useServerScope = true;
-        $allModels = [];
-
-        foreach ($servers as $server) {
-            $models = $this->fetchModelsFromServer($server, $config['llm_timeout'], $useServerScope, $modelType);
-            $allModels = array_merge($allModels, $models);
-        }
+        // Fetch all servers in parallel — sequential OpenAI+GPUStack waits
+        // made CMS prop pages take multiple seconds on every load.
+        $allModels = $this->fetchModelsFromServersParallel($servers, $listTimeout, true, $modelType);
 
         if (empty($allModels)) {
             return $this->getDefaultModelListByType($modelType);
         }
 
         return $allModels;
+    }
+
+    /**
+     * Timeout used only for listing /models (CMS selects), capped for snappy admin UI.
+     *
+     * @param array $config
+     * @return int
+     */
+    private function getModelsFetchTimeout($config)
+    {
+        $configured = isset($config['llm_timeout']) ? (int)$config['llm_timeout'] : LLM_DEFAULT_TIMEOUT;
+        $cap = defined('LLM_MODELS_FETCH_TIMEOUT') ? (int)LLM_MODELS_FETCH_TIMEOUT : 5;
+        if ($configured <= 0) {
+            $configured = LLM_DEFAULT_TIMEOUT;
+        }
+        return max(1, min($configured, $cap));
+    }
+
+    /**
+     * Fingerprint servers for the models cache key without storing secrets in the key text.
+     *
+     * @param array $servers
+     * @param array $config
+     * @return string
+     */
+    private function buildModelsCacheFingerprint($servers, $config)
+    {
+        $parts = array();
+        if (!empty($servers)) {
+            foreach ($servers as $server) {
+                $parts[] = array(
+                    'name' => (string)($server['name'] ?? ''),
+                    'base_url' => (string)($server['base_url'] ?? ''),
+                    'api_key_hash' => substr(hash('sha256', (string)($server['api_key'] ?? '')), 0, 12),
+                );
+            }
+        } else {
+            $parts[] = array(
+                'name' => 'Default',
+                'base_url' => (string)($config['llm_base_url'] ?? ''),
+                'api_key_hash' => substr(hash('sha256', (string)($config['llm_api_key'] ?? '')), 0, 12),
+            );
+        }
+        return md5(json_encode($parts));
     }
 
     /**
@@ -846,6 +926,10 @@ class LlmService extends BaseLlmService
     /**
      * Fetch models from a single server endpoint.
      *
+     * Uses a dedicated curl call with an explicit timeout. Core
+     * BaseModel::execute_curl_call() ignores `$data['timeout']` and defaults
+     * to 100s, which made CMS model dropdowns hang on slow providers.
+     *
      * @param array $server Server config {name, base_url, api_key}
      * @param int $timeout Request timeout
      * @param bool $prefix Whether to prefix model ids with server name
@@ -853,17 +937,13 @@ class LlmService extends BaseLlmService
      */
     private function fetchModelsFromServer($server, $timeout, $prefix = false, $modelType = 'llm')
     {
-        $data = [
-            'URL' => rtrim($server['base_url'], '/') . LLM_API_MODELS,
-            'request_type' => 'GET',
-            'header' => [
-                'Authorization: Bearer ' . ($server['api_key'] ?? '')
-            ],
-            'timeout' => $timeout
-        ];
+        $url = rtrim($server['base_url'], '/') . LLM_API_MODELS;
+        $headers = array(
+            'Authorization: Bearer ' . ($server['api_key'] ?? ''),
+            'Accept: application/json',
+        );
 
-        $response = BaseModel::execute_curl_call($data);
-
+        $response = $this->executeModelsListCurl($url, $headers, (int)$timeout);
         if (!$response || !is_array($response) || empty($response['data'])) {
             return [];
         }
@@ -883,6 +963,129 @@ class LlmService extends BaseLlmService
         }
 
         return $models;
+    }
+
+    /**
+     * Fetch /models from multiple servers in parallel via curl_multi.
+     *
+     * @param array $servers
+     * @param int $timeout
+     * @param bool $prefix
+     * @param string $modelType
+     * @return array
+     */
+    private function fetchModelsFromServersParallel($servers, $timeout, $prefix, $modelType)
+    {
+        if (count($servers) <= 1) {
+            $server = $servers[0] ?? null;
+            return $server
+                ? $this->fetchModelsFromServer($server, $timeout, $prefix, $modelType)
+                : array();
+        }
+
+        $multi = curl_multi_init();
+        $handles = array();
+
+        foreach ($servers as $index => $server) {
+            $url = rtrim($server['base_url'] ?? '', '/') . LLM_API_MODELS;
+            $ch = curl_init();
+            $opts = array(
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPGET => true,
+                CURLOPT_TIMEOUT => max(1, (int)$timeout),
+                CURLOPT_CONNECTTIMEOUT => max(1, min(3, (int)$timeout)),
+                CURLOPT_HTTPHEADER => array(
+                    'Authorization: Bearer ' . ($server['api_key'] ?? ''),
+                    'Accept: application/json',
+                ),
+            );
+            if (defined('DEBUG') && DEBUG) {
+                $opts[CURLOPT_SSL_VERIFYHOST] = false;
+                $opts[CURLOPT_SSL_VERIFYPEER] = false;
+            }
+            curl_setopt_array($ch, $opts);
+            curl_multi_add_handle($multi, $ch);
+            $handles[$index] = $ch;
+        }
+
+        $running = null;
+        do {
+            $status = curl_multi_exec($multi, $running);
+            if ($running) {
+                curl_multi_select($multi, 0.5);
+            }
+        } while ($running && $status === CURLM_OK);
+
+        $allModels = array();
+        foreach ($handles as $index => $ch) {
+            $raw = curl_multi_getcontent($ch);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_multi_remove_handle($multi, $ch);
+            curl_close($ch);
+
+            if ($httpCode >= 400 || $raw === false || $raw === null || $raw === '') {
+                continue;
+            }
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded) || empty($decoded['data'])) {
+                continue;
+            }
+
+            $server = $servers[$index];
+            $models = $this->normalizeModels($decoded['data']);
+            $models = $this->filterModelsByType($models, $modelType);
+            if ($prefix && !empty($server['name'])) {
+                foreach ($models as &$model) {
+                    $model['id'] = $this->buildScopedModelId(
+                        $server['name'] ?? 'Default',
+                        $model['id'] ?? '',
+                        true
+                    );
+                }
+                unset($model);
+            }
+            $allModels = array_merge($allModels, $models);
+        }
+
+        curl_multi_close($multi);
+        return $allModels;
+    }
+
+    /**
+     * GET /models with an enforced timeout (unlike BaseModel::execute_curl_call).
+     *
+     * @param string $url
+     * @param array $headers
+     * @param int $timeout
+     * @return array|null Decoded JSON or null on failure
+     */
+    private function executeModelsListCurl($url, $headers, $timeout)
+    {
+        $curl = curl_init();
+        $opts = array(
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPGET => true,
+            CURLOPT_TIMEOUT => max(1, (int)$timeout),
+            CURLOPT_CONNECTTIMEOUT => max(1, min(3, (int)$timeout)),
+            CURLOPT_HTTPHEADER => $headers,
+        );
+        if (defined('DEBUG') && DEBUG) {
+            $opts[CURLOPT_SSL_VERIFYHOST] = false;
+            $opts[CURLOPT_SSL_VERIFYPEER] = false;
+        }
+        curl_setopt_array($curl, $opts);
+        $raw = curl_exec($curl);
+        $httpCode = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $errno = curl_errno($curl);
+        curl_close($curl);
+
+        if ($errno !== 0 || $raw === false || $httpCode >= 400) {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : null;
     }
 
     /**
@@ -922,7 +1125,8 @@ class LlmService extends BaseLlmService
     {
         return strpos($id, 'whisper') !== false
             || strpos($id, 'speech') !== false
-            || strpos($id, 'audio') !== false;
+            || strpos($id, 'audio') !== false
+            || strpos($id, 'tts') !== false;
     }
 
     /**

@@ -188,6 +188,16 @@ class Sh_module_llmModel extends BaseModel
         }
 
         $this->pageFields = null;
+
+        if ($fieldName === 'llm_api_keys') {
+            try {
+                $llmService = new LlmService($this->services);
+                $llmService->clearAvailableModelsCache();
+            } catch (Exception $e) {
+                // Non-fatal: next models fetch will refresh within TTL
+            }
+        }
+
         return true;
     }
 

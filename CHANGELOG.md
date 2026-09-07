@@ -20,6 +20,15 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 - **Settings model dropdown.** If the saved default model is missing from the
   live model list, the UI still shows it as `(current)` instead of the blank
   placeholder.
+- **CMS model dropdown height.** `llm_model` / `speech_to_text_model` selects
+  use `max` => 8. Core SelfHelp `select` was fixed so `data-size` / `max`
+  works (option text no longer wraps and inflates bootstrap-select row
+  height).
+- **Slow CMS properties page.** Opening an `llmChat` prop page listed models
+  from every configured server twice (chat + audio). Root causes: sequential
+  fetches and `BaseModel::execute_curl_call()` ignoring the timeout (100s
+  default). Listing now uses a 5s curl timeout, parallel `curl_multi` across
+  servers, a 5-minute cache, and excludes TTS ids from the chat model list.
 
 ### Changed
 
