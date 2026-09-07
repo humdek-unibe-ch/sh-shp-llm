@@ -2,83 +2,63 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.5.0] - TBD (Work in Progress)
-
-### Fixed
-
-- **Cross-conversation / cross-model message bleed.** Sending after a CMS
-  model change (or with no conversation id) reused the latest thread for the
-  new model via `getOrCreateConversationForModel`, so prior topics (e.g.
-  football) could be mixed into a new Anthropic chat. The React UI also
-  appended the assistant reply onto the previous conversation's messages.
-  `resolveConversation` now always creates a fresh conversation in those
-  cases (section CMS `llm_model`, never client POST `model`); the chat UI
-  reloads messages from the server after send and no longer POSTs `model`;
-  API calls use the conversation's stored model. Sticky backend producers
-  (forms/evals) keep using `getOrCreateConversationForModel`.
-- **Default model not saved on LLM Configuration.** Saving Default Model on
-  `/admin/module_llm` reported success but stored nothing and reloaded empty.
-  Root cause: `llm_default_model` was never created on many installs because
-  v1.0.0 inserted the field before `fieldType` `select-llm-model` existed.
-  Migration `v1.5.0.sql` repairs the field + page wiring; the settings model
-  also self-heals the field on save and reports failed field names.
-- **New LLM styles not prefilled from module defaults.** Saving module
-  model / temperature / max tokens now updates `styles_fields.default_value`
-  for `llmChat`, `llmFormRecord`, and `llmFormLog`, so new sections prefill
-  those values. Existing section content is unchanged. Runtime getters also
-  fall back to module settings when a section field is empty.
-- **Settings model dropdown.** If the saved default model is missing from the
-  live model list, the UI still shows it as `(current)` instead of the blank
-  placeholder.
-- **CMS model dropdown height.** `llm_model` / `speech_to_text_model` selects
-  use `max` => 8. Core SelfHelp `select` was fixed so `data-size` / `max`
-  works (option text no longer wraps and inflates bootstrap-select row
-  height).
-- **Slow CMS properties page.** Opening an `llmChat` prop page listed models
-  from every configured server twice (chat + audio). Root causes: sequential
-  fetches and `BaseModel::execute_curl_call()` ignoring the timeout (100s
-  default). Listing now uses a 5s curl timeout, parallel `curl_multi` across
-  servers, a 5-minute cache, and excludes TTS ids from the chat model list.
-- **OpenAI chat HTTP 400 on `max_tokens`.** OpenAI (e.g. `gpt-5.6-luna`,
-  `gpt-6-astra`) rejects legacy `max_tokens`. Added `OpenAIProvider` (matched
-  by `api.openai.com` / Azure host) that always remaps to
-  `max_completion_tokens` via `adaptChatCompletionPayload()`. GPUStack/BFH keep
-  `max_tokens` — local OpenAI-compatible stacks still expect it for most hosted
-  models. HTTP errors also surface the provider's `error.message` when present.
-- **Vision flag wrong for OpenAI models (e.g. `gpt-5.6-luna` showed "No vision").**
-  Detection was an exact match on two GPUStack ids only, and ignored scoped ids
-  (`OpenAI :: …`). Now: strip server prefix; ask
-  `provider->modelSupportsVision()`; then `LLM_VISION_MODELS` /
-  `LLM_VISION_MODEL_PATTERNS`; then OpenAI and Anthropic name heuristics
-  (Claude 3+ via `AnthropicProvider` heuristics). Stock OpenAI `/models`
-  still has no modality metadata.
+## [1.5.0] - TBD
 
 ### Added
 
-- **Anthropic provider.** `AnthropicProvider` for `api.anthropic.com`:
-  Messages API (`/messages`), `x-api-key` + `anthropic-version` auth,
-  OpenAI→Anthropic payload conversion (system prompt, image_url→image),
-  response normalization (text + thinking blocks), and model listing via
-  provider headers (`GET /v1/models?limit=1000`). Register base URL as
-  `https://api.anthropic.com/v1`. Model list fetch now uses each provider's
-  `getAuthHeaders()` / `getApiUrl()` (fixes Anthropic 401 with Bearer-only).
-- **Reasoning effort field.** Shared CMS / module dropdown `llm_reasoning_effort`
-  backed by `lookups` (`type_code` = `llmReasoningEffort`: default, none,
-  minimal, low, medium, high, xhigh, max). Wired on `llmChat`,
-  `llmFormRecord`, `llmFormLog`, and module defaults. OpenAIProvider maps to
-  Chat Completions top-level `reasoning_effort` (not Responses-API
-  `reasoning.effort`, which causes HTTP 400). AnthropicProvider maps to
-  `output_config.effort` + adaptive thinking (`none` disables thinking).
-  BaseProvider strips it for GPUStack. Clear hooks/CMS/lookups cache after
-  migration.
+- **Anthropic provider.** Native Messages API support for
+  `https://api.anthropic.com/v1` (`AnthropicProvider`): Anthropic auth headers,
+  OpenAI-style payload conversion (including images), normalized responses
+  (text + thinking), and model listing. Model fetches now use each provider’s
+  auth helpers (fixes Anthropic 401 when only Bearer was sent).
+- **OpenAI Chat Completions adapter.** `OpenAIProvider` (OpenAI / Azure hosts)
+  remaps `max_tokens` → `max_completion_tokens` and applies OpenAI
+  `reasoning_effort`. GPUStack and other OpenAI-compatible hosts keep
+  `max_tokens`.
+- **Reasoning effort.** New CMS / module field `llm_reasoning_effort`
+  (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) on
+  `llmChat`, `llmFormRecord`, `llmFormLog`, and module defaults. Mapped per
+  provider (OpenAI Chat Completions, Anthropic `output_config.effort`; stripped
+  for GPUStack).
 
 ### Changed
 
-- **Default model** is now `gpt-oss-120b` (`LLM_DEFAULT_MODEL` and migration
-  seeds). Legacy stock value `qwen3-vl-8b-instruct` is migrated; custom admin
-  choices are left untouched.
-- Plugin version set to `v1.5.0` (DB migration required; clear CMS/page cache
-  after).
+- **Default model** is `gpt-oss-120b`. Migration updates the legacy stock value
+  `qwen3-vl-8b-instruct`; custom admin selections are preserved.
+- **Module defaults apply to styles.** Saving module model / temperature /
+  max tokens / reasoning effort updates `styles_fields` defaults for
+  `llmChat`, `llmFormRecord`, and `llmFormLog`. Empty section fields fall back
+  to module settings at runtime; existing section values are unchanged.
+- **Interactive chat owns the section model.** Chat turns resolve via
+  `resolveConversation` using the section CMS `llm_model` (client POST `model`
+  is ignored). A model mismatch starts a new conversation. Forms / evals keep
+  sticky `getOrCreateConversationForModel`.
+
+### Fixed
+
+- **Cross-conversation message bleed.** After a CMS model change (or missing
+  conversation id), chat no longer resumes an unrelated prior thread or appends
+  the reply onto the previous UI history. Messages reload from the server after
+  send; API calls use the conversation’s stored model.
+- **Default model not persisted.** Admin → LLM Configuration could report
+  success while storing nothing when `llm_default_model` / `select-llm-model`
+  were missing from older installs. Migration repairs field wiring; settings
+  save also self-heals and reports failed field names.
+- **Settings model dropdown blank.** A saved default missing from the live
+  model list is shown as `(current)` instead of an empty selection.
+- **CMS model list performance.** Property pages list models in parallel with
+  a short timeout and cache (~5 min), and exclude TTS ids from chat model
+  lists.
+- **CMS model select height.** `llm_model` / `speech_to_text_model` use
+  `max` → 8 so bootstrap-select menus stay compact (requires matching core
+  SelfHelp `select` fix for `data-size` / `max`).
+- **OpenAI HTTP 400 on `max_tokens`.** Current OpenAI chat models reject legacy
+  `max_tokens`; the OpenAI adapter sends `max_completion_tokens`. Provider
+  `error.message` values are surfaced when present.
+- **Incorrect vision capability flags.** Vision detection no longer relies on
+  two hard-coded GPUStack ids. Scoped ids are normalized, then checked via
+  provider heuristics and vision allow-lists / patterns (OpenAI and Claude 3+
+  included).
 
 ## [1.4.1]
 
