@@ -99,6 +99,19 @@ interface LlmProviderInterface
      * @return array Adapted payload
      */
     public function adaptChatCompletionPayload(array $payload);
+
+    /**
+     * Whether a raw model id supports vision/image input on this provider.
+     *
+     * Return true/false when the provider can decide; return null to defer to
+     * shared allowlist / patterns / vendor heuristics in LlmModelCapabilities.
+     * Stock OpenAI /models does not expose modalities — OpenAIProvider uses
+     * name heuristics. Future AnthropicProvider should do the same for Claude.
+     *
+     * @param string $modelId Raw model id (no server prefix)
+     * @return bool|null
+     */
+    public function modelSupportsVision($modelId);
 }
 ?>
 

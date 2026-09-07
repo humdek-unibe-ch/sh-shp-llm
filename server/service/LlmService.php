@@ -59,6 +59,21 @@ class LlmService extends BaseLlmService
     {
         return LlmProviderRegistry::getProviderForUrl($server['base_url']);
     }
+
+    /**
+     * Whether a (possibly scoped) model supports vision on its resolved provider.
+     *
+     * @param string $model
+     * @return bool
+     */
+    public function modelSupportsVision($model)
+    {
+        require_once __DIR__ . '/LlmModelCapabilities.php';
+
+        $resolved = $this->resolveModelServer($model);
+        $provider = $this->getProviderForServer($resolved['server']);
+        return LlmModelCapabilities::isVisionModel($model, $provider);
+    }
     
     /**
      * Get the current provider instance

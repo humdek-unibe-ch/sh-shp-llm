@@ -70,6 +70,17 @@ abstract class BaseProvider implements LlmProviderInterface
     }
 
     /**
+     * Default: unknown — LlmModelCapabilities falls back to allowlist/patterns/heuristics.
+     *
+     * @param string $modelId
+     * @return bool|null
+     */
+    public function modelSupportsVision($modelId)
+    {
+        return null;
+    }
+
+    /**
      * Extract content from normalized response structure
      * Helper method for providers
      * 

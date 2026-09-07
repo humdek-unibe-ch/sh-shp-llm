@@ -19,9 +19,15 @@ $response = $llm_service->callLlmApi($messages, $model, $temperature, $maxTokens
 
 | Provider | Base URL | Provider ID | Features |
 |----------|----------|-------------|----------|
-| OpenAI | `https://api.openai.com/v1` | `openai` | Remaps `max_tokens` → `max_completion_tokens` |
-| GPUStack (UniBE) | `https://gpustack.unibe.ch/v1` | `gpustack` | Standard OpenAI-compatible API (`max_tokens`) |
+| OpenAI | `https://api.openai.com/v1` | `openai` | Remaps `max_tokens` → `max_completion_tokens`; vision via model-id heuristics |
+| GPUStack (UniBE) | `https://gpustack.unibe.ch/v1` | `gpustack` | Standard OpenAI-compatible API (`max_tokens`); vision via allowlist/patterns |
 | BFH Inference API | `https://inference.mlmp.ti.bfh.ch/api/v1` | `bfh` | Enhanced with reasoning content |
+
+Vision detection (`LlmModelCapabilities::isVisionModel` / `LlmService::modelSupportsVision`):
+stock OpenAI `GET /v1/models` has **no** modality field. Providers may implement
+`modelSupportsVision($id)` (`true`/`false`/`null`). Shared fallbacks: exact
+`LLM_VISION_MODELS`, `LLM_VISION_MODEL_PATTERNS` (`*-vl-*`, …), then OpenAI and
+Anthropic name heuristics (Claude ready for a future `AnthropicProvider`).
 
 ## File Structure
 

@@ -35,6 +35,13 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   `max_completion_tokens` via `adaptChatCompletionPayload()`. GPUStack/BFH keep
   `max_tokens` — local OpenAI-compatible stacks still expect it for most hosted
   models. HTTP errors also surface the provider's `error.message` when present.
+- **Vision flag wrong for OpenAI models (e.g. `gpt-5.6-luna` showed "No vision").**
+  Detection was an exact match on two GPUStack ids only, and ignored scoped ids
+  (`OpenAI :: …`). Now: strip server prefix; ask
+  `provider->modelSupportsVision()`; then `LLM_VISION_MODELS` /
+  `LLM_VISION_MODEL_PATTERNS`; then OpenAI and Anthropic name heuristics
+  (Claude 3+ ready for a future `AnthropicProvider`). Stock OpenAI `/models`
+  still has no modality metadata.
 
 ### Changed
 

@@ -226,14 +226,24 @@ class LlmChatModel extends StyleModel
      */
     public function getAcceptedFileTypes()
     {
-        if (llm_is_vision_model($this->getConfiguredModel())) {
+        if ($this->isVisionModel()) {
             return LLM_ALLOWED_IMAGE_EXTENSIONS;
         }
         return array_merge(LLM_ALLOWED_DOCUMENT_EXTENSIONS, LLM_ALLOWED_CODE_EXTENSIONS, LLM_ALLOWED_IMAGE_EXTENSIONS);
     }
 
     /** @return bool Whether the configured model supports image/vision input. */
-    public function isVisionModel() { return llm_is_vision_model($this->getConfiguredModel()); }
+    public function isVisionModel()
+    {
+        $model = $this->getConfiguredModel();
+        try {
+            require_once __DIR__ . '/../../../service/LlmService.php';
+            $llmService = new LlmService($this->services);
+            return $llmService->modelSupportsVision($model);
+        } catch (Exception $e) {
+            return llm_is_vision_model($model);
+        }
+    }
 
     /**
      * Build the upload help text shown below the file input.

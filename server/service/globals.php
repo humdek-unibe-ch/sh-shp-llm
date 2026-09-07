@@ -181,12 +181,34 @@ define('LLM_FILE_TYPE_CODE', 'code');
 
 /* =========================================================================
  * MODEL CAPABILITY LISTS
- * Substring-matched against model IDs to classify models by capability.
+ * Used by LlmModelCapabilities::isVisionModel() together with provider
+ * heuristics (OpenAI / Anthropic) and substring patterns.
+ * Stock OpenAI GET /v1/models does not return vision modality metadata.
  * ========================================================================= */
 
+/** Exact model ids known to support vision (mostly GPUStack / local names) */
 define('LLM_VISION_MODELS', [
-    'internvl3-8b-instruct', 
-    'qwen3-vl-8b-instruct', 
+    'internvl3-8b-instruct',
+    'qwen3-vl-8b-instruct',
+    'qwen3.8-27b'
+]);
+
+/**
+ * Case-insensitive substrings that imply vision when present in the raw model id.
+ * Keep vendor-wide gpt-/claude- rules in LlmModelCapabilities / providers.
+ */
+define('LLM_VISION_MODEL_PATTERNS', [
+    '-vl-',
+    '-vl_',
+    'vision',
+    'internvl',
+    'llava',
+    'qwen2-vl',
+    'qwen2.5-vl',
+    'qwen3-vl',
+    'minicpm-v',
+    'phi-3-vision',
+    'phi-4-multimodal',
 ]);
 
 /** Speech-to-text models capable of transcribing audio via the Whisper API */

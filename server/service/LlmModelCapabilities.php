@@ -216,14 +216,159 @@ class LlmModelCapabilities
     }
 
     /**
-     * Check if a model supports vision/image processing
+     * Check if a model supports vision/image processing.
      *
-     * @param string $model Model identifier
+     * OpenAI (and most hosts) do not expose modalities on GET /v1/models, so
+     * detection uses:
+     *  1) optional provider decision (OpenAIProvider, future AnthropicProvider)
+     *  2) exact allowlist (LLM_VISION_MODELS)
+     *  3) substring patterns (LLM_VISION_MODEL_PATTERNS)
+     *  4) vendor heuristics (GPT-4o / GPT-5.x, Claude 3+)
+     *
+     * Scoped ids ("OpenAI :: gpt-5.6-luna") are stripped before matching.
+     *
+     * @param string $model Model identifier (raw or server-scoped)
+     * @param LlmProviderInterface|null $provider Optional resolved provider
      * @return bool
      */
-    public static function isVisionModel($model)
+    public static function isVisionModel($model, $provider = null)
     {
-        return in_array($model, LLM_VISION_MODELS);
+        $raw = self::getRawModelId($model);
+        if ($raw === '') {
+            return false;
+        }
+
+        // Embeddings / STT / rerankers are never chat-vision.
+        if (self::isNonChatModel($raw)) {
+            return false;
+        }
+
+        if ($provider !== null && method_exists($provider, 'modelSupportsVision')) {
+            $decision = $provider->modelSupportsVision($raw);
+            if ($decision !== null) {
+                return (bool)$decision;
+            }
+        }
+
+        if (defined('LLM_VISION_MODELS') && in_array($raw, LLM_VISION_MODELS, true)) {
+            return true;
+        }
+
+        $lower = strtolower($raw);
+        if (defined('LLM_VISION_MODEL_PATTERNS') && is_array(LLM_VISION_MODEL_PATTERNS)) {
+            foreach (LLM_VISION_MODEL_PATTERNS as $pattern) {
+                $pattern = strtolower((string)$pattern);
+                if ($pattern !== '' && strpos($lower, $pattern) !== false) {
+                    return true;
+                }
+            }
+        }
+
+        if (self::matchesOpenAiVisionHeuristic($raw)) {
+            return true;
+        }
+        if (self::matchesAnthropicVisionHeuristic($raw)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Strip server scope from a model id ("Server :: model" / legacy "Server - model").
+     *
+     * @param string $model
+     * @return string
+     */
+    public static function getRawModelId($model)
+    {
+        $model = trim((string)$model);
+        if ($model === '') {
+            return '';
+        }
+
+        $separator = ' :: ';
+        $pos = strpos($model, $separator);
+        if ($pos !== false) {
+            return trim(substr($model, $pos + strlen($separator)));
+        }
+
+        $legacyPos = strpos($model, ' - ');
+        if ($legacyPos !== false) {
+            return trim(substr($model, $legacyPos + 3));
+        }
+
+        return $model;
+    }
+
+    /**
+     * OpenAI chat models that accept image input (heuristic; /models has no modality field).
+     *
+     * Intentionally excludes gpt-oss-* (text-only local/open-weight) and non-chat ids.
+     *
+     * @param string $model Raw model id
+     * @return bool
+     */
+    public static function matchesOpenAiVisionHeuristic($model)
+    {
+        $lower = strtolower(trim((string)$model));
+        if ($lower === '' || strpos($lower, 'gpt-oss') === 0) {
+            return false;
+        }
+
+        // GPT-5+ multimodal chat family (gpt-5, gpt-5.6-luna, gpt-6-astra, gpt-10, …)
+        if (preg_match('/^gpt-(?:[5-9]|[1-9]\\d+)(?:[.-]|$)/', $lower)) {
+            return true;
+        }
+
+        // GPT-4o / GPT-4.1 multimodal chat
+        if (preg_match('/^gpt-4o([.-]|$)/', $lower)) {
+            return true;
+        }
+        if (preg_match('/^gpt-4\\.1([.-]|$)/', $lower)) {
+            return true;
+        }
+        if (preg_match('/^gpt-4-turbo/', $lower) || preg_match('/^gpt-4-vision/', $lower)) {
+            return true;
+        }
+
+        // ChatGPT alias ids sometimes returned by the API
+        if (preg_match('/^chatgpt-4o/', $lower)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Anthropic Claude models that accept image input (ready for AnthropicProvider).
+     *
+     * Claude 3+ (and numbered Claude 4+ / sonnet|opus|haiku product names) support vision.
+     * Claude 1/2 are treated as text-only.
+     *
+     * @param string $model Raw model id
+     * @return bool
+     */
+    public static function matchesAnthropicVisionHeuristic($model)
+    {
+        $lower = strtolower(trim((string)$model));
+        if ($lower === '' || strpos($lower, 'claude') !== 0) {
+            return false;
+        }
+
+        if (preg_match('/^claude-[12]([.-]|$)/', $lower)) {
+            return false;
+        }
+
+        // claude-3-*, claude-4-*, claude-sonnet-*, claude-opus-*, claude-haiku-*
+        if (preg_match('/^claude-[3-9]/', $lower)) {
+            return true;
+        }
+        if (preg_match('/^claude-(sonnet|opus|haiku)/', $lower)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

@@ -66,6 +66,33 @@ class OpenAIProvider extends BaseProvider
 
     /**
      * {@inheritdoc}
+     *
+     * OpenAI does not return vision modality on GET /v1/models; decide from id.
+     */
+    public function modelSupportsVision($modelId)
+    {
+        require_once __DIR__ . '/../LlmModelCapabilities.php';
+
+        $raw = LlmModelCapabilities::getRawModelId($modelId);
+        if ($raw === '' || LlmModelCapabilities::isNonChatModel($raw)) {
+            return false;
+        }
+
+        if (LlmModelCapabilities::matchesOpenAiVisionHeuristic($raw)) {
+            return true;
+        }
+
+        // Looks like an OpenAI id but not a known vision chat model → no vision
+        $lower = strtolower($raw);
+        if (preg_match('/^(gpt-|chatgpt-|o[1-4]([.-]|$))/', $lower)) {
+            return false;
+        }
+
+        return null;
+    }
+
+    /**
+     * {@inheritdoc}
      */
     public function normalizeResponse($rawResponse)
     {
