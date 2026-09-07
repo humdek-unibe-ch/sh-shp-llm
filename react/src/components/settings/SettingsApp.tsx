@@ -103,6 +103,9 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
       });
       const json = await res.json();
       if (json.error) throw new Error(json.error);
+      if (json.failed?.length) {
+        throw new Error(`Failed to save: ${json.failed.join(', ')}`);
+      }
       setSuccess(`Saved ${json.saved?.length || 0} setting(s) successfully.`);
       setDirty({});
       fetchConfig();

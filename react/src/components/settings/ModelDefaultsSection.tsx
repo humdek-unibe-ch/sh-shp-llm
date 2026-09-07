@@ -35,6 +35,11 @@ export const ModelDefaultsSection: React.FC<Props> = ({ getField, getVal, onChan
 
     if (name === 'llm_default_model') {
       const modelOptions = models.map(m => ({ value: m.id, label: m.name || m.id }));
+      // Keep a saved value selectable even if it is temporarily missing from
+      // the live model list (offline server / scoped vs raw id mismatch).
+      if (val && !modelOptions.some(o => o.value === val)) {
+        modelOptions.unshift({ value: val, label: `${val} (current)` });
+      }
       return (
         <div className="form-group" key={name}>
           <label className="small font-weight-bold">{field.label}</label>

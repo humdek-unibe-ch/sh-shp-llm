@@ -45,7 +45,7 @@ define('LLM_RATE_LIMIT_COOLDOWN_SECONDS', 60);
  * Applied when CMS fields are empty or not configured.
  * ========================================================================= */
 
-define('LLM_DEFAULT_MODEL', 'qwen3-vl-8b-instruct');
+define('LLM_DEFAULT_MODEL', 'gpt-oss-120b');
 define('LLM_DEFAULT_TEMPERATURE', 1);
 define('LLM_DEFAULT_MAX_TOKENS', 2048);
 define('LLM_DEFAULT_TIMEOUT', 30);

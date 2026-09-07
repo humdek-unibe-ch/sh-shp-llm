@@ -2,6 +2,33 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.5.0] - TBD (Work in Progress)
+
+### Fixed
+
+- **Default model not saved on LLM Configuration.** Saving Default Model on
+  `/admin/module_llm` reported success but stored nothing and reloaded empty.
+  Root cause: `llm_default_model` was never created on many installs because
+  v1.0.0 inserted the field before `fieldType` `select-llm-model` existed.
+  Migration `v1.5.0.sql` repairs the field + page wiring; the settings model
+  also self-heals the field on save and reports failed field names.
+- **New LLM styles not prefilled from module defaults.** Saving module
+  model / temperature / max tokens now updates `styles_fields.default_value`
+  for `llmChat`, `llmFormRecord`, and `llmFormLog`, so new sections prefill
+  those values. Existing section content is unchanged. Runtime getters also
+  fall back to module settings when a section field is empty.
+- **Settings model dropdown.** If the saved default model is missing from the
+  live model list, the UI still shows it as `(current)` instead of the blank
+  placeholder.
+
+### Changed
+
+- **Default model** is now `gpt-oss-120b` (`LLM_DEFAULT_MODEL` and migration
+  seeds). Legacy stock value `qwen3-vl-8b-instruct` is migrated; custom admin
+  choices are left untouched.
+- Plugin version set to `v1.5.0` (DB migration required; clear CMS/page cache
+  after).
+
 ## [1.4.1]
 
 ### Added

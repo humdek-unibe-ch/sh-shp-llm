@@ -120,6 +120,10 @@ class Sh_module_llmController extends BaseController
             ];
 
             $saved = [];
+            $failed = [];
+            $styleDefaultFields = ['llm_default_model', 'llm_temperature', 'llm_max_tokens'];
+            $shouldSyncStyleDefaults = false;
+
             foreach ($data['fields'] as $name => $value) {
                 if (!in_array($name, $allowedFields, true)) {
                     continue;
@@ -127,12 +131,22 @@ class Sh_module_llmController extends BaseController
                 $ok = $this->model->saveSetting($name, (string)$value);
                 if ($ok) {
                     $saved[] = $name;
+                    if (in_array($name, $styleDefaultFields, true)) {
+                        $shouldSyncStyleDefaults = true;
+                    }
+                } else {
+                    $failed[] = $name;
                 }
             }
 
+            if ($shouldSyncStyleDefaults) {
+                $this->model->syncStyleFieldDefaultsFromModuleSettings();
+            }
+
             $this->sendJsonResponse([
-                'success' => true,
+                'success' => empty($failed),
                 'saved' => $saved,
+                'failed' => $failed,
             ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);

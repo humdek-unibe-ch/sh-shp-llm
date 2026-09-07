@@ -162,16 +162,14 @@ class Sh_module_llmModel extends BaseModel
      */
     public function saveSetting($fieldName, $value)
     {
-        $fieldId = $this->db->query_db_first(
-            "SELECT id FROM fields WHERE name = ?",
-            [$fieldName]
-        );
-
-        if (!$fieldId) {
+        $fid = $this->resolveFieldId($fieldName);
+        if (!$fid) {
             return false;
         }
 
-        $fid = $fieldId['id'];
+        // Ensure the config page is wired to this field (needed for get_page_fields)
+        $this->ensurePageFieldLink($fid, $fieldName);
+
         $existing = $this->db->query_db_first(
             "SELECT id_pages FROM pages_fields_translation WHERE id_pages = ? AND id_fields = ? AND id_languages = ?",
             [$this->configPageId, $fid, self::CONFIG_LANGUAGE_ID]
@@ -191,5 +189,153 @@ class Sh_module_llmModel extends BaseModel
 
         $this->pageFields = null;
         return true;
+    }
+
+    /**
+     * Push module model/temperature/max_tokens into styles_fields.default_value
+     * for LLM styles so new CMS sections are prefilled from current settings.
+     * Existing section content is left untouched.
+     *
+     * @return void
+     */
+    public function syncStyleFieldDefaultsFromModuleSettings()
+    {
+        $fields = $this->getPageFields();
+        $map = [
+            'llm_model' => trim((string)($fields['llm_default_model'] ?? '')),
+            'llm_temperature' => trim((string)($fields['llm_temperature'] ?? '')),
+            'llm_max_tokens' => trim((string)($fields['llm_max_tokens'] ?? '')),
+        ];
+
+        $styles = ['llmChat', 'llmFormRecord', 'llmFormLog'];
+        foreach ($styles as $styleName) {
+            foreach ($map as $fieldName => $value) {
+                if ($value === '') {
+                    continue;
+                }
+                $this->db->execute_update_db(
+                    "UPDATE styles_fields sf
+                     INNER JOIN styles s ON s.id = sf.id_styles
+                     INNER JOIN fields f ON f.id = sf.id_fields
+                     SET sf.default_value = ?
+                     WHERE s.name = ? AND f.name = ?",
+                    [$value, $styleName, $fieldName]
+                );
+            }
+        }
+    }
+
+    /**
+     * Resolve a fields.id by name, self-healing llm_default_model when missing
+     * (legacy installs where the v1.0.0 field insert failed).
+     *
+     * @param string $fieldName
+     * @return int|null
+     */
+    private function resolveFieldId($fieldName)
+    {
+        $fieldId = $this->db->query_db_first(
+            "SELECT id FROM fields WHERE name = ?",
+            [$fieldName]
+        );
+        if ($fieldId) {
+            return (int)$fieldId['id'];
+        }
+
+        if ($fieldName !== 'llm_default_model') {
+            return null;
+        }
+
+        return $this->ensureDefaultModelFieldExists();
+    }
+
+    /**
+     * Create select-llm-model field type + llm_default_model field if absent.
+     *
+     * @return int|null New or existing field id
+     */
+    private function ensureDefaultModelFieldExists()
+    {
+        $type = $this->db->query_db_first(
+            "SELECT id FROM fieldType WHERE name = ?",
+            ['select-llm-model']
+        );
+        if (!$type) {
+            $this->db->execute_update_db(
+                "INSERT INTO fieldType (name, position) VALUES (?, ?)",
+                ['select-llm-model', 7]
+            );
+            $type = $this->db->query_db_first(
+                "SELECT id FROM fieldType WHERE name = ?",
+                ['select-llm-model']
+            );
+        }
+        if (!$type) {
+            return null;
+        }
+
+        $this->db->execute_update_db(
+            "INSERT IGNORE INTO fields (name, id_type, display) VALUES (?, ?, ?)",
+            ['llm_default_model', $type['id'], 0]
+        );
+
+        $field = $this->db->query_db_first(
+            "SELECT id FROM fields WHERE name = ?",
+            ['llm_default_model']
+        );
+        return $field ? (int)$field['id'] : null;
+    }
+
+    /**
+     * Ensure pages_fields (and pageType_fields) link exists for a config field.
+     *
+     * @param int $fieldId
+     * @param string $fieldName
+     * @return void
+     */
+    private function ensurePageFieldLink($fieldId, $fieldName)
+    {
+        if (!$this->configPageId || !$fieldId) {
+            return;
+        }
+
+        $defaults = [
+            'llm_default_model' => 'gpt-oss-120b',
+            'llm_temperature' => '1',
+            'llm_max_tokens' => '2048',
+            'llm_timeout' => '30',
+        ];
+        $defaultValue = $defaults[$fieldName] ?? '';
+        $help = $fieldName === 'llm_default_model'
+            ? 'Default LLM model to use'
+            : '';
+
+        $existing = $this->db->query_db_first(
+            "SELECT id_pages FROM pages_fields WHERE id_pages = ? AND id_fields = ?",
+            [$this->configPageId, $fieldId]
+        );
+        if (!$existing) {
+            $this->db->execute_update_db(
+                "INSERT INTO pages_fields (id_pages, id_fields, default_value, help) VALUES (?, ?, ?, ?)",
+                [$this->configPageId, $fieldId, $defaultValue, $help]
+            );
+        }
+
+        $pageType = $this->db->query_db_first(
+            "SELECT id FROM pageType WHERE name = ?",
+            ['sh_module_llm']
+        );
+        if ($pageType) {
+            $ptExisting = $this->db->query_db_first(
+                "SELECT id_pageType FROM pageType_fields WHERE id_pageType = ? AND id_fields = ?",
+                [$pageType['id'], $fieldId]
+            );
+            if (!$ptExisting) {
+                $this->db->execute_update_db(
+                    "INSERT INTO pageType_fields (id_pageType, id_fields, default_value, help) VALUES (?, ?, ?, ?)",
+                    [$pageType['id'], $fieldId, $defaultValue, $help]
+                );
+            }
+        }
     }
 }
