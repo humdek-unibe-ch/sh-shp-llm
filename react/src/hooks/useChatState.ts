@@ -90,8 +90,6 @@ export interface UseChatStateReturn {
   setError: (error: string) => void;
   /** Set current conversation (for internal use) */
   setCurrentConversation: (conversation: Conversation | null) => void;
-  /** Get the active model (conversation model or configured model) */
-  getActiveModel: () => string;
 }
 
 /**
@@ -258,7 +256,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       // Generate title if not provided
       const finalTitle = title?.trim() || generateDefaultTitle();
 
-      const conversationId = await conversationsApi.create(finalTitle, config.configuredModel);
+      const conversationId = await conversationsApi.create(finalTitle);
 
       // Convert to string for consistent comparison
       const conversationIdStr = String(conversationId);
@@ -359,17 +357,6 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
   }, [loadConversationMessages]);
   
   /**
-   * Get the active model for API calls
-   * Uses conversation model if exists, otherwise configured model
-   */
-  const getActiveModel = useCallback((): string => {
-    if (currentConversation?.model) {
-      return currentConversation.model;
-    }
-    return config.configuredModel;
-  }, [currentConversation?.model, config.configuredModel]);
-
-  /**
    * Send a message
    */
   const sendMessage = useCallback(async (
@@ -378,17 +365,12 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
   ): Promise<SendMessageResponse> => {
     try {
       setError(null);
-      
-      // Use the active model (conversation model or configured model)
-      const activeModel = getActiveModel();
-      
-      // Get the current conversation ID
+
       const conversationId = currentConversationIdRef.current;
       
       const response = await messagesApi.send(
         message,
         conversationId,
-        activeModel,
         files
       );
       
@@ -478,7 +460,6 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     config,
     conversationsApi,
     messagesApi,
-    getActiveModel,
     loadConversationMessagesInternal,
     currentConversation
   ]);
@@ -541,8 +522,7 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
     clearCurrentConversation,
     clearError,
     setError,
-    setCurrentConversation,
-    getActiveModel
+    setCurrentConversation
   };
 }
 

@@ -12,8 +12,10 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   football) could be mixed into a new Anthropic chat. The React UI also
   appended the assistant reply onto the previous conversation's messages.
   `resolveConversation` now always creates a fresh conversation in those
-  cases; the chat UI reloads messages from the server after send; API calls
-  use the conversation's stored model.
+  cases (section CMS `llm_model`, never client POST `model`); the chat UI
+  reloads messages from the server after send and no longer POSTs `model`;
+  API calls use the conversation's stored model. Sticky backend producers
+  (forms/evals) keep using `getOrCreateConversationForModel`.
 - **Default model not saved on LLM Configuration.** Saving Default Model on
   `/admin/module_llm` reported success but stored nothing and reloaded empty.
   Root cause: `llm_default_model` was never created on many installs because

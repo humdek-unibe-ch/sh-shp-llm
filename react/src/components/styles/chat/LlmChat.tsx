@@ -174,8 +174,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
     addUserMessage,
     clearError,
     setError,
-    setCurrentConversation,
-    getActiveModel
+    setCurrentConversation
   } = useChatState(config);
 
   /**
@@ -379,7 +378,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
       setIsProcessing(true);
       setIsFormSubmitting(true);
       try {
-        const result = await continueApi.continue(conversationId, config.configuredModel);
+        const result = await continueApi.continue(conversationId);
         
         if (result.error) {
           throw new Error(result.error);
@@ -405,7 +404,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   }, [
     isProcessing,
     currentConversation,
-    config.configuredModel,
     config.enableProgressTracking,
     continueApi,
     loadConversationMessages,
@@ -441,8 +439,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
       const result = await formApi.submit(
         values,
         readableText,
-        conversationId,
-        config.configuredModel
+        conversationId
       );
 
       if (result.error) {
@@ -479,7 +476,6 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   }, [
     isFormSubmitting,
     currentConversation,
-    config.configuredModel,
     config.enableConversationsList,
     config.enableProgressTracking,
     addUserMessage,

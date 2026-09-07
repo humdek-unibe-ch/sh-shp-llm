@@ -209,16 +209,14 @@ export function createConversationsApi(sectionId?: number) {
     /**
      * Create a new conversation
      * Calls: POST action=new_conversation
-     * 
+     *
      * @param title - Conversation title
-     * @param model - LLM model to use
      * @returns Promise resolving to the new conversation ID
      */
-    async create(title: string, model: string): Promise<string> {
+    async create(title: string): Promise<string> {
       const formData = new FormData();
       formData.append('action', 'new_conversation');
       formData.append('title', title);
-      formData.append('model', model);
       if (sectionId !== undefined) {
         formData.append('section_id', String(sectionId));
       }
@@ -305,23 +303,20 @@ export function createMessagesApi(sectionId?: number) {
     /**
      * Send a message
      * Calls: POST action=send_message
-     * 
+     *
      * @param message - Message content
      * @param conversationId - Conversation ID (optional, creates new if not provided)
-     * @param model - LLM model to use
      * @param files - Array of files to attach
      * @returns Promise resolving to send result
      */
     async send(
       message: string,
       conversationId: string | null,
-      model: string,
       files: SelectedFile[] = []
     ): Promise<SendMessageResponse> {
       const formData = new FormData();
       formData.append('action', 'send_message');
       formData.append('message', message);
-      formData.append('model', model);
       if (sectionId !== undefined) {
         formData.append('section_id', String(sectionId));
       }
@@ -355,24 +350,21 @@ export function createFormApi(sectionId?: number) {
     /**
      * Submit form selections
      * Calls: POST action=submit_form
-     * 
+     *
      * @param formValues - Object mapping field IDs to selected values
      * @param readableText - Human-readable text representation of selections
      * @param conversationId - Conversation ID (optional, creates new if not provided)
-     * @param model - LLM model to use
      * @returns Promise resolving to form submission result
      */
     async submit(
       formValues: Record<string, string | string[]>,
       readableText: string,
-      conversationId: string | null,
-      model: string
+      conversationId: string | null
     ): Promise<FormSubmissionResponse> {
       const formData = new FormData();
       formData.append('action', 'submit_form');
       formData.append('form_values', JSON.stringify(formValues));
       formData.append('readable_text', readableText);
-      formData.append('model', model);
       if (sectionId !== undefined) {
         formData.append('section_id', String(sectionId));
       }
@@ -405,19 +397,16 @@ export function createContinueApi(sectionId?: number) {
     /**
      * Continue the conversation (triggers next LLM response)
      * Calls: POST action=continue_conversation
-     * 
+     *
      * @param conversationId - The conversation ID to continue
-     * @param model - The LLM model to use
      * @returns Promise resolving to the response
      */
     async continue(
-      conversationId: string,
-      model: string
+      conversationId: string
     ): Promise<SendMessageResponse> {
       const formData = new FormData();
       formData.append('action', 'continue_conversation');
       formData.append('conversation_id', conversationId);
-      formData.append('model', model);
       if (sectionId !== undefined) {
         formData.append('section_id', String(sectionId));
       }
