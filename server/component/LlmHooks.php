@@ -116,7 +116,7 @@ class LlmHooks extends BaseHooks
             return new BaseStyleComponent("select", array(
                 "value" => $selectedValue,
                 "name" => $name,
-                "max" => 10,
+                "max" => 8,
                 "live_search" => 1,
                 "is_required" => 0,
                 "disabled" => $disabled,
@@ -134,7 +134,7 @@ class LlmHooks extends BaseHooks
             return new BaseStyleComponent("select", array(
                 "value" => $value,
                 "name" => $name,
-                "max" => 10,
+                "max" => 8,
                 "live_search" => 0,
                 "is_required" => 0,
                 "disabled" => $disabled,
@@ -376,7 +376,7 @@ class LlmHooks extends BaseHooks
             return new BaseStyleComponent("select", array(
                 "value" => $selectedValue,
                 "name" => $name,
-                "max" => 10,
+                "max" => 8,
                 "live_search" => 1,
                 "is_required" => 0,
                 "disabled" => $disabled,
@@ -395,7 +395,7 @@ class LlmHooks extends BaseHooks
             return new BaseStyleComponent("select", array(
                 "value" => $value,
                 "name" => $name,
-                "max" => 10,
+                "max" => 8,
                 "live_search" => 0,
                 "is_required" => 0,
                 "disabled" => $disabled,
