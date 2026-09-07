@@ -497,8 +497,17 @@ class LlmChatController extends BaseController
             return;
         }
 
-        // Get section ID for progress tracking context
+        // Bind the request to this conversation's stored model so a CMS model
+        // change cannot silently call a different provider with another thread's
+        // history (or the wrong endpoint).
+        $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $this->model->getSectionId();
+        $conversation = $user_id
+            ? $this->llm_service->getConversation($conversation_id, $user_id, $section_id)
+            : null;
+        $model = !empty($conversation['model'])
+            ? $conversation['model']
+            : $this->model->getConfiguredModel();
 
         // Build API messages with progress tracking context if enabled
         $api_messages = $this->context_service->buildApiMessages($messages, $conversation_id, $section_id);
@@ -510,10 +519,10 @@ class LlmChatController extends BaseController
         $context_messages = $this->context_service->getContextForTracking();
 
         // Call API with schema validation and retry logic
-        $llm_callable = function ($messages) use ($conversation_id, $context_messages) {
+        $llm_callable = function ($messages) use ($conversation_id, $context_messages, $model) {
             return $this->llm_service->callLlmApi(
                 $messages,
-                $this->model->getConfiguredModel(),
+                $model,
                 $this->model->getLlmTemperature(),
                 $this->model->getLlmMaxTokens(),
                 [

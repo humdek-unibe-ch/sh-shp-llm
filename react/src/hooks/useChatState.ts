@@ -434,41 +434,28 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       // Update conversation ID if new or changed
       if (response.conversation_id) {
         const responseIdStr = String(response.conversation_id);
-        const isNewConversation = !conversationId || response.is_new_conversation;
+        const sentIdStr = conversationId ? String(conversationId) : null;
+        const conversationChanged = !sentIdStr || sentIdStr !== responseIdStr;
+        const isNewConversation = !conversationId || response.is_new_conversation || conversationChanged;
 
+        currentConversationIdRef.current = responseIdStr;
         if (isNewConversation) {
-          currentConversationIdRef.current = responseIdStr;
           updateUrl(responseIdStr, config);
+        }
 
-          // In single conversation mode, update the current conversation state
-          if (!config.enableConversationsList) {
-            // Create a minimal conversation object for single conversation mode
-            const newConversation = {
-              id: responseIdStr,
-              title: 'New Conversation',
-              model: activeModel,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            };
-            setCurrentConversation(newConversation);
-          }
-        }
-        
-        // Add assistant message to UI
-        if (response.message) {
-          const assistantMessage: Message = {
-            id: 'assistant-' + Date.now(),
-            role: 'assistant',
-            content: response.message,
-            timestamp: new Date().toISOString()
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-        }
-        
-        // Reload conversations list if it was a new conversation
+        // Always reload from the server after a successful send.
+        // Appending onto `prev` leaked the previous conversation's messages
+        // when the backend started a new thread (model mismatch / null id).
+        await loadConversationMessagesInternal(responseIdStr);
+
+        // Refresh sidebar list when a new thread was created
         if (isNewConversation && config.enableConversationsList) {
-          // Use loadConversations to properly load and select the new conversation
-          await loadConversations();
+          const convs = await conversationsApi.getAll();
+          setConversations(convs);
+          const selected = convs.find(c => String(c.id) === responseIdStr);
+          if (selected) {
+            setCurrentConversation(selected);
+          }
         }
 
         // Return the full response including progress data
@@ -487,7 +474,14 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
       setError(errorMessage);
       return { error: errorMessage };
     }
-  }, [config.enableConversationsList, messagesApi, getActiveModel, loadConversations]);
+  }, [
+    config,
+    conversationsApi,
+    messagesApi,
+    getActiveModel,
+    loadConversationMessagesInternal,
+    currentConversation
+  ]);
   
   /**
    * Add user message to UI immediately
