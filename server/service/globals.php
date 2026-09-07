@@ -53,6 +53,14 @@ define('LLM_MODELS_FETCH_TIMEOUT', 5);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
 
+/**
+ * Reasoning / thinking effort (OpenAI, Anthropic, future GPUStack).
+ * Options live in `lookups` (type_code = LLM_LOOKUP_TYPE_REASONING_EFFORT).
+ * `default` means omit the API parameter (provider default).
+ */
+define('LLM_LOOKUP_TYPE_REASONING_EFFORT', 'llmReasoningEffort');
+define('LLM_REASONING_EFFORT_DEFAULT', 'default');
+
 /* =========================================================================
  * PHP CLI BINARY
  * Used by async/background workers spawned by the LLM plugin.

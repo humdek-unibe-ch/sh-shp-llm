@@ -520,7 +520,8 @@ class LlmChatController extends BaseController
                     'conversation_id' => $conversation_id,
                     'sent_context' => $context_messages,
                     // mark false initially; final validated attempt is updated below
-                    'is_validated' => false
+                    'is_validated' => false,
+                    'reasoning_effort' => $this->model->getLlmReasoningEffort(),
                 ]
             );
         };
@@ -1246,7 +1247,8 @@ class LlmChatController extends BaseController
                 [
                     'conversation_id' => $conversation_id,
                     'sent_context' => $context_messages,
-                    'is_validated' => true
+                    'is_validated' => true,
+                    'reasoning_effort' => $this->model->getLlmReasoningEffort(),
                 ]
             );
 

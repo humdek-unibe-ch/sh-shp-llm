@@ -18,6 +18,7 @@ class LlmFormModel extends FormUserInputModel
     private $llm_model;
     private $llm_temperature;
     private $llm_max_tokens;
+    private $llm_reasoning_effort;
     private $llm_context;
     private $llm_show_previous_result;
     private $llm_result_field_name;
@@ -56,6 +57,7 @@ class LlmFormModel extends FormUserInputModel
         $this->llm_model = $this->get_db_field('llm_model', '');
         $this->llm_temperature = $this->get_db_field('llm_temperature', '1');
         $this->llm_max_tokens = $this->get_db_field('llm_max_tokens', '2048');
+        $this->llm_reasoning_effort = $this->get_db_field('llm_reasoning_effort', 'default');
         $this->llm_context = $this->get_db_field('llm_context', '');
         $this->llm_show_previous_result = $this->get_db_field('llm_show_previous_result', '1');
         $this->llm_result_field_name = $this->get_db_field('llm_result_field_name', 'llm_result');
@@ -142,6 +144,28 @@ class LlmFormModel extends FormUserInputModel
             // fall through
         }
         return intval(defined('LLM_DEFAULT_MAX_TOKENS') ? LLM_DEFAULT_MAX_TOKENS : 2048);
+    }
+
+    /**
+     * Reasoning / thinking effort (OpenAI / Anthropic). Empty = provider default.
+     *
+     * @return string
+     */
+    public function getLlmReasoningEffort()
+    {
+        if ($this->llm_reasoning_effort !== '' && $this->llm_reasoning_effort !== null) {
+            return (string)$this->llm_reasoning_effort;
+        }
+        try {
+            $llmService = new LlmService($this->services);
+            $defaults = $llmService->getModuleDefaults();
+            if (isset($defaults['reasoning_effort']) && $defaults['reasoning_effort'] !== '') {
+                return (string)$defaults['reasoning_effort'];
+            }
+        } catch (Exception $e) {
+            // fall through
+        }
+        return defined('LLM_REASONING_EFFORT_DEFAULT') ? LLM_REASONING_EFFORT_DEFAULT : '';
     }
 
     /** @return string System prompt / context template with optional `{{field}}` placeholders. */

@@ -56,9 +56,15 @@ class OpenAIProvider extends BaseProvider
      */
     public function adaptChatCompletionPayload(array $payload)
     {
+        $effort = $this->consumeReasoningEffort($payload);
+
         if (array_key_exists('max_tokens', $payload)) {
             $payload['max_completion_tokens'] = $payload['max_tokens'];
             unset($payload['max_tokens']);
+        }
+
+        if ($effort !== null) {
+            $payload = $this->applyOpenAiReasoningEffort($payload, $effort);
         }
 
         return $payload;

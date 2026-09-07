@@ -213,6 +213,28 @@ class LlmChatModel extends StyleModel
         $defaults = $this->llm_service->getModuleDefaults();
         return $defaults['max_tokens'] !== '' ? $defaults['max_tokens'] : (string)LLM_DEFAULT_MAX_TOKENS;
     }
+
+    /**
+     * Reasoning / thinking effort for OpenAI / Anthropic (and future GPUStack).
+     * Empty string = omit (provider default).
+     *
+     * @return string
+     */
+    public function getLlmReasoningEffort()
+    {
+        $configured = trim((string)$this->get_db_field('llm_reasoning_effort', ''));
+        if ($configured !== '' && $configured !== 'default') {
+            return $configured;
+        }
+        if ($configured === 'default') {
+            return LLM_REASONING_EFFORT_DEFAULT;
+        }
+        $defaults = $this->llm_service->getModuleDefaults();
+        return isset($defaults['reasoning_effort']) && $defaults['reasoning_effort'] !== ''
+            ? (string)$defaults['reasoning_effort']
+            : LLM_REASONING_EFFORT_DEFAULT;
+    }
+
     /** @return bool Whether the conversation list sidebar is shown to the user. */
     public function isConversationsListEnabled() { return $this->get_db_field('enable_conversations_list', '0') === '1'; }
     /** @return bool Whether file upload button is available in the chat input. */

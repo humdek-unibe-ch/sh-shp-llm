@@ -29,6 +29,12 @@ stock OpenAI `GET /v1/models` has **no** modality field. Providers may implement
 `LLM_VISION_MODELS`, `LLM_VISION_MODEL_PATTERNS` (`*-vl-*`, …), then OpenAI and
 Anthropic name heuristics (Claude ready for a future `AnthropicProvider`).
 
+Reasoning effort (`llm_reasoning_effort` style/module field):
+options from `lookups` (`type_code` = `llmReasoningEffort`). Internal payload
+key `reasoning_effort`. `OpenAIProvider` → Chat Completions top-level
+`reasoning_effort` (not nested `reasoning`). `BaseProvider` strips it
+(GPUStack). Future Anthropic → `applyAnthropicReasoningEffort()`.
+
 ## File Structure
 
 ```

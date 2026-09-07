@@ -454,6 +454,140 @@ class LlmModelCapabilities
     }
 
     /**
+     * Normalize a CMS / API reasoning effort value.
+     *
+     * Lookup code `default` (or empty) means omit the provider parameter.
+     * When $db is provided, allowed codes come from `lookups`; otherwise a
+     * static fallback matching the migration seed is used.
+     *
+     * @param mixed $value
+     * @param object|null $db Optional PageDb for lookup validation
+     * @return string|null Canonical effort for the API, or null to omit
+     */
+    public static function normalizeReasoningEffort($value, $db = null)
+    {
+        if ($value === null) {
+            return null;
+        }
+        $effort = strtolower(trim((string)$value));
+        if ($effort === '' || $effort === 'default' || $effort === 'auto') {
+            return null;
+        }
+
+        $allowed = self::getReasoningEffortCodes($db);
+        if (!in_array($effort, $allowed, true)) {
+            return null;
+        }
+
+        return $effort;
+    }
+
+    /**
+     * Allowed effort codes (excludes `default`).
+     *
+     * @param object|null $db
+     * @return string[]
+     */
+    public static function getReasoningEffortCodes($db = null)
+    {
+        $codes = [];
+        foreach (self::getReasoningEffortSelectItems($db) as $item) {
+            $code = (string)($item['value'] ?? '');
+            if ($code !== '' && $code !== 'default') {
+                $codes[] = $code;
+            }
+        }
+        return $codes;
+    }
+
+    /**
+     * Dropdown items for CMS selects: [{value, text}, ...] from lookups.
+     *
+     * @param object|null $db
+     * @return array<int, array{value:string,text:string}>
+     */
+    public static function getReasoningEffortSelectItems($db = null)
+    {
+        $rows = self::fetchReasoningEffortLookups($db);
+        if (!empty($rows)) {
+            $items = [];
+            foreach ($rows as $row) {
+                $items[] = [
+                    'value' => (string)$row['lookup_code'],
+                    'text' => (string)$row['lookup_value'],
+                ];
+            }
+            return $items;
+        }
+        return self::getReasoningEffortFallbackItems();
+    }
+
+    /**
+     * Module-settings options: [{value, label}, ...].
+     *
+     * @param object|null $db
+     * @return array<int, array{value:string,label:string}>
+     */
+    public static function getReasoningEffortModuleOptions($db = null)
+    {
+        $items = [];
+        foreach (self::getReasoningEffortSelectItems($db) as $item) {
+            $items[] = [
+                'value' => $item['value'],
+                'label' => $item['text'],
+            ];
+        }
+        return $items;
+    }
+
+    /**
+     * @param object|null $db
+     * @return array<int, array{lookup_code:string,lookup_value:string}>
+     */
+    private static function fetchReasoningEffortLookups($db)
+    {
+        if ($db === null || !is_object($db) || !method_exists($db, 'query_db')) {
+            return [];
+        }
+
+        $type = defined('LLM_LOOKUP_TYPE_REASONING_EFFORT')
+            ? LLM_LOOKUP_TYPE_REASONING_EFFORT
+            : 'llmReasoningEffort';
+
+        try {
+            $rows = $db->query_db(
+                "SELECT lookup_code, lookup_value
+                 FROM lookups
+                 WHERE type_code = ?
+                 ORDER BY id",
+                [$type]
+            );
+            return is_array($rows) ? $rows : [];
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Static fallback matching v1.5.0 lookup seeds (used if DB lookups missing).
+     *
+     * @return array<int, array{value:string,text:string}>
+     */
+    private static function getReasoningEffortFallbackItems()
+    {
+        return [
+            ['value' => 'default', 'text' => 'Default (provider)'],
+            ['value' => 'none', 'text' => 'None (no thinking)'],
+            ['value' => 'minimal', 'text' => 'Minimal'],
+            ['value' => 'low', 'text' => 'Low'],
+            ['value' => 'medium', 'text' => 'Medium'],
+            ['value' => 'high', 'text' => 'High'],
+            ['value' => 'xhigh', 'text' => 'Extra high'],
+            ['value' => 'max', 'text' => 'Max'],
+        ];
+    }
+
+    /**
      * Validate MIME type against allowed types for extension
      *
      * @param string $extension File extension (without dot)

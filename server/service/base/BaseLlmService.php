@@ -197,6 +197,7 @@ abstract class BaseLlmService
             'model' => (string)($config['llm_default_model'] ?? LLM_DEFAULT_MODEL),
             'temperature' => (string)($config['llm_temperature'] ?? LLM_DEFAULT_TEMPERATURE),
             'max_tokens' => (string)($config['llm_max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS),
+            'reasoning_effort' => (string)($config['llm_reasoning_effort'] ?? LLM_REASONING_EFFORT_DEFAULT),
         ];
     }
 

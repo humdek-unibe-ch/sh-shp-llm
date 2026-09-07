@@ -1346,6 +1346,7 @@ class LlmService extends BaseLlmService
      *   - sent_context (array|null, context to persist with assistant message)
      *   - is_validated (bool, default true)
      *   - assistant_content (string|null, optional override for logged content)
+     *   - reasoning_effort (string|null, optional: none|minimal|low|medium|high|xhigh|max)
      * @return array Normalized response with 'request_payload' containing the full API request
      * @throws LlmApiException If API call fails
      * @throws InvalidArgumentException If strict logging options are missing
@@ -1372,11 +1373,15 @@ class LlmService extends BaseLlmService
         $url = $provider->getApiUrl($server['base_url'], LLM_API_CHAT_COMPLETIONS);
 
         // Validate parameters using validator
+        require_once __DIR__ . '/LlmModelCapabilities.php';
         $temp_value = LlmValidator::temperature($temperature, $config['llm_temperature']);
         $max_tokens_value = LlmValidator::maxTokens($max_tokens, $config['llm_max_tokens']);
+        $reasoning_effort = LlmModelCapabilities::normalizeReasoningEffort(
+            $log_options['reasoning_effort'] ?? ($config['llm_reasoning_effort'] ?? null),
+            $this->db
+        );
 
         // Convert messages for model compatibility (handles system role support)
-        require_once __DIR__ . '/LlmModelCapabilities.php';
         $converted_messages = LlmModelCapabilities::convertMessagesForModel($messages, $rawModel);
 
         // Build standard payload
@@ -1387,7 +1392,10 @@ class LlmService extends BaseLlmService
             'max_tokens' => $max_tokens_value,
             'stream' => false
         ];
-
+        if ($reasoning_effort !== null) {
+            // Internal key — providers map or strip in adaptChatCompletionPayload()
+            $payload['reasoning_effort'] = $reasoning_effort;
+        }
         // Merge provider-specific parameters, then let the provider adapt the
         // full payload (OpenAI → max_completion_tokens; GPUStack keeps max_tokens).
         $providerParams = $provider->getAdditionalRequestParams($payload);

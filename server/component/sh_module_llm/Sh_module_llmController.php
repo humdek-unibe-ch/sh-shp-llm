@@ -114,14 +114,14 @@ class Sh_module_llmController extends BaseController
 
             $allowedFields = [
                 'llm_api_keys', 'llm_default_model', 'llm_temperature',
-                'llm_max_tokens', 'llm_timeout',
+                'llm_max_tokens', 'llm_reasoning_effort', 'llm_timeout',
                 'llm_memory_enabled',
                 'llm_memory_storage_mode',
             ];
 
             $saved = [];
             $failed = [];
-            $styleDefaultFields = ['llm_default_model', 'llm_temperature', 'llm_max_tokens'];
+            $styleDefaultFields = ['llm_default_model', 'llm_temperature', 'llm_max_tokens', 'llm_reasoning_effort'];
             $shouldSyncStyleDefaults = false;
 
             foreach ($data['fields'] as $name => $value) {

@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseModel.php";
 require_once __DIR__ . "/../../service/LlmService.php";
+require_once __DIR__ . "/../../service/LlmModelCapabilities.php";
 
 /**
  * Model for the LLM Settings module.
@@ -85,6 +86,9 @@ class Sh_module_llmModel extends BaseModel
                         'Controls randomness (0-2). Lower values produce more deterministic output.'),
                     $this->buildField('llm_max_tokens', $fields, 'number', 'Max Tokens',
                         'Maximum number of tokens to generate per response.'),
+                    $this->buildField('llm_reasoning_effort', $fields, 'select', 'Reasoning Effort',
+                        'Thinking depth for OpenAI / Anthropic reasoning models. Default leaves the provider default (usually medium/high). GPUStack ignores this until models support it.',
+                        LlmModelCapabilities::getReasoningEffortModuleOptions($this->db)),
                     $this->buildField('llm_timeout', $fields, 'number', 'Timeout (seconds)',
                         'Request timeout in seconds for LLM API calls.'),
                 ],
@@ -215,6 +219,7 @@ class Sh_module_llmModel extends BaseModel
             'llm_model' => trim((string)($fields['llm_default_model'] ?? '')),
             'llm_temperature' => trim((string)($fields['llm_temperature'] ?? '')),
             'llm_max_tokens' => trim((string)($fields['llm_max_tokens'] ?? '')),
+            'llm_reasoning_effort' => trim((string)($fields['llm_reasoning_effort'] ?? '')),
         ];
 
         $styles = ['llmChat', 'llmFormRecord', 'llmFormLog'];

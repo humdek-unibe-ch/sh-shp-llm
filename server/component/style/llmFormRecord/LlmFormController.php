@@ -422,6 +422,7 @@ class LlmFormController extends FormUserInputController
         $llm_model = $model->getLlmModel();
         $temperature = $model->getLlmTemperature();
         $max_tokens = $model->getLlmMaxTokens();
+        $reasoning_effort = $model->getLlmReasoningEffort();
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
 
@@ -465,7 +466,8 @@ class LlmFormController extends FormUserInputController
                 [
                     'conversation_id' => $conversation_id,
                     'sent_context' => $sent_context,
-                    'is_validated' => true
+                    'is_validated' => true,
+                    'reasoning_effort' => $reasoning_effort,
                 ]
             );
 

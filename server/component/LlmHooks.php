@@ -263,6 +263,44 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /**
+     * Build select for reasoning effort CMS field.
+     *
+     * @param object $args
+     * @param int $disabled
+     * @return object
+     */
+    private function returnSelectLlmReasoningEffortField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        if (($field['name'] ?? '') !== 'llm_reasoning_effort') {
+            return $res;
+        }
+
+        require_once __DIR__ . '/../service/LlmModelCapabilities.php';
+
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $selectField = new BaseStyleComponent("select", array(
+            "value" => $field['content'] ?? '',
+            "name" => $field_name_prefix . "[content]",
+            "max" => 10,
+            "live_search" => 0,
+            "is_required" => 0,
+            "disabled" => $disabled,
+            "items" => LlmModelCapabilities::getReasoningEffortSelectItems($this->db)
+        ));
+
+        if ($selectField && $res) {
+            $children = $res->get_view()->get_children();
+            $children[] = $selectField;
+            $res->get_view()->set_children($children);
+        }
+
+        return $res;
+    }
+
     /* Public Methods *********************************************************/
 
     /**
@@ -311,6 +349,28 @@ class LlmHooks extends BaseHooks
     public function outputFieldFloatingPositionView($args)
     {
         return $this->returnSelectFloatingPositionField($args, 1);
+    }
+
+    /**
+     * CMS dropdown for llm_reasoning_effort (edit).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmReasoningEffortEdit($args)
+    {
+        return $this->returnSelectLlmReasoningEffortField($args, 0);
+    }
+
+    /**
+     * CMS dropdown for llm_reasoning_effort (view).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmReasoningEffortView($args)
+    {
+        return $this->returnSelectLlmReasoningEffortField($args, 1);
     }
 
     /**

@@ -66,6 +66,70 @@ abstract class BaseProvider implements LlmProviderInterface
      */
     public function adaptChatCompletionPayload(array $payload)
     {
+        // Drop internal effort key so OpenAI-compatible hosts that do not
+        // support it (typical GPUStack models) are not sent an unknown field.
+        unset($payload['reasoning_effort']);
+        return $payload;
+    }
+
+    /**
+     * Read and remove the internal reasoning_effort key from a payload.
+     *
+     * @param array $payload
+     * @return string|null Normalized effort or null to omit
+     */
+    protected function consumeReasoningEffort(array &$payload)
+    {
+        require_once __DIR__ . '/../LlmModelCapabilities.php';
+
+        $raw = null;
+        if (array_key_exists('reasoning_effort', $payload)) {
+            $raw = $payload['reasoning_effort'];
+            unset($payload['reasoning_effort']);
+        }
+
+        return LlmModelCapabilities::normalizeReasoningEffort($raw);
+    }
+
+    /**
+     * Map internal effort into OpenAI Chat Completions shape.
+     *
+     * Chat Completions uses top-level `reasoning_effort` (string).
+     * The nested `reasoning.effort` object is for the Responses API only —
+     * sending it to /chat/completions returns HTTP 400 Unknown parameter.
+     *
+     * @param array $payload
+     * @param string $effort
+     * @return array
+     */
+    protected function applyOpenAiReasoningEffort(array $payload, $effort)
+    {
+        unset($payload['reasoning']);
+        $payload['reasoning_effort'] = $effort;
+        return $payload;
+    }
+
+    /**
+     * Map internal effort into Anthropic Messages API shape (for AnthropicProvider).
+     *
+     * Modern Claude: output_config.effort + thinking.type=adaptive when unset.
+     *
+     * @param array $payload
+     * @param string $effort
+     * @return array
+     */
+    protected function applyAnthropicReasoningEffort(array $payload, $effort)
+    {
+        $outputConfig = isset($payload['output_config']) && is_array($payload['output_config'])
+            ? $payload['output_config']
+            : [];
+        $outputConfig['effort'] = $effort;
+        $payload['output_config'] = $outputConfig;
+
+        if (!isset($payload['thinking']) || !is_array($payload['thinking'])) {
+            $payload['thinking'] = ['type' => 'adaptive'];
+        }
+
         return $payload;
     }
 

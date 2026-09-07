@@ -43,6 +43,17 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   (Claude 3+ ready for a future `AnthropicProvider`). Stock OpenAI `/models`
   still has no modality metadata.
 
+### Added
+
+- **Reasoning effort field.** Shared CMS / module dropdown `llm_reasoning_effort`
+  backed by `lookups` (`type_code` = `llmReasoningEffort`: default, none,
+  minimal, low, medium, high, xhigh, max). Wired on `llmChat`,
+  `llmFormRecord`, `llmFormLog`, and module defaults. OpenAIProvider maps to
+  Chat Completions top-level `reasoning_effort` (not Responses-API
+  `reasoning.effort`, which causes HTTP 400). BaseProvider strips it for
+  GPUStack; Anthropic helper `applyAnthropicReasoningEffort()` is ready for
+  `AnthropicProvider`. Clear hooks/CMS/lookups cache after migration.
+
 ### Changed
 
 - **Default model** is now `gpt-oss-120b` (`LLM_DEFAULT_MODEL` and migration
