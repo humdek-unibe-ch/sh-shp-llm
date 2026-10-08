@@ -186,9 +186,11 @@ This keeps memory usage explicit and predictable.
 On the `LLM Memory` page:
 
 - `Overview`: shows whether memory is enabled, storage mode, tables, and quick links
+- `Keys`: list the memory keys with their rule count and the number of current / history rows
 - `Rules`: create and manage update rules
-- `Sources`: inspect which source events can write to memory
+- `Sources`: inspect which source events can write to memory (form / survey sections with selected rules, form actions with a memory-update job, llmChat fallback rules, login / profile hooks)
 - `Users`: browse the current memory and history for users
+- `Activity`: event log of every memory update with participant (name, email, code), rule, memory key, what triggered it (form / survey submit, llmChat form, login, profile change, admin action) and the result; filter by participant, rule, key, trigger, status and date
 
 ## Storage Modes
 

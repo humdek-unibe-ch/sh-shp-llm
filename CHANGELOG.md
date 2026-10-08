@@ -40,6 +40,19 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   exists. `server/db/optional/enable_surveyjs_llm_memory_rules.sql` is the
   separate, idempotent snippet to run once when SurveyJS is installed after this
   plugin (clear the SelfHelp cache afterwards, as for the rest of `v1.5.0.sql`).
+- **Memory activity feed.** The Memory → Activity tab is now a paginated,
+  filterable event log (`memory_activity` action → `LlmMemoryAdminService::
+  getActivity`, `LlmMemoryStorageService::getHistoryActivity`). Each event shows
+  the participant (name, email, code, id), the rule label and memory key, what
+  triggered it (form / survey submit with form name and record, llmChat form
+  submit, login, profile name change, or an admin action with the acting
+  admin) and the result. Filters: participant (name, email, code or id), rule
+  (including manual admin actions without a rule), memory key, trigger, status
+  and event date range.
+- **Form / survey sections as memory sources.** The Memory → Sources tab and the
+  per-rule source counts now include sections that select rules through
+  `llm_memory_rule_ids` (page, style and an "Open section" CMS link), not only
+  form actions and llmChat fallbacks. Source cards are labelled by category.
 
 ### Changed
 
@@ -79,6 +92,14 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   two hard-coded GPUStack ids. Scoped ids are normalized, then checked via
   provider heuristics and vision allow-lists / patterns (OpenAI and Claude 3+
   included).
+- **Memory keys always showed 0 rows.** Current / history row counts queried
+  physical tables that do not exist (memory lives in the `llm_memory` and
+  `llm_memory_history` data tables), so every key reported 0 rows and looked
+  deletable. Counts now come from the data tables and ignore soft-deleted rows.
+- **"User #N" instead of the participant name.** The Activity feed looked users
+  up by integer id while the lookup was keyed by the zero-padded id string the
+  database returns, so the name never matched. User lookups are now keyed by
+  integer id.
 
 ## [1.4.1]
 
