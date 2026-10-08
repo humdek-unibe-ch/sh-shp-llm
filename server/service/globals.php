@@ -66,7 +66,7 @@ define('LLM_REASONING_EFFORT_DEFAULT', 'default');
  * Used by async/background workers spawned by the LLM plugin.
  * ========================================================================= */
 
-define('LLM_PHP_CLI_BINARY', 'C:\\wamp64\\bin\\php\\php8.3.28\\php.exe');
+define('LLM_PHP_CLI_BINARY', 'D:\\DevTools\\wamp64\\bin\\php\\php8.3.14\\php.exe');
 
 /* =========================================================================
  * API ENDPOINTS (OpenAI-compatible paths)
