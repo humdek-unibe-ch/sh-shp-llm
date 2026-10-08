@@ -13,6 +13,9 @@
 --   3. Seeds a translation row when missing so get_page_fields can read it
 --   4. Sets the plugin default model to gpt-oss-120b
 --   5. Adds `llm_reasoning_effort` select field (OpenAI / Anthropic / future GPUStack)
+--   6. Adds `llm_memory_rule_ids` multi-select on the form styles (and on SurveyJS
+--      when that plugin is installed) plus the hooks that run the selected memory
+--      rules after a finished submission
 -- =====================================================
 
 START TRANSACTION;
@@ -194,5 +197,100 @@ VALUES
     'outputFieldLlmReasoningEffortView',
     5
 );
+
+-- =====================================================
+-- Direct memory-rule selection on form and SurveyJS styles
+-- =====================================================
+-- `llm_memory_rule_ids` stores comma-separated llm_memory_rules.id values.
+-- After a finished form / survey save, LlmHooks hands the selected rules to the
+-- existing async memory pipeline (empty = off; missing or disabled rules are
+-- skipped at runtime). Form actions with job type llm_memory_update are not
+-- touched and still run in addition.
+-- NOTE: hooks, styles and fields are cached - clear the SelfHelp cache after
+-- running this migration.
+
+INSERT IGNORE INTO `fieldType` (`id`, `name`, `position`)
+VALUES (NULL, 'select-llm-memory-rules', '14');
+
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`)
+VALUES (NULL, 'llm_memory_rule_ids', get_field_type_id('select-llm-memory-rules'), '0');
+
+-- Form styles (styles that do not exist are skipped)
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
+SELECT
+    s.`id`,
+    get_field_id('llm_memory_rule_ids'),
+    '',
+    'Memory rules to run in the background after this form is finished. Leave empty to disable. Form actions with job type llm_memory_update still run in addition.'
+FROM `styles` s
+WHERE s.`name` IN ('formUserInput', 'formUserInputRecord', 'formUserInputLog', 'llmFormRecord', 'llmFormLog');
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES
+(
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'field-llm-memory-rules-edit',
+    'Output multi select LLM memory rules field - edit mode',
+    'CmsView',
+    'create_field_form_item',
+    'LlmHooks',
+    'outputFieldLlmMemoryRulesEdit',
+    5
+),
+(
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'field-llm-memory-rules-view',
+    'Output multi select LLM memory rules field - view mode',
+    'CmsView',
+    'create_field_item',
+    'LlmHooks',
+    'outputFieldLlmMemoryRulesView',
+    5
+),
+(
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'llm-form-save-memory-rules',
+    'Run the selected LLM memory rules after a finished form save',
+    'FormUserInputModel',
+    'save_user_input',
+    'LlmHooks',
+    'onFormSavedMemoryRules',
+    20
+),
+(
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'llm-form-update-memory-rules',
+    'Run the selected LLM memory rules after a finished form update',
+    'FormUserInputModel',
+    'update_user_input',
+    'LlmHooks',
+    'onFormSavedMemoryRules',
+    20
+);
+
+-- SurveyJS is a separate plugin: link the field and register the save hook only
+-- when its style already exists. If SurveyJS is installed after this plugin, run
+-- server/db/optional/enable_surveyjs_llm_memory_rules.sql (the same two inserts).
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
+SELECT
+    s.`id`,
+    get_field_id('llm_memory_rule_ids'),
+    '',
+    'Memory rules to run in the background after this survey is finished. Leave empty to disable. Form actions with job type llm_memory_update still run in addition.'
+FROM `styles` s
+WHERE s.`name` = 'surveyJS';
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+SELECT
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'llm-survey-save-memory-rules',
+    'Run the selected LLM memory rules after a finished SurveyJS save',
+    'SurveyJSModel',
+    'save_survey',
+    'LlmHooks',
+    'onSurveySavedMemoryRules',
+    20
+FROM `styles` s
+WHERE s.`name` = 'surveyJS';
 
 COMMIT;

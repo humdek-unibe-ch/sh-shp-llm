@@ -12,6 +12,8 @@ require_once __DIR__ . "/../service/LlmPromptRegistryService.php";
 require_once __DIR__ . "/../service/LlmPromptExecutionProfileService.php";
 require_once __DIR__ . "/../service/LlmMemoryConfigService.php";
 require_once __DIR__ . "/../service/LlmMemoryTriggerService.php";
+require_once __DIR__ . "/../service/LlmMemoryRuleService.php";
+require_once __DIR__ . "/../service/LlmMemorySubmissionContextService.php";
 
 /**
  * The class to define the hooks for the LLM plugin.
@@ -301,6 +303,123 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
+    /**
+     * Build the multi select of memory rules for the llm_memory_rule_ids CMS field.
+     * Only rules of source type form_action_submit are offered (same filter as the
+     * form action job config); disabled rules stay visible so saved ids are not lost.
+     *
+     * @param object $args
+     * @param int $disabled
+     * @return object
+     */
+    private function returnSelectLlmMemoryRulesField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        if (($field['name'] ?? '') !== LLM_MEMORY_FIELD_RULE_IDS) {
+            return $res;
+        }
+
+        $config_service = new LlmMemoryConfigService($this->services);
+        $items = array();
+        foreach ($config_service->getRules() as $rule) {
+            if (($rule['source_type'] ?? '') !== LLM_MEMORY_SOURCE_FORM_ACTION) {
+                continue;
+            }
+            $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
+            $items[] = array(
+                "value" => (string)(int)($rule['id'] ?? 0),
+                "text" => $label . (!empty($rule['enabled']) ? '' : ' (disabled)')
+            );
+        }
+
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $selectField = new BaseStyleComponent("select", array(
+            // an empty value must stay [''] (not []): the select view only defines "selected" inside its value loop
+            "value" => array_map('trim', explode(',', (string)($field['content'] ?? ''))),
+            "name" => $field_name_prefix . "[content]",
+            "max" => 10,
+            "live_search" => 1,
+            "is_multiple" => 1,
+            "is_required" => 0,
+            "disabled" => $disabled,
+            "items" => $items
+        ));
+
+        if ($selectField && $res) {
+            $children = $res->get_view()->get_children();
+            $children[] = $selectField;
+            $res->get_view()->set_children($children);
+        }
+
+        return $res;
+    }
+
+    /**
+     * Memory rule ids selected on a form / SurveyJS section for a finished submission.
+     * Cheap exits first: most sections have no selection and must cost no more than one field read.
+     *
+     * @param object $model The model of the section the participant submitted
+     * @return int[] Rule ids; empty when nothing is selected, memory is off or the user is a guest
+     */
+    private function getSubmissionMemoryRuleIds($model)
+    {
+        $raw = trim((string)$model->get_db_field(LLM_MEMORY_FIELD_RULE_IDS));
+        $user_id = (int)($_SESSION['id_user'] ?? 0);
+        $section_id = (int)$model->get_db_field('id');
+        // memory is stored per user: the shared guest user must not collect one memory for everybody
+        if ($raw === '' || $user_id <= 0 || $user_id === GUEST_USER_ID) {
+            (new LlmMemoryTriggerService($this->services))->appendWorkerLogPublic(
+                'getSubmissionMemoryRuleIds empty',
+                array(
+                    'section_id' => $section_id,
+                    'user_id' => $user_id,
+                    'raw' => $raw,
+                    'guest' => ($user_id === GUEST_USER_ID),
+                )
+            );
+            return array();
+        }
+        if (!(new LlmMemoryConfigService($this->services))->isMemoryEnabled()) {
+            return array();
+        }
+        $ids = (new LlmMemoryRuleService($this->services))->normalizeRuleIds($raw);
+        (new LlmMemoryTriggerService($this->services))->appendWorkerLogPublic(
+            'getSubmissionMemoryRuleIds resolved',
+            array(
+                'section_id' => $section_id,
+                'user_id' => $user_id,
+                'raw' => $raw,
+                'rule_ids' => $ids,
+            )
+        );
+        return $ids;
+    }
+
+    /**
+     * Queue the selected rules for a finished submission. dispatchForRuleIds checks every
+     * rule (missing or disabled rules are skipped) and starts one detached background
+     * worker per rule and memory key, so the participant never waits for the LLM.
+     *
+     * @param int[] $rule_ids
+     * @param array $context Snapshot from LlmMemorySubmissionContextService
+     * @param int|string $record_id The saved record id
+     */
+    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id)
+    {
+        $trigger_service = new LlmMemoryTriggerService($this->services);
+        $normalized = $trigger_service->normalizeFormActionPayload(array(
+            'form_fields'  => $context['fields'],
+            'form_name'    => $context['form_name'],
+            'table_name'   => $context['table_name'],
+            'trigger_type' => actionTriggerTypes_finished,
+            'record_id'    => $record_id,
+        ), (int)$_SESSION['id_user']);
+        $normalized['readable_text'] = $context['readable_text'];
+        $trigger_service->dispatchForRuleIds($rule_ids, $normalized, true);
+    }
+
     /* Public Methods *********************************************************/
 
     /**
@@ -371,6 +490,28 @@ class LlmHooks extends BaseHooks
     public function outputFieldLlmReasoningEffortView($args)
     {
         return $this->returnSelectLlmReasoningEffortField($args, 1);
+    }
+
+    /**
+     * CMS multi select of memory rules for llm_memory_rule_ids (edit).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmMemoryRulesEdit($args)
+    {
+        return $this->returnSelectLlmMemoryRulesField($args, 0);
+    }
+
+    /**
+     * CMS multi select of memory rules for llm_memory_rule_ids (view).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmMemoryRulesView($args)
+    {
+        return $this->returnSelectLlmMemoryRulesField($args, 1);
     }
 
     /**
@@ -1825,6 +1966,71 @@ class LlmHooks extends BaseHooks
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
             error_log('LLM Memory: profile name change trigger failed: ' . $e->getMessage());
+        }
+
+        return $res;
+    }
+
+    /* =========================================================================
+     * FORM / SURVEYJS MEMORY RULE HOOKS
+     * ========================================================================= */
+
+    /**
+     * Run the memory rules selected on a form after a successful finished save.
+     * Hook on FormUserInputModel::save_user_input and ::update_user_input
+     * (hook_overwrite_return, priority 20). The original save runs first and is
+     * never changed; the rules are queued afterwards, only for a saved `finished`
+     * submission, and a failure here is logged without touching the save result.
+     * Rules attached through form actions keep running next to these.
+     */
+    public function onFormSavedMemoryRules($args)
+    {
+        $res = $this->execute_private_method($args);
+        $user_input = (array)($args['user_input'] ?? array());
+        if (!$res || ($user_input['trigger_type'] ?? '') !== actionTriggerTypes_finished) {
+            return $res;
+        }
+
+        try {
+            $model = $args['hookedClassInstance'];
+            $rule_ids = $this->getSubmissionMemoryRuleIds($model);
+            if (!empty($rule_ids)) {
+                $context = (new LlmMemorySubmissionContextService())->buildFormContext($model, $user_input, $res);
+                $this->queueSubmissionMemoryRules($rule_ids, $context, $res);
+            }
+        } catch (\Throwable $e) {
+            error_log('LLM Memory: form rule trigger failed: ' . $e->getMessage());
+        }
+
+        return $res;
+    }
+
+    /**
+     * Run the memory rules selected on a SurveyJS section after a successful finished save.
+     * Hook on SurveyJSModel::save_survey (hook_overwrite_return, priority 20); same
+     * behavior as onFormSavedMemoryRules. The hooked model is the section the
+     * participant submitted, so its own rule selection is used, even when several
+     * sections show the same survey.
+     */
+    public function onSurveySavedMemoryRules($args)
+    {
+        $res = $this->execute_private_method($args);
+        $data = (array)($args['data'] ?? array());
+        if (!$res || ($data['trigger_type'] ?? '') !== actionTriggerTypes_finished) {
+            return $res;
+        }
+
+        try {
+            $model = $args['hookedClassInstance'];
+            $rule_ids = $this->getSubmissionMemoryRuleIds($model);
+            if (!empty($rule_ids)) {
+                $context = (new LlmMemorySubmissionContextService())->buildSurveyContext($model, $data, $res);
+                if ($context) {
+                    $this->queueSubmissionMemoryRules($rule_ids, $context, $res);
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('LLM Memory: survey rule trigger failed: ' . $e->getMessage());
         }
 
         return $res;
