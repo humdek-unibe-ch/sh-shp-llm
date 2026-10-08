@@ -163,6 +163,50 @@ class LlmMemoryStorageService extends BaseLlmService
     }
 
     /**
+     * Get one filtered page of history rows across all users for the admin activity feed.
+     * Only the light columns the feed displays are loaded (no memory/payload JSON).
+     *
+     * @param array $filters Optional: memory_key, update_status, source_type, rule_id,
+     *                       user_ids (int[]), date_from / date_to (Y-m-d, matched against event_at).
+     * @param int   $limit   Page size.
+     * @param int   $offset  Row offset.
+     * @return array ['rows' => array, 'total' => int] Newest first; total ignores paging.
+     */
+    public function getHistoryActivity($filters = [], $limit = 25, $offset = 0)
+    {
+        $history_table = $this->config_service->getHistoryTableName();
+        $table_id = $this->services->get_user_input()->get_dataTable_id($history_table);
+        $extra = [
+            'user_ids' => $filters['user_ids'] ?? null,
+            'date_from' => $filters['date_from'] ?? '',
+            'date_to' => $filters['date_to'] ?? '',
+        ];
+        // a user search that matched nobody must not fall back to "all users"
+        if (!$table_id || (is_array($extra['user_ids']) && empty($extra['user_ids']))) {
+            return ['rows' => [], 'total' => 0];
+        }
+
+        $cell_filters = [];
+        foreach (['memory_key', 'update_status', 'source_type', 'rule_id'] as $column) {
+            if (isset($filters[$column]) && $filters[$column] !== '') {
+                $cell_filters[$column] = $filters[$column];
+            }
+        }
+
+        $total = $this->countMatchingRowIds($table_id, $cell_filters, null, $extra);
+        $row_ids = $this->findMatchingRowIds($table_id, $cell_filters, null, false, $limit, $offset, $extra);
+        $rows = $this->hydrateRowsByIds(
+            $table_id,
+            $row_ids,
+            null,
+            false,
+            'memory_key,rule_id,source_type,source_ref,change_summary,update_status,event_at,created_at'
+        );
+
+        return ['rows' => $rows, 'total' => $total];
+    }
+
+    /**
      * Get all user memory entries (for admin listing).
      *
      * @param int|null $limit
@@ -392,9 +436,10 @@ class LlmMemoryStorageService extends BaseLlmService
      * @param int[]    $row_ids   Row IDs to hydrate.
      * @param int|null $user_id   Optional user filter.
      * @param bool     $db_first  If true, return only the first row (or null).
+     * @param string   $selected_columns Optional comma-separated data columns to load (all when empty).
      * @return array|null Ordered rows, or single row/null when db_first is true.
      */
-    private function hydrateRowsByIds($table_id, $row_ids, $user_id = null, $db_first = false)
+    private function hydrateRowsByIds($table_id, $row_ids, $user_id = null, $db_first = false, $selected_columns = '')
     {
         $row_ids = array_values(array_unique(array_filter(array_map('intval', (array)$row_ids))));
         if (empty($row_ids)) {
@@ -403,7 +448,7 @@ class LlmMemoryStorageService extends BaseLlmService
 
         $user_input = $this->services->get_user_input();
         $filter = ' AND record_id IN (' . implode(',', $row_ids) . ') ORDER BY record_id DESC';
-        $rows = $user_input->get_data($table_id, $filter, false, $user_id, false);
+        $rows = $user_input->get_data($table_id, $filter, false, $user_id, false, true, $selected_columns);
         if (!is_array($rows) || empty($rows)) {
             return $db_first ? null : [];
         }
@@ -430,26 +475,34 @@ class LlmMemoryStorageService extends BaseLlmService
     }
 
     /**
-     * Find dataRow IDs matching cell-level filters using EXISTS subqueries, ordered DESC.
+     * Build the FROM/WHERE part (and its bound params) shared by the row lookups and counts
+     * of one dataTable. Soft-deleted rows are always excluded.
      *
      * @param int      $table_id     DataTable ID.
-     * @param array    $cell_filters Column name => value pairs.
-     * @param int|null $user_id      Optional user filter.
-     * @param bool     $first_only   If true, LIMIT 1.
-     * @param int|null $limit        Max rows (overridden by first_only).
-     * @param int      $offset       Pagination offset.
-     * @return int[] Matching row IDs.
+     * @param array    $cell_filters Column name => value pairs (exact match on the cell value).
+     * @param int|null $user_id      Optional single-user filter.
+     * @param array    $extra        Optional: user_ids (int[], any-of filter), date_from / date_to
+     *                               (Y-m-d, matched against the date part of the event_at cell).
+     * @return array [string $from_where_sql, array $params]
      */
-    private function findMatchingRowIds($table_id, $cell_filters = [], $user_id = null, $first_only = false, $limit = null, $offset = 0)
+    private function buildMatchingRowsQuery($table_id, $cell_filters = [], $user_id = null, $extra = [])
     {
         $params = [':table_id' => (int)$table_id];
-        $sql = "SELECT dr.id
-                FROM dataRows dr
+        $sql = " FROM dataRows dr
                 WHERE dr.id_dataTables = :table_id";
 
         if ($user_id !== null && (int)$user_id > 0) {
             $sql .= " AND dr.id_users = :user_id";
             $params[':user_id'] = (int)$user_id;
+        }
+
+        if (!empty($extra['user_ids']) && is_array($extra['user_ids'])) {
+            $placeholders = [];
+            foreach (array_values($extra['user_ids']) as $position => $extra_user_id) {
+                $placeholders[] = ':extra_user_' . $position;
+                $params[':extra_user_' . $position] = (int)$extra_user_id;
+            }
+            $sql .= " AND dr.id_users IN (" . implode(',', $placeholders) . ")";
         }
 
         $deleted_trigger_id = $this->db->get_lookup_id_by_value(actionTriggerTypes, actionTriggerTypes_deleted);
@@ -479,7 +532,41 @@ class LlmMemoryStorageService extends BaseLlmService
             $index++;
         }
 
-        $sql .= " ORDER BY dr.id DESC";
+        foreach (['>=' => 'date_from', '<=' => 'date_to'] as $operator => $bound) {
+            if (empty($extra[$bound])) {
+                continue;
+            }
+
+            $sql .= " AND EXISTS (
+                SELECT 1
+                FROM dataCols dc
+                INNER JOIN dataCells cell ON cell.id_dataCols = dc.id AND cell.id_dataRows = dr.id
+                WHERE dc.id_dataTables = dr.id_dataTables
+                  AND dc.name = 'event_at'
+                  AND LEFT(cell.value, 10) {$operator} :event_{$bound}
+            )";
+            $params[':event_' . $bound] = (string)$extra[$bound];
+        }
+
+        return [$sql, $params];
+    }
+
+    /**
+     * Find dataRow IDs matching cell-level filters using EXISTS subqueries, ordered DESC.
+     *
+     * @param int      $table_id     DataTable ID.
+     * @param array    $cell_filters Column name => value pairs.
+     * @param int|null $user_id      Optional user filter.
+     * @param bool     $first_only   If true, LIMIT 1.
+     * @param int|null $limit        Max rows (overridden by first_only).
+     * @param int      $offset       Pagination offset.
+     * @param array    $extra        See buildMatchingRowsQuery().
+     * @return int[] Matching row IDs.
+     */
+    private function findMatchingRowIds($table_id, $cell_filters = [], $user_id = null, $first_only = false, $limit = null, $offset = 0, $extra = [])
+    {
+        list($from_where, $params) = $this->buildMatchingRowsQuery($table_id, $cell_filters, $user_id, $extra);
+        $sql = "SELECT dr.id" . $from_where . " ORDER BY dr.id DESC";
 
         if ($first_only) {
             $sql .= " LIMIT 1";
@@ -495,6 +582,23 @@ class LlmMemoryStorageService extends BaseLlmService
         return array_map(function ($row) {
             return (int)$row['id'];
         }, $rows);
+    }
+
+    /**
+     * Count the dataRows that findMatchingRowIds() would return without paging.
+     *
+     * @param int      $table_id     DataTable ID.
+     * @param array    $cell_filters Column name => value pairs.
+     * @param int|null $user_id      Optional user filter.
+     * @param array    $extra        See buildMatchingRowsQuery().
+     * @return int Number of matching rows.
+     */
+    private function countMatchingRowIds($table_id, $cell_filters = [], $user_id = null, $extra = [])
+    {
+        list($from_where, $params) = $this->buildMatchingRowsQuery($table_id, $cell_filters, $user_id, $extra);
+        $row = $this->db->query_db_first("SELECT COUNT(*) AS total" . $from_where, $params);
+
+        return is_array($row) ? (int)$row['total'] : 0;
     }
 
     /**
