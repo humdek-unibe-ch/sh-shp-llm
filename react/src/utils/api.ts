@@ -700,8 +700,60 @@ interface MemoryKeysResponse {
   error?: string;
 }
 
+interface MemoryActivityItem {
+  record_id: number;
+  /** When the source event happened (e.g. the form was submitted). */
+  event_at: string;
+  /** When the memory update was saved (after the LLM answered). */
+  saved_at: string;
+  id_users: number;
+  user_name: string;
+  user_code: string;
+  user_email: string;
+  /** 0 for manual admin actions. */
+  rule_id: number;
+  rule_label: string;
+  memory_key: string;
+  memory_key_label: string;
+  update_status: string;
+  change_summary: string;
+  source_type: string;
+  source_label: string;
+  source_detail: string;
+  triggered_by: {
+    type: 'participant' | 'admin';
+    label: string;
+    name: string;
+    email: string;
+  };
+}
+
+interface MemoryActivityFilters {
+  /** Participant search: name, email, validation code or user id. */
+  q?: string;
+  /** Rule id; "0" selects manual admin actions. */
+  rule_id?: string;
+  memory_key?: string;
+  status?: string;
+  source_type?: string;
+  /** Inclusive Y-m-d bounds on the event date. */
+  date_from?: string;
+  date_to?: string;
+}
+
+interface MemoryActivityFilterOptions {
+  rules: Array<{ id: number; label: string }>;
+  memory_keys: Array<{ code: string; label: string }>;
+  statuses: Array<{ value: string; label: string }>;
+  source_types: Array<{ value: string; label: string }>;
+}
+
 interface MemoryActivityResponse {
-  items: Array<Record<string, unknown>>;
+  items: MemoryActivityItem[];
+  total: number;
+  page: number;
+  per_page: number;
+  filter_options?: MemoryActivityFilterOptions;
   error?: string;
 }
 
@@ -887,8 +939,22 @@ export const memoryApi = {
     return apiPost<{ deleted?: boolean; error?: string }>(formData);
   },
 
-  async getMemoryActivity(limit = 25): Promise<MemoryActivityResponse> {
-    return apiGet<MemoryActivityResponse>('memory_activity', { limit: String(limit) });
+  async getMemoryActivity(params: MemoryActivityFilters & { page?: number; per_page?: number } = {}): Promise<MemoryActivityResponse> {
+    // Empty filters are sent on purpose: apiGet copies the page URL into every request and that URL
+    // can carry a memory_key (Users tab), which would otherwise act as a hidden activity filter.
+    const requestParams: Record<string, string> = {
+      q: '',
+      rule_id: '',
+      memory_key: '',
+      status: '',
+      source_type: '',
+      date_from: '',
+      date_to: '',
+    };
+    Object.entries(params).forEach(([name, value]) => {
+      if (value !== undefined) requestParams[name] = String(value);
+    });
+    return apiGet<MemoryActivityResponse>('memory_activity', requestParams);
   },
 
   async getUsers(params: { page?: number; per_page?: number; q?: string }): Promise<MemoryUsersResponse> {

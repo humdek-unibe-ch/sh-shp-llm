@@ -153,6 +153,31 @@
   margin-top: auto;
 }
 
+.memory-activity-table th {
+  white-space: nowrap;
+}
+
+.memory-activity-table td {
+  vertical-align: top;
+}
+
+.memory-activity-table .memory-activity-summary {
+  max-width: 340px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.memory-activity-loading {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.memory-activity-page-size {
+  width: auto;
+}
+
 .llm-memory-rules-editor-root .memory-rule-section {
   border: 1px solid #e2e8f0;
 }

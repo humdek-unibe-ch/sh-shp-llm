@@ -12,6 +12,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Nav, Row, Spinner, Tab } from 'react-bootstrap';
+import { MemoryActivityPanel } from './MemoryActivityPanel';
 import { MemoryAdminPanel } from './MemoryAdminPanel';
 import { MemoryRulesEditorApp } from './MemoryRulesEditorApp';
 import { memoryApi } from '../../utils/api';
@@ -63,6 +64,21 @@ interface MemorySourceRecord {
   details?: Record<string, unknown>;
 }
 
+/** Where a write source lives, by `source_category` (section_field = the "Memory rules" field of a form / survey section). */
+const SOURCE_CATEGORY_LABELS: Record<string, string> = {
+  form_action: 'Form action',
+  section_field: 'Form / survey section',
+  llm_chat_fallback: 'llmChat fallback',
+  system: 'System hook',
+};
+
+/** Text of the link that opens a source's configuration, by `source_category`. */
+const SOURCE_OPEN_LABELS: Record<string, string> = {
+  form_action: 'Open action',
+  section_field: 'Open section',
+  llm_chat_fallback: 'Open page',
+};
+
 /** readUrlState function. */
 function readUrlState() {
   const url = new URL(window.location.href);
@@ -104,14 +120,12 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   const [canUpdateConfig, setCanUpdateConfig] = useState(false);
   const [sources, setSources] = useState<MemorySourceRecord[]>([]);
   const [sourceFilter, setSourceFilter] = useState('');
-  const [activityItems, setActivityItems] = useState<Array<Record<string, unknown>>>([]);
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [loadingSources, setLoadingSources] = useState(false);
-  const [loadingActivity, setLoadingActivity] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -173,18 +187,6 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load sources'))
       .finally(() => setLoadingSources(false));
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab !== 'activity') return;
-    setLoadingActivity(true);
-    memoryApi.getMemoryActivity()
-      .then((response) => {
-        if (response.error) throw new Error(response.error);
-        setActivityItems(response.items || []);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load recent activity'))
-      .finally(() => setLoadingActivity(false));
   }, [activeTab]);
 
   const getConfigField = (name: string): FieldDef | undefined =>
@@ -484,7 +486,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                       ) : null}
                     </div>
                     {sources.length === 0 ? (
-                      <Alert variant="info">No configured write sources found yet. This tab only shows enabled sources that currently point to memory rules.</Alert>
+                      <Alert variant="info">No write sources found yet. A source is a form or survey section with memory rules selected, a form action with a memory-update job, an llmChat section with fallback rules, or an enabled login / profile hook rule.</Alert>
                     ) : filteredSources.length === 0 ? (
                       <Alert variant="light">No sources match the current filter.</Alert>
                     ) : (
@@ -494,7 +496,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                             <Card.Body>
                               <div>
                                 <div className="font-weight-bold">{String(source.target_label || 'Source')}</div>
-                                <div className="memory-source-card__meta">{String(source.source_category || '')} | {String(source.source_type || '')} {source.trigger_type ? `| ${String(source.trigger_type)}` : ''}</div>
+                                <div className="memory-source-card__meta">{SOURCE_CATEGORY_LABELS[String(source.source_category || '')] || String(source.source_category || '')} | {String(source.source_type || '')} {source.trigger_type ? `| ${String(source.trigger_type)}` : ''}</div>
                                 {source.target_secondary ? <div className="memory-source-card__meta">{String(source.target_secondary)}</div> : null}
                               </div>
                               {(source.rule_refs || []).length > 0 ? (
@@ -509,7 +511,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                               <div className="memory-source-card__actions">
                                 {source.target_url ? (
                                   <a className="btn btn-sm btn-outline-primary" href={String(source.target_url)} target="_blank" rel="noopener noreferrer">
-                                    Open action
+                                    {SOURCE_OPEN_LABELS[String(source.source_category || '')] || 'Open'}
                                   </a>
                                 ) : null}
                                 {(source.rule_refs || []).map((ruleRef) => (
@@ -550,40 +552,13 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                   }}
                 />
               </Tab.Pane>
-              <Tab.Pane eventKey="activity">
-                {loadingActivity ? <div className="text-center py-5"><Spinner animation="border" size="sm" /></div> : (
-                  <Card className="border">
-                    <Card.Header>Recent Activity</Card.Header>
-                    <Card.Body>
-                      {activityItems.length > 0 ? (
-                        <div className="table-responsive">
-                          <table className="table table-sm mb-0">
-                            <thead>
-                              <tr>
-                                <th>When</th>
-                                <th>User</th>
-                                <th>Rule</th>
-                                <th>Status</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {activityItems.map((item, index) => (
-                                <tr key={`${String(item.record_id || index)}`}>
-                                  <td>{String(item.event_at || item.created_at || '')}</td>
-                                  <td>{String(item.user_name || `User #${String(item.id_users || '')}`)}</td>
-                                  <td>{String(item.rule_id || '-')}</td>
-                                  <td>{String(item.update_status || '-')}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="text-muted small">No recent activity yet.</div>
-                      )}
-                    </Card.Body>
-                  </Card>
-                )}
+              <Tab.Pane eventKey="activity" mountOnEnter>
+                <MemoryActivityPanel
+                  onOpenRule={(ruleId) => {
+                    setSelectedRuleId(ruleId);
+                    setActiveTab('rules');
+                  }}
+                />
               </Tab.Pane>
             </Tab.Content>
           </Card.Body>
