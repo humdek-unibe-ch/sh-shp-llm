@@ -443,14 +443,27 @@ class ModuleLlmMemoryController extends BaseController
         }
     }
 
-    /** Return recent memory activity log entries (limited by GET 'limit', max 100). */
+    /**
+     * Return one page of the memory activity feed. GET filters: q, rule_id, memory_key, status,
+     * source_type, date_from, date_to (Y-m-d); paging: page, per_page (max 100).
+     */
     private function handleMemoryActivity()
     {
         try {
-            $limit = min((int)($_GET['limit'] ?? 25), 100);
-            $this->sendJsonResponse([
-                'items' => $this->getAdminService()->getRecentActivity($limit),
-            ]);
+            $filters = array();
+            foreach (array('q', 'rule_id', 'memory_key', 'status', 'source_type') as $name) {
+                $filters[$name] = trim((string)($_GET[$name] ?? ''));
+            }
+            foreach (array('date_from', 'date_to') as $name) {
+                $value = trim((string)($_GET[$name] ?? ''));
+                $filters[$name] = preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) ? $value : '';
+            }
+
+            $this->sendJsonResponse($this->getAdminService()->getActivity(
+                $filters,
+                (int)($_GET['page'] ?? 1),
+                (int)($_GET['per_page'] ?? 25)
+            ));
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
         }

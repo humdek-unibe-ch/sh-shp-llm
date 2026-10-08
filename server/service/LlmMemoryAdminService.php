@@ -84,7 +84,7 @@ class LlmMemoryAdminService extends BaseLlmService
             $users_info = $this->getUsersInfo($user_ids);
             $search_lower = strtolower($search);
             $user_map = array_filter($user_map, function ($entry) use ($users_info, $search_lower) {
-                $uid = $entry['user_id'];
+                $uid = (int)$entry['user_id'];
                 $info = $users_info[$uid] ?? [];
                 $name = strtolower($info['name'] ?? '');
                 $email = strtolower($info['email'] ?? '');
@@ -107,7 +107,7 @@ class LlmMemoryAdminService extends BaseLlmService
         $user_ids = array_column($items, 'user_id');
         $users_info = $this->getUsersInfo($user_ids);
         foreach ($items as &$item) {
-            $info = $users_info[$item['user_id']] ?? [];
+            $info = $users_info[(int)$item['user_id']] ?? [];
             $item['user_name'] = $info['name'] ?? ('User #' . $item['user_id']);
             $item['user_email'] = $info['email'] ?? '';
         }
@@ -220,28 +220,95 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Fetch recent memory activity entries enriched with user names.
+     * Paginated, filterable activity feed (newest first) built from the memory history table.
+     * Every item names the participant (name, code, email), the rule and memory key, what
+     * triggered the update and who caused it, so no other tab has to be opened to read it.
      *
-     * @param int $limit Max entries to return.
-     * @return array Normalized activity rows with user_name.
+     * @param array $filters  Optional: q (name / email / validation code / user id), rule_id (0 = manual
+     *                        admin actions), memory_key, status, source_type, date_from / date_to (Y-m-d).
+     * @param int   $page     1-based page number.
+     * @param int   $per_page Page size (max 100).
+     * @return array ['items', 'total', 'page', 'per_page', 'filter_options']
      */
-    public function getRecentActivity($limit = 25)
+    public function getActivity($filters = array(), $page = 1, $per_page = 25)
     {
-        $recent_activity = $this->storage_service->getRecentHistory((int)$limit);
-        $recent_user_ids = array();
-        foreach ($recent_activity as $entry) {
-            if (!empty($entry['id_users'])) {
-                $recent_user_ids[] = (int)$entry['id_users'];
-            }
-        }
-        $recent_users = $this->getUsersInfo(array_values(array_unique($recent_user_ids)));
+        $page = max(1, (int)$page);
+        $per_page = max(1, min(100, (int)$per_page));
 
-        return array_map(function ($entry) use ($recent_users) {
-            $normalized = $this->normalizeMemoryRow($entry);
-            $uid = (int)($normalized['id_users'] ?? 0);
-            $normalized['user_name'] = $recent_users[$uid]['name'] ?? ('User #' . $uid);
-            return $normalized;
-        }, $recent_activity);
+        $storage_filters = array(
+            'rule_id' => $filters['rule_id'] ?? '',
+            'memory_key' => $filters['memory_key'] ?? '',
+            'update_status' => $filters['status'] ?? '',
+            'source_type' => $filters['source_type'] ?? '',
+            'date_from' => $filters['date_from'] ?? '',
+            'date_to' => $filters['date_to'] ?? '',
+        );
+        $search = trim((string)($filters['q'] ?? ''));
+        if ($search !== '') {
+            $storage_filters['user_ids'] = $this->findUserIdsBySearch($search);
+        }
+
+        $history = $this->storage_service->getHistoryActivity($storage_filters, $per_page, ($page - 1) * $per_page);
+
+        // participants and acting admins are loaded together in one query
+        $entries = array();
+        $user_ids = array();
+        foreach ($history['rows'] as $entry) {
+            $source_ref = $this->decodeJsonField($entry['source_ref'] ?? '');
+            $source_ref = is_array($source_ref) ? $source_ref : array();
+            $entries[] = array($entry, $source_ref);
+            $user_ids[] = (int)($entry['id_users'] ?? 0);
+            $user_ids[] = (int)($source_ref['admin_user_id'] ?? 0);
+        }
+        $users_info = $this->getUsersInfo(array_values(array_unique(array_filter($user_ids))));
+
+        $rules = $this->rule_service->listRules();
+        $rule_labels = array();
+        foreach ($rules as $rule) {
+            $rule_labels[(int)$rule['id']] = trim((string)$rule['label']);
+        }
+        $memory_keys = $this->rule_service->listMemoryKeys();
+        $key_labels = array();
+        foreach ($memory_keys as $key) {
+            $key_labels[(string)$key['code']] = (string)$key['label'];
+        }
+
+        $items = array();
+        foreach ($entries as $pair) {
+            list($entry, $source_ref) = $pair;
+            $user_id = (int)($entry['id_users'] ?? 0);
+            $user = $users_info[$user_id] ?? array();
+            $rule_id = (int)($entry['rule_id'] ?? 0);
+            $memory_key = (string)($entry['memory_key'] ?? '');
+            $event_at = (string)($entry['event_at'] ?? '');
+
+            $items[] = array_merge(
+                array(
+                    'record_id' => (int)($entry['record_id'] ?? 0),
+                    'event_at' => $event_at !== '' ? $event_at : (string)($entry['entry_date'] ?? ''),
+                    'saved_at' => (string)($entry['created_at'] ?? $entry['entry_date'] ?? ''),
+                    'id_users' => $user_id,
+                    'user_name' => (string)($user['name'] ?? $entry['user_name'] ?? ''),
+                    'user_code' => (string)($user['code'] ?? $entry['user_code'] ?? ''),
+                    'user_email' => (string)($user['email'] ?? ''),
+                    'rule_id' => $rule_id,
+                    'rule_label' => $rule_id > 0 ? ($rule_labels[$rule_id] ?? '') : 'Manual (no rule)',
+                    'memory_key' => $memory_key,
+                    'memory_key_label' => $key_labels[$memory_key] ?? $memory_key,
+                    'update_status' => (string)($entry['update_status'] ?? ''),
+                    'change_summary' => (string)($entry['change_summary'] ?? ''),
+                ),
+                $this->describeActivitySource($entry, $source_ref, $users_info)
+            );
+        }
+
+        return array(
+            'items' => $items,
+            'total' => (int)$history['total'],
+            'page' => $page,
+            'per_page' => $per_page,
+            'filter_options' => $this->getActivityFilterOptions($rules, $memory_keys),
+        );
     }
 
     /** @return string|null Timestamp of the most recent memory activity, or null. */
@@ -286,6 +353,7 @@ class LlmMemoryAdminService extends BaseLlmService
     {
         $sources = array();
         $sources = array_merge($sources, $this->getFormActionSources());
+        $sources = array_merge($sources, $this->getSectionFieldSources());
         $sources = array_merge($sources, $this->getLlmChatFallbackSources());
         $sources = array_merge($sources, $this->getSystemRuleSources());
         return $this->decorateSourcesWithRuleRefs($sources);
@@ -477,7 +545,8 @@ class LlmMemoryAdminService extends BaseLlmService
 
         $rows = $db->query_db($sql, array_values($user_ids));
         foreach ($rows as $row) {
-            $info[$row['id']] = [
+            // ids come back zero-padded ("0000000009"); key by int so every caller can look up with (int)
+            $info[(int)$row['id']] = [
                 'name'  => $row['name'] ?? '',
                 'email' => $row['email'] ?? '',
                 'code'  => $row['code'] ?? '',
@@ -485,6 +554,151 @@ class LlmMemoryAdminService extends BaseLlmService
         }
 
         return $info;
+    }
+
+    /**
+     * Resolve a free-text participant search to user ids.
+     *
+     * @param string $search Substring of the user name, email or validation code, or an exact user id.
+     * @return int[] Matching user ids (capped at 500).
+     */
+    private function findUserIdsBySearch($search)
+    {
+        $like = '%' . addcslashes($search, '\\%_') . '%';
+        $sql = "SELECT DISTINCT u.id
+                FROM users u
+                LEFT JOIN validation_codes vc ON vc.id_users = u.id
+                WHERE u.`name` LIKE ? OR u.email LIKE ? OR vc.`code` LIKE ?";
+        $params = array($like, $like, $like);
+        if (ctype_digit($search)) {
+            $sql .= " OR u.id = ?";
+            $params[] = (int)$search;
+        }
+
+        $rows = $this->db->query_db($sql . " LIMIT 500", $params);
+        return is_array($rows) ? array_map('intval', array_column($rows, 'id')) : array();
+    }
+
+    /**
+     * Display labels for the source types found in the memory history.
+     *
+     * @return array source_type => label
+     */
+    private function getActivitySourceLabels()
+    {
+        return array(
+            LLM_MEMORY_SOURCE_FORM_ACTION => 'Form / survey submit',
+            LLM_MEMORY_SOURCE_LLM_CHAT_FORM => 'llmChat form submit',
+            LLM_MEMORY_SOURCE_LOGIN => 'Login',
+            LLM_MEMORY_SOURCE_PROFILE_NAME => 'Profile name change',
+            'admin_manual' => 'Admin action',
+        );
+    }
+
+    /**
+     * Describe what triggered a history entry and who caused it.
+     * Participants cause every source except admin_manual, where source_ref carries the acting admin.
+     *
+     * @param array $entry      Hydrated history row.
+     * @param array $source_ref Decoded source_ref JSON of the row.
+     * @param array $users_info Output of getUsersInfo() covering the participant and acting admin.
+     * @return array source_label, source_detail and triggered_by {type, label, name, email}.
+     */
+    private function describeActivitySource($entry, $source_ref, $users_info)
+    {
+        $source_type = (string)($entry['source_type'] ?? '');
+        $labels = $this->getActivitySourceLabels();
+        $detail = '';
+        $triggered_by = array('type' => 'participant', 'label' => 'Participant', 'name' => '', 'email' => '');
+
+        if ($source_type === LLM_MEMORY_SOURCE_FORM_ACTION) {
+            $form = trim((string)($source_ref['form_name'] ?? ''));
+            if ($form === '') {
+                $form = trim((string)($source_ref['table_name'] ?? ''));
+            }
+            $record_id = (int)($source_ref['record_id'] ?? 0);
+            $detail = $form . ($record_id > 0 ? ' (record #' . $record_id . ')' : '');
+        } elseif ($source_type === LLM_MEMORY_SOURCE_LLM_CHAT_FORM) {
+            $parts = array();
+            if (!empty($source_ref['section_id'])) {
+                $parts[] = 'section #' . (int)$source_ref['section_id'];
+            }
+            if (!empty($source_ref['conversation_id'])) {
+                $parts[] = 'conversation #' . (int)$source_ref['conversation_id'];
+            }
+            $detail = implode(', ', $parts);
+        } elseif ($source_type === 'admin_manual') {
+            $actions = array(
+                'admin_rerun' => 'Rule re-run',
+                'rebuild_from_history' => 'Rebuilt from history',
+                'admin_edit' => 'Manual edit',
+                'admin_delete' => 'Memory cleared',
+            );
+            foreach ($actions as $flag => $action_label) {
+                if (!empty($source_ref[$flag])) {
+                    $detail = $action_label;
+                    break;
+                }
+            }
+
+            $admin_id = (int)($source_ref['admin_user_id'] ?? 0);
+            $admin = $users_info[$admin_id] ?? array();
+            $triggered_by = array(
+                'type' => 'admin',
+                'label' => 'Admin',
+                'name' => (string)($admin['name'] ?? ($admin_id > 0 ? 'User #' . $admin_id : '')),
+                'email' => (string)($admin['email'] ?? ''),
+            );
+        }
+
+        return array(
+            'source_type' => $source_type,
+            'source_label' => $labels[$source_type] ?? $source_type,
+            'source_detail' => $detail,
+            'triggered_by' => $triggered_by,
+        );
+    }
+
+    /**
+     * Options for the activity filters: rules, memory keys, statuses and source types.
+     *
+     * @param array $rules       Output of LlmMemoryRuleService::listRules().
+     * @param array $memory_keys Output of LlmMemoryRuleService::listMemoryKeys().
+     * @return array rules, memory_keys, statuses, source_types
+     */
+    private function getActivityFilterOptions($rules, $memory_keys)
+    {
+        $rule_options = array();
+        foreach ($rules as $rule) {
+            $label = trim((string)$rule['label']);
+            $rule_options[] = array(
+                'id' => (int)$rule['id'],
+                'label' => ($label !== '' ? $label : 'Rule') . ' (#' . (int)$rule['id'] . ')',
+            );
+        }
+        // history rows written by admin actions carry rule_id 0
+        $rule_options[] = array('id' => 0, 'label' => 'Manual admin action (no rule)');
+
+        $key_options = array();
+        foreach ($memory_keys as $key) {
+            $key_options[] = array('code' => (string)$key['code'], 'label' => (string)$key['label']);
+        }
+
+        $source_type_options = array();
+        foreach ($this->getActivitySourceLabels() as $value => $label) {
+            $source_type_options[] = array('value' => $value, 'label' => $label);
+        }
+
+        return array(
+            'rules' => $rule_options,
+            'memory_keys' => $key_options,
+            'statuses' => array(
+                array('value' => LLM_MEMORY_STATUS_APPLIED, 'label' => 'Applied'),
+                array('value' => LLM_MEMORY_STATUS_DUPLICATE, 'label' => 'Ignored (duplicate)'),
+                array('value' => LLM_MEMORY_STATUS_STALE, 'label' => 'Ignored (stale)'),
+            ),
+            'source_types' => $source_type_options,
+        );
     }
 
     /**
@@ -530,6 +744,155 @@ class LlmMemoryAdminService extends BaseLlmService
         }
 
         return $sources;
+    }
+
+    /**
+     * Collect memory write-sources from sections whose llm_memory_rule_ids field selects rules
+     * (formUserInput*, llmForm* and surveyJS styles). A finished submission of such a section runs the selected rules.
+     *
+     * @return array Source descriptors with section/page metadata and resolved rule IDs.
+     */
+    private function getSectionFieldSources()
+    {
+        // non-display fields are stored for language 1 / gender 1 (same as the llmChat fallback lookup)
+        $rows = $this->db->query_db(
+            "SELECT s.id AS section_id, s.name AS section_name, st.name AS style_name, sft.content AS rule_ids
+             FROM sections_fields_translation sft
+             INNER JOIN fields f ON f.id = sft.id_fields AND f.name = :field_name
+             INNER JOIN sections s ON s.id = sft.id_sections
+             INNER JOIN styles st ON st.id = s.id_styles
+             WHERE sft.id_languages = 1 AND sft.id_genders = 1
+               AND TRIM(IFNULL(sft.content, '')) <> ''
+             ORDER BY s.id ASC",
+            array(':field_name' => LLM_MEMORY_FIELD_RULE_IDS)
+        );
+        if (!is_array($rows)) {
+            return array();
+        }
+
+        $rule_ids_by_section = array();
+        foreach ($rows as $row) {
+            $rule_ids = $this->rule_service->normalizeRuleIds($row['rule_ids'] ?? '');
+            if (!empty($rule_ids)) {
+                $rule_ids_by_section[(int)$row['section_id']] = $rule_ids;
+            }
+        }
+
+        $pages = $this->findSectionPages(array_keys($rule_ids_by_section));
+
+        $sources = array();
+        foreach ($rows as $row) {
+            $section_id = (int)$row['section_id'];
+            if (!isset($rule_ids_by_section[$section_id])) {
+                continue;
+            }
+
+            $page = $pages[$section_id] ?? null;
+            $sources[] = array(
+                'source_category' => 'section_field',
+                'source_type' => LLM_MEMORY_SOURCE_FORM_ACTION,
+                'rule_ids' => $rule_ids_by_section[$section_id],
+                'trigger_type' => actionTriggerTypes_finished,
+                'target_label' => trim((string)$row['section_name']) !== '' ? $row['section_name'] : ('Section #' . $section_id),
+                'target_secondary' => $row['style_name'] . ' | ' . ($page ? $page['page_url'] : 'not placed on a page'),
+                'target_id' => $section_id,
+                'target_url' => $page ? $this->buildCmsSectionUrl($page['page_id'], $page['root_section_id'], $section_id) : null,
+                'details' => array(
+                    'section_id' => $section_id,
+                    'style_name' => $row['style_name'],
+                    'page_id' => $page ? $page['page_id'] : null,
+                    'page_keyword' => $page ? $page['page_keyword'] : null,
+                    'page_url' => $page ? $page['page_url'] : null,
+                ),
+            );
+        }
+
+        return $sources;
+    }
+
+    /**
+     * Resolve the page each section is shown on. A section can be nested in other sections, so
+     * sections_hierarchy is walked upwards until a section attached to a page is found.
+     * One query covers all sections.
+     *
+     * @param int[] $section_ids Section ids to resolve.
+     * @return array section_id => [page_id, page_keyword, page_url, root_section_id] (nearest page only).
+     */
+    private function findSectionPages($section_ids)
+    {
+        $section_ids = array_values(array_unique(array_filter(array_map('intval', $section_ids))));
+        if (empty($section_ids)) {
+            return array();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($section_ids), '?'));
+        $rows = $this->db->query_db(
+            "WITH RECURSIVE ancestors (origin, id, depth) AS (
+                 SELECT s.id, s.id, 0 FROM sections s WHERE s.id IN ($placeholders)
+                 UNION ALL
+                 SELECT a.origin, sh.parent, a.depth + 1
+                 FROM sections_hierarchy sh
+                 INNER JOIN ancestors a ON sh.child = a.id
+                 WHERE a.depth < 20
+             )
+             SELECT a.origin AS section_id, a.id AS root_section_id,
+                    p.id AS page_id, p.keyword AS page_keyword, p.url AS page_url
+             FROM ancestors a
+             INNER JOIN pages_sections ps ON ps.id_sections = a.id
+             INNER JOIN pages p ON p.id = ps.id_pages
+             ORDER BY a.origin ASC, a.depth ASC, p.id ASC",
+            $section_ids
+        );
+
+        $pages = array();
+        foreach ((array)$rows as $row) {
+            $section_id = (int)($row['section_id'] ?? 0);
+            if ($section_id > 0 && !isset($pages[$section_id])) {
+                $pages[$section_id] = array(
+                    'page_id' => (int)$row['page_id'],
+                    'page_keyword' => (string)$row['page_keyword'],
+                    'page_url' => (string)$row['page_url'],
+                    'root_section_id' => (int)$row['root_section_id'],
+                );
+            }
+        }
+
+        return $pages;
+    }
+
+    /**
+     * Generate the CMS admin URL that opens a section, in the CMS UI the current admin uses
+     * (same routing as BaseModel::get_cms_item_url).
+     *
+     * @param int $page_id         Page the section is shown on.
+     * @param int $root_section_id Section attached to the page (the section itself when it is not nested).
+     * @param int $section_id      Section to open.
+     * @return string|null Router-generated URL, or null if routing fails.
+     */
+    private function buildCmsSectionUrl($page_id, $root_section_id, $section_id)
+    {
+        $selected_section_id = (int)$section_id === (int)$root_section_id ? null : (int)$section_id;
+
+        try {
+            $router = $this->services->get_router();
+            if ($this->services->get_user_input()->is_new_ui_enabled()) {
+                return $router->generate('cmsUpdate', array(
+                    'pid' => (int)$page_id,
+                    'sid' => (int)$root_section_id,
+                    'ssid' => $selected_section_id,
+                    'mode' => UPDATE,
+                    'type' => 'prop',
+                ));
+            }
+
+            return $router->generate('cmsSelect', array(
+                'pid' => (int)$page_id,
+                'sid' => (int)$root_section_id,
+                'ssid' => $selected_section_id,
+            ));
+        } catch (Exception $e) {
+            return null;
+        }
     }
 
     /**
