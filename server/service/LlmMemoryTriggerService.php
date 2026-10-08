@@ -242,31 +242,63 @@ class LlmMemoryTriggerService extends BaseLlmService
     public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [])
     {
         if (!$this->config_service->isMemoryEnabled()) {
+            $this->appendWorkerLog('dispatchForRuleIds skipped: memory disabled', array(
+                'rule_ids' => array_values(array_map('intval', (array)$rule_ids)),
+            ));
             return [];
         }
 
         require_once __DIR__ . '/LlmMemoryRuleService.php';
         $rule_service = new LlmMemoryRuleService($this->services);
         $dispatched = [];
+        $rule_ids = array_values(array_map('intval', (array)$rule_ids));
 
-        foreach ((array)$rule_ids as $rule_id) {
-            $rule = $rule_service->getRuleById((int)$rule_id);
-            if (!$rule) {
-                continue;
-            }
-            if (!$rule['enabled']) {
-                $this->logDisabledRuleSkip($rule, $normalized_payload, 'rule_id_dispatch');
-                continue;
-            }
+        $this->appendWorkerLog('dispatchForRuleIds called', array(
+            'rule_ids' => $rule_ids,
+            'user_id' => (int)($normalized_payload['user_id'] ?? 0),
+            'async' => !empty($async),
+        ));
 
-            $rule = $this->applyRuleOverrides($rule, $rule_overrides);
-            $dispatched[] = (int)$rule['id'];
-            foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
-                $payload_for_key = $normalized_payload;
-                $payload_for_key['memory_key_override'] = $target_memory_key;
-                $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
+        foreach ($rule_ids as $rule_id) {
+            try {
+                $rule = $rule_service->getRuleById((int)$rule_id);
+                if (!$rule) {
+                    $this->appendWorkerLog('dispatchForRuleIds rule not found', array('rule_id' => (int)$rule_id));
+                    continue;
+                }
+                if (!$rule['enabled']) {
+                    $this->appendWorkerLog('dispatchForRuleIds rule disabled', array('rule_id' => (int)$rule_id));
+                    $this->logDisabledRuleSkip($rule, $normalized_payload, 'rule_id_dispatch');
+                    continue;
+                }
+
+                $rule = $this->applyRuleOverrides($rule, $rule_overrides);
+                $target_keys = $this->config_service->getRuleTargetMemoryKeys($rule);
+                if (empty($target_keys)) {
+                    $this->appendWorkerLog('dispatchForRuleIds no target memory keys', array('rule_id' => (int)$rule_id));
+                    continue;
+                }
+
+                $dispatched[] = (int)$rule['id'];
+                foreach ($target_keys as $target_memory_key) {
+                    $payload_for_key = $normalized_payload;
+                    $payload_for_key['memory_key_override'] = $target_memory_key;
+                    $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
+                }
+            } catch (\Throwable $e) {
+                // One rule must not block the others on the same submission.
+                $this->appendWorkerLog('dispatchForRuleIds rule failed', array(
+                    'rule_id' => (int)$rule_id,
+                    'error' => $e->getMessage(),
+                ));
+                error_log('LLM Memory: dispatchForRuleIds rule ' . (int)$rule_id . ' failed: ' . $e->getMessage());
             }
         }
+
+        $this->appendWorkerLog('dispatchForRuleIds dispatched', array(
+            'requested_rule_ids' => $rule_ids,
+            'dispatched_rule_ids' => $dispatched,
+        ));
 
         return $dispatched;
     }
@@ -437,6 +469,17 @@ class LlmMemoryTriggerService extends BaseLlmService
         $update_service->executeLlmSummarization($rule, $normalized);
     }
 
+    /**
+     * Public wrapper so hooks can write the same worker diagnostic log.
+     *
+     * @param string $message
+     * @param array $context
+     */
+    public function appendWorkerLogPublic($message, $context = array())
+    {
+        $this->appendWorkerLog($message, $context);
+    }
+
     private function appendWorkerLog($message, $context = array())
     {
         $log_file = realpath(__DIR__ . '/../..') . DIRECTORY_SEPARATOR . 'llm_memory_worker.log';
@@ -447,7 +490,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                 $line .= ' | ' . $encoded;
             }
         }
-        @file_put_contents($log_file, $line . PHP_EOL, FILE_APPEND);
+        @file_put_contents($log_file, $line . PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 
     /**
