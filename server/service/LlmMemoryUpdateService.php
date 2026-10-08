@@ -270,6 +270,12 @@ class LlmMemoryUpdateService extends BaseLlmService
             $sections[] = "## Submitted Data\nThe following data was submitted:\n```json\n" . $json . "\n```";
         }
 
+        // form / SurveyJS submissions carry a labeled snapshot (LlmMemorySubmissionContextService)
+        $readable = trim((string)($normalized_payload['readable_text'] ?? ''));
+        if (($normalized_payload['source_type'] ?? '') === LLM_MEMORY_SOURCE_FORM_ACTION && $readable !== '') {
+            $sections[] = "## Submission Context\nThe same submission as in Submitted Data, with the full question labels and readable answer texts:\n```json\n" . $readable . "\n```";
+        }
+
         $extra = $this->buildDataConfigContext($rule, $normalized_payload, $variables);
         if ($extra !== '') {
             $sections[] = "## Additional Context\n" . $extra;
