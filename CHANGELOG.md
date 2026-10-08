@@ -20,6 +20,26 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   `llmChat`, `llmFormRecord`, `llmFormLog`, and module defaults. Mapped per
   provider (OpenAI Chat Completions, Anthropic `output_config.effort`; stripped
   for GPUStack).
+- **Memory rules directly on forms and surveys.** New optional multi-select CMS
+  field `llm_memory_rule_ids` on `formUserInput`, `formUserInputRecord`,
+  `formUserInputLog`, `llmFormRecord`, `llmFormLog` and `surveyJS`: pick the
+  memory rules that run when the form / survey is finished, without a form
+  action. Hooks on `FormUserInputModel::save_user_input` / `update_user_input`
+  and `SurveyJSModel::save_survey` (`LlmHooks::onFormSavedMemoryRules` /
+  `onSurveySavedMemoryRules`) queue the rules in the existing async memory
+  worker after a successful `finished` save of a logged-in user; missing or
+  disabled rules are skipped, an empty selection changes nothing, and form
+  actions with `llm_memory_update` keep running in addition.
+- **Labeled submission context for memory.** New
+  `LlmMemorySubmissionContextService` snapshots the submission when it is saved
+  (form field labels and readable choice texts; SurveyJS question titles,
+  choices, matrices, dynamic panels, comments) and `LlmMemoryUpdateService` adds
+  it to the memory prompt as `## Submission Context` (only for
+  `form_action_submit` payloads that carry it, so form actions are unchanged).
+- **SurveyJS installed later.** The migration wires SurveyJS only when its style
+  exists. `server/db/optional/enable_surveyjs_llm_memory_rules.sql` is the
+  separate, idempotent snippet to run once when SurveyJS is installed after this
+  plugin (clear the SelfHelp cache afterwards, as for the rest of `v1.5.0.sql`).
 
 ### Changed
 

@@ -68,6 +68,8 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.2.0.sql
 This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations) plus the v1.2.0 memory-key registry for multi-key memory rules. The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
 It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed.
 
+**Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.5.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It enables the memory rule selection on `surveyJS` sections (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
+
 ### 3. Build Frontend Assets
 
 ```bash
@@ -244,7 +246,16 @@ The runtime guarantees:
 
 #### Trigger integration
 
-**Core forms and surveys** — use form actions:
+**Core forms and surveys (v1.5.0)** — select the memory rules directly on the style, no form action needed:
+
+- Field `llm_memory_rule_ids` (comma-separated `llm_memory_rules.id`, multi select in the CMS) on `formUserInput`, `formUserInputRecord`, `formUserInputLog`, `llmFormRecord`, `llmFormLog` and `surveyJS`. Empty = off. Only `form_action_submit` rules are offered.
+- Hooks registered by `v1.5.0.sql`: `FormUserInputModel::save_user_input` / `update_user_input` and `SurveyJSModel::save_survey` → `LlmHooks::onFormSavedMemoryRules` / `onSurveySavedMemoryRules`. The original save runs first and is never changed. The rules are queued only after a saved `finished` submission of a logged-in (non-guest) user while memory is enabled. The hooked model is the submitting section, so the selection always belongs to the section that was submitted.
+- Execution reuses the existing pipeline: `LlmMemoryTriggerService::normalizeFormActionPayload()` + `dispatchForRuleIds(..., async = true)`. The request only starts one detached worker per rule and memory key; missing or disabled rules are skipped; dedupe, ordering and failure handling are unchanged. Errors in the hook are logged (`LLM Memory: form rule trigger failed` / `survey rule trigger failed`) and never change the save result.
+- `LlmMemorySubmissionContextService` builds the labeled snapshot inside the save request (the worker has no session language and no live form model). `fields` stays the flat name → value map; `readable_text` carries the JSON context (question labels, readable choice texts) that `LlmMemoryUpdateService` adds to the prompt as `## Submission Context` for `form_action_submit` payloads.
+- SurveyJS is a separate plugin. If it is installed after this plugin, run `server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache (see the user guide).
+- Form actions with `llm_memory_update` keep working and run in addition; a rule selected in both places runs once per path.
+
+**Core forms and surveys with form actions** — alternatively use form actions:
 
 1. Open the form or survey configuration
 2. Add a form action
@@ -321,7 +332,7 @@ This works in `conversation_context`, LLM script prompts, `llmResponse` template
 2. Open the dedicated `LLM Memory` page.
 3. Create one or more rules in the `Rules` tab.
 4. Edit the rule prompt in Prompt Lab from that page.
-5. For core forms and surveys, add a `llm_memory_update` form action and select the rule key.
+5. For core forms and surveys, select the rules in `llm_memory_rule_ids` on the section (or add a `llm_memory_update` form action and select the rule key).
 7. For `llmChat` without data saving, configure `memory_rule_keys` on the section.
 8. Load memory explicitly through `data_config` in prompts or content (see above).
 9. Use the dedicated memory page tabs to:
@@ -454,6 +465,7 @@ The core `LlmService` handles conversations, messages, rate limiting, and API ca
 - **LlmMemoryConfigService** — Module-level configuration loader and rule registry
 - **LlmMemoryStorageService** — DataTable initialization, read/write with dedupe and stale ordering guards
 - **LlmMemoryTriggerService** — Source-agnostic payload normalization and rule dispatching
+- **LlmMemorySubmissionContextService** — Labeled snapshot (field / question labels, readable choice texts) of a finished form or SurveyJS submission (v1.5.0)
 - **LlmMemoryUpdateService** — Direct mapping and LLM-summarization execution (async via `llm_memory_worker.php`)
 - **LlmMemoryAdminService** — Admin UI data (overview, user list, history, manual actions)
 
