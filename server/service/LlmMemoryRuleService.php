@@ -651,7 +651,7 @@ class LlmMemoryRuleService extends BaseLlmService
     {
         $llm_config = $this->getLlmConfig();
         $source_type_options = array(
-            array('value' => LLM_MEMORY_SOURCE_FORM_ACTION, 'label' => 'Form action submit'),
+            array('value' => LLM_MEMORY_SOURCE_FORM_ACTION, 'label' => 'Form / survey submit'),
             array('value' => LLM_MEMORY_SOURCE_LOGIN, 'label' => 'Login'),
             array('value' => LLM_MEMORY_SOURCE_PROFILE_NAME, 'label' => 'Profile name change'),
         );
@@ -1016,55 +1016,43 @@ class LlmMemoryRuleService extends BaseLlmService
             }
         }
 
-        $tables = array(
-            'current_rows' => LLM_MEMORY_DEFAULT_TABLE,
-            'history_rows' => LLM_MEMORY_DEFAULT_HISTORY_TABLE,
+        // Memory rows live in the core data-table model (dataTables > dataRows > dataCells),
+        // not in physical tables. Soft-deleted rows do not count as usage.
+        $fields_by_table = array(
+            LLM_MEMORY_DEFAULT_TABLE => 'current_rows',
+            LLM_MEMORY_DEFAULT_HISTORY_TABLE => 'history_rows',
         );
-        foreach ($tables as $field => $table_name) {
-            if (!$this->tableExists($table_name)) {
+        $params = array_keys($fields_by_table);
+        $deleted_filter = '';
+        $deleted_trigger_id = $this->db->get_lookup_id_by_value(actionTriggerTypes, actionTriggerTypes_deleted);
+        if ($deleted_trigger_id) {
+            $deleted_filter = ' AND IFNULL(dr.id_actionTriggerTypes, 0) <> ?';
+            $params[] = (int)$deleted_trigger_id;
+        }
+
+        $rows = $this->db->query_db(
+            "SELECT dt.`name` AS table_name, cell.`value` AS memory_key, COUNT(*) AS row_count
+             FROM dataTables dt
+             INNER JOIN dataRows dr ON dr.id_dataTables = dt.id
+             INNER JOIN dataCols dc ON dc.id_dataTables = dt.id AND dc.`name` = 'memory_key'
+             INNER JOIN dataCells cell ON cell.id_dataRows = dr.id AND cell.id_dataCols = dc.id
+             WHERE dt.`name` IN (?, ?){$deleted_filter}
+             GROUP BY dt.`name`, cell.`value`",
+            $params
+        );
+        foreach ((array)$rows as $row) {
+            $code = $this->normalizeMemoryKeyCode($row['memory_key'] ?? '');
+            $field = $fields_by_table[$row['table_name'] ?? ''] ?? null;
+            if ($code === '' || $field === null) {
                 continue;
             }
-            try {
-                $rows = $this->db->query_db(
-                    "SELECT memory_key, COUNT(*) AS row_count
-                     FROM {$table_name}
-                     GROUP BY memory_key"
-                );
-                foreach ((array)$rows as $row) {
-                    $code = $this->normalizeMemoryKeyCode($row['memory_key'] ?? '');
-                    if ($code === '') {
-                        continue;
-                    }
-                    if (!isset($usage[$code])) {
-                        $usage[$code] = array();
-                    }
-                    $usage[$code][$field] = (int)($row['row_count'] ?? 0);
-                }
-            } catch (Exception $e) {
-                // table might not exist yet on fresh installs
+            if (!isset($usage[$code])) {
+                $usage[$code] = array();
             }
+            $usage[$code][$field] = (int)($row['row_count'] ?? 0);
         }
 
         return $usage;
-    }
-
-    /**
-     * Check whether a database table exists by name.
-     *
-     * @param string $table_name Table name to check.
-     * @return bool True if the table exists.
-     */
-    private function tableExists($table_name)
-    {
-        try {
-            $row = $this->db->query_db_first(
-                "SHOW TABLES LIKE :table_name",
-                array(':table_name' => $table_name)
-            );
-            return !empty($row);
-        } catch (Exception $e) {
-            return false;
-        }
     }
 
     /**
