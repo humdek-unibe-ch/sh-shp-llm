@@ -16,6 +16,8 @@
 --   6. Adds `llm_memory_rule_ids` multi-select on the form styles (and on SurveyJS
 --      when that plugin is installed) plus the hooks that run the selected memory
 --      rules after a finished submission
+--   7. Adds `floating_shortcuts_hide_delay` (seconds, default 2) on llmChat for
+--      how long the floating shortcut tray stays visible after mouse leave / blur
 -- =====================================================
 
 START TRANSACTION;
@@ -292,5 +294,19 @@ SELECT
     20
 FROM `styles` s
 WHERE s.`name` = 'surveyJS';
+
+-- ---------------------------------------------------------------------
+-- Floating shortcut tray hide delay (seconds)
+-- ---------------------------------------------------------------------
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`)
+VALUES (NULL, 'floating_shortcuts_hide_delay', get_field_type_id('number'), '0');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
+VALUES (
+    get_style_id('llmChat'),
+    get_field_id('floating_shortcuts_hide_delay'),
+    '2',
+    'How long (in seconds) the floating shortcut pills stay visible after the mouse leaves the floating button (or focus leaves the control). Default: 2. Set to 0 to hide immediately. Only applies when `enable_floating_button` is on and `llm_chat_shortcuts` is not empty.'
+);
 
 COMMIT;

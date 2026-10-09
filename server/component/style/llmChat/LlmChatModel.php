@@ -415,6 +415,28 @@ class LlmChatModel extends StyleModel
     public function getFloatingChatTitle() { return $this->get_db_field('floating_chat_title', 'AI Assistant'); }
 
     /**
+     * Seconds the floating shortcut tray stays open after mouse leave / blur.
+     * CMS field `floating_shortcuts_hide_delay` (default 2). Clamped to 0–60.
+     *
+     * @return float
+     */
+    public function getFloatingShortcutsHideDelay()
+    {
+        $raw = $this->get_db_field('floating_shortcuts_hide_delay', '2');
+        if (!is_numeric($raw)) {
+            return 2.0;
+        }
+        $seconds = (float)$raw;
+        if ($seconds < 0) {
+            return 0.0;
+        }
+        if ($seconds > 60) {
+            return 60.0;
+        }
+        return $seconds;
+    }
+
+    /**
      * Parse the llm_chat_shortcuts JSON field into a normalized array.
      *
      * Expected shape:
@@ -612,6 +634,7 @@ class LlmChatModel extends StyleModel
             'floatingButtonLabel' => $this->getFloatingButtonLabel(),
             'floatingChatTitle' => $this->getFloatingChatTitle(),
             'floatingShortcuts' => $this->getFloatingShortcuts(),
+            'floatingShortcutsHideDelay' => $this->getFloatingShortcutsHideDelay(),
             'messagePlaceholder' => $f('message_placeholder', 'Type your message here...'),
             'noConversationsMessage' => $f('no_conversations_message', 'No conversations yet. Start a new chat!'),
             'newConversationTitleLabel' => $f('new_conversation_title_label', 'New Conversation'),

@@ -338,6 +338,11 @@ export interface LlmChatConfig {
   floatingChatTitle: string;
   /** Quick-start message shortcuts for the floating button */
   floatingShortcuts?: LlmChatShortcut[];
+  /**
+   * Seconds the shortcut tray stays visible after mouse leave / blur.
+   * Default 2. CMS field `floating_shortcuts_hide_delay`.
+   */
+  floatingShortcutsHideDelay?: number;
   /** Whether the chat is currently in floating mode */
   isFloatingMode: boolean;
   /** Force scroll to bottom (used by floating chat when panel opens) */
@@ -470,6 +475,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   floatingButtonLabel: '',
   floatingChatTitle: 'AI Assistant',
   floatingShortcuts: [],
+  floatingShortcutsHideDelay: 2,
   isFloatingMode: false,
   forceScrollToBottom: false,
   messagePlaceholder: 'Type your message...',

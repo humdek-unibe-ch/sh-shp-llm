@@ -124,6 +124,13 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
 
   // Generate unique IDs based on section_id for multiple floating buttons
   const uniqueId = useMemo(() => `llm-float-${config.sectionId || 'default'}`, [config.sectionId]);
+
+  // CMS field floating_shortcuts_hide_delay (seconds, default 2) → ms for setTimeout
+  const shortcutTrayHideDelayMs = useMemo(() => {
+    const seconds = Number(config.floatingShortcutsHideDelay);
+    const safe = Number.isFinite(seconds) && seconds >= 0 ? seconds : 2;
+    return Math.min(safe, 60) * 1000;
+  }, [config.floatingShortcutsHideDelay]);
   
   // Calculate z-index offset for stacking multiple buttons
   const zIndexOffset = useMemo(
@@ -247,11 +254,11 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
           }
         }}
         onMouseLeave={() => {
-          // Delay hiding the tray by 5 seconds to allow clicking shortcuts
+          // Delay hiding the tray so users can click shortcuts (CMS: floating_shortcuts_hide_delay)
           shortcutTrayTimeoutRef.current = window.setTimeout(() => {
             setShowShortcutTray(false);
             shortcutTrayTimeoutRef.current = null;
-          }, 5000);
+          }, shortcutTrayHideDelayMs);
         }}
         onFocus={() => {
           if (shortcutTrayTimeoutRef.current) {
@@ -268,7 +275,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
             shortcutTrayTimeoutRef.current = window.setTimeout(() => {
               setShowShortcutTray(false);
               shortcutTrayTimeoutRef.current = null;
-            }, 5000);
+            }, shortcutTrayHideDelayMs);
           }
         }}
       >

@@ -40,6 +40,12 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   exists. `server/db/optional/enable_surveyjs_llm_memory_rules.sql` is the
   separate, idempotent snippet to run once when SurveyJS is installed after this
   plugin (clear the SelfHelp cache afterwards, as for the rest of `v1.5.0.sql`).
+- **Floating shortcut tray hide delay.** New `llmChat` number field
+  `floating_shortcuts_hide_delay` (default **2** seconds) controls how long the
+  shortcut pills stay visible after mouse leave / blur on the floating button.
+  Exposed as `config.floatingShortcutsHideDelay` to React (`FloatingChat`).
+  Clamped to 0–60; `0` hides immediately. Clear the CMS styles/fields cache after
+  migrating.
 - **Memory activity feed.** The Memory → Activity tab is now a paginated,
   filterable event log (`memory_activity` action → `LlmMemoryAdminService::
   getActivity`, `LlmMemoryStorageService::getHistoryActivity`). Each event shows
