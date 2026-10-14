@@ -14,6 +14,8 @@ export interface LlmScript {
   data_config: string;
   test_variables: string;
   async: number | boolean;
+  /** When true, stitch script images into one labeled collage; when false, first 4 only. */
+  combine_images?: number | boolean;
   model: string | null;
   temperature: string | null;
   max_tokens: number | null;
@@ -157,6 +159,7 @@ export function createScriptsApi() {
       model?: string;
       temperature?: string;
       max_tokens?: string;
+      combine_images?: number | string;
     }): Promise<Record<string, unknown>> {
       const formData = new FormData();
       formData.append('action', 'test');
