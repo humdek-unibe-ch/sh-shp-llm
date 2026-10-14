@@ -717,6 +717,24 @@ class LlmHooks extends BaseHooks
         );
         $linked_record_id = $this->resolveLlmScriptLinkedRecordId($args);
 
+        // Persist survey/form images to the LLM upload folder before writing the
+        // async args file so base64 never lands in the temp JSON payload.
+        if (is_array($form_values) && !empty($form_values)) {
+            require_once __DIR__ . '/../service/LlmScriptImageService.php';
+            $combineImages = !empty($script_info['combine_images']);
+            $apiMax = defined('LLM_MAX_FILES_PER_MESSAGE') ? (int)LLM_MAX_FILES_PER_MESSAGE : 4;
+            $sourceMax = $combineImages
+                ? (defined('LLM_MAX_SCRIPT_SOURCE_IMAGES') ? (int)LLM_MAX_SCRIPT_SOURCE_IMAGES : 12)
+                : $apiMax;
+            $imageService = new LlmScriptImageService($sourceMax);
+            $imageResult = $imageService->materializeVariables(
+                $form_values,
+                $args['user']['id_users'],
+                $script_info['id'] ?? 0
+            );
+            $form_values = $imageResult['variables'];
+        }
+
         $worker_args = [
             'script_id' => $script_info['id'],
             'form_values' => $form_values,

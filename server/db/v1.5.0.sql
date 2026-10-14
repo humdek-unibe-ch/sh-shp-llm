@@ -16,6 +16,7 @@
 --   6. Adds `llm_memory_rule_ids` multi-select on the form styles (and on SurveyJS
 --      when that plugin is installed) plus the hooks that run the selected memory
 --      rules after a finished submission
+--   7. Adds `llm_scripts.combine_images` (optional labeled collage for vision scripts)
 -- =====================================================
 
 START TRANSACTION;
@@ -292,5 +293,12 @@ SELECT
     20
 FROM `styles` s
 WHERE s.`name` = 'surveyJS';
+
+-- Optional labeled collage for multi-image LLM scripts (off = send first 4 only)
+CALL add_table_column(
+    'llm_scripts',
+    'combine_images',
+    "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'When 1, stitch script images into one labeled collage with layout/EXIF guide; when 0, send at most LLM_MAX_FILES_PER_MESSAGE (4) separate images'"
+);
 
 COMMIT;
