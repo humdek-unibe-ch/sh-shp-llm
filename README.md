@@ -40,10 +40,13 @@ This plugin provides a general-purpose LLM integration layer for SelfHelp. It is
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | SelfHelp | v7.8.0+ | Core CMS framework |
-| PHP | 8.2+ | With cURL and GD extensions |
+| PHP | 8.2+ | With **cURL** and **GD** extensions |
+| PHP `exif` | optional* | Bundled PHP extension (`exif_read_data`); needed for LLM-script image EXIF (datetime, camera, GPS) as prompt text |
 | MySQL | 8.0+ | InnoDB, utf8mb4 |
 | Node.js | 16+ | For building frontend assets |
 | LLM API | Any | GPUStack, BFH, or any OpenAI-compatible endpoint |
+
+\*Vision image attach/resize works with GD alone. Without `exif`, script image runs still work; EXIF metadata is simply omitted from the prompt. Enable with `extension=exif` in `php.ini` (Windows) or `php-exif` package on Linux. Check: `php -m | grep -i exif`.
 
 The LLM API must expose `/v1/chat/completions` and `/v1/models` endpoints following the OpenAI API format.
 
@@ -413,6 +416,8 @@ Scripts can be triggered:
 - **Via Callback** — Through the `CallbackLlm.php` endpoint for async results
 
 Each script maintains a single conversation in `llmConversations` (linked via `id_llm_scripts`). Successive executions append messages to the same conversation.
+
+**Images (v1.5.0+):** named form/survey variables that contain base64 data-URLs, SurveyJS file JSON, or `?file_path=` uploads are materialized under `upload/{userId}/scripts/{scriptId}/` and sent as vision attachments (use a vision model). Bookkeeping fields such as `_json` are skipped. Scripts Manager option **Combine images into collage** (`llm_scripts.combine_images`): when on, 2+ images become one labeled collage (`Image 1…N`) with a layout + EXIF guide in the prompt; when off (default), only the **first 4** images are sent. Optional PHP **`exif`** reads datetime/camera/GPS from the original files (API image bytes are re-encoded and lose EXIF).
 
 ## Architecture
 

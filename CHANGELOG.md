@@ -6,100 +6,18 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Added
 
-- **Anthropic provider.** Native Messages API support for
-  `https://api.anthropic.com/v1` (`AnthropicProvider`): Anthropic auth headers,
-  OpenAI-style payload conversion (including images), normalized responses
-  (text + thinking), and model listing. Model fetches now use each provider’s
-  auth helpers (fixes Anthropic 401 when only Bearer was sent).
-- **OpenAI Chat Completions adapter.** `OpenAIProvider` (OpenAI / Azure hosts)
-  remaps `max_tokens` → `max_completion_tokens` and applies OpenAI
-  `reasoning_effort`. GPUStack and other OpenAI-compatible hosts keep
-  `max_tokens`.
-- **Reasoning effort.** New CMS / module field `llm_reasoning_effort`
-  (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) on
-  `llmChat`, `llmFormRecord`, `llmFormLog`, and module defaults. Mapped per
-  provider (OpenAI Chat Completions, Anthropic `output_config.effort`; stripped
-  for GPUStack).
-- **Memory rules directly on forms and surveys.** New optional multi-select CMS
-  field `llm_memory_rule_ids` on `formUserInput`, `formUserInputRecord`,
-  `formUserInputLog`, `llmFormRecord`, `llmFormLog` and `surveyJS`: pick the
-  memory rules that run when the form / survey is finished, without a form
-  action. Hooks on `FormUserInputModel::save_user_input` / `update_user_input`
-  and `SurveyJSModel::save_survey` (`LlmHooks::onFormSavedMemoryRules` /
-  `onSurveySavedMemoryRules`) queue the rules in the existing async memory
-  worker after a successful `finished` save of a logged-in user; missing or
-  disabled rules are skipped, an empty selection changes nothing, and form
-  actions with `llm_memory_update` keep running in addition.
-- **Labeled submission context for memory.** New
-  `LlmMemorySubmissionContextService` snapshots the submission when it is saved
-  (form field labels and readable choice texts; SurveyJS question titles,
-  choices, matrices, dynamic panels, comments) and `LlmMemoryUpdateService` adds
-  it to the memory prompt as `## Submission Context` (only for
-  `form_action_submit` payloads that carry it, so form actions are unchanged).
-- **SurveyJS installed later.** The migration wires SurveyJS only when its style
-  exists. `server/db/optional/enable_surveyjs_llm_memory_rules.sql` is the
-  separate, idempotent snippet to run once when SurveyJS is installed after this
-  plugin (clear the SelfHelp cache afterwards, as for the rest of `v1.5.0.sql`).
-- **Memory activity feed.** The Memory → Activity tab is now a paginated,
-  filterable event log (`memory_activity` action → `LlmMemoryAdminService::
-  getActivity`, `LlmMemoryStorageService::getHistoryActivity`). Each event shows
-  the participant (name, email, code, id), the rule label and memory key, what
-  triggered it (form / survey submit with form name and record, llmChat form
-  submit, login, profile name change, or an admin action with the acting
-  admin) and the result. Filters: participant (name, email, code or id), rule
-  (including manual admin actions without a rule), memory key, trigger, status
-  and event date range.
-- **Form / survey sections as memory sources.** The Memory → Sources tab and the
-  per-rule source counts now include sections that select rules through
-  `llm_memory_rule_ids` (page, style and an "Open section" CMS link), not only
-  form actions and llmChat fallbacks. Source cards are labelled by category.
+- **Vision image support in LLM scripts.** Scripts can now send uploaded form and SurveyJS images (including base64 data URLs and file paths) to vision-capable models, automatically extracting EXIF metadata (capture time, camera, GPS) into the prompt context.
+- **Labeled image collage mode for scripts (`combine_images`).** Optional setting in Scripts Manager to stitch multiple images (up to 12) into a single high-resolution, labeled `Image N` grid with a matching prompt and EXIF legend.
+- **Anthropic & OpenAI provider support.** Added native Anthropic Messages API support (`api.anthropic.com`) alongside OpenAI Chat Completions compatibility (`max_completion_tokens` and reasoning effort mapping).
+- **Reasoning effort configuration (`llm_reasoning_effort`).** Configurable reasoning effort level (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) in module defaults and on `llmChat`, `llmFormRecord`, and `llmFormLog` styles.
+- **Direct memory rules on forms and surveys (`llm_memory_rule_ids`).** Select memory rules directly on `formUserInput`, `formUserInputRecord`, `formUserInputLog`, `llmFormRecord`, `llmFormLog`, and `surveyJS` sections to run automatically on submission with full field/question label context, without needing a separate form action.
+- **Memory Activity log & source tracking.** Filterable, paginated activity feed in the Memory admin console (by participant, rule, memory key, trigger, status, and date range), plus visibility for form and survey sections bound via `llm_memory_rule_ids`.
 
 ### Changed
 
-- **Default model** is `gpt-oss-120b`. Migration updates the legacy stock value
-  `qwen3-vl-8b-instruct`; custom admin selections are preserved.
-- **Module defaults apply to styles.** Saving module model / temperature /
-  max tokens / reasoning effort updates `styles_fields` defaults for
-  `llmChat`, `llmFormRecord`, and `llmFormLog`. Empty section fields fall back
-  to module settings at runtime; existing section values are unchanged.
-- **Interactive chat owns the section model.** Chat turns resolve via
-  `resolveConversation` using the section CMS `llm_model` (client POST `model`
-  is ignored). A model mismatch starts a new conversation. Forms / evals keep
-  sticky `getOrCreateConversationForModel`.
-
-### Fixed
-
-- **Cross-conversation message bleed.** After a CMS model change (or missing
-  conversation id), chat no longer resumes an unrelated prior thread or appends
-  the reply onto the previous UI history. Messages reload from the server after
-  send; API calls use the conversation’s stored model.
-- **Default model not persisted.** Admin → LLM Configuration could report
-  success while storing nothing when `llm_default_model` / `select-llm-model`
-  were missing from older installs. Migration repairs field wiring; settings
-  save also self-heals and reports failed field names.
-- **Settings model dropdown blank.** A saved default missing from the live
-  model list is shown as `(current)` instead of an empty selection.
-- **CMS model list performance.** Property pages list models in parallel with
-  a short timeout and cache (~5 min), and exclude TTS ids from chat model
-  lists.
-- **CMS model select height.** `llm_model` / `speech_to_text_model` use
-  `max` → 8 so bootstrap-select menus stay compact (requires matching core
-  SelfHelp `select` fix for `data-size` / `max`).
-- **OpenAI HTTP 400 on `max_tokens`.** Current OpenAI chat models reject legacy
-  `max_tokens`; the OpenAI adapter sends `max_completion_tokens`. Provider
-  `error.message` values are surfaced when present.
-- **Incorrect vision capability flags.** Vision detection no longer relies on
-  two hard-coded GPUStack ids. Scoped ids are normalized, then checked via
-  provider heuristics and vision allow-lists / patterns (OpenAI and Claude 3+
-  included).
-- **Memory keys always showed 0 rows.** Current / history row counts queried
-  physical tables that do not exist (memory lives in the `llm_memory` and
-  `llm_memory_history` data tables), so every key reported 0 rows and looked
-  deletable. Counts now come from the data tables and ignore soft-deleted rows.
-- **"User #N" instead of the participant name.** The Activity feed looked users
-  up by integer id while the lookup was keyed by the zero-padded id string the
-  database returns, so the name never matched. User lookups are now keyed by
-  integer id.
+- **Default model updated to `gpt-oss-120b`.** Module-level defaults for model, temperature, max tokens, and reasoning effort now propagate to `llmChat`, `llmFormRecord`, and `llmFormLog` style defaults.
+- **Strict section model binding in chat.** Interactive `llmChat` sections always use the model configured on the section and start a fresh conversation when the section model changes.
+- **Image attachment limit per message (`LLM_MAX_FILES_PER_MESSAGE`).** Set to 4 to match vision provider limits when collage mode is disabled.
 
 ## [1.4.1]
 
