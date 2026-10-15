@@ -193,6 +193,13 @@ class LlmApiFormatterService extends BaseLlmService
     const MAX_IMAGE_DIMENSION = 768;
 
     /**
+     * Maximum dimension (width or height) in pixels for multi-image collages.
+     * Collages contain up to 12 panels (e.g. 4x3 grid); keeping a higher ceiling
+     * prevents per-panel details and "Image N" headers from becoming illegible.
+     */
+    const MAX_COLLAGE_DIMENSION = 3072;
+
+    /**
      * Maximum image file size in bytes (10MB) - original file limit
      * Files larger than this are rejected outright
      */
@@ -211,10 +218,20 @@ class LlmApiFormatterService extends BaseLlmService
     const MAX_OUTPUT_SIZE = 750000;
 
     /**
+     * Maximum allowed output size in bytes for a multi-panel collage (~2.5MB binary).
+     */
+    const MAX_COLLAGE_OUTPUT_SIZE = 2500000;
+
+    /**
      * JPEG quality for resized images (0-100)
      * 70% provides good balance of quality and size
      */
     const RESIZE_JPEG_QUALITY = 70;
+
+    /**
+     * Initial JPEG quality for multi-panel collages (0-100).
+     */
+    const COLLAGE_JPEG_QUALITY = 85;
 
     /**
      * Encode image file as base64 data URL for vision API
@@ -252,9 +269,10 @@ class LlmApiFormatterService extends BaseLlmService
         }
 
         $mimeType = $attachment['type'] ?? LlmFileUtility::detectMimeType($fullPath) ?? 'image/jpeg';
+        $isCollage = !empty($attachment['is_collage']);
         
-        // ALWAYS optimize images for LLM - smaller is better for vision models
-        $imageData = $this->getOptimizedImageData($fullPath, $mimeType, $originalName);
+        // Optimize image for LLM while preserving multi-panel collage legibility
+        $imageData = $this->getOptimizedImageData($fullPath, $mimeType, $originalName, $isCollage);
         
         if ($imageData === false || $imageData === null) {
             return [
@@ -282,16 +300,17 @@ class LlmApiFormatterService extends BaseLlmService
     /**
      * Get optimized image data for API
      * 
-     * ALWAYS resizes and optimizes images for vision models.
-     * Vision models work well with smaller images (768px max dimension).
-     * Ensures output is under 1MB for optimal token usage.
+     * Resizes and optimizes images for vision models.
+     * Single images use 768px max dimension; labeled multi-panel collages use
+     * MAX_COLLAGE_DIMENSION so individual panels and "Image N" labels stay readable.
      *
      * @param string $fullPath Full path to image file
      * @param string $mimeType Original MIME type
      * @param string $originalName Original filename for logging
+     * @param bool $isCollage Whether the image is a multi-panel collage
      * @return string|false Optimized image data or false on failure
      */
-    private function getOptimizedImageData($fullPath, $mimeType, $originalName)
+    private function getOptimizedImageData($fullPath, $mimeType, $originalName, $isCollage = false)
     {
         // Check if GD is available
         if (!function_exists('imagecreatefromstring')) {
@@ -315,15 +334,25 @@ class LlmApiFormatterService extends BaseLlmService
 
         $width = $imageInfo[0];
         $height = $imageInfo[1];
+        $maxDimension = $isCollage ? self::MAX_COLLAGE_DIMENSION : self::MAX_IMAGE_DIMENSION;
+        $maxOutputSize = $isCollage ? self::MAX_COLLAGE_OUTPUT_SIZE : self::MAX_OUTPUT_SIZE;
+
+        // If a pre-rendered JPEG collage already fits within collage bounds, avoid a second lossy pass
+        if ($isCollage && $mimeType === 'image/jpeg'
+            && $width <= $maxDimension && $height <= $maxDimension
+            && strlen($imageData) <= $maxOutputSize
+        ) {
+            return $imageData;
+        }
         
-        // ALWAYS resize to max dimension for optimal LLM processing
+        // Resize to max dimension for optimal LLM processing
         $newWidth = $width;
         $newHeight = $height;
         
-        if ($width > self::MAX_IMAGE_DIMENSION || $height > self::MAX_IMAGE_DIMENSION) {
-            $ratio = min(self::MAX_IMAGE_DIMENSION / $width, self::MAX_IMAGE_DIMENSION / $height);
-            $newWidth = (int)($width * $ratio);
-            $newHeight = (int)($height * $ratio);
+        if ($width > $maxDimension || $height > $maxDimension) {
+            $ratio = min($maxDimension / $width, $maxDimension / $height);
+            $newWidth = max(1, (int)($width * $ratio));
+            $newHeight = max(1, (int)($height * $ratio));
         }
 
         // Create image resource from string
@@ -358,16 +387,17 @@ class LlmApiFormatterService extends BaseLlmService
             return false;
         }
 
-        // Progressive quality reduction to ensure output is under MAX_OUTPUT_SIZE
-        $quality = self::RESIZE_JPEG_QUALITY;
+        // Progressive quality reduction to ensure output is under maxOutputSize
+        $quality = $isCollage ? self::COLLAGE_JPEG_QUALITY : self::RESIZE_JPEG_QUALITY;
+        $minQuality = $isCollage ? 50 : 30;
         $resizedData = null;
         
-        while ($quality >= 30) {
+        while ($quality >= $minQuality) {
             ob_start();
             imagejpeg($dstImage, null, $quality);
             $resizedData = ob_get_clean();
             
-            if (strlen($resizedData) <= self::MAX_OUTPUT_SIZE) {
+            if (strlen($resizedData) <= $maxOutputSize) {
                 break; // Size is acceptable
             }
             
@@ -376,13 +406,13 @@ class LlmApiFormatterService extends BaseLlmService
 
         imagedestroy($dstImage);
 
-        // If still too large after quality reduction, resize dimensions further
-        if ($resizedData && strlen($resizedData) > self::MAX_OUTPUT_SIZE) {
+        // If still too large after quality reduction, reduce dimensions further
+        if ($resizedData && strlen($resizedData) > $maxOutputSize) {
             $this->logWarning("Image still too large after quality reduction, reducing dimensions further: {$originalName}");
             
-            // Reduce dimensions by 50%
-            $smallerWidth = (int)($newWidth * 0.5);
-            $smallerHeight = (int)($newHeight * 0.5);
+            $scaleFactor = $isCollage ? 0.75 : 0.5;
+            $smallerWidth = max(1, (int)($newWidth * $scaleFactor));
+            $smallerHeight = max(1, (int)($newHeight * $scaleFactor));
             
             $srcImage = @imagecreatefromstring($imageData);
             if ($srcImage !== false) {
@@ -394,7 +424,7 @@ class LlmApiFormatterService extends BaseLlmService
                     imagedestroy($srcImage);
                     
                     ob_start();
-                    imagejpeg($dstImage, null, 60);
+                    imagejpeg($dstImage, null, $isCollage ? 70 : 60);
                     $resizedData = ob_get_clean();
                     imagedestroy($dstImage);
                 }

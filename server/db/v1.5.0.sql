@@ -18,6 +18,7 @@
 --      rules after a finished submission
 --   7. Adds `floating_shortcuts_hide_delay` (seconds, default 2) on llmChat for
 --      how long the floating shortcut tray stays visible after mouse leave / blur
+--   8. Adds `llm_scripts.combine_images` (optional labeled collage for vision scripts)
 -- =====================================================
 
 START TRANSACTION;
@@ -295,18 +296,11 @@ SELECT
 FROM `styles` s
 WHERE s.`name` = 'surveyJS';
 
--- ---------------------------------------------------------------------
--- Floating shortcut tray hide delay (seconds)
--- ---------------------------------------------------------------------
-INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`)
-VALUES (NULL, 'floating_shortcuts_hide_delay', get_field_type_id('number'), '0');
-
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
-VALUES (
-    get_style_id('llmChat'),
-    get_field_id('floating_shortcuts_hide_delay'),
-    '2',
-    'How long (in seconds) the floating shortcut pills stay visible after the mouse leaves the floating button (or focus leaves the control). Default: 2. Set to 0 to hide immediately. Only applies when `enable_floating_button` is on and `llm_chat_shortcuts` is not empty.'
+-- Optional labeled collage for multi-image LLM scripts (off = send first 4 only)
+CALL add_table_column(
+    'llm_scripts',
+    'combine_images',
+    "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'When 1, stitch script images into one labeled collage with layout/EXIF guide; when 0, send at most LLM_MAX_FILES_PER_MESSAGE (4) separate images'"
 );
 
 COMMIT;

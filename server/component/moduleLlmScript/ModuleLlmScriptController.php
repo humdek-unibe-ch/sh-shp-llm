@@ -173,6 +173,7 @@ class ModuleLlmScriptController extends BaseController
             $script = $_POST['script'] ?? '';
             $test_variables = $_POST['test_variables'] ?? '';
             $async = intval($_POST['async'] ?? 0);
+            $combine_images = intval($_POST['combine_images'] ?? 0);
             $data_config = $_POST['data_config'] ?? '';
             $model = (!empty($_POST['model'])) ? $_POST['model'] : null;
             $temperature = ($_POST['temperature'] ?? '') !== '' ? floatval($_POST['temperature']) : null;
@@ -183,7 +184,8 @@ class ModuleLlmScriptController extends BaseController
 
             $res = $this->scriptService->update_script(
                 $sid, $name, $script, $test_variables,
-                $async, $data_config, $model, $temperature, $max_tokens, $refresh_sections, $prompt_change_note, $prompt_meta_json
+                $async, $data_config, $model, $temperature, $max_tokens, $refresh_sections, $prompt_change_note, $prompt_meta_json,
+                $combine_images
             );
 
             if ($res) {
@@ -250,10 +252,13 @@ class ModuleLlmScriptController extends BaseController
             $model = (!empty($_POST['model'])) ? $_POST['model'] : null;
             $temperature = ($_POST['temperature'] ?? '') !== '' ? floatval($_POST['temperature']) : null;
             $max_tokens = ($_POST['max_tokens'] ?? '') !== '' ? intval($_POST['max_tokens']) : null;
+            $combine_images = array_key_exists('combine_images', $_POST)
+                ? (bool)intval($_POST['combine_images'])
+                : null;
 
             $result = $this->scriptService->execute_llm_script(
                 $script_content, $data_config, $test_variables, ($_SESSION['id_user'] ?? null),
-                $model, $temperature, $max_tokens, $sid, $script_name
+                $model, $temperature, $max_tokens, $sid, $script_name, $combine_images
             );
 
             $this->sendJsonResponse($result);

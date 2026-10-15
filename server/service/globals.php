@@ -139,7 +139,12 @@ define('LLM_EVAL_TYPE_HUMAN_REVIEW', 'human_review');
  * Enforced by LlmFileUploadService during chat attachment handling.
  * ========================================================================= */
 define('LLM_MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
-define('LLM_MAX_FILES_PER_MESSAGE', 5); // Maximum files per message
+// Hard API limit for vision prompts (e.g. GPUStack / OpenAI-compatible): "At most 4 image(s)".
+define('LLM_MAX_FILES_PER_MESSAGE', 4); // Maximum files/images per chat/API message
+// Script runs may collect more sources, then stitch into one labeled collage (1 API image).
+define('LLM_MAX_SCRIPT_SOURCE_IMAGES', 12);
+// Per-panel max edge in the collage (pixels). Kept high so panels stay readable.
+define('LLM_SCRIPT_COLLAGE_CELL_MAX', 1024);
 
 // Allowed file extensions by category
 define('LLM_ALLOWED_IMAGE_EXTENSIONS', ['jpg', 'jpeg', 'png', 'gif', 'webp']);

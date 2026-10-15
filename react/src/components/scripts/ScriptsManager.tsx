@@ -68,6 +68,7 @@ interface ScriptFormState {
   script: string;
   test_variables: string;
   async: number;
+  combine_images: number;
   data_config: string;
   model: string;
   temperature: string;
@@ -123,6 +124,7 @@ function getEmptyForm(): ScriptFormState {
     script: '',
     test_variables: '',
     async: 0,
+    combine_images: 0,
     data_config: '',
     model: '',
     temperature: '',
@@ -333,6 +335,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
       script: full.script || '',
       test_variables: full.test_variables || '{\n  \n}',
       async: full.async ? 1 : 0,
+      combine_images: full.combine_images ? 1 : 0,
       data_config: full.data_config || '',
       model: full.model || '',
       temperature: full.temperature != null ? String(full.temperature) : '',
@@ -390,6 +393,7 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
         script: form.script,
         test_variables: form.test_variables,
         async: form.async,
+        combine_images: form.combine_images,
         data_config: form.data_config,
         model: form.model || null,
         temperature: form.temperature || null,
@@ -846,6 +850,22 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
                   label={<span className="small">Async (run via cron, not immediately)</span>}
                   checked={!!form.async}
                   onChange={(event) => setForm((prev) => ({ ...prev, async: event.target.checked ? 1 : 0 }))}
+                />
+              </Form.Group>
+
+              <Form.Group className="mb-2">
+                <Form.Check
+                  type="checkbox"
+                  label={
+                    <span className="small">
+                      Combine images into collage (layout + EXIF guide; otherwise first 4 only)
+                    </span>
+                  }
+                  checked={!!form.combine_images}
+                  onChange={(event) => setForm((prev) => ({
+                    ...prev,
+                    combine_images: event.target.checked ? 1 : 0,
+                  }))}
                 />
               </Form.Group>
 

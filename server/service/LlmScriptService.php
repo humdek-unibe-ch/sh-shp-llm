@@ -6,6 +6,7 @@
 require_once __DIR__ . "/base/BaseLlmService.php";
 require_once __DIR__ . "/LlmService.php";
 require_once __DIR__ . "/LlmPromptRegistryService.php";
+require_once __DIR__ . "/LlmScriptImageService.php";
 
 /**
  * Service for LLM Script execution.
@@ -134,9 +135,10 @@ class LlmScriptService extends BaseLlmService
      * @param int|null $max_tokens Max tokens override
      * @param string|null $refresh_sections JSON array of section IDs
      * @param string|null $prompt_meta_json Prompt registry metadata snapshot
+     * @param int|bool|null $combine_images When set, stitch images into one collage
      * @return int|false Script ID or false on failure
      */
-    public function update_script($sid, $name, $script, $test_variables, $async, $data_config, $model = null, $temperature = null, $max_tokens = null, $refresh_sections = null, $prompt_change_note = null, $prompt_meta_json = null)
+    public function update_script($sid, $name, $script, $test_variables, $async, $data_config, $model = null, $temperature = null, $max_tokens = null, $refresh_sections = null, $prompt_change_note = null, $prompt_meta_json = null, $combine_images = null)
     {
         try {
             $this->db->begin_transaction();
@@ -144,7 +146,7 @@ class LlmScriptService extends BaseLlmService
             if ($current) {
                 $this->update_dataTables_displayName($current['generated_id'], $name);
             }
-            $this->db->update_by_ids(LLM_TABLE_SCRIPTS, array(
+            $update = array(
                 "name" => $name,
                 "script" => $script,
                 "test_variables" => $test_variables,
@@ -154,7 +156,11 @@ class LlmScriptService extends BaseLlmService
                 "temperature" => $temperature,
                 "max_tokens" => $max_tokens,
                 "refresh_sections" => $refresh_sections
-            ), array('id' => $sid));
+            );
+            if ($combine_images !== null) {
+                $update['combine_images'] = (int)((bool)$combine_images);
+            }
+            $this->db->update_by_ids(LLM_TABLE_SCRIPTS, $update, array('id' => $sid));
 
             $updated_script = $this->fetch_script($sid);
             if ($updated_script) {
@@ -199,9 +205,10 @@ class LlmScriptService extends BaseLlmService
      * @param int|null $max_tokens Max tokens override
      * @param int|null $script_id Optional script ID for conversation grouping
      * @param string|null $script_name Optional script name for conversation title
+     * @param bool|null $combine_images Collage mode; null = load from script row when script_id set
      * @return array Result with 'result' (bool), 'data', and 'context' keys
      */
-    public function execute_llm_script($script, $data_config = null, $variables = array(), $id_users = null, $model = null, $temperature = null, $max_tokens = null, $script_id = null, $script_name = null)
+    public function execute_llm_script($script, $data_config = null, $variables = array(), $id_users = null, $model = null, $temperature = null, $max_tokens = null, $script_id = null, $script_name = null, $combine_images = null)
     {
         try {
             if (!is_array($variables) && $variables != null) {
@@ -217,32 +224,6 @@ class LlmScriptService extends BaseLlmService
                 $data_config = array();
             }
 
-            $data_config = $this->db->replace_calced_values($data_config, $variables);
-            $data_config_values = $data_config ? $this->fetch_data($data_config, $id_users) : [];
-            $merged_vars = array_merge($data_config_values, $variables);
-            $prompt = $this->db->replace_calced_values($script, $merged_vars);
-
-            $config = $this->getLlmConfig();
-            $use_model = $model ?: $config['llm_default_model'];
-            $use_temperature = $temperature !== null ? $temperature : $config['llm_temperature'];
-            $use_max_tokens = $max_tokens !== null ? $max_tokens : $config['llm_max_tokens'];
-
-            $execution_context = array(
-                'script_template' => $script,
-                'data_config' => $data_config,
-                'test_variables' => $variables,
-                'data_config_values' => $data_config_values,
-                'merged_variables' => $merged_vars,
-                'interpolated_prompt' => $prompt,
-                'model' => $use_model,
-                'temperature' => $use_temperature,
-                'max_tokens' => $use_max_tokens,
-            );
-
-            $messages = array(
-                array('role' => 'user', 'content' => $prompt)
-            );
-
             $effective_user_id = $id_users ?: ($_SESSION['id_user'] ?? null);
             if (!$effective_user_id) {
                 return array(
@@ -251,17 +232,147 @@ class LlmScriptService extends BaseLlmService
                 );
             }
 
-            $conversation_id = null;
+            // Collage is opt-in per script (Scripts Manager). Off → first 4 only.
+            if ($combine_images === null && $script_id) {
+                $scriptRow = $this->fetch_script($script_id);
+                $combine_images = !empty($scriptRow['combine_images']);
+            }
+            $combine_images = (bool)$combine_images;
+            $apiMax = defined('LLM_MAX_FILES_PER_MESSAGE') ? (int)LLM_MAX_FILES_PER_MESSAGE : 4;
+            $sourceMax = $combine_images
+                ? (defined('LLM_MAX_SCRIPT_SOURCE_IMAGES') ? (int)LLM_MAX_SCRIPT_SOURCE_IMAGES : 12)
+                : $apiMax;
+
+            $data_config = $this->db->replace_calced_values($data_config, $variables);
+            $data_config_values = $data_config ? $this->fetch_data($data_config, $id_users) : [];
+            $merged_vars = array_merge($data_config_values, $variables);
+
+            // Materialize survey/form images (base64 or file paths) into the LLM
+            // upload folder and keep only short markers in the text prompt.
+            $imageService = new LlmScriptImageService($sourceMax);
+            $imageResult = $imageService->materializeVariables(
+                $merged_vars,
+                $effective_user_id,
+                $script_id
+            );
+            $merged_vars = $imageResult['variables'];
+            $promptVars = $imageService->markersForPrompt($merged_vars);
+            $promptVars = $imageService->scrubBase64FromVariables($promptVars);
+            $sourceAttachments = $imageService->attachmentsForStorage($imageResult['attachments']);
+
+            $combineResult = array(
+                'attachments' => $sourceAttachments,
+                'layout_prompt' => '',
+                'combined' => false,
+                'source_count' => count($sourceAttachments),
+            );
+            if ($combine_images && count($sourceAttachments) >= 2) {
+                // Opt-in: stitch into one labeled collage + layout/EXIF guide.
+                $responseIdForCollage = null;
+                foreach ($sourceAttachments as $sa) {
+                    if (!empty($sa['response_id'])) {
+                        $responseIdForCollage = (string)$sa['response_id'];
+                        break;
+                    }
+                }
+                $combineResult = $imageService->combineIntoLabeledCollage(
+                    $sourceAttachments,
+                    $effective_user_id,
+                    $script_id,
+                    $responseIdForCollage
+                );
+            }
+            $attachments = $imageService->attachmentsForStorage($combineResult['attachments']);
+            $prompt = $this->db->replace_calced_values($script, $promptVars);
+            $prompt = $imageService->scrubBase64FromPrompt($prompt);
+            $prompt = $imageService->appendImageGuideToPrompt(
+                $prompt,
+                $combineResult,
+                $sourceAttachments
+            );
+
+            $config = $this->getLlmConfig();
+            $use_model = $model ?: $config['llm_default_model'];
+            $use_temperature = $temperature !== null ? $temperature : $config['llm_temperature'];
+            $use_max_tokens = $max_tokens !== null ? $max_tokens : $config['llm_max_tokens'];
+
+            // gpt-oss-* and other text-only models ignore image_url parts; the prompt
+            // then only contains markers like "[Bild: images vorhanden]" and the model
+            // invents image descriptions. Fail closed when vision is required.
+            $sourceImageCount = (int)($combineResult['source_count'] ?? count($sourceAttachments));
+            if ($sourceImageCount < 1) {
+                $sourceImageCount = count($sourceAttachments);
+            }
+            if (!empty($attachments) && !LlmModelCapabilities::isVisionModel($use_model)) {
+                $visionHint = defined('LLM_VISION_MODELS') && is_array(LLM_VISION_MODELS)
+                    ? implode(', ', LLM_VISION_MODELS)
+                    : 'a vision-capable model (e.g. qwen3-vl-*, gpt-4o, claude-3*)';
+                return array(
+                    "result" => false,
+                    "data" => "Script has "
+                        . $sourceImageCount
+                        . " image attachment(s), but model '{$use_model}' does not support vision. "
+                        . "Use a vision model such as: {$visionHint}. "
+                        . "Images were materialized under upload/ but were not sent to a vision API.",
+                    "image_count" => $sourceImageCount,
+                    "attachments" => $attachments,
+                    "model" => $use_model,
+                );
+            }
+
+            // Collage opted in but GD failed → still over API cap.
+            if (count($attachments) > $apiMax) {
+                return array(
+                    "result" => false,
+                    "data" => "Script has "
+                        . count($attachments)
+                        . " image(s) after materialize, but the vision API allows at most {$apiMax}. "
+                        . ($combine_images
+                            ? "Collage combining failed (GD/image load). Check PHP GD and source image formats."
+                            : "Enable “Combine images into collage” on the script, or reduce attachments."),
+                    "image_count" => count($attachments),
+                    "attachments" => $attachments,
+                    "combine_images" => $combine_images,
+                    "collage_combined" => !empty($combineResult['combined']),
+                );
+            }
+
+            $execution_context = array(
+                'script_template' => $script,
+                'data_config' => $data_config,
+                // Prompt-safe view only (no base64); image fields are markers.
+                'merged_variables' => $promptVars,
+                'interpolated_prompt' => $prompt,
+                'attachments' => $attachments,
+                'image_count' => count($attachments),
+                'source_image_count' => $sourceImageCount,
+                'combine_images' => $combine_images,
+                'collage_combined' => !empty($combineResult['combined']),
+                'model' => $use_model,
+                'temperature' => $use_temperature,
+                'max_tokens' => $use_max_tokens,
+            );
+
+            $messages = $imageService->buildApiMessages(
+                $prompt,
+                $attachments,
+                $this->services,
+                $use_model
+            );
+
             $sent_context = [
                 [
                     'role' => 'system',
                     'content' => json_encode([
                         'script_template' => $script,
                         'data_config' => $data_config,
-                        'test_variables' => $variables,
-                        'data_config_values' => $data_config_values,
-                        'merged_variables' => $merged_vars,
+                        'merged_variables' => $promptVars,
                         'interpolated_prompt' => $prompt,
+                        'attachments' => $attachments,
+                        'image_count' => count($attachments),
+                        'source_image_count' => $sourceImageCount,
+                        'combine_images' => $combine_images,
+                        'collage_combined' => !empty($combineResult['combined']),
                     ])
                 ],
                 ['role' => 'user', 'content' => $prompt]
@@ -286,7 +397,7 @@ class LlmScriptService extends BaseLlmService
                 $conversation_id,
                 'user',
                 $prompt,
-                null,
+                !empty($attachments) ? $attachments : null,
                 $use_model
             );
 
@@ -313,7 +424,8 @@ class LlmScriptService extends BaseLlmService
                     'tokens_used' => $response['usage']['total_tokens'] ?? null,
                     'execution_time_ms' => $execution_time,
                     'raw_response' => json_encode($response),
-                    'logged_message_id' => $response['logged_message_id'] ?? null
+                    'logged_message_id' => $response['logged_message_id'] ?? null,
+                    'image_count' => count($attachments),
                 );
 
                 return array(

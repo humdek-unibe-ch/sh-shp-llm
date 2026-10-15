@@ -159,6 +159,123 @@ class LlmFileNamingService
     }
 
     /**
+     * Relative directory for images materialized during LLM script execution.
+     *
+     * Format: upload/{userId}/scripts/{scriptId}
+     *
+     * @param int $userId User ID
+     * @param int|string $scriptId Script ID (0 when unknown)
+     * @return string Relative path from plugin root
+     */
+    public static function getScriptImageDirectory($userId, $scriptId = 0)
+    {
+        return self::getUserUploadDirectory($userId)
+            . '/scripts/'
+            . (int)$scriptId;
+    }
+
+    /**
+     * Filename for a survey/form image attached to an LLM script run.
+     *
+     * Format:
+     *   u{user}_script{script}_resp_{responseId}_q_{question}[_{origBase}]_{index}_{random}.{ext}
+     *
+     * responseId / question come from survey variables when available so files
+     * can be traced back to a specific response and question.
+     *
+     * @param int $userId User ID
+     * @param int|string $scriptId Script ID
+     * @param string $responseId Survey response id / record tracker (sanitized)
+     * @param string $questionName Variable / question name (sanitized)
+     * @param string $extension File extension without dot
+     * @param int $fileIndex 1-based index when a question has multiple files
+     * @param string|null $originalBase Optional original filename stem (sanitized)
+     * @return string Generated filename
+     */
+    public static function generateScriptImageFilename(
+        $userId,
+        $scriptId,
+        $responseId,
+        $questionName,
+        $extension,
+        $fileIndex = 1,
+        $originalBase = null
+    ) {
+        $extension = strtolower(trim((string)$extension, '.'));
+        if ($extension === '') {
+            $extension = 'jpg';
+        }
+
+        $responseId = self::sanitizeNameToken($responseId, 'na', 64);
+        $questionName = self::sanitizeNameToken($questionName, 'image', 64);
+        $random = self::generateRandomSuffix(4);
+
+        $parts = array(
+            'u' . (int)$userId,
+            'script' . (int)$scriptId,
+            'resp_' . $responseId,
+            'q_' . $questionName,
+        );
+
+        if ($originalBase !== null && $originalBase !== '') {
+            $parts[] = self::sanitizeNameToken($originalBase, 'file', 40);
+        }
+
+        $parts[] = 'i' . max(1, (int)$fileIndex);
+        $parts[] = $random;
+
+        return implode('_', $parts) . '.' . $extension;
+    }
+
+    /**
+     * Ensure the script-image upload directory exists for a user/script.
+     *
+     * @param int $userId User ID
+     * @param int|string $scriptId Script ID
+     * @return string Full filesystem path of the directory
+     * @throws Exception If directory creation fails
+     */
+    public static function ensureScriptImageDirectoryExists($userId, $scriptId = 0)
+    {
+        $relative = self::getScriptImageDirectory($userId, $scriptId);
+        $fullPath = __DIR__ . '/../../' . $relative;
+
+        if (!is_dir($fullPath)) {
+            if (!mkdir($fullPath, 0755, true)) {
+                throw new Exception(
+                    'Failed to create script image directory for user '
+                    . (int)$userId . ' script ' . (int)$scriptId
+                );
+            }
+        }
+
+        return $fullPath;
+    }
+
+    /**
+     * Sanitize a free-form token for use inside a filename.
+     *
+     * @param mixed $value Raw value
+     * @param string $fallback Fallback when empty after sanitize
+     * @param int $maxLen Max length
+     * @return string
+     */
+    public static function sanitizeNameToken($value, $fallback = 'na', $maxLen = 64)
+    {
+        $value = strtolower(trim((string)$value));
+        $value = preg_replace('/[^a-z0-9_-]+/', '_', $value);
+        $value = trim($value, '_-');
+        if ($value === '') {
+            $value = $fallback;
+        }
+        if (strlen($value) > $maxLen) {
+            $value = substr($value, 0, $maxLen);
+            $value = rtrim($value, '_-');
+        }
+        return $value !== '' ? $value : $fallback;
+    }
+
+    /**
      * Get the full filesystem path for a user's upload directory
      * 
      * @param int $userId User ID
