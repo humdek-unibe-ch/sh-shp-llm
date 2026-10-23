@@ -194,7 +194,7 @@ class LlmAdminService extends LlmService
                 m.request_payload
              FROM llmMessages m
              WHERE m.id_llmConversations = :conversation_id
-             ORDER BY m.timestamp ASC
+             ORDER BY m.timestamp ASC, m.id ASC
              LIMIT " . (int)$limit,
             [':conversation_id' => $conversation_id]
         ) ?: [];

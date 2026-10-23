@@ -805,10 +805,10 @@ class LlmService extends BaseLlmService
              INNER JOIN (
                  SELECT id FROM llmMessages
                  WHERE id_llmConversations = :conversation_id AND deleted = 0 AND is_validated = 1
-                 ORDER BY timestamp DESC
+                 ORDER BY timestamp DESC, id DESC
                  LIMIT " . (int)$limit . "
              ) recent ON m.id = recent.id
-             ORDER BY m.timestamp ASC;",
+             ORDER BY m.timestamp ASC, m.id ASC;",
             [':conversation_id' => $conversation_id]
         );
 
