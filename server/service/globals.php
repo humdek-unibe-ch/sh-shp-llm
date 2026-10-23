@@ -124,6 +124,20 @@ define('LLM_CONV_SOURCE_DATASET_EVAL',   'dataset_eval');
 define('LLM_CONV_SOURCE_FORM',           'form');
 define('LLM_CONV_SOURCE_SCRIPT',         'script');
 define('LLM_CONV_SOURCE_DATASET_IMPORT', 'dataset_import');
+define('LLM_CONV_SOURCE_FORM_INTERVIEW', 'form_interview');
+
+/* =========================================================================
+ * INTERVIEW OPTION LOOKUP TYPES (v1.6.0+)
+ *
+ * Lookup `type_code`s backing the CMS selects of the `llm_interview_*`
+ * option fields on the `llmFormLogList` style. The stored field value is
+ * the lookup_code; the rows are registered in `db/v1.6.0.sql`.
+ * ========================================================================= */
+
+define('LLM_LOOKUP_INTERVIEW_PROGRESS_LAYOUT', 'llmInterviewProgressLayouts');
+define('LLM_LOOKUP_INTERVIEW_RETENTION',       'llmInterviewRetentionPolicies');
+define('LLM_LOOKUP_INTERVIEW_CHAT_POSITION',   'llmInterviewChatPositions');
+define('LLM_LOOKUP_INTERVIEW_CONFIRM',          'llmInterviewConfirmModes');
 
 /* =========================================================================
  * EVALUATION TYPES
