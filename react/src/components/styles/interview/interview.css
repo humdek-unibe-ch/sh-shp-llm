@@ -6,8 +6,9 @@
  * bubbles, avatars, composer, quick replies (see chat/LlmChat.css and
  * shared/*) - plus Bootstrap 4.6 components (card, btn, badge, progress,
  * alert, form-control). This file only adds what is interview specific:
- * the workspace (answers + chat, page or modal), the answers list, the
- * dialogs and a default look for the core list (table / cards).
+ * the workspace (answers + chat, page or modal), the answers list and the
+ * dialogs. The list (table / cards) shows the core's default look; the
+ * theme variables below drive that look too (see "Core list look" at the end).
  *
  * Theming without touching this file - set any of these custom
  * properties on the section (or any ancestor, or `.llm-interview-react`):
@@ -651,117 +652,20 @@
 .llm-iv-change-after .llm-iv-change-text { font-weight: 500; }
 .llm-iv-review-unchanged { margin-top: 0.25rem; }
 
-/* ---------- Default look of the core list (list_layout: table | cards) ----------
- * The core list ships structure only. This gives both layouts a finished
- * look; every rule sits in :where(.llmFormLogList), so it has the lowest
- * possible specificity - the project's own CSS (even a plain
- * `.formUserInputLogList-card { ... }`) always wins, and the same custom
- * properties theme it (--llm-iv-accent / -border / -surface / -radius). */
-:where(.llmFormLogList) {
-    --_la: var(--llm-iv-accent, var(--primary, #007bff));
-    --_lb: var(--llm-iv-border, #dee2e6);
-    --_ls: var(--llm-iv-surface, #fff);
-    --_lr: var(--llm-iv-radius, 0.5rem);
-    --_lm: #6c757d;
-}
-:where(.llmFormLogList) .formUserInputLogList-list { margin-bottom: 1rem; }
-
-/* The edit action (and its look next to quick actions) */
-:where(.llmFormLogList) .formUserInputLogList-btn-edit {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.3rem 0.95rem;
-    border: 1px solid var(--_la);
-    border-radius: 999px;
-    color: var(--_la);
-    font-size: 0.85rem;
-    font-weight: 600;
-    line-height: 1.3;
-    text-decoration: none;
-    transition: background-color 0.15s ease, color 0.15s ease;
-}
-:where(.llmFormLogList) .formUserInputLogList-btn-edit:hover,
-:where(.llmFormLogList) .formUserInputLogList-btn-edit:focus {
-    background-color: var(--_la);
-    color: #fff;
-    text-decoration: none;
-}
-
-/* table */
-:where(.llmFormLogList) .formUserInputLogList-list > .table-responsive {
-    border: 1px solid var(--_lb);
-    border-radius: var(--_lr);
-    background: var(--_ls);
-    overflow: hidden;
-}
-:where(.llmFormLogList) .formUserInputLogList-table { margin-bottom: 0; }
-:where(.llmFormLogList) .formUserInputLogList-table thead th {
-    padding: 0.7rem 1rem;
-    border-top: 0;
-    border-bottom: 1px solid var(--_lb);
-    background-color: #f8f9fa;
-    color: var(--_lm);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    white-space: nowrap;
-}
-/* DataTables reserves room for sort icons on the header cells, which makes
- * the (separately laid out) header and body columns drift apart. The
- * list is not sortable (`sorting_disabled`), so neither icon nor room. */
-.llmFormLogList .formUserInputLogList-table.dataTable thead th.sorting_disabled { padding-right: 1rem; }
-.llmFormLogList .formUserInputLogList-table.dataTable thead th.sorting_disabled::before,
-.llmFormLogList .formUserInputLogList-table.dataTable thead th.sorting_disabled::after { display: none; }
-/* DataTables sizes its tables a couple of pixels wider than the bordered
- * container, which shows a stray scrollbar (its own stylesheet pins
- * `max-width: none !important`). Tables never go below their content
- * width, so narrow screens still scroll. */
-.llmFormLogList .dataTables_scrollHeadInner { max-width: 100%; }
-.llmFormLogList .dataTables_scrollHeadInner > table,
-.llmFormLogList .dataTables_scrollBody > table { max-width: 100% !important; }
-:where(.llmFormLogList) .formUserInputLogList-table tbody td {
-    padding: 0.8rem 1rem;
-    border-top: 1px solid #eef0f2;
-    vertical-align: middle;
-}
-:where(.llmFormLogList) .formUserInputLogList-table tbody tr:first-child td { border-top: 0; }
-:where(.llmFormLogList) .formUserInputLogList-table tbody tr:hover td { background-color: rgba(0, 0, 0, 0.025); }
-:where(.llmFormLogList) .formUserInputLogList-actions-col,
-:where(.llmFormLogList) .formUserInputLogList-actions-cell { text-align: right; }
-:where(.llmFormLogList.formUserInputLogList-actions-right) .formUserInputLogList-actions { justify-content: flex-end; }
-
-/* cards: one finished card per entry, label above value */
-:where(.llmFormLogList) .formUserInputLogList-card {
-    padding: 0.875rem 1.125rem;
-    border: 1px solid var(--_lb);
-    border-radius: var(--_lr);
-    background: var(--_ls);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-:where(.llmFormLogList) .formUserInputLogList-card:hover {
-    border-color: var(--_la);
-    box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.08);
-}
-:where(.llmFormLogList) .formUserInputLogList-card-cell {
-    /* equal columns, so the values line up from card to card */
-    flex: 1 1 9rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    font-size: 0.95rem;
-    font-weight: 500;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
-}
-:where(.llmFormLogList) .formUserInputLogList-card-cell::before {
-    content: attr(data-header);
-    color: var(--_lm);
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+/* ---------- Core list look: theme bridge ----------
+ * The list itself (table / cards, edit pill, form modals) has no look of its
+ * own here: llmFormLogList shows the core's default look
+ * (formUserInputLogList.css), so both styles look the same. This only lets the
+ * interview theme variables drive that look as well - one --llm-iv-* setting
+ * then colours the list, the launcher and the workspace alike. The core
+ * resolves --ful-* through the private aliases --_ful-*; an --llm-iv-* value
+ * wins, then the core's own --ful-* / Bootstrap default. Specificity 0,2,0
+ * beats the core's declaration of the aliases, whatever the load order. */
+.llmFormLogList.formUserInputLogList {
+    --_ful-accent: var(--llm-iv-accent, var(--ful-accent, var(--primary, #007bff)));
+    --_ful-border: var(--llm-iv-border, var(--ful-border, #dee2e6));
+    --_ful-surface: var(--llm-iv-surface, var(--ful-surface, #fff));
+    --_ful-radius: var(--llm-iv-radius, var(--ful-radius, 0.5rem));
 }
 
 /* ---------- Narrow screens: panels stack, chat keeps a fixed height ---------- */

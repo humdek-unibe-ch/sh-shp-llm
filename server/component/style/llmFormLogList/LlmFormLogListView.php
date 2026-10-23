@@ -19,8 +19,9 @@ require_once __DIR__ . "/../../../service/LlmFormSchemaService.php";
 class LlmFormLogListView extends FormUserInputLogListView
 {
     /**
-     * Adds the `llmFormLogList` root class: the scope of the plugin's default
-     * list look (table/cards), which must not restyle the core lists.
+     * Adds the `llmFormLogList` root class: the scope of the interview theme
+     * bridge (--llm-iv-* variables driving the core's default list look),
+     * which must not recolour the core lists.
      */
     public function __construct($model, $controller)
     {
