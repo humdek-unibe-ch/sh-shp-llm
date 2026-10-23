@@ -247,6 +247,11 @@
   color: #245b8f;
 }
 
+.conversation-type-badge-interview {
+  background: #fdeef5;
+  color: #a02860;
+}
+
 .conversation-type-badge-prompt-lab {
   background: #eef8e7;
   color: #3e6f2f;

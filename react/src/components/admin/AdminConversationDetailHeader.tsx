@@ -68,6 +68,20 @@ export const AdminConversationDetailHeader: React.FC<AdminConversationDetailHead
               {conversation.script_name}
             </>
           )}
+          {conversation.source_type === 'form_interview' && (
+            <>
+              <span className="mx-2">|</span>
+              <i className="fas fa-database mr-1"></i>
+              {conversation.id_dataRows ? `Record #${conversation.id_dataRows}` : 'Unbound draft'}
+            </>
+          )}
+          {conversation.completed_at && (
+            <>
+              <span className="mx-2">|</span>
+              <i className="fas fa-check-circle mr-1"></i>
+              Completed {formatDateTime(conversation.completed_at)}
+            </>
+          )}
           <span className="mx-2">|</span>
           <i className="fas fa-brain mr-1"></i>
           {conversation.model}

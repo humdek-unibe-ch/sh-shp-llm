@@ -124,6 +124,31 @@ class ModuleLlmAdminConsoleController extends BaseController
         if (!empty($_GET['date_to'])) {
             $filters['date_to'] = $_GET['date_to'];
         }
+        if (!empty($_GET['source_type'])) {
+            if (!is_scalar($_GET['source_type'])) {
+                $this->sendJsonResponse(['error' => 'Invalid source_type filter'], 400);
+                return;
+            }
+            $source_type = (string)$_GET['source_type'];
+            if (!preg_match('/^[a-z0-9_]+$/', $source_type)) {
+                $this->sendJsonResponse(['error' => 'Invalid source_type filter'], 400);
+                return;
+            }
+            $filters['source_type'] = $source_type;
+        }
+        if (isset($_GET['record_id']) && $_GET['record_id'] !== '') {
+            $record_id = $_GET['record_id'];
+            if ($record_id === 'draft') {
+                $filters['record_id'] = 'draft';
+            } elseif (is_scalar($record_id) && preg_match('/^\d+$/', (string)$record_id)
+                && (int)$record_id > 0
+            ) {
+                $filters['record_id'] = (int)$record_id;
+            } else {
+                $this->sendJsonResponse(['error' => 'Invalid record_id filter'], 400);
+                return;
+            }
+        }
 
         try {
             $result = $this->model->getAdminConversations($filters, $page, $per_page);

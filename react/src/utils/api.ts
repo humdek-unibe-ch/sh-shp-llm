@@ -774,6 +774,8 @@ export const adminApi = {
     user_id?: string;
     section_id?: string;
     script_id?: string;
+    source_type?: string;
+    record_id?: string;
     q?: string;
     date_from?: string;
     date_to?: string;
@@ -784,6 +786,8 @@ export const adminApi = {
     if (params.user_id) cleanParams.user_id = params.user_id;
     if (params.section_id) cleanParams.section_id = params.section_id;
     if (params.script_id) cleanParams.script_id = params.script_id;
+    if (params.source_type) cleanParams.source_type = params.source_type;
+    if (params.record_id) cleanParams.record_id = params.record_id;
     if (params.q) cleanParams.q = params.q;
     if (params.date_from) cleanParams.date_from = params.date_from;
     if (params.date_to) cleanParams.date_to = params.date_to;

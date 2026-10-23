@@ -676,6 +676,7 @@ export interface AdminFiltersResponse {
     users: AdminFilterOption[];
     sections: { id: number; name: string }[];
     scripts: { id: number; name: string }[];
+    sources: { id: number; code: string; label?: string | null }[];
   };
   error?: string;
 }
@@ -700,6 +701,14 @@ export interface AdminConversation extends Conversation {
   blocked_by?: number;
   /** Whether conversation is deleted (soft delete) */
   deleted?: boolean | number;
+  /** Producer source lookup value (e.g. 'chat', 'form_interview') */
+  source_type?: string | null;
+  /** Producer source lookup description */
+  source_label?: string | null;
+  /** Bound core data row (form interview approval target), null = unbound draft */
+  id_dataRows?: number | null;
+  /** When the producing unit of work completed (e.g. interview approval) */
+  completed_at?: string | null;
 }
 
 export interface AdminConversationsResponse {

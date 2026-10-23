@@ -39,6 +39,8 @@ interface AdminFilters {
   userId: string;
   sectionId: string;
   scriptId: string;
+  sourceType: string;
+  recordId: string;
   query: string;
   dateFrom: string;
   dateTo: string;
@@ -73,6 +75,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     userId: '', 
     sectionId: '', 
     scriptId: '',
+    sourceType: '',
+    recordId: '',
     query: '',
     dateFrom: getTodayDate(),
     dateTo: getTodayDate()
@@ -81,7 +85,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     users: FilterOption[];
     sections: { id: number; name: string }[];
     scripts: { id: number; name: string }[];
-  }>({ users: [], sections: [], scripts: [] });
+    sources: { id: number; code: string; label?: string | null }[];
+  }>({ users: [], sections: [], scripts: [], sources: [] });
   const [conversations, setConversations] = useState<AdminConversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<AdminConversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -243,6 +248,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         user_id: filters.userId || undefined,
         section_id: filters.sectionId || undefined,
         script_id: filters.scriptId || undefined,
+        source_type: filters.sourceType || undefined,
+        record_id: filters.recordId || undefined,
         q: filters.query || undefined,
         date_from: filters.dateFrom || undefined,
         date_to: filters.dateTo || undefined
@@ -307,6 +314,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
       userId: '', 
       sectionId: '', 
       scriptId: '',
+      sourceType: '',
+      recordId: '',
       query: '',
       dateFrom: getTodayDate(),
       dateTo: getTodayDate()
@@ -471,7 +480,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     return nameParts.length > 0 ? nameParts.join(' ') : `User ${user.id}`;
   };
 
-  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.query;
+  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.sourceType || filters.recordId || filters.query;
 
   // Prepare options for react-select
   const userOptions = [
@@ -495,6 +504,14 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     ...(filterOptions.scripts || []).map(script => ({
       value: script.id.toString(),
       label: script.name
+    }))
+  ];
+
+  const sourceOptions = [
+    { value: '', label: 'All sources' },
+    ...(filterOptions.sources || []).map(source => ({
+      value: source.code,
+      label: source.label || source.code
     }))
   ];
 
@@ -656,6 +673,43 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       />
                     </div>
                   )}
+
+                  {/* Source Filter */}
+                  {sourceOptions.length > 1 && (
+                    <div className="filter-col filter-col-half">
+                      <Form.Label className="small text-muted mb-1">
+                        <i className="fas fa-stream mr-1"></i>
+                        Source
+                      </Form.Label>
+                      <Select
+                        value={sourceOptions.find(option => option.value === filters.sourceType)}
+                        onChange={(selectedOption) => handleFilterChange('sourceType', selectedOption?.value || '')}
+                        options={sourceOptions}
+                        isSearchable={true}
+                        isClearable={false}
+                        placeholder="All sources..."
+                        className="react-select-container filter-select"
+                        classNamePrefix="react-select"
+                        menuPortalTarget={document.body}
+                        styles={compactSelectStyles}
+                      />
+                    </div>
+                  )}
+
+                  {/* Record Filter */}
+                  <div className="filter-col filter-col-half">
+                    <Form.Label className="small text-muted mb-1">
+                      <i className="fas fa-database mr-1"></i>
+                      Record
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      placeholder="Record ID or 'draft'"
+                      value={filters.recordId}
+                      onChange={(e) => handleFilterChange('recordId', e.target.value)}
+                      className="filter-input"
+                    />
+                  </div>
 
                   {/* Search Filter */}
                   <div className="filter-col filter-col-half">

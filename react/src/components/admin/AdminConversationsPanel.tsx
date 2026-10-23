@@ -133,6 +133,14 @@ export const AdminConversationsPanel: React.FC<AdminConversationsPanelProps> = (
                       {conversation.script_name}
                     </span>
                   )}
+                  {conversation.source_type === 'form_interview' && (
+                    <span className="conversation-chip">
+                      <i className="fas fa-database mr-1"></i>
+                      {conversation.id_dataRows
+                        ? `Record #${conversation.id_dataRows}`
+                        : 'Unbound draft'}
+                    </span>
+                  )}
                   {conversation.model && (
                     <span className="conversation-chip">
                       <i className="fas fa-brain mr-1"></i>

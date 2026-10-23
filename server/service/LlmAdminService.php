@@ -52,10 +52,20 @@ class LlmAdminService extends LlmService
              ORDER BY ls.name ASC"
         );
 
+        $sources = $this->db->query_db(
+            "SELECT l.id, l.lookup_value AS code, l.lookup_description AS label
+             FROM lookups l
+             INNER JOIN llmConversations lc ON lc.id_llm_conversation_sources = l.id
+             WHERE l.type_code = 'llmConversationSourceType'
+             GROUP BY l.id, l.lookup_value, l.lookup_description
+             ORDER BY l.lookup_value ASC"
+        );
+
         return [
             'users' => $users ?: [],
             'sections' => $sections ?: [],
-            'scripts' => $scripts ?: []
+            'scripts' => $scripts ?: [],
+            'sources' => $sources ?: []
         ];
     }
 
@@ -101,6 +111,20 @@ class LlmAdminService extends LlmService
             $params[] = $filters['date_to'];
         }
 
+        if (!empty($filters['source_type']) && is_string($filters['source_type'])) {
+            $where[] = "cs.lookup_value = ?";
+            $params[] = $filters['source_type'];
+        }
+
+        if (isset($filters['record_id']) && $filters['record_id'] !== '' && $filters['record_id'] !== null) {
+            if ($filters['record_id'] === 'draft') {
+                $where[] = "lc.id_dataRows IS NULL";
+            } else {
+                $where[] = "lc.id_dataRows = ?";
+                $params[] = (int)$filters['record_id'];
+            }
+        }
+
         $where_clause = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
         $offset = ($page - 1) * $per_page;
 
@@ -110,6 +134,7 @@ class LlmAdminService extends LlmService
                       LEFT JOIN users u ON lc.id_users = u.id
                       LEFT JOIN sections s ON lc.id_sections = s.id
                       LEFT JOIN llm_scripts ls ON lc.id_llm_scripts = ls.id
+                      LEFT JOIN lookups cs ON cs.id = lc.id_llm_conversation_sources
                       {$where_clause}";
         $total_result = $this->db->query_db_first($count_sql, $params);
         $total = $total_result['total'] ?? 0;
@@ -120,11 +145,14 @@ class LlmAdminService extends LlmService
                        u.email as user_email,
                        s.name as section_name,
                        ls.name as script_name,
+                       cs.lookup_value as source_type,
+                       cs.lookup_description as source_label,
                        (SELECT COUNT(*) FROM llmMessages lm WHERE lm.id_llmConversations = lc.id) as message_count
                 FROM llmConversations lc
                 LEFT JOIN users u ON lc.id_users = u.id
                 LEFT JOIN sections s ON lc.id_sections = s.id
                 LEFT JOIN llm_scripts ls ON lc.id_llm_scripts = ls.id
+                LEFT JOIN lookups cs ON cs.id = lc.id_llm_conversation_sources
                 {$where_clause}
                 ORDER BY lc.updated_at DESC
                 LIMIT {$per_page} OFFSET {$offset}";
@@ -150,10 +178,13 @@ class LlmAdminService extends LlmService
             "SELECT lc.*,
                     u.name as user_name,
                     u.email as user_email,
-                    s.name as section_name
+                    s.name as section_name,
+                    cs.lookup_value as source_type,
+                    cs.lookup_description as source_label
              FROM llmConversations lc
              LEFT JOIN users u ON lc.id_users = u.id
              LEFT JOIN sections s ON lc.id_sections = s.id
+             LEFT JOIN lookups cs ON cs.id = lc.id_llm_conversation_sources
              WHERE lc.id = ?",
             [$conversation_id]
         );
