@@ -420,6 +420,63 @@ class LlmHooks extends BaseHooks
         $trigger_service->dispatchForRuleIds($rule_ids, $normalized, true);
     }
 
+    /**
+     * Build a lookup-backed select for one of the `llm_interview_*` option
+     * fields (`llmFormLogList` style). One hook pair serves all four
+     * fields: the lookup family is chosen by field name and any other
+     * field falls through to the default renderer.
+     *
+     * @param object $args
+     * @param int $disabled
+     * @return object
+     */
+    private function returnSelectLlmInterviewField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        // name => expected custom field type + lookup family; both must
+        // match so a same-named field of another type gets no extra control
+        static $field_map = array(
+            'llm_interview_progress_layout' => array('select-llm-interview-progress-layout', LLM_LOOKUP_INTERVIEW_PROGRESS_LAYOUT),
+            'llm_interview_chat_retention'  => array('select-llm-interview-retention', LLM_LOOKUP_INTERVIEW_RETENTION),
+            'llm_interview_chat_position'   => array('select-llm-interview-chat-position', LLM_LOOKUP_INTERVIEW_CHAT_POSITION),
+            'llm_interview_confirm'         => array('select-llm-interview-confirm', LLM_LOOKUP_INTERVIEW_CONFIRM),
+        );
+        $field_name = $field['name'] ?? '';
+        $spec = $field_map[$field_name] ?? null;
+        if ($spec === null || (string)($field['type'] ?? '') !== $spec[0]) {
+            return $res;
+        }
+
+        $items = array();
+        foreach ($this->db->get_lookups($spec[1]) as $option) {
+            $items[] = array(
+                "value" => (string)($option['lookup_code'] ?? ''),
+                "text" => (string)($option['lookup_value'] ?? '')
+            );
+        }
+
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $selectField = new BaseStyleComponent("select", array(
+            "value" => $field['content'] ?? '',
+            "name" => $field_name_prefix . "[content]",
+            "max" => 10,
+            "live_search" => 0,
+            "is_required" => 0,
+            "disabled" => $disabled,
+            "items" => $items
+        ));
+
+        if ($selectField && $res) {
+            $children = $res->get_view()->get_children();
+            $children[] = $selectField;
+            $res->get_view()->set_children($children);
+        }
+
+        return $res;
+    }
+
     /* Public Methods *********************************************************/
 
     /**
@@ -512,6 +569,28 @@ class LlmHooks extends BaseHooks
     public function outputFieldLlmMemoryRulesView($args)
     {
         return $this->returnSelectLlmMemoryRulesField($args, 1);
+    }
+
+    /**
+     * CMS select for the llm_interview_* option fields (edit).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmInterviewSelectEdit($args)
+    {
+        return $this->returnSelectLlmInterviewField($args, 0);
+    }
+
+    /**
+     * CMS select for the llm_interview_* option fields (view).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmInterviewSelectView($args)
+    {
+        return $this->returnSelectLlmInterviewField($args, 1);
     }
 
     /**
