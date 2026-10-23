@@ -39,7 +39,7 @@ This plugin provides a general-purpose LLM integration layer for SelfHelp. It is
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| SelfHelp | v7.8.0+ | Core CMS framework |
+| SelfHelp | v7.8.0+ | Core CMS framework; **v7.12.0+** required for `llmFormLogList` interviews |
 | PHP | 8.2+ | With **cURL** and **GD** extensions |
 | PHP `exif` | optional* | Bundled PHP extension (`exif_read_data`); needed for LLM-script image EXIF (datetime, camera, GPS) as prompt text |
 | MySQL | 8.0+ | InnoDB, utf8mb4 |
@@ -66,10 +66,14 @@ server/plugins/sh-shp-llm/
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.0.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.1.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.2.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.3.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.4.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.5.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.6.0.sql
 ```
 
-This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations) plus the v1.2.0 memory-key registry for multi-key memory rules. The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
-It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed.
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached).
 
 **Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.5.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It enables the memory rule selection on `surveyJS` sections (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
 
@@ -87,6 +91,7 @@ This installs React dependencies and builds UMD bundles, including:
 - `js/ext/llm-scripts.umd.js` — Scripts manager
 - `js/ext/llm-apikeys.umd.js` — CMS API key manager
 - `js/ext/llm-memory.umd.js` - Dedicated memory manager page
+- `js/ext/llm-form-interview.umd.js` — `llmFormLogList` interview workspace
 
 ### 4. Configure the Module
 
@@ -383,6 +388,32 @@ A display component for showing LLM script results. Supports:
 - `{{field.path}}` interpolation from JSON data
 - Optional inline editing
 - Automatic loading overlay during async processing
+
+### llmFormLogList (Style, v1.6.0+)
+
+A `formUserInputLogList` extension that interviews participants
+conversationally against the CMS child fields and saves the record through
+the inherited form write path only on explicit approval. Drafts stay in a
+scoped conversation state (never in `dataRows`). The plain page URL shows a
+launcher card above the list; `?record=new&sid=<section>` (or
+`?record=<id>&sid=<section>`) opens a two-pane workspace - in the page or,
+with `show_form_in_modal`, in a real modal window over the list: the
+answers (stepper, cards, list or none) that grow with their content and
+highlight the current question, plus a Save button, next to the chat (chat
+left, right, top or bottom, or chat only) - no floating chat bubble.
+The chat uses the same header, bubbles and composer as `llmChat`; the
+default look is plain Bootstrap 4.6 and is themed through `--llm-iv-*`
+custom properties and the `llm_chat_appearance` JSON; the list gets a
+finished default look in both layouts (table and cards). Coach questions
+with fixed choices come as quick-reply buttons, `llm_interview_confirm`
+decides whether saving first shows the record (new entries) and/or a
+before/after view of the changes (saved records) or saves at once,
+`llm_use_user_language` makes the coach answer in the participant's
+current UI language, and `enable_speech_to_text` adds a Whisper
+microphone. The form can be shared across pages with a CMS reference
+section inside a loop, and combined with a hidden `status`, quick actions
+and `history_log` into an archive/restore pattern. See
+[doc/llm-form-interview.md](doc/llm-form-interview.md).
 
 ### moduleLlmAdminConsole (Module)
 
