@@ -27,6 +27,10 @@ export type {
   PromptEvalRunResult,
   PromptEvalScore,
 } from '../evaluations/evaluationTypes';
+import type {
+  InterviewFieldDef,
+  InterviewProgress,
+} from '../../types/interview';
 
 /** The entity type that owns a prompt (CMS style field, LLM script, or memory rule). */
 export type PromptOwnerType = 'style_field' | 'llm_script' | 'llm_memory_rule';
@@ -35,6 +39,7 @@ export type PromptOwnerType = 'style_field' | 'llm_script' | 'llm_memory_rule';
 export type KnownPromptExecutionProfile =
   | 'chat_runtime'
   | 'form_runtime'
+  | 'interview_runtime'
   | 'script_runtime'
   | 'memory_runtime'
   | 'text_only';
@@ -140,6 +145,15 @@ export interface PromptPlaygroundRun {
   id_llm_prompt_playground_runs?: number | null;
   parse_errors?: string[];
   is_fallback?: boolean;
+  /** Interview runtime: merged draft after the validated turn. */
+  interview_draft?: Record<string, unknown>;
+  /** Interview runtime: visible field definitions at preview time. */
+  interview_fields?: Record<string, InterviewFieldDef>;
+  /** Interview runtime: deterministic field progress snapshot. */
+  interview_progress?: InterviewProgress | null;
+  /** Interview runtime: per-field validation errors of the last turn. */
+  field_errors?: Record<string, string> | null;
+  attempts?: number | null;
 }
 
 /** Response from a playground execution, potentially containing multiple model comparison runs. */

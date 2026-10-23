@@ -118,6 +118,49 @@ export const PromptResultPanel: React.FC<PromptResultPanelProps> = ({ run, color
         </div>
       </div>
 
+      {run.interview_progress && (
+        <div className="prompt-interview-result mb-3">
+          <div className="small font-weight-bold text-muted mb-2">Interview Draft &amp; Progress</div>
+          <div className="border rounded p-3 bg-light">
+            <div className="small mb-2">
+              <Badge variant={run.interview_progress.ready_for_approval ? 'success' : 'secondary'} className="mr-2">
+                {run.interview_progress.ready_for_approval ? 'Ready for approval' : 'In progress'}
+              </Badge>
+              {typeof run.interview_progress.done === 'number' && typeof run.interview_progress.total === 'number' && (
+                <span className="mr-2">
+                  {run.interview_progress.done}/{run.interview_progress.total} fields
+                </span>
+              )}
+              {typeof run.interview_progress.required_done === 'number' && typeof run.interview_progress.required_total === 'number' && (
+                <span className="mr-2">
+                  {run.interview_progress.required_done}/{run.interview_progress.required_total} required
+                </span>
+              )}
+              {run.interview_progress.active && (
+                <span>
+                  active: {String(run.interview_progress.active)}
+                </span>
+              )}
+            </div>
+            {run.field_errors && Object.keys(run.field_errors).length > 0 && (
+              <Alert variant="warning" className="small py-2 mb-2">
+                {Object.entries(run.field_errors).map(([name, msg]) => (
+                  <div key={name}><strong>{name}</strong>: {String(msg)}</div>
+                ))}
+              </Alert>
+            )}
+            {run.interview_draft && Object.keys(run.interview_draft).length > 0 && (
+              <details>
+                <summary className="small font-weight-bold text-muted">Draft values</summary>
+                <div className="small bg-white border rounded p-2 mt-2 prompt-pre">
+                  <JsonInspector value={run.interview_draft} />
+                </div>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
+
       <details className="mb-2">
         <summary className="small font-weight-bold text-muted">Raw Response</summary>
         <div className="position-relative mt-2">

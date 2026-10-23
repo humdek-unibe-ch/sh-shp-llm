@@ -154,6 +154,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function resolveExecutionProfileByPromptSlot($descriptor)
     {
+        if (($descriptor['prompt_slot'] ?? '') === 'llm_interview_context') {
+            return 'interview_runtime';
+        }
         return '';
     }
 
@@ -248,6 +251,19 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function getExtendedCompanionFieldNames($profile)
     {
+        if ($profile === 'interview_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens',
+                'llm_reasoning_effort',
+                'llm_interview_include_history',
+                'llm_interview_writable_hidden_fields',
+                'llm_conversation_scope',
+                'llm_use_user_language',
+                'data_config'
+            );
+        }
         return array();
     }
 
@@ -259,6 +275,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function getExtendedPlaygroundRuntimeType($profile)
     {
+        if ($profile === 'interview_runtime') {
+            return 'chat';
+        }
         return 'none';
     }
 
@@ -270,7 +289,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function isExtendedChatLikeExecutionProfile($profile)
     {
-        return false;
+        return $profile === 'interview_runtime';
     }
 
     /**
@@ -419,6 +438,16 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function getExtendedConfigSnapshotFields($profile, $runtime_values)
     {
+        if ($profile === 'interview_runtime') {
+            return array(
+                'reasoning_effort' => $runtime_values['llm_reasoning_effort'] ?? null,
+                'include_history' => $this->toBoolString($runtime_values['llm_interview_include_history'] ?? null),
+                'use_user_language' => $this->toBoolString($runtime_values['llm_use_user_language'] ?? null),
+                'writable_hidden_fields' => $this->decodeJsonValue($runtime_values['llm_interview_writable_hidden_fields'] ?? null),
+                'conversation_scope' => $runtime_values['llm_conversation_scope'] ?? null,
+                'data_config' => $this->decodeJsonValue($runtime_values['data_config'] ?? null)
+            );
+        }
         return array();
     }
 
