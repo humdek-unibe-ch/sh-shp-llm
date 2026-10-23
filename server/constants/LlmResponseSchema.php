@@ -156,10 +156,13 @@ class LlmResponseSchema
     /**
      * Validate LLM response against schema
      *
-     * @param array $response Decoded JSON response from LLM
+     * @param array $response Decoded JSON response from LLM (assoc)
+     * @param object|null $raw Optional object-decoded copy of the same
+     *   JSON (stdClass); when given, object-vs-array distinctions that are
+     *   lost by the assoc decode ({} vs []) are enforced on the raw shape.
      * @return array ['valid' => bool, 'errors' => array]
      */
-    public static function validate($response)
+    public static function validate($response, $raw = null)
     {
         $errors = [];
 
@@ -233,10 +236,90 @@ class LlmResponseSchema
             $errors = array_merge($errors, $formErrors);
         }
 
+        // Validate the optional interview extension if present
+        if (array_key_exists('interview', $response)) {
+            $raw_interview = null;
+            if (is_object($raw) && property_exists($raw, 'interview')) {
+                $raw_interview = $raw->interview;
+            }
+            $errors = array_merge(
+                $errors,
+                self::validateInterviewStructure($response['interview'], $raw_interview)
+            );
+        }
+
         return [
             'valid' => empty($errors),
             'errors' => $errors
         ];
+    }
+
+    /**
+     * Validate the optional `interview` extension object against the
+     * authored schema contract: exactly collected_fields (object of
+     * scalar/flat-array/null values), active_field (nullable non-empty
+     * string) and ready_for_approval (boolean); no other keys allowed.
+     *
+     * @param mixed $interview The interview property value (assoc-decoded)
+     * @param mixed $raw_interview The object-decoded interview value, or
+     *   null when unavailable (assoc-only validation)
+     * @return array Array of validation error messages
+     */
+    private static function validateInterviewStructure($interview, $raw_interview = null)
+    {
+        $errors = [];
+        if ($raw_interview !== null && !($raw_interview instanceof stdClass)) {
+            return ['interview must be an object'];
+        }
+        if (!is_array($interview) || (array_is_list($interview) && $interview !== array())) {
+            return ['interview must be an object'];
+        }
+        $allowed = ['collected_fields', 'active_field', 'ready_for_approval'];
+        foreach ($allowed as $key) {
+            if (!array_key_exists($key, $interview)) {
+                $errors[] = "interview.{$key} is required";
+            }
+        }
+        foreach (array_keys($interview) as $key) {
+            if (!in_array($key, $allowed, true)) {
+                $errors[] = "interview.{$key} is not allowed";
+            }
+        }
+        if (array_key_exists('collected_fields', $interview)) {
+            if (is_object($raw_interview)
+                && property_exists($raw_interview, 'collected_fields')
+                && !($raw_interview->collected_fields instanceof stdClass)
+            ) {
+                $errors[] = 'interview.collected_fields must be an object';
+            } elseif (!is_array($interview['collected_fields'])
+                || (array_is_list($interview['collected_fields']) && $interview['collected_fields'] !== array())
+            ) {
+                $errors[] = 'interview.collected_fields must be an object';
+            } else {
+                foreach ($interview['collected_fields'] as $name => $value) {
+                    if (is_array($value)) {
+                        if (!array_is_list($value)
+                            || count(array_filter($value, function ($v) { return !is_scalar($v); })) > 0
+                        ) {
+                            $errors[] = "interview.collected_fields.{$name} must be a flat scalar list";
+                        }
+                    } elseif (!is_scalar($value) && $value !== null) {
+                        $errors[] = "interview.collected_fields.{$name} must be scalar, list or null";
+                    }
+                }
+            }
+        }
+        if (array_key_exists('active_field', $interview) && $interview['active_field'] !== null) {
+            if (!is_string($interview['active_field']) || $interview['active_field'] === '') {
+                $errors[] = 'interview.active_field must be a non-empty string or null';
+            }
+        }
+        if (array_key_exists('ready_for_approval', $interview)
+            && !is_bool($interview['ready_for_approval'])
+        ) {
+            $errors[] = 'interview.ready_for_approval must be a boolean';
+        }
+        return $errors;
     }
 
     /**

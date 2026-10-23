@@ -209,11 +209,13 @@ class LlmResponseService
         $cleaned = $this->cleanJsonContent($content);
 
         // Try to parse JSON
+        $raw_source = $cleaned;
         $parsed = json_decode($cleaned, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             // Try fixing common syntax errors from weaker models
             $fixed = $this->fixJsonSyntax($cleaned);
             $parsed = json_decode($fixed, true);
+            $raw_source = $fixed;
         }
         if ($parsed === null && json_last_error() !== JSON_ERROR_NONE) {
             return [
@@ -227,8 +229,10 @@ class LlmResponseService
         // Normalize non-conforming responses from weaker models
         $parsed = $this->normalizeResponse($parsed);
 
-        // Validate against schema
-        $validation = LlmResponseSchema::validate($parsed);
+        // Validate against schema; the object-decoded copy preserves the
+        // JSON object/array distinction that assoc decoding loses
+        $raw_object = json_decode($raw_source);
+        $validation = LlmResponseSchema::validate($parsed, $raw_object);
         if (!$validation['valid']) {
             return [
                 'valid' => false,
@@ -593,6 +597,9 @@ class LlmResponseService
      *
      * @param callable $callable Function that makes the LLM API call
      * @param array $api_messages Messages to send to LLM
+     * @param callable|null $semantic_validator Optional callback receiving
+     *   the parsed response data and returning an array of semantic errors
+     *   (empty = valid); absent keeps existing behavior unchanged
      * @return array [
      *   'response' => parsed_response,
      *   'attempts' => int,
@@ -602,7 +609,7 @@ class LlmResponseService
      *   'all_attempts' => array (all attempts with their full payloads and responses for debugging)
      * ]
      */
-    public function callLlmWithSchemaValidation($callable, $api_messages)
+    public function callLlmWithSchemaValidation($callable, $api_messages, $semantic_validator = null)
     {
         $max_attempts = self::MAX_RETRY_ATTEMPTS;
         $last_response = null;
@@ -641,6 +648,13 @@ class LlmResponseService
 
                 // Parse and validate the response
                 $parsed = $this->parseResponse($assistant_message);
+                if ($parsed['valid'] && is_callable($semantic_validator)) {
+                    $semantic_errors = call_user_func($semantic_validator, $parsed['data']);
+                    if (!empty($semantic_errors)) {
+                        $parsed['valid'] = false;
+                        $parsed['errors'] = array_values($semantic_errors);
+                    }
+                }
                 $last_parsed = $parsed;
                 $attempt_data['parsed'] = $parsed;
                 $attempt_data['valid'] = $parsed['valid'];
