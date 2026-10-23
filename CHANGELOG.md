@@ -2,6 +2,97 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.6.0] Work in progress
+
+Requires **SelfHelp core v7.12.0** (extension seams of the core
+`formUserInputLogList`). Run `server/db/v1.6.0.sql` once, then clear the
+SelfHelp cache (**Admin > Cache > Clear all**).
+
+### Added
+
+- **LLM form interviews: the `llmFormLogList` style.** Extends the core
+  `formUserInputLogList` (same list, quick actions, history, ownership and
+  ACL) with a guided interview: a coach collects the answers in a chat and
+  the record is written through the inherited save/update path **only after
+  the participant approves**. Nothing reaches `dataRows` before that; drafts
+  live in the conversation state. CMS recipe, status/archive pattern and
+  configuration reference: [doc/llm-form-interview.md](doc/llm-form-interview.md).
+- **Interview workspace** (`llm-form-interview.umd.js`). A launcher card,
+  then answers and chat side by side (`llm_interview_chat_position`), in the
+  page or - with `show_form_in_modal` - in a real modal window. Addressed by
+  the URL (`?record=new|<id>&sid=<section>`) and keeps an unfinished draft
+  across reloads. Quick replies for closed questions, the question being
+  asked is marked, edited answers show their previous value.
+  - Answers render as `stepper`, `cards`, `list` or `none`
+    (`llm_interview_progress_layout`).
+  - Save dialog (`llm_interview_confirm`: `edit`, `always`, `never`) with a
+    before/after table for edits.
+  - `llm_interview_chat_retention` (`continue`, `new_on_open`,
+    `new_after_save`) decides between *Continue* and *Start over*.
+- **Server runtime.**
+  - `LlmFormInterviewService`: open, turn, update draft, reset and approve
+    (request-id idempotency; two-phase approval in one transaction).
+  - `LlmFormSchemaService`: what the interview may ask and write. Hidden,
+    scope-bound and unsupported fields stay native-only unless allowlisted
+    (`llm_interview_writable_hidden_fields`); manual edits need
+    `llm_interview_allow_manual_edit`.
+  - `LlmConversationStateService`: revision-based state per participant,
+    section and record on `llmConversations` (new columns `id_dataRows`,
+    `completed_at`, `context_key`, `state`).
+  - The structured LLM response gets an optional `interview` block
+    (`collected_fields`, `active_field`, `ready_for_approval`) that the
+    server validates.
+- **`form_interview` conversation source.** Interview threads stay out of
+  the chat sidebar. The admin console filters by source and by record
+  (`record_id` or `draft`) and shows a source badge.
+- **Chat look, labels and speech for the interview.** The same header,
+  bubbles, quick replies and composer as `llmChat`, `llm_chat_appearance`,
+  translatable `llm_interview_labels` (English, German and French built in)
+  and Whisper speech-to-text (`enable_speech_to_text`,
+  `speech_to_text_model`; the audio is deleted right after transcription).
+- **Default list look.** `table` and `cards` layouts are styled under the
+  `.llmFormLogList` root class. Every rule has minimal specificity and
+  follows the `--llm-iv-*` CSS variables, so project CSS always wins.
+- **Shared forms.** One interview form can be reused on many pages through a
+  reference section inside a `loop`; loop variables interpolate into the
+  context, scope, titles, values, filter and `values_map`.
+- **Prompt Lab `interview_runtime` profile.** Tests `llm_interview_context`
+  against a read-only preview with the production context assembly, schema
+  validation and draft merge - no participant state, approval or memory
+  writes.
+- **`llm_use_user_language`** checkbox on `llmChat`, `llmFormRecord`,
+  `llmFormLog` and `llmFormLogList` (see Changed).
+- **`floating_shortcuts_hide_delay`** on `llmChat` (default 2 seconds, 0-60):
+  how long the floating shortcut pills stay visible after the mouse leaves.
+
+### Changed
+
+- **The language rule is opt-in.** In 1.5.0 every conversation was told to
+  answer in the participant's language. Now that happens only when
+  `llm_use_user_language` is ticked (off by default, also after the upgrade -
+  tick it wherever the old behavior is wanted). Unticked, the author context
+  alone decides the language.
+- **Inline `llmChat` looks like the floating chat.** Same panel header, one
+  shared slim scrollbar.
+
+### Fixed
+
+- Messages written within the same second could be listed out of order; chat
+  and admin reads now break `timestamp` ties by `id`.
+- `llmChat` answered POSTs that were not chat requests (a CMS save, another
+  form on the same page) as an empty message. Only requests with an `action`
+  (or the legacy bare `message`) are handled now.
+
+### Core companion fixes
+
+Recommended with this release, not required:
+
+- `Router` / `Login`: background JSON calls (`?__llm_interview_action=...`,
+  any `__*` parameter) are no longer stored as the last visited page, so
+  logging in again never lands on a JSON response.
+- `CmsView`: `text` fields are no longer HTML-escaped a second time in the
+  CMS edit form.
+
 ## [1.5.0]
 
 ### Added
