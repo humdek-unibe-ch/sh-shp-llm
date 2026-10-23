@@ -199,53 +199,9 @@
   transform: translateX(-50%);
 }
 
-/* ===== Panel Header ===== */
-.llm-float-panel-header {
-  flex-shrink: 0;
-  border-bottom: none;
-  border-radius: 12px 12px 0 0 !important;
-}
-
-.llm-float-panel-header h6 {
-  font-size: 0.95rem;
-}
-
-.llm-float-panel-header small {
-  font-size: 0.75rem;
-  opacity: 0.9;
-}
-
-/* Avatar circle */
-.llm-float-panel-avatar {
-  width: 36px;
-  height: 36px;
-  background-color: #ffffff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-
-/* Online status dot */
-.llm-float-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-/* Panel action buttons */
-.llm-float-panel-actions .btn {
-  font-size: 14px;
-  opacity: 0.8;
-  transition: opacity 0.15s ease;
-}
-
-.llm-float-panel-actions .btn:hover {
-  opacity: 1;
-  text-decoration: none;
-}
+/* ===== Panel Header =====
+ * Base rules live in ../shared/ChatPanelHeader.css (shared with the inline
+ * chat and the form interview); only the mobile overrides stay below. */
 
 /* ===== Panel Body ===== */
 .llm-float-panel-body {

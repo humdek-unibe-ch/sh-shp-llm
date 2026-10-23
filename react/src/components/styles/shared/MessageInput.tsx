@@ -15,7 +15,16 @@
  * @module components/MessageInput
  */
 
-import React, { useState, useRef, useCallback, useEffect, KeyboardEvent, DragEvent } from 'react';
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+  KeyboardEvent,
+  DragEvent,
+} from 'react';
 import { Form, Button, Alert, Badge, CloseButton } from 'react-bootstrap';
 import type { LlmChatConfig, SelectedFile, FileValidationResult } from '../../../types';
 import { FILE_ERRORS } from '../../../types';
@@ -31,6 +40,41 @@ import {
 import { useSpeechToText } from '../../../hooks/useSpeechToText';
 
 /**
+ * The slice of the chat configuration the input reads - other surfaces
+ * (the form interview) pass just this instead of a full LlmChatConfig.
+ */
+export type MessageInputConfig = Pick<
+  LlmChatConfig,
+  | 'enableSpeechToText'
+  | 'speechToTextModel'
+  | 'sectionId'
+  | 'fileConfig'
+  | 'emptyMessageError'
+  | 'enableFileUploads'
+  | 'isVisionModel'
+  | 'isFloatingMode'
+  | 'enableFormMode'
+  | 'formModeActiveTitle'
+  | 'formModeActiveDescription'
+  | 'messagePlaceholder'
+  | 'acceptedFileTypes'
+  | 'attachFilesTitle'
+  | 'noVisionSupportTitle'
+  | 'noVisionSupportText'
+  | 'clearButtonLabel'
+  | 'sendMessageTitle'
+  | 'removeFileTitle'
+>;
+
+/** Imperative handle for surfaces that drive the text box. */
+export interface MessageInputHandle {
+  /** Focus the text box without scrolling the page. */
+  focus: () => void;
+  /** Put text back (a send that never reached the server); only when the box is empty. */
+  restore: (text: string) => void;
+}
+
+/**
  * Props for MessageInput component
  */
 interface MessageInputProps {
@@ -43,7 +87,19 @@ interface MessageInputProps {
   /** Whether input is disabled */
   disabled: boolean;
   /** Component configuration */
-  config: LlmChatConfig;
+  config: MessageInputConfig;
+  /** Block sending while something is busy, but keep the text box editable (no focus loss). */
+  sendDisabled?: boolean;
+  /** Placeholder override (defaults to config.messagePlaceholder). */
+  placeholder?: string;
+  /** Focus the text box when this value changes (never steals focus from another input). */
+  focusSignal?: unknown;
+  /** Focus the text box on mount. */
+  autoFocus?: boolean;
+  /** Speech transport override (other plugin surfaces expose their own contract). */
+  speech?: { endpoint?: string; requestFields?: Record<string, string> };
+  /** Tooltips of the microphone button. */
+  micLabels?: { start: string; stop: string; busy: string };
 }
 
 /**
@@ -51,13 +107,19 @@ interface MessageInputProps {
  * 
  * Provides the complete message input UI including file attachments
  */
-export const MessageInput: React.FC<MessageInputProps> = ({
+export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({
   onSend,
   selectedFiles,
   onFilesChange,
   disabled,
-  config
-}) => {
+  config,
+  sendDisabled = false,
+  placeholder,
+  focusSignal,
+  autoFocus = false,
+  speech: speechOptions,
+  micLabels,
+}, ref) {
   // Local state
   const [message, setMessage] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -117,6 +179,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     model: config.speechToTextModel || '',
     sectionId: config.sectionId,
     onTranscription: appendTranscribedText,
+    endpoint: speechOptions?.endpoint,
+    requestFields: speechOptions?.requestFields,
   });
   
   // File config
@@ -129,7 +193,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     
-    if (disabled) return;
+    if (disabled || sendDisabled) return;
     
     const trimmedMessage = message.trim();
     // Always require a message, even with file attachments
@@ -149,7 +213,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [message, selectedFiles, disabled, onSend]);
+  }, [message, selectedFiles, disabled, sendDisabled, onSend, config.emptyMessageError]);
   
   /**
    * Handle Enter key for submission
@@ -175,6 +239,34 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, []);
   
+  useImperativeHandle(ref, () => ({
+    focus: () => textareaRef.current?.focus({ preventScroll: true }),
+    restore: (text: string) => {
+      setMessage((current) => (current === '' ? text : current));
+      requestAnimationFrame(adjustTextareaHeight);
+    },
+  }), [adjustTextareaHeight]);
+
+  // Focus on mount / when the signal changes - but never take the cursor
+  // away from another editable control the participant is working in.
+  useEffect(() => {
+    if (!autoFocus && focusSignal === undefined) return;
+    const el = textareaRef.current;
+    if (!el || disabled) return;
+    const active = document.activeElement as HTMLElement | null;
+    const editing =
+      !!active &&
+      active !== el &&
+      (active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA' ||
+        active.tagName === 'SELECT' ||
+        active.isContentEditable);
+    if (!editing) {
+      el.focus({ preventScroll: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSignal, disabled]);
+
   /**
    * Handle text input change
    */
@@ -444,14 +536,14 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         <Form.Control
           ref={textareaRef}
           as="textarea"
-          placeholder={config.messagePlaceholder}
+          placeholder={placeholder ?? config.messagePlaceholder}
           value={message}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           disabled={disabled}
           maxLength={maxLength}
           rows={1}
-          className="border-0 rounded-0 message-input-textarea"
+          className="border-0 rounded-0 message-input-textarea llm-slim-scroll"
           style={{ resize: 'none', minHeight: '44px', maxHeight: '120px' }}
         />
         
@@ -485,7 +577,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                   size="sm"
                   onClick={speech.toggleRecording}
                   disabled={disabled || speech.isProcessing}
-                  title={speech.isRecording ? 'Stop recording' : 'Start voice input'}
+                  title={
+                    speech.isProcessing
+                      ? (micLabels?.busy ?? 'Transcribing...')
+                      : speech.isRecording
+                        ? (micLabels?.stop ?? 'Stop recording')
+                        : (micLabels?.start ?? 'Start voice input')
+                  }
                   className={`message-action-btn ml-1 ${speech.isRecording ? 'speech-recording-active' : ''}`}
                 >
                   {speech.isProcessing ? (
@@ -521,11 +619,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               type="submit"
               variant="primary"
               size="sm"
-              disabled={disabled || !message.trim()}
+              disabled={disabled || sendDisabled || !message.trim()}
               title={config.sendMessageTitle}
               className="message-action-btn message-send-btn"
             >
-              {disabled ? (
+              {disabled || sendDisabled ? (
                 <i className="fas fa-spinner fa-spin"></i>
               ) : (
                 <i className="fas fa-paper-plane"></i>
@@ -536,7 +634,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       </div>
     </Form>
   );
-};
+});
 
 /**
  * Attachment Item Component
@@ -549,7 +647,7 @@ interface AttachmentItemProps {
 }
 
 /** AttachmentItem React component. */
-const AttachmentItem: React.FC<AttachmentItemProps & { config: LlmChatConfig }> = ({ item, onRemove, fileConfig, config }) => {
+const AttachmentItem: React.FC<AttachmentItemProps & { config: MessageInputConfig }> = ({ item, onRemove, fileConfig, config }) => {
   const extension = getFileExtension(item.file.name);
   const isImage = isImageExtension(extension, fileConfig.allowedImageExtensions);
   const fileIcon = getFileIconByExtension(extension);

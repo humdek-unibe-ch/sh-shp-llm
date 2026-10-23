@@ -195,7 +195,7 @@ function getTextStyle(side: ChatAppearanceSide): React.CSSProperties | undefined
 /**
  * Build CSS custom properties so shared CSS can use the configured palette.
  */
-function getPaletteVariables(appearance?: { user: ChatAppearanceSide; ai: ChatAppearanceSide }): React.CSSProperties {
+export function getPaletteVariables(appearance?: { user: ChatAppearanceSide; ai: ChatAppearanceSide }): React.CSSProperties {
   const ai = appearance?.ai ?? DEFAULT_APPEARANCE.ai;
   const user = appearance?.user ?? DEFAULT_APPEARANCE.user;
   const style: React.CSSProperties & Record<string, string> = {};
@@ -233,7 +233,7 @@ function getPaletteVariables(appearance?: { user: ChatAppearanceSide; ai: ChatAp
  * `LlmChatModel::getChatAppearance()` (interpolation applied, BASE_PATH
  * prepended for absolute paths). The React layer treats it as opaque.
  */
-const BubbleAvatar: React.FC<{
+export const BubbleAvatar: React.FC<{
   isUser: boolean;
   config: LlmChatConfig;
   /** Override styling on the wrapper (e.g. validation tint in admin viewer). */

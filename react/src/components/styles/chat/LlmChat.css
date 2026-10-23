@@ -42,6 +42,11 @@
   min-height: 72px;
 }
 
+/* The shared panel header brings its own height */
+.llm-chat-header.llm-chat-header-shared {
+  min-height: 0;
+}
+
 /* ===== Conversation Sidebar ===== */
 .conversation-icon {
   width: 36px;
@@ -120,6 +125,8 @@
 .message-input-textarea {
   font-size: 15px;
   background: transparent;
+  line-height: 1.45;
+  overflow-y: auto;
 }
 
 .message-input-textarea:focus {

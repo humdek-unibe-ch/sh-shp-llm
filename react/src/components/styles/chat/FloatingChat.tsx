@@ -19,6 +19,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { LlmChat } from './LlmChat';
+import { ChatPanelHeader, HeaderButton } from '../shared/ChatPanelHeader';
 import type { LlmChatConfig, FloatingButtonPosition } from '../../../types';
 import './FloatingChat.css';
 
@@ -334,44 +335,20 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
           aria-labelledby={`${uniqueId}-title`}
           style={panelStyle}
         >
-          {/* Panel Header */}
-          <div className="llm-float-panel-header card-header bg-primary text-white d-flex align-items-center justify-content-between py-2 px-3">
-            <div className="d-flex align-items-center">
-              <div className="llm-float-panel-avatar mr-2">
-                <i className={`${iconClass} text-primary`}></i>
-              </div>
-              <div>
-                <h6 id={`${uniqueId}-title`} className="mb-0 font-weight-normal">
-                  {config.floatingChatTitle}
-                </h6>
-                <small className="d-flex align-items-center">
-                  <span className="llm-float-status-dot bg-success mr-1"></span>
-                  <i className="fas fa-robot fa-xs mr-1"></i>
-                  {config.configuredModel}
-                </small>
-              </div>
-            </div>
-            <div className="llm-float-panel-actions">
-              <button
-                type="button"
-                className="btn btn-link text-white p-1"
-                onClick={handleClose}
-                aria-label="Minimize chat"
-                title="Minimize"
-              >
-                <i className="fas fa-minus"></i>
-              </button>
-              <button
-                type="button"
-                className="btn btn-link text-white p-1 ml-1"
-                onClick={handleClose}
-                aria-label="Close chat"
-                title="Close"
-              >
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-          </div>
+          {/* Panel Header (shared with the inline chat and the form interview) */}
+          <ChatPanelHeader
+            title={config.floatingChatTitle}
+            titleId={`${uniqueId}-title`}
+            iconClass={iconClass}
+            status={config.configuredModel}
+            statusIcon="fa-robot"
+            actions={
+              <>
+                <HeaderButton icon="fa-minus" label="Minimize chat" onClick={handleClose} />
+                <HeaderButton icon="fa-times" label="Close chat" onClick={handleClose} />
+              </>
+            }
+          />
 
           {/* Panel Body - Chat Interface */}
           <div className="llm-float-panel-body">

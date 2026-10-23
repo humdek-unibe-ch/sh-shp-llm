@@ -15,6 +15,7 @@ import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react'
 import { Container, Row, Col, Alert, Card, Dropdown, Button } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
+import { ChatPanelHeader } from '../shared/ChatPanelHeader';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { ProgressIndicator } from '../shared/ProgressIndicator';
@@ -664,23 +665,15 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
             </div>
           )}
           <Card className="h-100 border-0 shadow-sm llm-chat-panel d-flex flex-column">
-            {/* Chat Header — hidden in floating mode by CSS */}
-            <Card.Header className="llm-chat-header bg-white border-0 d-flex justify-content-between align-items-center">
-              <div className="d-flex align-items-center" style={{ minWidth: 0, flex: 1 }}>
-                {!config.isFloatingMode && (
-                  <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3 flex-shrink-0" style={{width: '40px', height: '40px'}}>
-                    <i className="fas fa-robot text-white"></i>
-                  </div>
-                )}
-                <h5 className="mb-0">{currentConversation?.title || config.defaultChatTitle}</h5>
-              </div>
-              <div className="d-flex align-items-center flex-shrink-0 ml-2">
-                <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'} llm-model-badge`}>
-                  <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'} mr-1`}></i>
-                  {activeModel}
-                </span>
-              </div>
-            </Card.Header>
+            {/* Chat Header - shared with the floating panel; hidden in floating mode by CSS */}
+            <div className="llm-chat-header llm-chat-header-shared">
+              <ChatPanelHeader
+                title={currentConversation?.title || config.defaultChatTitle}
+                status={activeModel}
+                statusIcon={isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'}
+                warning={!!isModelMismatch}
+              />
+            </div>
 
             {/* Progress Indicator */}
             {config.enableProgressTracking && progress && (
@@ -703,7 +696,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
                 ref={messagesContainerRef}
                 id="messages-container"
                 onScroll={handleScroll}
-                className="flex-grow-1 overflow-auto p-3"
+                className="flex-grow-1 overflow-auto p-3 llm-slim-scroll"
               >
                 <MessageList
                   messages={messages}
