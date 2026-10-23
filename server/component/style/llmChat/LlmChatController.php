@@ -90,7 +90,9 @@ class LlmChatController extends BaseController
 
         // CRITICAL: Validate section_id FIRST
         // This ensures only the correct controller handles the request
-        if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->current_keyword == 'admin') {
+        // `current_keyword` is filled lazily, so it must be resolved through the getter; reading the
+        // bare property returned null and let CMS saves (admin/cms_update/...) reach handleRequest().
+        if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->get_keyword_from_url() == 'admin') {
             return; // Another controller will handle this request
         }
 
@@ -200,7 +202,13 @@ class LlmChatController extends BaseController
 
         // Handle POST requests
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $action = $_POST['action'] ?? 'send_message';
+            // Only POSTs that explicitly address the chat API are ours (an `action`, or the legacy bare
+            // `message`). Anything else - a CMS save, another form on the same page - must pass through
+            // untouched instead of being answered as an empty chat message.
+            $action = $_POST['action'] ?? (isset($_POST['message']) ? 'send_message' : null);
+            if ($action === null) {
+                return;
+            }
             $this->current_action = $action;
             $this->handlePostRequest($action);
             return;
