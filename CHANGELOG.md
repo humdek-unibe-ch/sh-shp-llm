@@ -50,9 +50,14 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   translatable `llm_interview_labels` (English, German and French built in)
   and Whisper speech-to-text (`enable_speech_to_text`,
   `speech_to_text_model`; the audio is deleted right after transcription).
-- **Default list look.** `table` and `cards` layouts are styled under the
-  `.llmFormLogList` root class. Every rule has minimal specificity and
-  follows the `--llm-iv-*` CSS variables, so project CSS always wins.
+- **The list shows the core's default look.** The `table` and `cards`
+  layouts of `llmFormLogList` look exactly like the core
+  `formUserInputLogList` (SelfHelp 7.12.0 ships that look; the plugin has no
+  list styles of its own). A small bridge on the `.llmFormLogList` root class
+  lets `--llm-iv-accent`, `--llm-iv-border`, `--llm-iv-surface` and
+  `--llm-iv-radius` drive it; without them the core's `--ful-*` variables and
+  Bootstrap's `--primary` apply. Add `formUserInputLogList-bare` to the
+  section's CSS field to drop the look and style the list from scratch.
 - **Shared forms.** One interview form can be reused on many pages through a
   reference section inside a `loop`; loop variables interpolate into the
   context, scope, titles, values, filter and `values_map`.
