@@ -403,8 +403,9 @@ highlight the current question, plus a Save button, next to the chat (chat
 left, right, top or bottom, or chat only) - no floating chat bubble.
 The chat uses the same header, bubbles and composer as `llmChat`; the
 default look is plain Bootstrap 4.6 and is themed through `--llm-iv-*`
-custom properties and the `llm_chat_appearance` JSON; the list gets a
-finished default look in both layouts (table and cards). Coach questions
+custom properties and the `llm_chat_appearance` JSON; the list shows the
+core's default look in both layouts (table and cards), themed by the same
+properties. Coach questions
 with fixed choices come as quick-reply buttons, `llm_interview_confirm`
 decides whether saving first shows the record (new entries) and/or a
 before/after view of the changes (saved records) or saves at once,

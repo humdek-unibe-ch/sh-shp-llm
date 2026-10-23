@@ -319,10 +319,10 @@ Set any of these custom properties on the section, an ancestor or
 | Property | Controls |
 |----------|----------|
 | `--llm-iv-height` | workspace height (default `clamp(420px, 74vh, 620px)`) |
-| `--llm-iv-accent` | chat header, active step, edited marks, progress, quick replies, save buttons (default Bootstrap `--primary`) |
+| `--llm-iv-accent` | chat header, active step, edited marks, progress, quick replies, save buttons, the list's edit button and card hover (default Bootstrap `--primary`) |
 | `--llm-iv-done` | completed step colour (default `--success`) |
-| `--llm-iv-border`, `--llm-iv-surface`, `--llm-iv-panel-bg`, `--llm-iv-chat-bg` | pane borders and backgrounds |
-| `--llm-iv-radius`, `--llm-iv-gap` | corner radius, space between the panes |
+| `--llm-iv-border`, `--llm-iv-surface`, `--llm-iv-panel-bg`, `--llm-iv-chat-bg` | pane borders and backgrounds (`-border` and `-surface` also the list's table and cards) |
+| `--llm-iv-radius`, `--llm-iv-gap` | corner radius (also the list's), space between the panes |
 | `--llm-iv-icon-bg` | launcher / header icon background |
 | `--llm-iv-sticky-top` | distance of the pinned chat from the viewport top (default `1rem`) |
 | `--llm-iv-modal-bg` | background of the modal window body (default `#f4f6f8`) |
@@ -341,6 +341,18 @@ window), `.llm-iv-modal` (every dialog), `.llm-iv-record` and
 `llmFormLogList`. The shared chat parts keep their `llmChat` classes:
 `.llm-panel-header`, `.message-bubble`, `.message-input-container`,
 `.message-send-btn`.
+
+**The list** (`table` or `cards`) has no styles of its own in this plugin: it
+shows the core's default look, the same one a plain `formUserInputLogList`
+has (SelfHelp 7.12.0 or newer). The shared `--llm-iv-*` variables above drive
+it through the `.llmFormLogList` root class; where they are not set, the core's
+`--ful-accent`, `--ful-border`, `--ful-surface`, `--ful-muted` and
+`--ful-radius` apply, then Bootstrap's `--primary`. Hooks for custom CSS are
+the core's: `.formUserInputLogList-card` (with `-card-cell`, whose
+`data-header` is the label), `-table-wrap`, `-col`, `-cell`, `-btn-edit`,
+`-btn-quick`, `-btn-delete`, and a language-independent `data-field` on every
+column. Add the class `formUserInputLogList-bare` to the section's CSS field
+to switch the whole look off and style the list from scratch.
 
 **Bubbles and avatars** come from `llm_chat_appearance` (same JSON as
 `llmChat`: `bg`, `text`, `border`, `icon`, `iconMobile`, `iconImage` per
