@@ -16,9 +16,7 @@
 --   6. Adds `llm_memory_rule_ids` multi-select on the form styles (and on SurveyJS
 --      when that plugin is installed) plus the hooks that run the selected memory
 --      rules after a finished submission
---   7. Adds `floating_shortcuts_hide_delay` (seconds, default 2) on llmChat for
---      how long the floating shortcut tray stays visible after mouse leave / blur
---   8. Adds `llm_scripts.combine_images` (optional labeled collage for vision scripts)
+--   7. Adds `llm_scripts.combine_images` (optional labeled collage for vision scripts)
 -- =====================================================
 
 START TRANSACTION;
