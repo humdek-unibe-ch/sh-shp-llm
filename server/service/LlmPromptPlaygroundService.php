@@ -517,7 +517,10 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $language_code = $this->getSessionLanguageCode();
         $system_prompt = $interpolated_context;
 
-        if ($language_code !== '') {
+        // Same opt-in as the production form (`llm_use_user_language`).
+        $use_user_language = (string)(is_array($runtime_values) && isset($runtime_values['llm_use_user_language'])
+            ? $runtime_values['llm_use_user_language'] : '0') === '1';
+        if ($language_code !== '' && $use_user_language) {
             $suffix = $this->prompt_assets->load('core.playground.language_suffix');
             $system_prompt .= "\n\n" . strtr($suffix, array('{{language_code}}' => $language_code));
         }
@@ -963,6 +966,12 @@ class LlmPromptChatRuntimeModel
     public function getConversationContext()
     {
         return $this->prompt;
+    }
+
+    /** @return bool Whether the language rule is appended (`llm_use_user_language`). */
+    public function useUserLanguage()
+    {
+        return (string)($this->runtime_values['llm_use_user_language'] ?? '0') === '1';
     }
 
     /** @return string Two-letter session language code (defaults to 'en'). */

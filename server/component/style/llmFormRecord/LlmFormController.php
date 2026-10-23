@@ -407,7 +407,7 @@ class LlmFormController extends FormUserInputController
         $user_prompt = $this->buildUserPrompt($filtered_form_data);
 
         $system_prompt = $interpolated_context;
-        if (!empty($user_language)) {
+        if (!empty($user_language) && $model->useUserLanguage()) {
             $suffix = $this->prompt_assets->load('core.playground.language_suffix');
             $system_prompt .= "\n\n" . strtr($suffix, array('{{language_code}}' => $user_language));
         }

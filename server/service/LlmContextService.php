@@ -64,7 +64,7 @@ class LlmContextService
      *
      * Priority order:
      * 1. Unified response schema with safety detection (ALWAYS applied)
-     * 2. Language-specific context adaptation
+     * 2. Language rule (only when `llm_use_user_language` is enabled)
      * 3. Floating mode - if floating button is enabled
      * 4. Strict conversation mode - if enabled and has context
      * 5. Form mode context - if enabled
@@ -79,8 +79,11 @@ class LlmContextService
         // Get base context from model configuration
         $context_messages = $this->model->getParsedConversationContext();
 
-        // Apply language-specific context adaptation
-        $context_messages = $this->applyLanguageContext($context_messages);
+        // Language rule: opt-in per chat (`llm_use_user_language`). Without
+        // it the author context alone decides the answer language.
+        if (method_exists($this->model, 'useUserLanguage') && $this->model->useUserLanguage()) {
+            $context_messages = $this->applyLanguageContext($context_messages);
+        }
 
         // Build progress data if progress tracking is enabled
         $include_progress = $this->model->isProgressTrackingEnabled();

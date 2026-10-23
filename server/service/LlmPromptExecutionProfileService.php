@@ -204,7 +204,8 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'danger_blocked_message',
                 'enable_floating_button',
                 'enable_media_rendering',
-                'allowed_media_domains'
+                'allowed_media_domains',
+                'llm_use_user_language'
             );
         }
 
@@ -212,7 +213,8 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             return array(
                 'llm_model',
                 'llm_temperature',
-                'llm_max_tokens'
+                'llm_max_tokens',
+                'llm_use_user_language'
             );
         }
 
@@ -395,6 +397,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             $snapshot['danger_keywords'] = $runtime_values['danger_keywords'] ?? '';
             $snapshot['enable_floating_button'] = $this->toBoolString($runtime_values['enable_floating_button'] ?? null);
             $snapshot['enable_media_rendering'] = $this->toBoolString($runtime_values['enable_media_rendering'] ?? null);
+        }
+        if ($profile === 'chat_runtime' || $profile === 'form_runtime') {
+            $snapshot['use_user_language'] = $this->toBoolString($runtime_values['llm_use_user_language'] ?? null);
         }
 
         $extended = $this->getExtendedConfigSnapshotFields($profile, $runtime_values);

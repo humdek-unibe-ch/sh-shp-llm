@@ -532,6 +532,18 @@ class LlmChatModel extends StyleModel
     public function shouldShowProgressTopics() { return $this->get_db_field('progress_show_topics', '0') === '1'; }
 
     /**
+     * Whether the model is told to answer in the participant's UI language
+     * (`llm_use_user_language`, off by default: the author context then
+     * decides the language alone).
+     *
+     * @return bool
+     */
+    public function useUserLanguage()
+    {
+        return $this->get_db_field('llm_use_user_language', '0') === '1';
+    }
+
+    /**
      * Get the context language for progress confirmation questions.
      * Auto-detected from session locale via LlmLanguageUtility.
      */
