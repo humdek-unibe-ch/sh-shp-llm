@@ -840,6 +840,16 @@
     font-size: 0.875rem;
 }
 .llm-iv-notice .close { padding: 0.45rem 0.6rem; }
+/* CMS danger_blocked_message is markdown (often stored as HTML). */
+.llm-iv-notice-md { font-size: 0.9rem; line-height: 1.45; }
+.llm-iv-notice-md > *:first-child { margin-top: 0; }
+.llm-iv-notice-md > *:last-child { margin-bottom: 0; }
+.llm-iv-notice-md p,
+.llm-iv-notice-md ul,
+.llm-iv-notice-md ol { margin: 0 0 0.5rem; }
+.llm-iv-notice-md ul,
+.llm-iv-notice-md ol { padding-left: 1.25rem; }
+.llm-iv-launcher .llm-iv-notice-md { max-width: 48rem; }
 
 .llm-iv-footer.card-footer {
     flex: 0 0 auto;

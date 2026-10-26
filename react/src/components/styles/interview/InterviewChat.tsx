@@ -39,6 +39,8 @@ export interface ChatNotice {
   retry?: () => void;
   /** `info` for something that fixed itself (a draft refreshed elsewhere). */
   tone?: 'danger' | 'info';
+  /** When true, `message` is markdown (e.g. CMS danger_blocked_message). */
+  markdown?: boolean;
 }
 
 interface InterviewChatProps {
@@ -54,8 +56,10 @@ interface InterviewChatProps {
   opening: boolean;
   /** Sending waits (a turn or the save is running); typing stays possible. */
   sendBlocked: boolean;
-  /** The entry is saved - transcript only. */
+  /** The entry is saved - transcript only (not a crisis block). */
   finished: boolean;
+  /** Danger/crisis block: hide composer without treating the entry as saved. */
+  conversationBlocked?: boolean;
   /** The save request is running. */
   approving: boolean;
   /** Everything needed to save is there: offer the Save button here too. */
@@ -106,6 +110,7 @@ export const InterviewChat: React.FC<InterviewChatProps> = ({
   opening,
   sendBlocked,
   finished,
+  conversationBlocked = false,
   approving,
   canApprove,
   notice,
@@ -169,12 +174,14 @@ export const InterviewChat: React.FC<InterviewChatProps> = ({
 
   // Quick replies: the coach's own suggestions first, otherwise the
   // closed options of the active question.
+  const hideComposer = finished || conversationBlocked;
+
   const quickReplies = useMemo(() => {
-    if (finished || thinking || sendBlocked) return [] as string[];
+    if (hideComposer || thinking || sendBlocked) return [] as string[];
     const suggested = (state?.suggestions ?? []).filter((s) => s.trim() !== '');
     if (suggested.length > 0) return suggested;
     return choicesOf(state).map((o) => o.label);
-  }, [state, finished, thinking, sendBlocked]);
+  }, [state, hideComposer, thinking, sendBlocked]);
 
   // Keep the newest entry in view; the transcript never grows the page.
   useEffect(() => {
@@ -280,10 +287,18 @@ export const InterviewChat: React.FC<InterviewChatProps> = ({
 
       {notice ? (
         <div
-          className={`alert alert-${notice.tone === 'info' ? 'info' : 'danger'} alert-dismissible llm-iv-notice mb-0`}
+          className={`alert alert-${notice.tone === 'info' ? 'info' : 'danger'}${
+            notice.markdown ? '' : ' alert-dismissible'
+          } llm-iv-notice mb-0`}
           role="alert"
         >
-          <span>{notice.message}</span>
+          {notice.markdown ? (
+            <div className="llm-iv-notice-md">
+              <MarkdownRenderer content={notice.message} />
+            </div>
+          ) : (
+            <span>{notice.message}</span>
+          )}
           {notice.retry ? (
             <button
               type="button"
@@ -293,13 +308,15 @@ export const InterviewChat: React.FC<InterviewChatProps> = ({
               {labels.retry}
             </button>
           ) : null}
-          <button type="button" className="close" aria-label={labels.close} onClick={onDismissNotice}>
-            <span aria-hidden="true">&times;</span>
-          </button>
+          {!notice.markdown ? (
+            <button type="button" className="close" aria-label={labels.close} onClick={onDismissNotice}>
+              <span aria-hidden="true">&times;</span>
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      {!finished ? (
+      {!hideComposer ? (
         <Card.Footer className="bg-white border-0 p-3 llm-chat-footer llm-iv-footer">
           {canApprove ? (
             <div className="llm-iv-approvebar" role="status">

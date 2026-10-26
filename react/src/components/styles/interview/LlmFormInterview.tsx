@@ -383,6 +383,9 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
   const describe = useCallback(
     (e: InterviewApiError): string => {
       switch (e.type) {
+        case 'danger_detected':
+          // CMS `danger_blocked_message` (markdown) from the server.
+          return e.message || labels.errorGeneric;
         case 'rate_limited':
           return labels.errorRate;
         case 'conflict':
@@ -420,10 +423,13 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
         }
         // Keep the technical detail for support, show the friendly text.
         console.warn('[llm-interview]', e.type, e.message);
+        const isDanger = e.type === 'danger_detected';
         setNotice({
           message: describe(e),
-          retry,
+          // Danger blocks the thread; retrying the same text is wrong.
+          retry: isDanger ? undefined : retry,
           tone: e.type === 'conflict' ? 'info' : 'danger',
+          markdown: isDanger,
         });
         if (e.fieldErrors) setFieldErrors(e.fieldErrors);
         if (e.formErrors) setFormErrors(e.formErrors);
@@ -660,7 +666,13 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
                 continue;
               }
             }
-            const delivered = userMessageCount(stateRef.current) > before;
+            // Prefer the error payload's state: a post-turn danger block
+            // already stored the participant message even though sendTurn threw.
+            const after =
+              e instanceof InterviewApiError && e.state
+                ? e.state
+                : stateRef.current;
+            const delivered = userMessageCount(after) > before;
             applyError(
               e,
               start
@@ -971,7 +983,9 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
   const isWorking = working > 0;
   const opening = opKind === 'open' && isWorking;
   const approving = opKind === 'approve' && isWorking;
-  const sendBlocked = awaitingCoach || approving || opening;
+  // Crisis block locks the composer; it is not a normal saved/finished entry.
+  const conversationBlocked = !!state?.blocked;
+  const sendBlocked = awaitingCoach || approving || opening || conversationBlocked;
   const finished = !!state?.completed_at && state.mode === 'new';
 
   // Fields edited in a hosted native control sit in the slot of their own question.
@@ -1084,6 +1098,7 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
       resume={resume}
       busy={opening && !config.modal}
       error={open ? null : notice?.message ?? null}
+      errorMarkdown={!open && !!notice?.markdown}
       saved={savedNote}
       onDismissSaved={() => setSavedNote(false)}
       onDismissError={dismissNotice}
@@ -1153,8 +1168,9 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
         opening={opening}
         sendBlocked={sendBlocked}
         finished={finished}
+        conversationBlocked={conversationBlocked}
         approving={approving}
-        canApprove={!!state?.can_approve && !finished}
+        canApprove={!!state?.can_approve && !finished && !conversationBlocked}
         notice={notice}
         onDismissNotice={dismissNotice}
         onSend={(text) => send(text)}

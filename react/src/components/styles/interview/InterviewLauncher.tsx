@@ -18,6 +18,7 @@ import React from 'react';
 import { Spinner } from 'react-bootstrap';
 import type { InterviewConfig, InterviewUiLabels } from '../../../types/interview';
 import { faClass } from '../shared/ChatPanelHeader';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { fillTemplate } from './interviewUtils';
 
 interface InterviewLauncherProps {
@@ -30,6 +31,8 @@ interface InterviewLauncherProps {
   /** The interview is opening. */
   busy: boolean;
   error: string | null;
+  /** CMS danger_blocked_message (markdown/HTML) — render rich text, no dismiss. */
+  errorMarkdown?: boolean;
   /** An entry was just saved. */
   saved: boolean;
   onDismissSaved: () => void;
@@ -45,6 +48,7 @@ export const InterviewLauncher: React.FC<InterviewLauncherProps> = ({
   resume,
   busy,
   error,
+  errorMarkdown = false,
   saved,
   onDismissSaved,
   onDismissError,
@@ -96,11 +100,22 @@ export const InterviewLauncher: React.FC<InterviewLauncherProps> = ({
           </div>
         </div>
         {error ? (
-          <div className="alert alert-danger alert-dismissible mt-3 mb-0" role="alert">
-            {error}
-            <button type="button" className="close" aria-label={labels.close} onClick={onDismissError}>
-              <span aria-hidden="true">&times;</span>
-            </button>
+          <div
+            className={`alert alert-danger mt-3 mb-0${errorMarkdown ? '' : ' alert-dismissible'}`}
+            role="alert"
+          >
+            {errorMarkdown ? (
+              <div className="llm-iv-notice-md">
+                <MarkdownRenderer content={error} />
+              </div>
+            ) : (
+              <span>{error}</span>
+            )}
+            {!errorMarkdown ? (
+              <button type="button" className="close" aria-label={labels.close} onClick={onDismissError}>
+                <span aria-hidden="true">&times;</span>
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
