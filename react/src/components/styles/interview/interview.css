@@ -25,6 +25,11 @@
  *   --llm-iv-gap           space between the panels
  *   --llm-iv-icon-bg       launcher icon background / highlight tint
  *   --llm-iv-sticky-top    distance of the pinned chat from the viewport top
+ *   --llm-iv-chat-width    chat pane width when beside the answers (default
+ *                          min(28%, 22rem)); form takes the rest. e.g. 18rem
+ *                          for a slim chat, 36rem / 40% for a wider one
+ *   --llm-iv-cards-min     min card width in the cards grid (default 14rem);
+ *                          columns wrap as more questions are added
  *
  * Bubble colours and avatars come from the `llm_chat_appearance` field
  * (same JSON as llmChat). Class hooks for deeper CSS: .llm-iv-launcher,
@@ -107,15 +112,22 @@
 /* ---------- Workspace: answers panel + chat panel ----------
  * The answers panel grows with its content (no inner scrollbar); the chat
  * keeps a fixed height and stays pinned while the page scrolls past a tall
- * form. Chat position: right (default) | left | top | bottom. */
+ * form. Chat position: right (default) | left | top | bottom.
+ *
+ * Beside the answers the form takes the free space and the chat stays a
+ * chat-width column (--llm-iv-chat-width). Override on the section, e.g.
+ * 18rem (slim), 36rem / 40% (wider).
+ */
 .llm-iv-workspace {
     display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-columns: minmax(0, 1fr) minmax(14rem, var(--llm-iv-chat-width, min(28%, 22rem)));
     gap: var(--_gap);
     align-items: start;
     min-width: 0;
 }
-.llm-iv-workspace.pos-left { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+.llm-iv-workspace.pos-left {
+    grid-template-columns: minmax(14rem, var(--llm-iv-chat-width, min(28%, 22rem))) minmax(0, 1fr);
+}
 .llm-iv-workspace.pos-left .llm-iv-chat { order: -1; }
 .llm-iv-workspace.pos-top,
 .llm-iv-workspace.pos-bottom { grid-template-columns: minmax(0, 1fr); }
@@ -379,16 +391,29 @@
 }
 .llm-iv-steps-stepper .llm-iv-step.is-done:not(:last-child)::before { background: var(--_done); }
 
-/* cards: each question on its own card */
+/* cards: responsive grid - auto-fill columns from --llm-iv-cards-min so
+ * 4 questions read as a 2×2 (like a WOOP board), 6 as 2×3 / 3×2, etc. */
+.llm-iv-steps-cards {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(min(100%, var(--llm-iv-cards-min, 14rem)), 1fr)
+    );
+    gap: 0.75rem;
+    align-items: stretch;
+}
 .llm-iv-steps-cards .llm-iv-step {
     --_mark: 1.75rem;
-    margin-bottom: 0.625rem;
-    padding: 0.75rem 0.875rem;
+    margin: 0;
+    height: 100%;
+    padding: 0.875rem 1rem;
     background: var(--_surface);
     border: 1px solid var(--_border);
+    border-radius: calc(var(--_radius) * 0.85);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.llm-iv-steps-cards .llm-iv-step:last-child { margin-bottom: 0; }
+/* Hand-editable / wide controls keep a full row so inputs stay usable. */
+.llm-iv-steps-cards .llm-iv-step.is-hosted { grid-column: 1 / -1; }
 .llm-iv-steps-cards .llm-iv-step.is-done { border-left: 3px solid var(--_done); }
 .llm-iv-steps-cards .llm-iv-step.is-asking,
 .llm-iv-steps-cards .llm-iv-step.is-edited {

@@ -100,6 +100,10 @@ const THEME_VARS = [
   '--llm-iv-gap',
   '--llm-iv-icon-bg',
   '--llm-iv-height',
+  '--llm-iv-chat-width',
+  '--llm-iv-cards-min',
+  '--llm-iv-sticky-top',
+  '--llm-iv-modal-bg',
 ];
 
 /** How long an answer the coach just filled in stays highlighted. */
