@@ -1110,25 +1110,6 @@ class LlmFormInterviewService
         $messages = array();
         $protocol = $this->prompt_assets->load('core.form_interview.system');
         $messages[] = array('role' => 'system', 'content' => $protocol);
-        // Default-on (`llm_use_user_language`): the participant's current UI
-        // language wins - including English, so a German author context or
-        // earlier German turns never keep the coach answering in German
-        // after a language switch. When the flag is off the author context
-        // alone decides the language.
-        $language = method_exists($model, 'getUserLanguage') ? $model->getUserLanguage() : 'en';
-        $use_user_language = method_exists($model, 'useUserLanguage') && $model->useUserLanguage();
-        if ($use_user_language && $language !== '') {
-            $language_name = LlmLanguageUtility::getLanguageName($language);
-            $messages[] = array(
-                'role' => 'system',
-                'content' => 'CRITICAL LANGUAGE INSTRUCTION: '
-                    . LlmLanguageUtility::generateLanguageInstruction($language)
-                    . " Use {$language_name} and ONLY {$language_name} for all coach text and quick-reply suggestions,"
-                    . ' even when the author context, field labels, option labels or earlier messages are in another language,'
-                    . ' unless the participant explicitly asks to switch. This overrides any other instruction about language.'
-                    . ' Field names and option values inside interview.collected_fields stay exactly as supplied by the server.',
-            );
-        }
 
         $interp = $this->interpolationEntry($model, $payload);
         $author_template = trim((string)$model->getInterviewContextTemplate());
@@ -1169,6 +1150,29 @@ class LlmFormInterviewService
                 $messages[] = array('role' => 'assistant', 'content' => $last_coach);
             }
         }
+
+        // Language rule LAST among system/context blocks (after the author
+        // prompt). Default-on (`llm_use_user_language`): the participant's
+        // current UI language wins — including English — even when the
+        // author context is German or asks to "speak Deutsch". Placing it
+        // after the author text stops that text from winning by recency.
+        // When the flag is off the author context alone decides language.
+        $language = method_exists($model, 'getUserLanguage') ? $model->getUserLanguage() : 'en';
+        $use_user_language = method_exists($model, 'useUserLanguage') && $model->useUserLanguage();
+        if ($use_user_language && $language !== '') {
+            $language_name = LlmLanguageUtility::getLanguageName($language);
+            $messages[] = array(
+                'role' => 'system',
+                'content' => 'CRITICAL LANGUAGE INSTRUCTION: '
+                    . LlmLanguageUtility::generateLanguageInstruction($language)
+                    . " Use {$language_name} and ONLY {$language_name} for all coach text and quick-reply suggestions,"
+                    . ' even when the author context, field labels, option labels or earlier messages are in another language,'
+                    . ' and even when the author context itself is written in another language or tells you to speak that language.'
+                    . ' This overrides any other instruction about language unless the participant explicitly asks to switch.'
+                    . ' Field names and option values inside interview.collected_fields stay exactly as supplied by the server.',
+            );
+        }
+
         if ($start) {
             $messages[] = array('role' => 'system', 'content' => $this->startInstruction($record_id !== null));
         } else {

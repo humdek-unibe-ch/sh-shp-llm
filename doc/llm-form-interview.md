@@ -380,15 +380,17 @@ the list is replaced).
 ## Language, quick replies and speech
 
 - **Language rule (default on).** With `llm_use_user_language = 1` (the
-  default) every turn carries a system instruction that the participant's
-  current UI language wins - including English - even when the author
-  context, field labels or earlier turns are in another language (unless
-  the participant explicitly asks the coach to switch). Switching the site
-  language mid-interview switches the coach on the next turn. Untick the
-  flag so only the author context decides. Field names and option values
-  in `interview.collected_fields` stay exactly as supplied by the server.
-  The built-in UI texts (buttons, dialogs, hints) always follow the UI
-  language.
+  default) every turn appends a system instruction *after* the author
+  context so the participant's current UI language wins - including
+  English - even when the author prompt is written in another language or
+  tells the coach to speak that language, and even when field labels or
+  earlier turns are in another language (unless the participant explicitly
+  asks to switch). Switching the site language mid-interview switches the
+  coach on the next turn. Untick the flag so only the author context
+  decides. Field names and option values in `interview.collected_fields`
+  stay exactly as supplied by the server. The built-in UI texts (buttons,
+  dialogs, hints) always follow the UI language. Prefer language-neutral
+  address rules in the author context when you expect mixed UI languages.
 - **Quick replies.** The coach may return `content.suggestions` (up to six
   distinct single-line labels of at most 120 characters). They render as
   buttons under the last coach message of an open draft; choosing one sends
