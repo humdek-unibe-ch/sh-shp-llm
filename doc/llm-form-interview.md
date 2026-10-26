@@ -13,7 +13,7 @@ to `dataRows` before that approval.
 > chat position, all four answers layouts, the table and cards list),
 > URL-driven open, drafting, approval with its three confirmation modes,
 > resume, editing an existing record (with a before/after view), the
-> opt-in language rule, quick replies, a shared form reused through a
+> language rule (default on), quick replies, a shared form reused through a
 > reference section, loop interpolation and the archive/restore pattern
 > were exercised end-to-end on a development stack (real database, LLM
 > endpoint, browser, phone viewport).
@@ -141,7 +141,7 @@ Every field also appears in the CMS with its own help text.
 | `llm_interview_title` / `llm_interview_subtitle` | - | Chat header text. Translatable; both support `{{field}}` / loop-variable interpolation (e.g. `Your personal plan for {{module_topic}}`). |
 | `llm_interview_input_placeholder` / `llm_interview_send_label` / `llm_interview_approve_label` | defaults | UI labels. The start button uses the core `label_new` field. |
 | `llm_interview_labels` | - | Translatable JSON that overrides every remaining participant-facing text - see [Participant UI](#participant-ui). English, German and French are built in. |
-| `llm_use_user_language` | `0` | Append the language rule: the coach answers in the language the participant selected in SelfHelp. Off = only the author context decides. Shared by `llmChat`, `llmFormRecord`, `llmFormLog`, `llmFormLogList` and Prompt Lab. |
+| `llm_use_user_language` | `1` | Append the language rule: the coach answers in the language the participant selected in SelfHelp. On by default (same as pre-1.6.0). Off = only the author context decides. Shared by `llmChat`, `llmFormRecord`, `llmFormLog`, `llmFormLogList` and Prompt Lab. |
 | `llm_chat_appearance` | blue/grey | Bubble colours and avatars, the same JSON contract as `llmChat` - see [Theming](#theming). |
 | `enable_speech_to_text` / `speech_to_text_model` | `0` / `faster-whisper-large-v3` | Microphone button in the composer (Whisper transcription) - see [Language, quick replies and speech](#language-quick-replies-and-speech). |
 | `llm_model` / `llm_temperature` / `llm_max_tokens` / `llm_reasoning_effort` | module defaults | Same fallback chain as `llmChat`. |
@@ -373,13 +373,13 @@ the list is replaced).
 
 ## Language, quick replies and speech
 
-- **Language rule (opt-in).** With `llm_use_user_language = 1` every turn
-  carries a system instruction that the participant's current UI language
-  wins - including English - even when the author context, field labels or
-  earlier turns are in another language (unless the participant explicitly
-  asks the coach to switch). Switching the site language mid-interview
-  switches the coach on the next turn. Without the flag (default) only the
-  author context decides. Field names and option values
+- **Language rule (default on).** With `llm_use_user_language = 1` (the
+  default) every turn carries a system instruction that the participant's
+  current UI language wins - including English - even when the author
+  context, field labels or earlier turns are in another language (unless
+  the participant explicitly asks the coach to switch). Switching the site
+  language mid-interview switches the coach on the next turn. Untick the
+  flag so only the author context decides. Field names and option values
   in `interview.collected_fields` stay exactly as supplied by the server.
   The built-in UI texts (buttons, dialogs, hints) always follow the UI
   language.

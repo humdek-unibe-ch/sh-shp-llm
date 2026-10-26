@@ -66,17 +66,36 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   validation and draft merge - no participant state, approval or memory
   writes.
 - **`llm_use_user_language`** checkbox on `llmChat`, `llmFormRecord`,
-  `llmFormLog` and `llmFormLogList` (see Changed).
+  `llmFormLog` and `llmFormLogList` (see Changed). Default on so upgrades
+  keep the always-on participant-language behaviour from 1.5.0; uncheck to
+  let the author context alone decide.
 - **`floating_shortcuts_hide_delay`** on `llmChat` (default 2 seconds, 0-60):
   how long the floating shortcut pills stay visible after the mouse leaves.
+- **LLM script `sent_context` audit fields.** Each script run now also
+  stores `script_id`, `script_name` and `script_updated_at` next to the
+  full `script_template` snapshot so admin inspection can see which row
+  revision was used after edits (`llm_scripts` has no version column).
+
+### Fixed
+
+- **Script / memory-rule Prompt Lab versions stuck on v1 Draft.** Saves
+  wrote versions under the CMS language while the Scripts/Memory UI
+  bootstrapped language `1`, so the toolbar never saw new versions and
+  stayed dirty. Both owners now always version under SelfHelp language
+  id `1` (the CMS default / neutral slot); a legacy NULL or other-language
+  stream is adopted into that slot so prior saves reappear.
+- **`llm_interview_context` CMS label showed a stray `'>`.** The field
+  Hint used `participant's`; core `descriptionItem` put help into a
+  single-quoted `data-content` without escaping, so the apostrophe broke
+  the attribute. Help wording no longer uses that apostrophe; core must
+  escape help for the popover attribute (see Core companion fixes).
 
 ### Changed
 
-- **The language rule is opt-in.** In 1.5.0 every conversation was told to
-  answer in the participant's language. Now that happens only when
-  `llm_use_user_language` is ticked (off by default, also after the upgrade -
-  tick it wherever the old behavior is wanted). Unticked, the author context
-  alone decides the language.
+- **The language rule is configurable (default on).** In 1.5.0 every
+  conversation was told to answer in the participant's language. That
+  behaviour stays the default via `llm_use_user_language` (ticked). Untick
+  it when the author context alone should decide the language.
 - **Inline `llmChat` looks like the floating chat.** Same panel header, one
   shared slim scrollbar.
 
@@ -97,6 +116,9 @@ Recommended with this release, not required:
   logging in again never lands on a JSON response.
 - `CmsView`: `text` fields are no longer HTML-escaped a second time in the
   CMS edit form.
+- `descriptionItem` help popover: `data-content` is HTML-attribute-escaped
+  so Hint text with apostrophes or Parsedown markup no longer breaks the
+  field label (stray `'>` after the name).
 
 ## [1.5.0]
 

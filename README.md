@@ -409,9 +409,9 @@ properties. Coach questions
 with fixed choices come as quick-reply buttons, `llm_interview_confirm`
 decides whether saving first shows the record (new entries) and/or a
 before/after view of the changes (saved records) or saves at once,
-`llm_use_user_language` makes the coach answer in the participant's
-current UI language, and `enable_speech_to_text` adds a Whisper
-microphone. The form can be shared across pages with a CMS reference
+`llm_use_user_language` (on by default) makes the coach answer in the
+participant's current UI language; uncheck it so the author context alone
+decides. `enable_speech_to_text` adds a Whisper microphone. The form can be shared across pages with a CMS reference
 section inside a loop, and combined with a hidden `status`, quick actions
 and `history_log` into an archive/restore pattern. See
 [doc/llm-form-interview.md](doc/llm-form-interview.md).
