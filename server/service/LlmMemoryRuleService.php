@@ -416,11 +416,13 @@ class LlmMemoryRuleService extends BaseLlmService
             throw new Exception('Memory rule not found for prompt descriptor');
         }
 
+        // Memory-rule prompts are language-agnostic (same as LLM scripts):
+        // one version stream per rule under SelfHelp language id 1.
         return array(
             'owner_type' => LLM_PROMPT_OWNER_MEMORY_RULE,
             'owner_id' => (int)$rule['id'],
             'prompt_slot' => 'memory_rule',
-            'id_languages' => $this->registry->getCurrentCmsLanguageId(),
+            'id_languages' => $this->registry->getAgnosticPromptLanguageId(),
             'title' => $rule['label'] ?: ('Rule #' . $rule['id']),
             'rule_config' => $rule
         );

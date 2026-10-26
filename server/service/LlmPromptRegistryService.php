@@ -63,9 +63,14 @@ class LlmPromptRegistryService extends BaseLlmService
         }
 
         if ($entry) {
-            $locale = $this->findLocale($entry['id'], $descriptor['id_languages'] ?? null);
+            $language_id = $this->normalizeOwnerLanguageId($descriptor);
+            $locale = $this->resolveLocale(
+                (int)$entry['id'],
+                $language_id,
+                $this->isAgnosticPromptOwner($descriptor)
+            );
             if (!$locale && $create_if_missing) {
-                $locale = $this->createLocale($entry['id'], $descriptor['id_languages'] ?? null);
+                $locale = $this->createLocale($entry['id'], $language_id);
             }
 
             if ($locale && empty($locale['active_version_id']) && $create_if_missing) {
@@ -120,9 +125,15 @@ class LlmPromptRegistryService extends BaseLlmService
             $entry = $this->createEntry($descriptor);
         }
 
-        $locale = $this->findLocale($entry['id'], $descriptor['id_languages'] ?? null);
+        $language_id = $this->normalizeOwnerLanguageId($descriptor);
+        $descriptor['id_languages'] = $language_id;
+        $locale = $this->resolveLocale(
+            (int)$entry['id'],
+            $language_id,
+            $this->isAgnosticPromptOwner($descriptor)
+        );
         if (!$locale) {
-            $locale = $this->createLocale($entry['id'], $descriptor['id_languages'] ?? null);
+            $locale = $this->createLocale($entry['id'], $language_id);
         }
 
         return $this->ensureVersionSnapshot(
@@ -173,11 +184,15 @@ class LlmPromptRegistryService extends BaseLlmService
      */
     public function syncScriptSave($script_row, $change_note = null, $meta_json = null)
     {
+        // Scripts are language-agnostic: one prompt stream per row, stored
+        // under SelfHelp language id 1 (the CMS default / neutral slot).
+        // Never key by the editor's CMS language - that stranded versions
+        // when the UI bootstrapped language 1 (stuck on v1 Draft).
         $descriptor = array(
             'owner_type' => LLM_PROMPT_OWNER_SCRIPT,
             'owner_id' => (int)$script_row['id'],
             'prompt_slot' => 'script',
-            'id_languages' => $script_row['id_languages'] ?? $this->getCurrentCmsLanguageId(),
+            'id_languages' => $this->getAgnosticPromptLanguageId(),
             'title' => $script_row['name'] ?? ('Script ' . $script_row['id'])
         );
 
@@ -433,6 +448,101 @@ class LlmPromptRegistryService extends BaseLlmService
     }
 
     /**
+     * SelfHelp language id used for language-neutral owners (scripts,
+     * memory rules): the same default slot CMS uses when a field is not
+     * translated per language.
+     *
+     * @return int
+     */
+    public function getAgnosticPromptLanguageId()
+    {
+        return 1;
+    }
+
+    /**
+     * @param array $descriptor
+     * @return bool
+     */
+    private function isAgnosticPromptOwner(array $descriptor)
+    {
+        $owner_type = $descriptor['owner_type'] ?? '';
+        return $owner_type === LLM_PROMPT_OWNER_SCRIPT
+            || $owner_type === LLM_PROMPT_OWNER_MEMORY_RULE;
+    }
+
+    /**
+     * Normalize descriptor language: agnostic owners always use language 1;
+     * other owners keep an explicit id or null.
+     *
+     * @param array $descriptor
+     * @return int|null
+     */
+    private function normalizeOwnerLanguageId(array $descriptor)
+    {
+        if ($this->isAgnosticPromptOwner($descriptor)) {
+            return $this->getAgnosticPromptLanguageId();
+        }
+        if (!array_key_exists('id_languages', $descriptor) || $descriptor['id_languages'] === null || $descriptor['id_languages'] === '') {
+            return null;
+        }
+        return (int)$descriptor['id_languages'];
+    }
+
+    /**
+     * Resolve the locale stream for an entry. For agnostic owners (scripts /
+     * memory rules), when the preferred language-1 stream is missing, adopt
+     * the richest existing stream (including legacy NULL or CMS-language
+     * rows) into language 1 so versions stay visible. Never adopt for
+     * normal per-language style-field prompts.
+     *
+     * @param int $entry_id
+     * @param int|null $language_id
+     * @param bool $allow_adopt
+     * @return array|null
+     */
+    private function resolveLocale($entry_id, $language_id, $allow_adopt = false)
+    {
+        if ($language_id !== null && $language_id !== '') {
+            $language_id = (int)$language_id;
+        } else {
+            $language_id = null;
+        }
+
+        $locale = $this->findLocale($entry_id, $language_id);
+        if ($locale || !$allow_adopt || $language_id === null) {
+            return $locale;
+        }
+
+        // Prefer a legacy NULL stream from the earlier agnostic fix, else the
+        // richest language-keyed row (e.g. saves under CMS language 2).
+        $candidate = $this->findLocale($entry_id, null);
+        if (!$candidate) {
+            $candidate = $this->db->query_db_first(
+                "SELECT *
+                 FROM llm_prompt_locales
+                 WHERE id_llm_prompt_entries = :entry_id
+                 ORDER BY COALESCE(active_version_no, 0) DESC, id DESC
+                 LIMIT 1",
+                array(':entry_id' => (int)$entry_id)
+            );
+        }
+        if (!$candidate) {
+            return null;
+        }
+
+        $this->db->update_by_ids(
+            'llm_prompt_locales',
+            array(
+                'id_languages' => $language_id,
+                'id_users_updated' => $_SESSION['id_user'] ?? null,
+            ),
+            array('id' => (int)$candidate['id'])
+        );
+
+        return $this->findLocale($entry_id, $language_id);
+    }
+
+    /**
      * Create a new locale stream for a prompt entry and log the transaction.
      *
      * @param int      $entry_id    Prompt entry ID.
@@ -515,9 +625,14 @@ class LlmPromptRegistryService extends BaseLlmService
                 array('id' => (int)$locale['id'])
             );
 
+            $language_id = $this->normalizeOwnerLanguageId($descriptor);
             return array(
                 'entry' => $entry,
-                'locale' => $this->findLocale($entry['id'], $descriptor['id_languages'] ?? null),
+                'locale' => $this->resolveLocale(
+                    (int)$entry['id'],
+                    $language_id,
+                    $this->isAgnosticPromptOwner($descriptor)
+                ) ?: $locale,
                 'version' => $active_version,
                 'created' => false
             );
@@ -567,9 +682,14 @@ class LlmPromptRegistryService extends BaseLlmService
             'Prompt version created'
         );
 
+        $language_id = $this->normalizeOwnerLanguageId($descriptor);
         return array(
             'entry' => $this->findEntry($descriptor),
-            'locale' => $this->findLocale($entry['id'], $descriptor['id_languages'] ?? null),
+            'locale' => $this->resolveLocale(
+                (int)$entry['id'],
+                $language_id,
+                $this->isAgnosticPromptOwner($descriptor)
+            ),
             'version' => $this->getVersion($version_id),
             'created' => true
         );
