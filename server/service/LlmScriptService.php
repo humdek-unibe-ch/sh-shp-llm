@@ -232,11 +232,23 @@ class LlmScriptService extends BaseLlmService
                 );
             }
 
-            // Collage is opt-in per script (Scripts Manager). Off → first 4 only.
-            if ($combine_images === null && $script_id) {
+            // Load the script row once for collage flag + audit metadata
+            // (script_updated_at is the only revision marker llm_scripts has).
+            $scriptRow = null;
+            $script_updated_at = null;
+            if ($script_id) {
                 $scriptRow = $this->fetch_script($script_id);
-                $combine_images = !empty($scriptRow['combine_images']);
+                if (is_array($scriptRow)) {
+                    if (($script_name === null || $script_name === '') && !empty($scriptRow['name'])) {
+                        $script_name = $scriptRow['name'];
+                    }
+                    $script_updated_at = isset($scriptRow['updated_at']) ? $scriptRow['updated_at'] : null;
+                    if ($combine_images === null) {
+                        $combine_images = !empty($scriptRow['combine_images']);
+                    }
+                }
             }
+            // Collage is opt-in per script (Scripts Manager). Off → first 4 only.
             $combine_images = (bool)$combine_images;
             $apiMax = defined('LLM_MAX_FILES_PER_MESSAGE') ? (int)LLM_MAX_FILES_PER_MESSAGE : 4;
             $sourceMax = $combine_images
@@ -338,6 +350,9 @@ class LlmScriptService extends BaseLlmService
             }
 
             $execution_context = array(
+                'script_id' => $script_id ? (int)$script_id : null,
+                'script_name' => $script_name,
+                'script_updated_at' => $script_updated_at,
                 'script_template' => $script,
                 'data_config' => $data_config,
                 // Prompt-safe view only (no base64); image fields are markers.
@@ -364,6 +379,9 @@ class LlmScriptService extends BaseLlmService
                 [
                     'role' => 'system',
                     'content' => json_encode([
+                        'script_id' => $script_id ? (int)$script_id : null,
+                        'script_name' => $script_name,
+                        'script_updated_at' => $script_updated_at,
                         'script_template' => $script,
                         'data_config' => $data_config,
                         'merged_variables' => $promptVars,
