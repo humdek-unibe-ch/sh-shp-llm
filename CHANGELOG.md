@@ -77,6 +77,18 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   load starts a fresh chat and previous sessions are hidden (no sidebar /
   floating session switcher). When disabled, existing sessions stay available
   if `enable_conversations_list` is on.
+- **Danger / crisis detection on form interviews** (`llmFormLogList`). Same
+  CMS fields as `llmChat`: `enable_danger_detection`, `danger_keywords`,
+  `danger_notification_emails`, `danger_blocked_message`. Participant turns
+  are keyword-scanned before the coach runs; critical LLM safety can block
+  the interview thread after a turn (same `danger_detected` + CMS markdown
+  message as a keyword hit; the validated coach reply stays in `state`);
+  safety instructions are added to the coach context; email and audit
+  logging match chat. The UI shows the blocked message and locks the
+  composer without treating the entry as a normal saved/`finished`
+  completion. `open` skips blocked threads, so a reload or `new_on_open`
+  may start a fresh interview for the same scope (blocked transcript kept
+  for audit).
 - **LLM script `sent_context` audit fields.** Each script run now also
   stores `script_id`, `script_name` and `script_updated_at` next to the
   full `script_template` snapshot so admin inspection can see which row
@@ -111,6 +123,11 @@ SelfHelp cache (**Admin > Cache > Clear all**).
 
 ### Fixed
 
+- **`llmChat` keyword danger pre-scan.** With `enable_danger_detection`,
+  user messages (and form-mode readable text) are scanned before they are
+  stored or sent to the LLM. A match returns `danger_detected`, shows the
+  CMS blocked message, and blocks the conversation (the React chat UI
+  already expected this response).
 - Messages written within the same second could be listed out of order; chat
   and admin reads now break `timestamp` ties by `id`.
 - `llmChat` answered POSTs that were not chat requests (a CMS save, another

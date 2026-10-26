@@ -53,7 +53,8 @@ The Danger Word Detection System is a critical safety feature of the LLM Chat pl
 
 ### CMS Fields
 
-The danger detection system is configured per llmChat section via the following CMS fields:
+The danger detection system is configured per `llmChat` **and**
+`llmFormLogList` (form interview) section via the following CMS fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -61,6 +62,13 @@ The danger detection system is configured per llmChat section via the following 
 | `danger_keywords` | Textarea | Comma-separated list of keywords |
 | `danger_notification_emails` | Textarea | Email addresses for notifications |
 | `danger_blocked_message` | Markdown | Message shown to users when blocked |
+
+On form interviews, keyword hits and critical/emergency LLM safety both
+return `danger_detected` with the CMS blocked message and lock the
+composer. Blocked interview threads are skipped on the next `open` /
+reload (including `new_on_open`), so a fresh interview may start for the
+same scope while the blocked transcript remains for audit — see
+[LLM form interviews](llm-form-interview.md#drafts-approval-and-retention).
 
 ### Example Configuration
 

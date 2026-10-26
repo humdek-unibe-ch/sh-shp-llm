@@ -131,6 +131,7 @@ Every field also appears in the CMS with its own help text.
 | `llm_interview_include_history` | `0` | With `history_log` on, include the last <=3 record history snapshots (<=8000 chars, eligible fields only) in the prompt as read-only `RECORD HISTORY`. |
 | `llm_interview_progress_layout` | `stepper` | Answers overview, always with the collected values and a highlighted current question: `stepper` (numbered steps on a line) / `cards` (responsive multi-column grid - four questions read as a 2×2 board; more wrap into extra rows) / `list` / `none`. `none` shows no progress and no answers; without native controls (manual editing off) it leaves the **chat only** - the participant approves from the chat bar. |
 | `llm_interview_chat_retention` | `continue` | See [Drafts, approval and retention](#drafts-approval-and-retention): `continue`, `new_on_open`, `new_after_save`. |
+| `enable_danger_detection` / `danger_keywords` / `danger_notification_emails` / `danger_blocked_message` | off / defaults | Same crisis fields as `llmChat` (see [Danger word detection](danger-word-detection.md)). Keyword pre-scan before the coach runs; critical LLM safety can block after a turn. The UI shows the CMS blocked message (markdown) and locks the composer without treating the entry as saved. |
 | `llm_interview_allow_manual_edit` | `0` | Participants may also edit the supported native controls next to the chat. The control sits under its own question, the panel grows with it and the field in focus is highlighted. Edits share the draft and approval path - nothing saves early. |
 | `llm_interview_confirm` | `edit` | The **single switch** of the save confirmation: `edit` (only when a saved entry is revised: a before/after dialog), `always` (also for new entries: the record that will be saved) or `never` (the approve button saves at once). See [Saving](#saving-confirmation-and-edits). |
 | `confirmation_title` / `confirmation_message` / `confirmation_continue` / `label_cancel` | - | Core fields, here **only the texts** of the confirmation dialog: title, text above the record, save button, back button. Empty = built-in, translated defaults. They never switch the dialog on or off - `llm_interview_confirm` does. |
@@ -542,6 +543,14 @@ Every write is a revision-based compare-and-swap - stale clients get a
   | `continue` (default) | Opening resumes the latest unfinished thread of the scope. | *Continue* (+ *Start over*) while an unfinished draft exists, else the `label_new`. |
   | `new_on_open` | Every explicit open starts a fresh thread; nothing is resumed or peeked. A reload or back/forward navigation while the workspace is open keeps the thread. | Always `label_new` (after minimizing, the launcher never offers *Continue*). |
   | `new_after_save` | Resumes an unfinished draft, but after an approved save the next open is fresh. | *Continue* while unfinished, else `label_new` (also right after a save). |
+
+  **Blocked (danger/crisis) threads are never resumed.** `open` skips
+  conversations with `blocked=1`, for every retention mode. A page reload
+  or a new `new_on_open` start may therefore open a **fresh** interview
+  for the same scope after a crisis block; the blocked transcript stays
+  in `llmConversations` for admin audit. Within the blocked session the
+  composer stays locked and the CMS `danger_blocked_message` is shown —
+  that is not the same as a normal saved/`finished` completion.
 
   Clearing a thread is an explicit, confirmed action that abandons the
   draft and starts a fresh one. The old transcript stays in
