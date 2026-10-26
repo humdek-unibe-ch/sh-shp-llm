@@ -129,7 +129,7 @@ Every field also appears in the CMS with its own help text.
 | `llm_interview_context` | - | Author prompt (Prompt Lab `llm_prompt` field). Resolved per turn against draft + base entry + `data_config` + globals. |
 | `llm_conversation_scope` | - | Scope template for unbound drafts, e.g. `module:{{module_id}}`. Resolved server-side at open and **frozen**; empty = canonical fingerprint of immutable server-bound hidden context. |
 | `llm_interview_include_history` | `0` | With `history_log` on, include the last <=3 record history snapshots (<=8000 chars, eligible fields only) in the prompt as read-only `RECORD HISTORY`. |
-| `llm_interview_progress_layout` | `stepper` | Answers overview, always with the collected values and a highlighted current question: `stepper` (numbered steps on a line) / `cards` / `list` / `none`. `none` shows no progress and no answers; without native controls (manual editing off) it leaves the **chat only** - the participant approves from the chat bar. |
+| `llm_interview_progress_layout` | `stepper` | Answers overview, always with the collected values and a highlighted current question: `stepper` (numbered steps on a line) / `cards` (responsive multi-column grid - four questions read as a 2×2 board; more wrap into extra rows) / `list` / `none`. `none` shows no progress and no answers; without native controls (manual editing off) it leaves the **chat only** - the participant approves from the chat bar. |
 | `llm_interview_chat_retention` | `continue` | See [Drafts, approval and retention](#drafts-approval-and-retention): `continue`, `new_on_open`, `new_after_save`. |
 | `llm_interview_allow_manual_edit` | `0` | Participants may also edit the supported native controls next to the chat. The control sits under its own question, the panel grows with it and the field in focus is highlighted. Edits share the draft and approval path - nothing saves early. |
 | `llm_interview_confirm` | `edit` | The **single switch** of the save confirmation: `edit` (only when a saved entry is revised: a before/after dialog), `always` (also for new entries: the record that will be saved) or `never` (the approve button saves at once). See [Saving](#saving-confirmation-and-edits). |
@@ -288,13 +288,17 @@ built-in, translated texts.
 - `llm_interview_chat_position` places the chat pane (`right` default;
   `left`, `top`, `bottom`) - in the page and in the modal window alike.
   `right`/`left` put the answers pane and the chat side by side: the
-  answers pane grows with its content and never scrolls inside, the chat
-  keeps a fixed height (in page mode fitted to the visible viewport, so the
-  composer is never cut off) and stays pinned at `--llm-iv-sticky-top`
-  while the page scrolls past a tall answers pane. `top`/`bottom` stack
-  the panes, the chat at `--llm-iv-height` (`top` = chat first). With manual
-  editing on, the native controls live in the answers pane under their
-  question.
+  answers pane takes the free width and grows with its content (no inner
+  scrollbar); the chat is a narrower column (`--llm-iv-chat-width`, default
+  about a chat sidebar) with a fixed height (in page mode fitted to the
+  visible viewport, so the composer is never cut off) and stays pinned at
+  `--llm-iv-sticky-top` while the page scrolls past a tall answers pane.
+  `top`/`bottom` stack the panes, the chat at `--llm-iv-height`
+  (`top` = chat first). With manual editing on, the native controls live in
+  the answers pane under their question (and span the full row in the
+  `cards` grid). Set `llm_interview_progress_layout` to `cards` for a
+  WOOP-style board: columns auto-fill from `--llm-iv-cards-min` as
+  questions are added.
 - **Modal window** (`show_form_in_modal = 1`): up to 1140 px wide (800 px
   for the chat only), the window body scrolls - never the page behind it -
   and the chat height is capped to the window.
@@ -326,6 +330,8 @@ Set any of these custom properties on the section, an ancestor or
 | `--llm-iv-icon-bg` | launcher / header icon background |
 | `--llm-iv-sticky-top` | distance of the pinned chat from the viewport top (default `1rem`) |
 | `--llm-iv-modal-bg` | background of the modal window body (default `#f4f6f8`) |
+| `--llm-iv-chat-width` | width of the chat when it sits beside the answers (default `min(28%, 22rem)`). The answers pane takes the rest. Use e.g. `18rem` for a slim chat, `36rem` or `40%` for a wider one. Ignored when the chat is `top`/`bottom` or the only pane. |
+| `--llm-iv-cards-min` | minimum card width in the `cards` progress layout (default `14rem`). Columns auto-fill from this; raise it for fewer columns, lower it for denser boards. |
 
 Class hooks for deeper CSS: `.llm-iv-launcher` (`-icon`, `-title`,
 `-text`, `-start`), `.llm-iv-workspace` (`.pos-left|right|top|bottom`,

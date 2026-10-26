@@ -124,7 +124,7 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description) VALUES
 ('llmConversationSourceType', 'llm_conv_source_form_interview', 'form_interview', 'Conversation produced by an llmFormLogList guided form interview. Hidden from the chat sidebar.'),
 ('llmInterviewProgressLayouts', 'stepper', 'Steps (numbered, default)', 'Numbered steps connected by a line, with the collected values.'),
-('llmInterviewProgressLayouts', 'cards', 'Cards (one per question)', 'One card per question with its status and value.'),
+('llmInterviewProgressLayouts', 'cards', 'Cards (responsive grid)', 'One card per question in a responsive multi-column grid (e.g. 2×2 for four questions); more questions wrap into extra rows.'),
 ('llmInterviewProgressLayouts', 'list', 'Compact list', 'Plain rows with the status and value of each question.'),
 ('llmInterviewProgressLayouts', 'none', 'Chat only (no progress, no answers)', 'No progress overview and no collected answers; hand-editable fields (if enabled) are listed without steps. Without those the chat is shown alone and carries the approve button.'),
 ('llmInterviewRetentionPolicies', 'continue', 'Continue the unfinished chat (default)', 'Opening the interview resumes the unfinished draft of the same scope.'),
@@ -169,12 +169,12 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_context'), '', 'Your instructions for the coach: domain knowledge, tone, what to ask and what to leave out. Edited and versioned like every `llm_prompt` field (Prompt Lab).\n\nThe basics need no text here: the coach interviews the participant question by question, offers quick replies for closed questions and, when a saved entry is edited, starts by asking what should change. It never saves anything itself - saving is always the participant clicking the approve button.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_include_history'), '0', 'When enabled together with `history_log`, the coach also sees a short summary of the last three saved versions of the entry that is being edited, so it can refer to earlier answers. Off by default.'),
-(get_style_id('llmFormLogList'), get_field_id('llm_interview_progress_layout'), 'stepper', 'How the answers panel lists the questions, with the answer collected so far (the panel grows with its content and highlights the question the coach is asking):\n\n* `stepper` (default) - numbered steps connected by a line\n* `cards` - one card per question\n* `list` - compact rows\n* `none` - no progress and no collected answers. Without hand-editable fields (`llm_interview_allow_manual_edit`) the chat is shown alone and the approve button sits inside it; with them only those fields are listed.'),
+(get_style_id('llmFormLogList'), get_field_id('llm_interview_progress_layout'), 'stepper', 'How the answers panel lists the questions, with the answer collected so far (the panel grows with its content and highlights the question the coach is asking):\n\n* `stepper` (default) - numbered steps connected by a line\n* `cards` - responsive multi-column card grid (four questions read as a 2×2 board; more wrap into extra rows). Tune density with CSS `--llm-iv-cards-min`\n* `list` - compact rows\n* `none` - no progress and no collected answers. Without hand-editable fields (`llm_interview_allow_manual_edit`) the chat is shown alone and the approve button sits inside it; with them only those fields are listed.\n\nChat width beside the answers: CSS `--llm-iv-chat-width` on the section (default about a slim sidebar).'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_chat_retention'), 'continue', 'What happens when the participant opens the interview again:\n\n* `continue` (default) - resume the unfinished chat. Opening a saved entry resumes its chat as well.\n* `new_after_save` - resume an unfinished chat, but start a fresh one after the entry was saved.\n* `new_on_open` - always start a fresh chat; an older unfinished draft is discarded. A page reload while the chat is open keeps it.\n\nThe start button shows `label_new` for a fresh chat and the translated `resume` text (default `Continue`) only when an unfinished draft exists.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_confirm'), 'edit', 'Confirmation before the entry is saved (the participant pressed the approve button):\n\n* `edit` (default) - only when a saved entry is revised: a dialog lists what changed, before and after\n* `always` - also for new entries: a dialog shows the record that will be saved\n* `never` - no confirmation, the approve button saves at once\n\nThe texts of the dialog come from `confirmation_title`, `confirmation_message`, `confirmation_continue` and `label_cancel`; empty = built-in, translated defaults.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_allow_manual_edit'), '0', 'When enabled, participants may also edit the supported native form controls next to the chat. The fields sit in the answers panel under their question; the panel grows with their content. Manual edits share the same draft and approval path; nothing is saved before approval. Off by default.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_writable_hidden_fields'), '[]', 'JSON array of ordinary hidden form field names the coach may update during the interview (explicit allowlist). Reserved/system keys, fields excluded by a condition and unknown names are always rejected.\n\nExample:\n\n```json\n[\n  "is_done_flag"\n]\n```'),
-(get_style_id('llmFormLogList'), get_field_id('llm_interview_chat_position'), 'right', 'Where the chat sits next to the answers: `right` (default), `left`, `top` or `bottom`. Applies to the page and the modal window (see `show_form_in_modal`); narrow screens stack the panels.'),
+(get_style_id('llmFormLogList'), get_field_id('llm_interview_chat_position'), 'right', 'Where the chat sits next to the answers: `right` (default), `left`, `top` or `bottom`. Applies to the page and the modal window (see `show_form_in_modal`); narrow screens stack the panels. For `right`/`left` the answers take the free width and the chat stays a sidebar; override width with CSS `--llm-iv-chat-width` on the section (e.g. `18rem` slim, `36rem` or `40%` wider).'),
 (get_style_id('llmFormLogList'), get_field_id('llm_conversation_scope'), '', 'Optional scope identity template for new drafts, for example `module:{{module_id}}`. Resolved on the server and frozen when the interview opens; the same participant + section + scope resumes the same draft. Empty = canonical fingerprint of the immutable server-bound hidden context.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_title'), '', 'Optional title of the chat header, for example the coach name. Supports `{{field}}` interpolation.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_subtitle'), '', 'Optional line under the title, for example `Your personal plan for {{module_title}}`. Supports `{{field}}` interpolation.'),
@@ -306,6 +306,22 @@ VALUES (
     '2',
     'Seconds the floating shortcut tray stays visible after mouse leave / blur (0-60). Default 2. 0 hides immediately.'
 );
+
+-- Idempotent copy refresh for installs that already ran the INSERTs above.
+UPDATE lookups
+SET lookup_value = 'Cards (responsive grid)',
+    lookup_description = 'One card per question in a responsive multi-column grid (e.g. 2×2 for four questions); more questions wrap into extra rows.'
+WHERE type_code = 'llmInterviewProgressLayouts' AND lookup_code = 'cards';
+
+UPDATE styles_fields
+SET help = 'How the answers panel lists the questions, with the answer collected so far (the panel grows with its content and highlights the question the coach is asking):\n\n* `stepper` (default) - numbered steps connected by a line\n* `cards` - responsive multi-column card grid (four questions read as a 2×2 board; more wrap into extra rows). Tune density with CSS `--llm-iv-cards-min`\n* `list` - compact rows\n* `none` - no progress and no collected answers. Without hand-editable fields (`llm_interview_allow_manual_edit`) the chat is shown alone and the approve button sits inside it; with them only those fields are listed.\n\nChat width beside the answers: CSS `--llm-iv-chat-width` on the section (default about a slim sidebar).'
+WHERE id_styles = get_style_id('llmFormLogList')
+  AND id_fields = get_field_id('llm_interview_progress_layout');
+
+UPDATE styles_fields
+SET help = 'Where the chat sits next to the answers: `right` (default), `left`, `top` or `bottom`. Applies to the page and the modal window (see `show_form_in_modal`); narrow screens stack the panels. For `right`/`left` the answers take the free width and the chat stays a sidebar; override width with CSS `--llm-iv-chat-width` on the section (e.g. `18rem` slim, `36rem` or `40%` wider).'
+WHERE id_styles = get_style_id('llmFormLogList')
+  AND id_fields = get_field_id('llm_interview_chat_position');
 
 -- Version bump last: a failed DDL statement above must never mark v1.6.0
 -- as installed (DDL commits implicitly, so ordering is the only guard).

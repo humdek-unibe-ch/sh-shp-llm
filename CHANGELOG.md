@@ -23,8 +23,10 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   the URL (`?record=new|<id>&sid=<section>`) and keeps an unfinished draft
   across reloads. Quick replies for closed questions, the question being
   asked is marked, edited answers show their previous value.
-  - Answers render as `stepper`, `cards`, `list` or `none`
-    (`llm_interview_progress_layout`).
+  - Answers render as `stepper`, `cards` (responsive multi-column grid),
+    `list` or `none` (`llm_interview_progress_layout`). Beside the answers
+    the chat stays a sidebar (`--llm-iv-chat-width`); card density uses
+    `--llm-iv-cards-min`.
   - Save dialog (`llm_interview_confirm`: `edit`, `always`, `never`) with a
     before/after table for edits.
   - `llm_interview_chat_retention` (`continue`, `new_on_open`,
