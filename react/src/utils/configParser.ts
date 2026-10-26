@@ -104,6 +104,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
 
     // Boolean flags
     enableConversationsList: bool(ds, 'enableConversationsList', jsonConfig, 'enableConversationsList', true),
+    alwaysStartNewConversation: bool(ds, 'alwaysStartNewConversation', jsonConfig, 'alwaysStartNewConversation', false),
     enableFileUploads: bool(ds, 'enableFileUploads', jsonConfig, 'enableFileUploads', true),
     enableFullPageReload: bool(ds, 'enableFullPageReload', jsonConfig, 'enableFullPageReload'),
     isVisionModel: bool(ds, 'isVisionModel', jsonConfig, 'isVisionModel'),

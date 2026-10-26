@@ -30,14 +30,17 @@
 --   5. Adds `floating_shortcuts_hide_delay` (seconds, default 2) on llmChat
 --      for how long the floating shortcut tray stays visible after mouse
 --      leave / blur.
---   6. Adds the checkbox `llm_use_user_language` (default on) to llmChat,
+--   6. Adds `always_start_new_conversation` on llmChat (default off) and
+--      refreshes `llm_chat_shortcuts` help so clicks prefill the composer
+--      instead of auto-sending.
+--   7. Adds the checkbox `llm_use_user_language` (default on) to llmChat,
 --      llmFormRecord, llmFormLog and llmFormLogList: when ticked (default),
 --      the participant's selected system language is appended to the
 --      prompt as a language rule - matching the always-on 1.5.0 behaviour.
 --      When unticked, only the author's context decides the language.
 --      Idempotent UPDATEs re-apply the default and restore existing
 --      section values that were stored as off during an earlier WIP run.
---   7. Bumps the plugin version LAST so a failed DDL statement can never
+--   8. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
 -- NOTE: MySQL DDL (CREATE/ALTER/CALL add_table_column) is not rolled back
@@ -306,6 +309,32 @@ VALUES (
     '2',
     'Seconds the floating shortcut tray stays visible after mouse leave / blur (0-60). Default 2. 0 hides immediately.'
 );
+
+-- =====================================================
+-- 6. always_start_new_conversation on llmChat + shortcut
+--    help refresh (prefills composer, does not auto-send)
+-- =====================================================
+
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`)
+VALUES (NULL, 'always_start_new_conversation', get_field_type_id('checkbox'), '0');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
+VALUES (
+    get_style_id('llmChat'),
+    get_field_id('always_start_new_conversation'),
+    '0',
+    'When enabled, every page load starts a fresh chat and previous sessions are hidden (no sidebar / session switcher).\n\nWhen disabled, existing sessions are shown if `enable_conversations_list` is enabled, so the participant can continue a previous conversation or start a new one.'
+);
+
+UPDATE styles_fields
+SET help = 'When enabled, every page load starts a fresh chat and previous sessions are hidden (no sidebar / session switcher).\n\nWhen disabled, existing sessions are shown if `enable_conversations_list` is enabled, so the participant can continue a previous conversation or start a new one.'
+WHERE id_styles = get_style_id('llmChat')
+  AND id_fields = get_field_id('always_start_new_conversation');
+
+UPDATE styles_fields
+SET help = 'Quick-start message shortcuts that appear as pills around the floating chat button. Each shortcut has a `label` (shown on the pill) and a `message` (prefilled into the chat input when clicked). If `message` is empty, the `label` is used as the message. Shortcuts are only shown when `enable_floating_button` is enabled.\n\nFormat (JSON array):\n```json\n[\n  {\n    "label": "Where was that exercise with XY again?",\n    "message": "Where was that exercise with XY again?"\n  }\n]\n```\n\n**Web behaviour:** The tray appears on hover/focus over the floating button. Clicking a shortcut opens the chat and inserts the message into the input so the participant can edit it before sending.\n\n**Mobile behaviour:** First tap on the floating button shows the shortcut tray; tapping a shortcut opens the chat and prefills the input. Tapping the floating button again opens the chat normally.'
+WHERE id_styles = get_style_id('llmChat')
+  AND id_fields = get_field_id('llm_chat_shortcuts');
 
 -- Idempotent copy refresh for installs that already ran the INSERTs above.
 UPDATE lookups

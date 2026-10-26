@@ -545,8 +545,8 @@ function generateDefaultTitle(): string {
  * When disabled, we never show conversation parameter in URL
  */
 function updateUrl(conversationId: string, config: LlmChatConfig): void {
-  // Only update URL if conversations list is enabled
-  if (!config.enableConversationsList) {
+  // Never put a conversation id in the URL when sessions are hidden
+  if (!config.enableConversationsList || config.alwaysStartNewConversation) {
     return;
   }
 

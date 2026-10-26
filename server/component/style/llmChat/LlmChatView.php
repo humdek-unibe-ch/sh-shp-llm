@@ -114,7 +114,8 @@ class LlmChatView extends StyleView
         // Only add minimal additional data needed for mobile functionality
         // The mobile app gets all configuration from DB fields directly
 
-        if ($this->model->getCurrentConversation()) {
+        // Always-new mode: do not surface previous sessions to mobile clients
+        if (!$this->model->isAlwaysStartNewConversation() && $this->model->getCurrentConversation()) {
             $style['current_conversation'] = $this->model->getCurrentConversation();
             $style['messages'] = $this->model->getConversationMessages();
             $style['conversations'] = $this->model->getUserConversations();

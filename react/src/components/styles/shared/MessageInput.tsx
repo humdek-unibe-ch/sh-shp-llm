@@ -72,6 +72,8 @@ export interface MessageInputHandle {
   focus: () => void;
   /** Put text back (a send that never reached the server); only when the box is empty. */
   restore: (text: string) => void;
+  /** Replace the box contents (e.g. floating shortcut prefills) and focus for editing. */
+  prefill: (text: string) => void;
 }
 
 /**
@@ -244,6 +246,19 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     restore: (text: string) => {
       setMessage((current) => (current === '' ? text : current));
       requestAnimationFrame(adjustTextareaHeight);
+    },
+    prefill: (text: string) => {
+      const next = text ?? '';
+      setMessage(next);
+      messageRef.current = next;
+      requestAnimationFrame(() => {
+        adjustTextareaHeight();
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus({ preventScroll: true });
+        const pos = next.length;
+        textarea.setSelectionRange(pos, pos);
+      });
     },
   }), [adjustTextareaHeight]);
 

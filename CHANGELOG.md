@@ -73,6 +73,10 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   let the author context alone decide.
 - **`floating_shortcuts_hide_delay`** on `llmChat` (default 2 seconds, 0-60):
   how long the floating shortcut pills stay visible after the mouse leaves.
+- **`always_start_new_conversation`** on `llmChat`. When enabled, every page
+  load starts a fresh chat and previous sessions are hidden (no sidebar /
+  floating session switcher). When disabled, existing sessions stay available
+  if `enable_conversations_list` is on.
 - **LLM script `sent_context` audit fields.** Each script run now also
   stores `script_id`, `script_name` and `script_updated_at` next to the
   full `script_template` snapshot so admin inspection can see which row
@@ -98,6 +102,10 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   conversation was told to answer in the participant's language. That
   behaviour stays the default via `llm_use_user_language` (ticked). Untick
   it when the author context alone should decide the language.
+- **Floating shortcuts prefill the composer** instead of auto-sending.
+  Clicking a shortcut opens the chat and inserts the configured message so
+  the participant can edit it before sending
+  ([doc/llm-chat-shortcuts.md](doc/llm-chat-shortcuts.md)).
 - **Inline `llmChat` looks like the floating chat.** Same panel header, one
   shared slim scrollbar.
 

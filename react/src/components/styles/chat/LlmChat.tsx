@@ -12,9 +12,10 @@
  */
 
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
-import { Container, Row, Col, Alert, Card, Dropdown, Button } from 'react-bootstrap';
+import { Container, Row, Col, Alert, Card, Dropdown } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
 import { MessageInput } from '../shared/MessageInput';
+import type { MessageInputHandle } from '../shared/MessageInput';
 import { ChatPanelHeader } from '../shared/ChatPanelHeader';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
@@ -84,7 +85,8 @@ function useSmartScroll(containerRef: React.RefObject<HTMLDivElement>) {
 }
 
 /**
- * Shortcut request object for safe "send exactly once" behavior
+ * Shortcut request: insert message into the composer for the user to edit/send.
+ * Request IDs guard against React StrictMode double-consumption.
  */
 interface ShortcutRequest {
   id: string;
@@ -97,7 +99,7 @@ interface ShortcutRequest {
 interface LlmChatProps {
   /** Component configuration from PHP backend */
   config: LlmChatConfig;
-  /** Optional shortcut request from floating chat */
+  /** Optional shortcut prefill request from floating chat */
   shortcutRequest?: ShortcutRequest | null;
   /** Callback to notify when shortcut request is consumed */
   onShortcutRequestConsumed?: () => void;
@@ -144,12 +146,14 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   // Local state for progress tracking
   const [progress, setProgress] = useState<ProgressData | null>(null);
 
-  // Track consumed shortcut request IDs to prevent duplicate sends in React StrictMode
+  // Track consumed shortcut request IDs to prevent duplicate prefills in React StrictMode
   const consumedShortcutRequestIdsRef = useRef<Set<string>>(new Set());
   const [isProgressUpdating, setIsProgressUpdating] = useState(false);
 
   // Ref for messages container (for smooth scrolling)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // Ref for composer — used to prefill shortcut text without auto-sending
+  const messageInputRef = useRef<MessageInputHandle>(null);
 
   // Smart scroll management
   const {
@@ -173,6 +177,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
     selectConversation,
     sendMessage,
     addUserMessage,
+    clearCurrentConversation,
     clearError,
     setError,
     setCurrentConversation
@@ -201,22 +206,21 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   }, [config.enableProgressTracking, config.sectionId]);
 
   /**
-   * Initialize chat on mount
+   * Always-new mode: leave the chat empty, or auto-start a brand-new thread.
+   * Previous sessions are never loaded into the UI.
    */
-  useEffect(() => {
-    const initializeChat = async () => {
-      if (config.enableConversationsList) {
-        // Load conversations list - this will also load the current conversation's messages
-        // if there's a conversation ID in the URL/config
-        await loadConversations();
-      } else {
-        // Single conversation mode - load current or last conversation
-        await loadCurrentConversation();
-      }
-    };
-    
-    initializeChat();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const startFreshConversation = useCallback(async () => {
+    clearCurrentConversation();
+    if (!config.autoStartConversation) {
+      return;
+    }
+    try {
+      // createConversation seeds auto-start when enabled
+      await createConversation();
+    } catch (err) {
+      // Empty composer is fine if auto-start fails
+    }
+  }, [clearCurrentConversation, config.autoStartConversation, createConversation]);
 
   /**
    * Load current conversation for single-conversation mode
@@ -238,7 +242,31 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
       }
     }
   }, [config.currentConversationId, loadConversationMessages, loadConversations, config.enableProgressTracking, loadProgress]);
-  
+
+  /**
+   * Initialize chat on mount
+   */
+  useEffect(() => {
+    const initializeChat = async () => {
+      // Always-new mode: never resume previous sessions (optionally auto-start a fresh one)
+      if (config.alwaysStartNewConversation) {
+        await startFreshConversation();
+        return;
+      }
+
+      if (config.enableConversationsList) {
+        // Load conversations list - this will also load the current conversation's messages
+        // if there's a conversation ID in the URL/config
+        await loadConversations();
+      } else {
+        // Single conversation mode - load current or last conversation
+        await loadCurrentConversation();
+      }
+    };
+    
+    initializeChat();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /**
    * Handle sending a message
    */
@@ -310,28 +338,43 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   ]);
 
   /**
-   * Send shortcut message if request is provided and not yet consumed
-   * This implements safe "send exactly once" behavior with request ID tracking
+   * Prefill the composer from a floating shortcut — never auto-submit.
+   * Request IDs ensure each click is applied exactly once (StrictMode-safe).
    */
   useEffect(() => {
     if (!shortcutRequest) {
       return;
     }
 
-    // Check if this request was already consumed
     if (consumedShortcutRequestIdsRef.current.has(shortcutRequest.id)) {
       return;
     }
 
-    // Only send if not already processing or loading
-    if (!isProcessing && !isLoading) {
-      // Mark as consumed before sending
-      consumedShortcutRequestIdsRef.current.add(shortcutRequest.id);
-      handleSendMessage(shortcutRequest.message, []);
-      // Notify parent that request was consumed
-      onShortcutRequestConsumed?.();
+    // Wait until conversations finish loading so the composer is mounted
+    if (isLoading) {
+      return;
     }
-  }, [shortcutRequest, isProcessing, isLoading, handleSendMessage, onShortcutRequestConsumed]);
+
+    const applyPrefill = (): boolean => {
+      if (!messageInputRef.current) {
+        return false;
+      }
+      consumedShortcutRequestIdsRef.current.add(shortcutRequest.id);
+      messageInputRef.current.prefill(shortcutRequest.message);
+      onShortcutRequestConsumed?.();
+      return true;
+    };
+
+    if (applyPrefill()) {
+      return;
+    }
+
+    // Panel just opened: composer may mount one tick later
+    const timer = window.setTimeout(() => {
+      applyPrefill();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [shortcutRequest, isLoading, onShortcutRequestConsumed]);
   
   /**
    * Handle conversation creation
@@ -596,9 +639,11 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   // Determine if conversation is blocked
   const isConversationBlocked = currentConversation?.blocked === true || currentConversation?.blocked === 1;
 
+  // Always-new mode hides previous sessions; otherwise respect enableConversationsList
+  const showSessions = !config.alwaysStartNewConversation && config.enableConversationsList;
   // In floating mode, use a compact conversation dropdown instead of the full sidebar
-  const showFullSidebar = config.enableConversationsList && !config.isFloatingMode;
-  const showFloatingConversationSwitcher = config.enableConversationsList && config.isFloatingMode;
+  const showFullSidebar = showSessions && !config.isFloatingMode;
+  const showFloatingConversationSwitcher = showSessions && config.isFloatingMode;
 
   return (
     <Container fluid className={`llm-chat-container llm-chat-shell ${config.isFloatingMode ? 'p-0' : 'p-3'}`}>
@@ -734,6 +779,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
                 </Alert>
               ) : (
                 <MessageInput
+                  ref={messageInputRef}
                   onSend={handleSendMessage}
                   selectedFiles={selectedFiles}
                   onFilesChange={handleFilesChange}

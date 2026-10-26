@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `llm_chat_shortcuts` field allows authors to configure quick-start message shortcuts that appear as pill buttons around the floating chat button. When a user clicks a shortcut, the chat panel opens (or continues) and the configured message is sent automatically.
+The `llm_chat_shortcuts` field allows authors to configure quick-start message shortcuts that appear as pill buttons around the floating chat button. When a user clicks a shortcut, the chat panel opens (or continues) and the configured message is inserted into the chat input so the user can edit it before sending.
 
 This feature is available in plugin v1.4.0+ and mobile app v4.0.5+.
 
@@ -19,7 +19,7 @@ This feature is available in plugin v1.4.0+ and mobile app v4.0.5+.
 The field expects a JSON array of shortcut objects. Each object has:
 
 - `label` (required): The text shown on the shortcut pill button
-- `message` (optional): The message sent to the chat when clicked. If omitted or empty, the `label` is used as the message.
+- `message` (optional): The message prefilled into the chat input when clicked. If omitted or empty, the `label` is used as the message.
 
 ### Example
 
@@ -39,7 +39,7 @@ The field expects a JSON array of shortcut objects. Each object has:
 ]
 ```
 
-In the third example, since `message` is omitted, the `label` ("Help me with homework") will be sent as the message.
+In the third example, since `message` is omitted, the `label` ("Help me with homework") is prefilled as the message.
 
 ## Behavior
 
@@ -47,14 +47,14 @@ In the third example, since `message` is omitted, the `label` ("Help me with hom
 
 - Shortcuts appear as pill buttons in a tray around the floating chat button
 - The tray is shown on **hover** or **focus** over the floating button
-- Clicking a shortcut opens the chat panel and sends the message immediately
+- Clicking a shortcut opens the chat panel and prefills the message into the input (the user can edit it, then send)
 - The tray disappears when the user's mouse leaves the floating button/tray area or focus moves outside
 
 ### Mobile
 
 - Shortcuts appear as pill buttons in a tray near the floating button
 - **First tap** on the floating button shows the shortcut tray (if shortcuts are configured)
-- **Tapping a shortcut** opens the chat and sends the message
+- **Tapping a shortcut** opens the chat and prefills the message into the input
 - **Tapping the floating button again** when the tray is open opens the chat normally
 - If no shortcuts are configured, the first tap on the floating button opens the chat directly (existing behavior)
 
@@ -91,10 +91,10 @@ Since the field is translatable (`display = 1`), you can configure different sho
 - Check that the `llm_chat_shortcuts` field contains a valid JSON array
 - Ensure at least one shortcut has a non-empty `label`
 
-**Message not sending when shortcut clicked:**
+**Message not appearing in the input when shortcut clicked:**
 - Check browser console for JavaScript errors
-- Verify the chat service is properly configured
-- Ensure the user has permission to send messages
+- Verify the chat panel opened and the composer is visible
+- Ensure the shortcut JSON has a non-empty `label` or `message`
 
 **Tray closing too quickly (web):**
 - This is by design - the tray stays open while hovering over the FAB or tray

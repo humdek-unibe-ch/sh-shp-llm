@@ -27,7 +27,7 @@ import './FloatingChat.css';
  * Props for FloatingChat component
  */
 /**
- * Shortcut request object for safe "send exactly once" behavior
+ * Shortcut request: open the panel and prefill the composer (user edits/sends).
  */
 interface ShortcutRequest {
   id: string;
@@ -158,7 +158,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     setPendingShortcutRequest(null);
   }, []);
 
-  // Handle shortcut click - generates unique request ID for safe "send exactly once"
+  // Handle shortcut click — open chat and prefill the composer (do not auto-send)
   const handleShortcutClick = useCallback((message: string) => {
     // Clear any pending timeout since we're closing the tray immediately
     if (shortcutTrayTimeoutRef.current) {
@@ -168,6 +168,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     const requestId = `shortcut-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     setPendingShortcutRequest({ id: requestId, message });
     setIsOpen(true);
+    setShowShortcutTray(false);
   }, []);
 
   // Handle escape key to close panel

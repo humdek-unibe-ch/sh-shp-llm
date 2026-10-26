@@ -154,6 +154,13 @@ class LlmChatModel extends StyleModel
     {
         if (!$this->conversation_id_resolved) {
             $this->conversation_id_resolved = true;
+
+            // Always-new mode: never resume a previous session
+            if ($this->isAlwaysStartNewConversation()) {
+                $this->conversation_id = null;
+                return $this->conversation_id;
+            }
+
             $this->conversation_id = $_GET['conversation'] ?? null;
 
             if (!$this->isConversationsListEnabled()) {
@@ -237,6 +244,14 @@ class LlmChatModel extends StyleModel
 
     /** @return bool Whether the conversation list sidebar is shown to the user. */
     public function isConversationsListEnabled() { return $this->get_db_field('enable_conversations_list', '0') === '1'; }
+    /**
+     * Whether every page load starts a fresh chat (previous sessions hidden).
+     * @return bool
+     */
+    public function isAlwaysStartNewConversation()
+    {
+        return $this->get_db_field('always_start_new_conversation', '0') === '1';
+    }
     /** @return bool Whether file upload button is available in the chat input. */
     public function isFileUploadsEnabled() { return $this->get_db_field('enable_file_uploads', '0') == '1'; }
     /** @return bool Whether to reload the full page after conversation actions (delete, new). */
@@ -624,6 +639,7 @@ class LlmChatModel extends StyleModel
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
             'maxFileSize' => LLM_MAX_FILE_SIZE,
             'enableConversationsList' => $this->isConversationsListEnabled(),
+            'alwaysStartNewConversation' => $this->isAlwaysStartNewConversation(),
             'enableFileUploads' => $this->isFileUploadsEnabled(),
             'enableFullPageReload' => $this->isFullPageReloadEnabled(),
             'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->getAcceptedFileTypes())),

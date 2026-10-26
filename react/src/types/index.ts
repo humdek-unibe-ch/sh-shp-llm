@@ -273,6 +273,11 @@ export interface LlmChatConfig {
   configuredModel: string;
   /** Whether conversations list is enabled */
   enableConversationsList: boolean;
+  /**
+   * When true, every page load starts a fresh chat and previous sessions are hidden.
+   * When false, existing sessions are shown (if enableConversationsList is on).
+   */
+  alwaysStartNewConversation: boolean;
   /** Whether file uploads are enabled */
   enableFileUploads: boolean;
   /** Whether to do full page reload after request completion (default: false - React refresh only) */
@@ -445,6 +450,7 @@ export interface LlmChatConfig {
 export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   configuredModel: 'gpt-oss-120b',
   enableConversationsList: true,
+  alwaysStartNewConversation: false,
   enableFileUploads: true,
   enableFullPageReload: false,
   acceptedFileTypes: '',
