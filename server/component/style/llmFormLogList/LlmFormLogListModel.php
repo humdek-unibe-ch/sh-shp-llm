@@ -265,12 +265,12 @@ class LlmFormLogListModel extends FormUserInputLogListModel
 
     /**
      * @return bool Append the "answer in the participant's UI language"
-     *  rule to the prompt (`llm_use_user_language`, off by default - the
-     *  author context then decides the language alone).
+     *  rule to the prompt (`llm_use_user_language`, on by default to match
+     *  pre-1.6.0 behaviour; uncheck so the author context alone decides).
      */
     public function useUserLanguage()
     {
-        return $this->get_db_field('llm_use_user_language', '0') === '1';
+        return $this->get_db_field('llm_use_user_language', '1') === '1';
     }
 
     /**

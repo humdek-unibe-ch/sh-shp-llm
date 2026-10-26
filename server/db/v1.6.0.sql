@@ -30,11 +30,13 @@
 --   5. Adds `floating_shortcuts_hide_delay` (seconds, default 2) on llmChat
 --      for how long the floating shortcut tray stays visible after mouse
 --      leave / blur.
---   6. Adds the checkbox `llm_use_user_language` (default off) to llmChat,
---      llmFormRecord, llmFormLog and llmFormLogList: when ticked, the
---      participant's selected system language is appended to the prompt
---      as a language rule; when not ticked, only the author's context
---      decides the language.
+--   6. Adds the checkbox `llm_use_user_language` (default on) to llmChat,
+--      llmFormRecord, llmFormLog and llmFormLogList: when ticked (default),
+--      the participant's selected system language is appended to the
+--      prompt as a language rule - matching the always-on 1.5.0 behaviour.
+--      When unticked, only the author's context decides the language.
+--      Idempotent UPDATEs re-apply the default and restore existing
+--      section values that were stored as off during an earlier WIP run.
 --   7. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
@@ -165,7 +167,7 @@ INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`) VALUES
 (NULL, 'llm_use_user_language', get_field_type_id('checkbox'), '0');
 
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('llmFormLogList'), get_field_id('llm_interview_context'), '', 'Your instructions for the coach: domain knowledge, tone, what to ask and what to leave out. Edited and versioned like every `llm_prompt` field (Prompt Lab).\n\nThe basics need no text here: the coach interviews the participant question by question, offers quick replies for closed questions and, when a saved entry is edited, starts by asking what should change. It never saves anything itself - saving is always the participant''s click on the approve button.'),
+(get_style_id('llmFormLogList'), get_field_id('llm_interview_context'), '', 'Your instructions for the coach: domain knowledge, tone, what to ask and what to leave out. Edited and versioned like every `llm_prompt` field (Prompt Lab).\n\nThe basics need no text here: the coach interviews the participant question by question, offers quick replies for closed questions and, when a saved entry is edited, starts by asking what should change. It never saves anything itself - saving is always the participant clicking the approve button.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_include_history'), '0', 'When enabled together with `history_log`, the coach also sees a short summary of the last three saved versions of the entry that is being edited, so it can refer to earlier answers. Off by default.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_progress_layout'), 'stepper', 'How the answers panel lists the questions, with the answer collected so far (the panel grows with its content and highlights the question the coach is asking):\n\n* `stepper` (default) - numbered steps connected by a line\n* `cards` - one card per question\n* `list` - compact rows\n* `none` - no progress and no collected answers. Without hand-editable fields (`llm_interview_allow_manual_edit`) the chat is shown alone and the approve button sits inside it; with them only those fields are listed.'),
 (get_style_id('llmFormLogList'), get_field_id('llm_interview_chat_retention'), 'continue', 'What happens when the participant opens the interview again:\n\n* `continue` (default) - resume the unfinished chat. Opening a saved entry resumes its chat as well.\n* `new_after_save` - resume an unfinished chat, but start a fresh one after the entry was saved.\n* `new_on_open` - always start a fresh chat; an older unfinished draft is discarded. A page reload while the chat is open keeps it.\n\nThe start button shows `label_new` for a fresh chat and the translated `resume` text (default `Continue`) only when an unfinished draft exists.'),
@@ -187,11 +189,44 @@ INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `
 (get_style_id('llmFormLogList'), get_field_id('speech_to_text_model'), 'faster-whisper-large-v3', 'Whisper model used for the speech recognition. The microphone only appears when this model is set and speech-to-text is enabled.');
 
 -- Language rule switch on every LLM style that talks to the model.
+-- Default ON = pre-1.6.0 always-on participant language. Uncheck to let
+-- the author context alone decide.
 INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
-(get_style_id('llmChat'), get_field_id('llm_use_user_language'), '0', 'Language rule. Unchecked (default): the model answers in the language your context (prompt) is written in. Checked: a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`).'),
-(get_style_id('llmFormRecord'), get_field_id('llm_use_user_language'), '0', 'Language rule. Unchecked (default): the model answers in the language your context (prompt) is written in. Checked: a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`).'),
-(get_style_id('llmFormLog'), get_field_id('llm_use_user_language'), '0', 'Language rule. Unchecked (default): the model answers in the language your context (prompt) is written in. Checked: a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`).'),
-(get_style_id('llmFormLogList'), get_field_id('llm_use_user_language'), '0', 'Language rule. Unchecked (default): the coach answers in the language your `llm_interview_context` is written in. Checked: a rule is appended so the coach always answers in the language the participant selected in the system (for example `de`, `en`, `fr`).');
+(get_style_id('llmChat'), get_field_id('llm_use_user_language'), '1', 'Language rule. Checked (default): a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`). Unchecked: the model answers in the language your context (prompt) is written in.'),
+(get_style_id('llmFormRecord'), get_field_id('llm_use_user_language'), '1', 'Language rule. Checked (default): a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`). Unchecked: the model answers in the language your context (prompt) is written in.'),
+(get_style_id('llmFormLog'), get_field_id('llm_use_user_language'), '1', 'Language rule. Checked (default): a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`). Unchecked: the model answers in the language your context (prompt) is written in.'),
+(get_style_id('llmFormLogList'), get_field_id('llm_use_user_language'), '1', 'Language rule. Checked (default): a rule is appended so the coach always answers in the language the participant selected in the system (for example `de`, `en`, `fr`). Unchecked: the coach answers in the language your `llm_interview_context` is written in.');
+
+-- Re-apply style defaults/help if an earlier WIP run inserted default off
+-- (INSERT IGNORE would leave the old row untouched).
+UPDATE `styles_fields`
+SET `default_value` = '1',
+    `help` = 'Language rule. Checked (default): a rule is appended so the model always answers in the language the participant selected in the system (for example `de`, `en`, `fr`). Unchecked: the model answers in the language your context (prompt) is written in.'
+WHERE `id_fields` = get_field_id('llm_use_user_language')
+  AND `id_styles` IN (get_style_id('llmChat'), get_style_id('llmFormRecord'), get_style_id('llmFormLog'));
+
+UPDATE `styles_fields`
+SET `default_value` = '1',
+    `help` = 'Language rule. Checked (default): a rule is appended so the coach always answers in the language the participant selected in the system (for example `de`, `en`, `fr`). Unchecked: the coach answers in the language your `llm_interview_context` is written in.'
+WHERE `id_fields` = get_field_id('llm_use_user_language')
+  AND `id_styles` = get_style_id('llmFormLogList');
+
+-- Restore section values stored as off during an earlier WIP run so the
+-- upgrade matches the always-on 1.5.0 behaviour. Editors who want
+-- author-context-only language can uncheck the field afterwards.
+UPDATE `sections_fields_translation` sft
+INNER JOIN `fields` f ON f.`id` = sft.`id_fields`
+SET sft.`content` = '1'
+WHERE f.`name` = 'llm_use_user_language'
+  AND sft.`content` = '0';
+
+-- Ensure the interview context CMS Hint is complete even if INSERT IGNORE
+-- left an older/empty help from a partial migration.
+UPDATE `styles_fields`
+SET `default_value` = '',
+    `help` = 'Your instructions for the coach: domain knowledge, tone, what to ask and what to leave out. Edited and versioned like every `llm_prompt` field (Prompt Lab).\n\nThe basics need no text here: the coach interviews the participant question by question, offers quick replies for closed questions and, when a saved entry is edited, starts by asking what should change. It never saves anything itself - saving is always the participant clicking the approve button.'
+WHERE `id_styles` = get_style_id('llmFormLogList')
+  AND `id_fields` = get_field_id('llm_interview_context');
 
 -- CMS selects for the four interview lookup fields (single hook pair; the
 -- exec methods dispatch on the concrete field name and field type).

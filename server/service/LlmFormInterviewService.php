@@ -1110,10 +1110,10 @@ class LlmFormInterviewService
         $messages = array();
         $protocol = $this->prompt_assets->load('core.form_interview.system');
         $messages[] = array('role' => 'system', 'content' => $protocol);
-        // Opt-in (`llm_use_user_language`): the participant's current UI
+        // Default-on (`llm_use_user_language`): the participant's current UI
         // language wins - including English, so a German author context or
         // earlier German turns never keep the coach answering in German
-        // after a language switch. Without the flag the author context
+        // after a language switch. When the flag is off the author context
         // alone decides the language.
         $language = method_exists($model, 'getUserLanguage') ? $model->getUserLanguage() : 'en';
         $use_user_language = method_exists($model, 'useUserLanguage') && $model->useUserLanguage();

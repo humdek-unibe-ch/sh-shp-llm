@@ -1102,7 +1102,7 @@ check('scope key: resolved loop value keeps modules apart', !empty($res2['ok'])
     && $res2['state']['conversation_id'] !== $res['state']['conversation_id']);
 
 /* =========================================================================
- * 15. Language rule is opt-in (`llm_use_user_language`)
+ * 15. Language rule is on by default (`llm_use_user_language`); off disables it
  * ========================================================================= */
 
 list($db_o, $c_o, $s_o, $llm_o, $state_o, $sc_o, $svc_o) = env();

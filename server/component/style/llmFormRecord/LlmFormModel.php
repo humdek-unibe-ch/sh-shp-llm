@@ -426,13 +426,14 @@ class LlmFormModel extends FormUserInputModel
 
     /**
      * Whether the prompt gets the "answer in the participant's UI language"
-     * rule (`llm_use_user_language`, off by default).
+     * rule (`llm_use_user_language`, on by default to match pre-1.6.0
+     * behaviour; uncheck so the author context alone decides).
      *
      * @return bool
      */
     public function useUserLanguage()
     {
-        return $this->get_db_field('llm_use_user_language', '0') === '1';
+        return $this->get_db_field('llm_use_user_language', '1') === '1';
     }
 
     /**
