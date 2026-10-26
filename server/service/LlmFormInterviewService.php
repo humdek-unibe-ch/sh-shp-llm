@@ -7,6 +7,7 @@ require_once __DIR__ . '/LlmService.php';
 require_once __DIR__ . '/LlmConversationStateService.php';
 require_once __DIR__ . '/LlmFormSchemaService.php';
 require_once __DIR__ . '/LlmResponseService.php';
+require_once __DIR__ . '/LlmDangerDetectionService.php';
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 require_once __DIR__ . '/cache/LlmCacheManager.php';
@@ -157,6 +158,9 @@ class LlmFormInterviewService
                 $completed = null;
                 $unfinished_rows = array();
                 foreach ($this->state_service->listScopedConversations($scope) as $row) {
+                    // Crisis/danger blocks are per-thread: open never resumes
+                    // a blocked conversation. Reload and new_on_open may
+                    // therefore start a fresh interview for the same scope.
                     if (!empty($row['blocked'])) {
                         continue;
                     }
@@ -513,6 +517,24 @@ class LlmFormInterviewService
                         'current_revision' => (int)$env['revision'],
                     ));
                 }
+                // Keyword pre-scan before any draft/message write so a blocked
+                // detection (and its audit/email) survives this transaction.
+                if (!$start && trim($message) !== '') {
+                    $danger = new LlmDangerDetectionService($this->services, $model);
+                    $check = $danger->checkMessage($message, $actor, (int)$conversation['id']);
+                    if (empty($check['safe'])) {
+                        $safety = isset($check['message']) ? (string)$check['message']
+                            : $model->getDangerBlockedMessage();
+                        $this->db->commit();
+                        return $this->err('danger_detected', $safety, array(
+                            'blocked' => true,
+                            'safety_message' => $safety,
+                            'detected_keywords' => isset($check['detected_keywords'])
+                                ? $check['detected_keywords'] : array(),
+                            'state' => $this->project($model, $record_id, $conversation),
+                        ));
+                    }
+                }
                 if ($conversation['completed_at'] !== null) {
                     $this->state_service->setCompleted(
                         (int)$conversation['id'], $scope, $expected_revision, false
@@ -736,8 +758,47 @@ class LlmFormInterviewService
                 $this->db->rollback();
                 throw $e;
             }
+            // After the merge commits: LLM safety may block the conversation
+            // without rolling back the validated coach reply.
+            $danger = new LlmDangerDetectionService($this->services, $model);
+            $danger->processSafetyDetection(
+                $response_service,
+                $data,
+                $conversation_id,
+                $actor,
+                (int)$model->get_section_id()
+            );
             $this->cache_manager->clearConversationMessageCache($conversation_id);
-            return $this->ok(array('state' => $this->project($model, $record_id, $conversation)));
+            $state = $this->project($model, $record_id, $conversation);
+            $safety = $response_service->assessSafety($data);
+            $critical = in_array(
+                isset($safety['danger_level']) ? $safety['danger_level'] : null,
+                array('critical', 'emergency'),
+                true
+            );
+            // Same UX as keyword pre-scan: danger_detected + CMS markdown
+            // message + locked composer. State still carries the validated
+            // coach turn that triggered the block.
+            if (!empty($state['blocked']) || $critical) {
+                $msg = $model->getDangerBlockedMessage();
+                $out = array(
+                    'blocked' => true,
+                    'safety_message' => $msg,
+                    'state' => $state,
+                );
+                if (!$safety['is_safe'] || $safety['danger_level'] !== null) {
+                    $out['safety'] = $safety;
+                }
+                if (!empty($safety['detected_concerns']) && is_array($safety['detected_concerns'])) {
+                    $out['detected_keywords'] = $safety['detected_concerns'];
+                }
+                return $this->err('danger_detected', $msg, $out);
+            }
+            $out = array('state' => $state);
+            if (!$safety['is_safe'] || $safety['danger_level'] !== null) {
+                $out['safety'] = $safety;
+            }
+            return $this->ok($out);
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
         } catch (Exception $e) {
@@ -1180,7 +1241,35 @@ class LlmFormInterviewService
         }
 
         $response_service = new LlmResponseService($model, $this->services);
-        return $response_service->buildResponseContext($messages);
+        return $response_service->buildResponseContext(
+            $messages,
+            false,
+            array(),
+            $this->buildDangerConfig($model)
+        );
+    }
+
+    /**
+     * Danger config for schema/safety instructions (mirrors LlmContextService).
+     *
+     * @param object $model Interview model
+     * @return array{enabled:bool,keywords:string[]}
+     */
+    private function buildDangerConfig($model)
+    {
+        if (!method_exists($model, 'isDangerDetectionEnabled')
+            || !$model->isDangerDetectionEnabled()
+        ) {
+            return array('enabled' => false, 'keywords' => array());
+        }
+        $keywords_str = method_exists($model, 'getDangerKeywords')
+            ? $model->getDangerKeywords() : '';
+        if ($keywords_str === '' || $keywords_str === null) {
+            return array('enabled' => true, 'keywords' => array());
+        }
+        $keywords = array_map('trim', explode(',', (string)$keywords_str));
+        $keywords = array_values(array_unique(array_filter($keywords)));
+        return array('enabled' => true, 'keywords' => $keywords);
     }
 
     /* Internals **************************************************************/
@@ -1362,7 +1451,7 @@ class LlmFormInterviewService
                 'not_found', 'Conversation not found for this scope'
             );
         }
-        $this->assertConversationUsable($conversation);
+        $this->assertConversationUsable($conversation, $model);
         return $conversation;
     }
 
@@ -1389,7 +1478,7 @@ class LlmFormInterviewService
                 'not_found', 'Conversation not found for this scope'
             );
         }
-        $this->assertConversationUsable($conversation);
+        $this->assertConversationUsable($conversation, $model);
         return array($conversation, $scope);
     }
 
@@ -1432,16 +1521,23 @@ class LlmFormInterviewService
                 'not_found', 'Conversation not found for this scope'
             );
         }
-        $this->assertConversationUsable($row);
+        $this->assertConversationUsable($row, $model);
         $this->authorizeRecord($model, (int)$row['id_dataRows']);
         $scope = $this->scope($actor, (int)$model->get_section_id(), null, $context_key);
         return array($row, $scope);
     }
 
-    private function assertConversationUsable(array $conversation)
+    private function assertConversationUsable(array $conversation, $model = null)
     {
         if (!empty($conversation['blocked'])) {
-            throw new LlmFormInterviewAbort('forbidden', 'This conversation is blocked');
+            $msg = 'This conversation is blocked';
+            if ($model !== null && method_exists($model, 'getDangerBlockedMessage')) {
+                $msg = $model->getDangerBlockedMessage();
+            }
+            throw new LlmFormInterviewAbort('danger_detected', $msg, array(
+                'blocked' => true,
+                'safety_message' => $msg,
+            ));
         }
     }
 
@@ -1993,11 +2089,14 @@ class LlmFormInterviewService
             'messages' => $messages,
             'completed_at' => $completed_at,
             'can_approve' => !$completed && $phase === 'draft' && $has_changes
-                && $projection['progress']['ready_for_approval'],
+                && $projection['progress']['ready_for_approval']
+                && empty($conversation['blocked']),
             'needs_start' => !$has_assistant || $edit_pending,
             'suggestions' => !$completed && $phase === 'draft'
                 && isset($payload['suggestions']) && is_array($payload['suggestions'])
+                && empty($conversation['blocked'])
                 ? array_values($payload['suggestions']) : array(),
+            'blocked' => !empty($conversation['blocked']),
         );
     }
 
