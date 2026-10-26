@@ -80,6 +80,17 @@ export interface InterviewState {
   needs_start: boolean;
   /** Quick-reply choices the coach offered for the pending question. */
   suggestions?: string[];
+  /** Conversation blocked by danger/crisis detection; composer is locked. */
+  blocked?: boolean;
+}
+
+/** LLM structured safety assessment returned on interview turns. */
+export interface InterviewSafety {
+  is_safe?: boolean;
+  danger_level?: null | 'warning' | 'critical' | 'emergency';
+  detected_concerns?: string[];
+  requires_intervention?: boolean;
+  safety_message?: string | null;
 }
 
 /** Chat panel placement relative to the form area. */

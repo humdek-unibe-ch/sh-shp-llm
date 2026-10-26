@@ -13,6 +13,7 @@
 import type {
   InterviewApprovalReceipt,
   InterviewConfig,
+  InterviewSafety,
   InterviewState,
 } from '../types/interview';
 import { InterviewApiError } from '../types/interview';
@@ -78,6 +79,33 @@ interface RawResult {
   approval?: InterviewApprovalReceipt;
   idempotent?: boolean;
   replayed?: boolean;
+  /** Present when the coach reply carried a safety assessment. */
+  safety?: InterviewSafety;
+  /** CMS danger_blocked_message when the thread was blocked this turn. */
+  safety_message?: string | null;
+  blocked?: boolean;
+}
+
+/** Critical/emergency LLM safety or an already-blocked projection. */
+function isCriticalBlock(state: InterviewState | null | undefined, safety?: InterviewSafety | null): boolean {
+  if (state?.blocked) return true;
+  const level = safety?.danger_level;
+  return level === 'critical' || level === 'emergency';
+}
+
+/**
+ * Prefer the CMS blocked message from the payload; fall back to the LLM
+ * safety_message, then a generic lock notice.
+ */
+function blockedMessage(body: RawResult | null): string {
+  if (typeof body?.safety_message === 'string' && body.safety_message.trim() !== '') {
+    return body.safety_message;
+  }
+  const fromSafety = body?.safety?.safety_message;
+  if (typeof fromSafety === 'string' && fromSafety.trim() !== '') {
+    return fromSafety;
+  }
+  return body?.error?.message || 'This conversation has been blocked due to safety concerns.';
 }
 
 /** Core write validation errors arrive as a name => message map, or
@@ -108,11 +136,21 @@ async function parseResult(res: Response): Promise<RawResult> {
   }
   if (!res.ok || !body || body.success !== true) {
     const type = body?.error?.type || 'error';
-    const message = body?.error?.message || `Interview request failed (${res.status})`;
+    const message =
+      type === 'danger_detected'
+        ? blockedMessage(body)
+        : body?.error?.message || `Interview request failed (${res.status})`;
     throw new InterviewApiError(type, message, res.status, {
       fieldErrors: normalizeErrors(body?.field_errors),
       formErrors: normalizeErrors(body?.form_errors),
       state: body?.state ?? null,
+    });
+  }
+  // Belt-and-suspenders: a 200 that still flipped blocked / critical
+  // safety must not drop the CMS blocked message (same UX as keyword).
+  if (isCriticalBlock(body.state, body.safety)) {
+    throw new InterviewApiError('danger_detected', blockedMessage(body), 403, {
+      state: body.state ?? null,
     });
   }
   return body;
@@ -249,7 +287,7 @@ export async function sendTurn(
   patch: Record<string, unknown>,
   nativePatch: Record<string, unknown>,
   signal?: AbortSignal
-): Promise<{ state: InterviewState; replayed: boolean }> {
+): Promise<{ state: InterviewState; replayed: boolean; safety?: InterviewSafety }> {
   const extra: Record<string, string> = {
     conversation_id: String(conversationId),
     revision: String(revision),
@@ -262,7 +300,11 @@ export async function sendTurn(
     extra.start = '1';
   }
   const res = await post(config, 'turn', recordId, extra, signal);
-  return { state: res.state as InterviewState, replayed: res.replayed === true };
+  return {
+    state: res.state as InterviewState,
+    replayed: res.replayed === true,
+    safety: res.safety,
+  };
 }
 
 /** Approve the draft through the inherited core write path. */
