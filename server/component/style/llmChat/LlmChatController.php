@@ -357,6 +357,23 @@ class LlmChatController extends BaseController
             $conv = $this->resolveConversationWithRateLimit($user_id, $conversation_id, $message);
             $conversation_id = $conv['conversation_id'];
 
+            // Keyword pre-scan before storing the user message or calling the LLM.
+            $danger_check = $this->danger_detection_service->checkMessage(
+                $message,
+                $user_id,
+                $conversation_id
+            );
+            if (empty($danger_check['safe'])) {
+                $this->sendJsonResponse([
+                    'blocked' => true,
+                    'type' => 'danger_detected',
+                    'message' => $danger_check['message'] ?? $this->model->getDangerBlockedMessage(),
+                    'detected_keywords' => $danger_check['detected_keywords'] ?? [],
+                    'conversation_id' => $conversation_id,
+                ]);
+                return;
+            }
+
             $uploaded_files = $this->file_upload_service->handleFileUploads($user_id, $section_id, $conversation_id);
 
             $message_id = $this->llm_service->addMessage(
@@ -417,6 +434,22 @@ class LlmChatController extends BaseController
         try {
             $conv = $this->resolveConversationWithRateLimit($user_id, $conversation_id, $readable_text);
             $conversation_id = $conv['conversation_id'];
+
+            $danger_check = $this->danger_detection_service->checkMessage(
+                $readable_text,
+                $user_id,
+                $conversation_id
+            );
+            if (empty($danger_check['safe'])) {
+                $this->sendJsonResponse([
+                    'blocked' => true,
+                    'type' => 'danger_detected',
+                    'message' => $danger_check['message'] ?? $this->model->getDangerBlockedMessage(),
+                    'detected_keywords' => $danger_check['detected_keywords'] ?? [],
+                    'conversation_id' => $conversation_id,
+                ]);
+                return;
+            }
 
             $form_metadata = $this->form_mode_service->createFormMetadata($form_values);
             $message_id = $this->llm_service->addMessage(
