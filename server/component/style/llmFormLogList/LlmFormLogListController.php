@@ -602,7 +602,7 @@ class LlmFormLogListController extends FormUserInputLogListController
         $type = isset($result['error']['type']) ? $result['error']['type'] : '';
         if ($type === 'unauthenticated') {
             $status = 401;
-        } else if ($type === 'forbidden') {
+        } else if ($type === 'forbidden' || $type === 'danger_detected') {
             $status = 403;
         } else if ($type === 'not_found') {
             $status = 404;
@@ -615,7 +615,7 @@ class LlmFormLogListController extends FormUserInputLogListController
         } else {
             $status = $error_status;
         }
-        $this->sendJsonResponse(array(
+        $payload = array(
             'success' => false,
             'error' => isset($result['error']) ? $result['error'] : array(
                 'type' => 'error', 'message' => 'Interview request failed',
@@ -623,7 +623,17 @@ class LlmFormLogListController extends FormUserInputLogListController
             'state' => isset($result['state']) ? $result['state'] : null,
             'field_errors' => isset($result['field_errors'])
                 ? $result['field_errors'] : null,
-        ), $status);
+        );
+        if ($type === 'danger_detected') {
+            $payload['blocked'] = true;
+            $payload['safety_message'] = isset($result['safety_message'])
+                ? $result['safety_message']
+                : (isset($result['error']['message']) ? $result['error']['message'] : null);
+            if (isset($result['detected_keywords'])) {
+                $payload['detected_keywords'] = $result['detected_keywords'];
+            }
+        }
+        $this->sendJsonResponse($payload, $status);
     }
 }
 ?>
