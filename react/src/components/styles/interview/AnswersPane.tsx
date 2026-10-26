@@ -254,7 +254,7 @@ export const AnswersPane: React.FC<AnswersPaneProps> = ({
                         <span className="badge badge-pill llm-iv-edited-badge">
                           {labels.editedBadge}
                         </span>
-                      ) : isAsked && !plain ? (
+                      ) : isAsked && !plain && layout !== 'stepper' ? (
                         <span className="llm-iv-asking-tag">{labels.stepActive}</span>
                       ) : null}
                     </div>
@@ -262,9 +262,9 @@ export const AnswersPane: React.FC<AnswersPaneProps> = ({
                       <div className="llm-iv-step-slot" data-llm-iv-slot={name} />
                     ) : answer !== '' ? (
                       <div className="llm-iv-step-answer">{answer}</div>
-                    ) : (
+                    ) : isAsked || plain ? (
                       <div className="llm-iv-step-empty">{labels.notAnswered}</div>
-                    )}
+                    ) : null}
                     {step.edited ? (
                       <div className="llm-iv-step-before">
                         <span className="llm-iv-step-before-label">{labels.valueBefore}</span>

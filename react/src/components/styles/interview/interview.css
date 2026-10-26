@@ -216,17 +216,29 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.75rem 1.25rem;
+    padding: 0.875rem 1.25rem;
     font-weight: 600;
     border-bottom: 1px solid var(--_border);
 }
+.llm-iv-pane-title { font-size: 1rem; letter-spacing: -0.01em; color: #212529; }
+.llm-iv-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #495057;
+    background: #e9ecef;
+    padding: 0.25rem 0.55rem;
+}
 .llm-iv-progress {
     flex: 0 0 auto;
-    height: 4px;
+    height: 0.375rem;
     border-radius: 0;
     background: rgba(0, 0, 0, 0.06);
+    overflow: hidden;
 }
-.llm-iv-progress .progress-bar { background-color: var(--_accent); transition: width 0.4s ease; }
+.llm-iv-progress .progress-bar {
+    background-color: var(--_accent);
+    transition: width 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
 .llm-iv-pane-body {
     flex: 1 1 auto;
     min-width: 0;
@@ -272,25 +284,50 @@
 }
 
 /* ---------- Answers: one entry per question ----------
- * Mark column + content. The layouts only change the chrome around the
- * entries; the current question (is-asking) is tinted and ringed in all of
- * them, an answer the coach just set flashes (is-flash). */
+ * Mark column + content. Layouts change the chrome; shared states:
+ * is-asking (current), is-done, is-edited, is-flash (coach just filled). */
 .llm-iv-steps { list-style: none; margin: 0; padding: 0; }
 .llm-iv-step {
     --_mark: 2rem;
+    --_step-pad-y: 0.75rem;
+    --_step-pad-x: 0.875rem;
     position: relative;
     display: grid;
     grid-template-columns: var(--_mark) minmax(0, 1fr);
-    column-gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
+    column-gap: 0.875rem;
+    align-items: start;
+    padding: var(--_step-pad-y) var(--_step-pad-x);
     border-radius: calc(var(--_radius) * 0.75);
-    transition: background-color 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    border: 1px solid transparent;
+    background-color: transparent;
+    transition:
+        background-color 0.3s ease,
+        border-color 0.3s ease,
+        box-shadow 0.3s ease,
+        opacity 0.3s ease,
+        transform 0.3s ease;
 }
-.llm-iv-step.is-asking { background-color: var(--_tint); }
-.llm-iv-step.is-flash { animation: llm-iv-flash 2.4s ease-out; }
+.llm-iv-step.is-asking {
+    background-color: var(--_tint);
+    border-color: color-mix(in srgb, var(--_accent) 28%, var(--_border));
+    box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.04);
+}
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+    .llm-iv-step.is-asking { border-color: var(--_accent); }
+}
+.llm-iv-step.is-flash { animation: llm-iv-flash 1.6s ease-out; }
 @keyframes llm-iv-flash {
-    0% { background-color: var(--_flash); box-shadow: 0 0 0 0.35rem var(--_flash); }
-    100% { box-shadow: 0 0 0 0.35rem transparent; }
+    0% {
+        background-color: var(--_flash);
+        box-shadow: inset 0 0 0 1px transparent;
+        transform: scale(1.01);
+    }
+    35% { background-color: var(--_flash); }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+        transform: none;
+    }
 }
 
 .llm-iv-step-mark {
@@ -310,7 +347,12 @@
     font-size: 0.8rem;
     font-weight: 600;
     line-height: 1;
-    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+    transition:
+        background-color 0.3s ease,
+        border-color 0.3s ease,
+        color 0.3s ease,
+        box-shadow 0.3s ease,
+        transform 0.3s ease;
 }
 .llm-iv-step-mark i { font-size: 0.7rem; }
 .llm-iv-step.is-none .llm-iv-step-mark { border-style: dashed; }
@@ -318,7 +360,13 @@
 .llm-iv-step.is-asking .llm-iv-step-mark {
     border-color: var(--_accent);
     color: var(--_accent);
-    box-shadow: 0 0 0 4px var(--_icon-bg);
+    background: var(--_surface);
+    box-shadow: 0 0 0 0.25rem var(--_icon-bg);
+    animation: llm-iv-ask-pulse 2.2s ease-in-out infinite;
+}
+@keyframes llm-iv-ask-pulse {
+    0%, 100% { box-shadow: 0 0 0 0.2rem var(--_icon-bg); }
+    50% { box-shadow: 0 0 0 0.4rem var(--_icon-bg); }
 }
 .llm-iv-step.is-done .llm-iv-step-mark {
     background: var(--_done);
@@ -330,39 +378,72 @@
     border-color: var(--_accent);
     color: #fff;
 }
+/* Pop only when the coach just filled this answer (is-flash), not on resume. */
+.llm-iv-step.is-flash .llm-iv-step-mark {
+    animation: llm-iv-mark-pop 0.45s cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+@keyframes llm-iv-mark-pop {
+    0% { transform: scale(0.7); }
+    55% { transform: scale(1.12); }
+    100% { transform: scale(1); }
+}
 
-.llm-iv-step-main { grid-column: 2; min-width: 0; padding-top: 0.2rem; }
+.llm-iv-step-main { grid-column: 2; min-width: 0; padding-top: 0.15rem; }
 .llm-iv-step-head {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.25rem 0.5rem;
+    gap: 0.3rem 0.5rem;
     min-height: 1.5rem;
 }
-.llm-iv-step-label { font-weight: 600; font-size: 0.9rem; line-height: 1.3; }
+.llm-iv-step-label { font-weight: 600; font-size: 0.95rem; line-height: 1.3; color: #343a40; }
 .llm-iv-step.is-pending:not(.is-asking) .llm-iv-step-label { color: var(--_muted); font-weight: 500; }
 .llm-iv-step.is-asking .llm-iv-step-label { color: var(--_accent); }
+.llm-iv-step.is-done .llm-iv-step-label { color: #343a40; }
 .llm-iv-req { margin-left: 0.2rem; color: #dc3545; }
 .llm-iv-asking-tag {
-    padding: 0.05rem 0.55rem;
-    border-radius: 999px;
-    background: var(--_icon-bg);
-    color: var(--_accent);
-    font-size: 0.7rem;
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 0.25rem;
+    background: var(--_accent);
+    color: #fff;
+    font-size: 0.68rem;
     font-weight: 600;
-    line-height: 1.5;
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+    animation: llm-iv-tag-in 0.35s ease-out;
 }
 .llm-iv-asking-tag::first-letter { text-transform: uppercase; }
+@keyframes llm-iv-tag-in {
+    from { opacity: 0; transform: translateY(-2px) scale(0.96); }
+    to { opacity: 1; transform: none; }
+}
 .llm-iv-step-answer {
-    margin-top: 0.15rem;
+    margin-top: 0.35rem;
+    padding: 0.45rem 0.65rem;
     font-size: 0.9rem;
     line-height: 1.5;
+    color: #212529;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    background: rgba(0, 0, 0, 0.035);
+    border-radius: calc(var(--_radius) * 0.55);
+    border-left: 3px solid var(--_done);
+    animation: llm-iv-answer-in 0.4s ease-out;
 }
-.llm-iv-step-empty { margin-top: 0.1rem; font-size: 0.8rem; color: #868e96; font-style: italic; }
+.llm-iv-step.is-edited .llm-iv-step-answer { border-left-color: var(--_accent); }
+@keyframes llm-iv-answer-in {
+    from { opacity: 0; transform: translateY(0.35rem); }
+    to { opacity: 1; transform: none; }
+}
+.llm-iv-step-empty {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: #adb5bd;
+    font-style: italic;
+}
 .llm-iv-step-before {
-    margin-top: 0.3rem;
+    margin-top: 0.4rem;
     font-size: 0.8rem;
     color: var(--_muted);
     white-space: pre-wrap;
@@ -375,21 +456,242 @@
     letter-spacing: 0.03em;
     font-size: 0.68rem;
 }
-.llm-iv-step-slot { margin-top: 0.3rem; }
+.llm-iv-step-slot { margin-top: 0.35rem; }
 .llm-iv-step-slot:empty { display: none; }
 
-/* stepper: connector line through the marks */
+/* stepper: open vertical timeline (Ant / Stripe style)
+ * Continuous rail + clear states. Current step is a roomy panel;
+ * done answers sit in a soft value block; pending stay quiet on the rail. */
+.llm-iv-steps-stepper {
+    --_rail: 0.125rem;
+    --_mark: 2.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.25rem 0.25rem 0.35rem;
+}
+.llm-iv-steps-stepper .llm-iv-step {
+    --_step-pad-y: 0;
+    --_step-pad-x: 0;
+    grid-template-columns: var(--_mark) minmax(0, 1fr);
+    column-gap: 1.15rem;
+    margin: 0;
+    padding: 0 0 1.75rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+    transform: none;
+}
+.llm-iv-steps-stepper .llm-iv-step:last-child { padding-bottom: 0.25rem; }
+.llm-iv-steps-stepper .llm-iv-step.is-asking {
+    padding-bottom: 2rem;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-pending:not(.is-asking) { opacity: 1; }
+.llm-iv-steps-stepper .llm-iv-step.is-asking,
+.llm-iv-steps-stepper .llm-iv-step.is-done,
+.llm-iv-steps-stepper .llm-iv-step.is-edited {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Continuous rail behind the marks */
 .llm-iv-steps-stepper .llm-iv-step:not(:last-child)::before {
     content: '';
     position: absolute;
-    left: calc(0.75rem + var(--_mark) / 2 - 1px);
-    top: calc(0.625rem + var(--_mark));
-    bottom: -0.625rem;
-    width: 2px;
+    left: calc(var(--_mark) / 2 - var(--_rail) / 2);
+    top: var(--_mark);
+    bottom: 0;
+    width: var(--_rail);
     background: var(--_border);
-    transition: background-color 0.25s ease;
+    transition: background-color 0.45s ease;
+    z-index: 0;
+    pointer-events: none;
 }
-.llm-iv-steps-stepper .llm-iv-step.is-done:not(:last-child)::before { background: var(--_done); }
+.llm-iv-steps-stepper .llm-iv-step.is-done:not(:last-child)::before {
+    background: var(--_done);
+}
+
+.llm-iv-steps-stepper .llm-iv-step-mark {
+    width: var(--_mark);
+    height: var(--_mark);
+    border-width: 2px;
+    font-size: 0.875rem;
+    background: var(--_panel);
+    box-shadow: 0 0 0 5px var(--_panel);
+}
+.llm-iv-steps-stepper .llm-iv-step.is-pending:not(.is-asking) .llm-iv-step-mark {
+    border-color: #ced4da;
+    color: #adb5bd;
+    background: var(--_panel);
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-mark {
+    width: calc(var(--_mark) + 0.25rem);
+    height: calc(var(--_mark) + 0.25rem);
+    margin-left: -0.125rem;
+    background: var(--_accent);
+    border-color: var(--_accent);
+    color: #fff;
+    font-size: 0.9375rem;
+    box-shadow: 0 0 0 5px var(--_panel), 0 0 0 9px var(--_icon-bg);
+    animation: llm-iv-ask-pulse 2.4s ease-in-out infinite;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-mark {
+    background: var(--_done);
+    border-color: var(--_done);
+    color: #fff;
+    box-shadow: 0 0 0 5px var(--_panel);
+}
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-mark {
+    background: var(--_accent);
+    border-color: var(--_accent);
+    color: #fff;
+    box-shadow: 0 0 0 5px var(--_panel);
+}
+.llm-iv-steps-stepper .llm-iv-step.is-flash .llm-iv-step-mark {
+    animation: llm-iv-mark-pop 0.45s cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+.llm-iv-steps-stepper .llm-iv-step-main {
+    min-width: 0;
+    padding: 0.2rem 0 0;
+}
+/* Room around the current step — positive margin, not overlapping neighbours */
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-main {
+    margin: 0.15rem 0 0.35rem;
+    padding: 1rem 1.15rem 1.15rem;
+    border-radius: calc(var(--_radius) * 0.9);
+    background: var(--_surface);
+    border: 1px solid var(--_border);
+    box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.06);
+}
+
+.llm-iv-steps-stepper .llm-iv-step-label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #343a40;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-pending:not(.is-asking) .llm-iv-step-label {
+    color: #868e96;
+    font-weight: 500;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-label {
+    color: var(--_accent);
+    font-size: 1.05rem;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-label {
+    color: #495057;
+    font-weight: 600;
+}
+
+/* Collected answers: one quiet frame — no left accent bar (that doubles with border) */
+.llm-iv-steps-stepper .llm-iv-step-answer {
+    margin-top: 0.55rem;
+    padding: 0.65rem 0.85rem;
+    background: rgba(47, 158, 111, 0.06);
+    border: 1px solid var(--_border);
+    border-radius: calc(var(--_radius) * 0.65);
+    color: #212529;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    box-shadow: none;
+}
+@supports (background: color-mix(in srgb, red 10%, transparent)) {
+    .llm-iv-steps-stepper .llm-iv-step-answer {
+        background: color-mix(in srgb, var(--_done) 8%, var(--_surface));
+    }
+}
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-answer {
+    background: var(--_tint);
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-answer {
+    margin-top: 0.65rem;
+    background: var(--_tint);
+    border: 0;
+}
+.llm-iv-steps-stepper .llm-iv-step-empty {
+    margin-top: 0.45rem;
+    color: #adb5bd;
+    font-size: 0.8125rem;
+    font-style: normal;
+}
+/* Hosted native control under the step label */
+.llm-iv-steps-stepper .llm-iv-step-slot {
+    margin-top: 0.55rem;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot {
+    margin-top: 0.7rem;
+}
+/* Done + edit mode: one border on the toggle only; kill wrapper chrome */
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select,
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .bootstrap-select {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .form-control,
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpInput,
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpTextArea,
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
+    background: rgba(47, 158, 111, 0.06);
+    border: 1px solid var(--_border) !important;
+    box-shadow: none !important;
+    min-height: 2.5rem;
+}
+@supports (background: color-mix(in srgb, red 10%, transparent)) {
+    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .form-control,
+    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpInput,
+    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpTextArea,
+    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
+        background: color-mix(in srgb, var(--_done) 8%, var(--_surface));
+    }
+}
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .form-control,
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .selfhelpInput,
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .selfhelpTextArea,
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
+    background: var(--_tint);
+    border: 1px solid var(--_border) !important;
+    box-shadow: none !important;
+}
+/* Current step panel already frames the field — strip the inner control border */
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .form-control,
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .selfhelpInput,
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .selfhelpTextArea,
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot textarea,
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: var(--_tint);
+    min-height: 5.5rem;
+    padding: 0.75rem 0.9rem;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
+    min-height: 2.75rem;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select {
+    border: 0 !important;
+    box-shadow: none !important;
+}
+.llm-iv-steps-stepper .llm-iv-step.is-flash {
+    animation: llm-iv-flash-rail 1.35s ease-out;
+}
+@keyframes llm-iv-flash-rail {
+    0% { background-color: transparent; }
+    20% { background-color: var(--_flash); }
+    100% { background-color: transparent; }
+}
+.llm-iv-steps-stepper .llm-iv-step.is-asking.is-flash .llm-iv-step-main {
+    animation: llm-iv-flash-panel 1.35s ease-out;
+}
+@keyframes llm-iv-flash-panel {
+    0%, 25% { background-color: var(--_flash); }
+    100% { background-color: var(--_surface); }
+}
 
 /* cards: responsive grid - auto-fill columns from --llm-iv-cards-min so
  * 4 questions read as a 2×2 (like a WOOP board), 6 as 2×3 / 3×2, etc. */
@@ -463,11 +765,21 @@
 }
 .llm-native-field .form-control,
 .llm-native-field .selfhelpInput:not([type='checkbox']):not([type='radio']),
-.llm-native-field .selfhelpTextArea {
+.llm-native-field .selfhelpTextArea,
+.llm-native-field .bootstrap-select > .dropdown-toggle {
     border-color: var(--_border);
     border-radius: calc(var(--_radius) * 0.6);
     background-color: var(--_surface);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.llm-native-field .bootstrap-select { width: 100% !important; }
+.llm-native-field .bootstrap-select > .dropdown-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.85rem;
+    text-align: left;
 }
 .llm-native-field .form-control:focus,
 .llm-native-field .selfhelpInput:focus,
@@ -719,6 +1031,15 @@
     .llm-iv-progress .progress-bar,
     .llm-iv-step,
     .llm-iv-step-mark { transition: none; }
-    .llm-iv-step.is-flash { animation: none; background-color: var(--_flash); }
+    .llm-iv-step.is-flash,
+    .llm-iv-steps-stepper .llm-iv-step.is-flash,
+    .llm-iv-steps-stepper .llm-iv-step.is-asking.is-flash .llm-iv-step-main,
+    .llm-iv-step.is-asking .llm-iv-step-mark,
+    .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-mark,
+    .llm-iv-step.is-flash .llm-iv-step-mark,
+    .llm-iv-asking-tag,
+    .llm-iv-step-answer,
     .llm-iv-skeleton span { animation: none; }
+    .llm-iv-step.is-flash,
+    .llm-iv-steps-stepper .llm-iv-step.is-flash { background-color: var(--_flash); }
 }
