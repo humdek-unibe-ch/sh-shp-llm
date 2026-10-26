@@ -812,6 +812,59 @@ class LlmFormLogListModel extends FormUserInputLogListModel
     }
 
     /**
+     * CamelCase alias for LlmDangerDetectionService / LlmContextService.
+     *
+     * @return int
+     */
+    public function getSectionId()
+    {
+        return (int)$this->get_section_id();
+    }
+
+    // ===== Danger Detection (parity with llmChat) =====
+
+    /** @return bool Whether keyword-based danger/crisis detection is active. */
+    public function isDangerDetectionEnabled()
+    {
+        return $this->get_db_field('enable_danger_detection', '0') === '1';
+    }
+
+    /** @return string Comma-separated danger keywords/phrases. */
+    public function getDangerKeywords()
+    {
+        return $this->get_db_field('danger_keywords', '');
+    }
+
+    /**
+     * @return string Markdown message shown when danger keywords are detected.
+     */
+    public function getDangerBlockedMessage()
+    {
+        return $this->get_db_field(
+            'danger_blocked_message',
+            "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n"
+            . "**Please consider reaching out to:**\n"
+            . "- A trusted friend or family member\n"
+            . "- A mental health professional\n"
+            . "- Crisis hotlines in your area\n\n"
+            . "If you're in immediate danger, please contact emergency services.\n\n"
+            . "*Your well-being is important. Take care of yourself.*"
+        );
+    }
+
+    /**
+     * @return string[] Email addresses to notify on danger detection.
+     */
+    public function getDangerNotificationEmails()
+    {
+        $raw = $this->get_db_field('danger_notification_emails', '');
+        if ($raw === '' || $raw === null) {
+            return array();
+        }
+        return array_values(array_filter(array_map('trim', preg_split('/[\n;]+/', (string)$raw))));
+    }
+
+    /**
      * Two-letter code of the participant's UI language.
      *
      * @return string
