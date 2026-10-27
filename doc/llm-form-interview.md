@@ -740,10 +740,10 @@ never shown to the participant and never sent to the model again.
 ## Memory integration
 
 `llm_memory_rule_ids` on `llmFormLogList` behaves exactly like the core
-form field (v1.5.0): after the inherited `finished` save succeeds, the
-selected rules queue through `LlmMemoryTriggerService`. The interview
-adds nothing extra - if the approval/form save fails, nothing is saved
-and therefore nothing is queued.
+form field (v1.5.0 / v1.6.0 also on plain `formUserInputLogList`): after
+the inherited `finished` save succeeds, the selected rules queue through
+`LlmMemoryTriggerService`. The interview adds nothing extra - if the
+approval/form save fails, nothing is saved and therefore nothing is queued.
 
 ## Boundaries
 

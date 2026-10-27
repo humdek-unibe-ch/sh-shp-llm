@@ -84,7 +84,7 @@ When a form or survey is finished, memory can be updated in two ways. Both can b
 
 #### Select the rules on the form or survey (recommended)
 
-1. In the CMS open the section of the form (`formUserInput`, `formUserInputRecord`, `formUserInputLog`, `llmFormRecord`, `llmFormLog`) or of the survey (`surveyJS`).
+1. In the CMS open the section of the form (`formUserInput`, `formUserInputRecord`, `formUserInputLog`, `formUserInputLogList`, `llmFormRecord`, `llmFormLog`, `llmFormLogList`) or of the survey (`surveyJS`).
 2. Open the field `llm_memory_rule_ids` and select one or more memory rules. Only rules with the source `form_action_submit` are listed. Leave the field empty to switch this off for the form.
 3. Save the section. No form action is needed.
 
@@ -131,17 +131,13 @@ Then clear the SelfHelp cache, because hooks, styles and fields are cached. The 
 
 ### llmChat With Data Saving Enabled
 
-Use the same `llm_memory_update` form action on the generated chat data table.
+Use the same `llm_memory_update` form action on the generated chat data table. The section field `memory_rule_ids` is ignored in this mode.
 
 ### llmChat With Data Saving Disabled
 
-Use the section field `memory_rule_keys`.
-
-Example:
-
-```text
-sleep_form_finished, general_chat_update
-```
+1. Create a memory rule with source `llmChat form submit` (`llm_chat_form_submit`) on the LLM Memory → Rules tab.
+2. On the `llmChat` section, open `memory_rule_ids` and select one or more of those rules (multi-select). Leave empty to auto-match every enabled rule of that source.
+3. Memory still runs only on **chat form** submissions (structured answers), not on free-text messages.
 
 ### Login
 

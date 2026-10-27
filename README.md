@@ -256,7 +256,7 @@ The runtime guarantees:
 
 **Core forms and surveys (v1.5.0)** — select the memory rules directly on the style, no form action needed:
 
-- Field `llm_memory_rule_ids` (comma-separated `llm_memory_rules.id`, multi select in the CMS) on `formUserInput`, `formUserInputRecord`, `formUserInputLog`, `llmFormRecord`, `llmFormLog` and `surveyJS`. Empty = off. Only `form_action_submit` rules are offered.
+- Field `llm_memory_rule_ids` (comma-separated `llm_memory_rules.id`, multi select in the CMS) on `formUserInput`, `formUserInputRecord`, `formUserInputLog`, `formUserInputLogList` (v1.6.0), `llmFormRecord`, `llmFormLog`, `llmFormLogList` (v1.6.0) and `surveyJS`. Empty = off. Only `form_action_submit` rules are offered.
 - Hooks registered by `v1.5.0.sql`: `FormUserInputModel::save_user_input` / `update_user_input` and `SurveyJSModel::save_survey` → `LlmHooks::onFormSavedMemoryRules` / `onSurveySavedMemoryRules`. The original save runs first and is never changed. The rules are queued only after a saved `finished` submission of a logged-in (non-guest) user while memory is enabled. The hooked model is the submitting section, so the selection always belongs to the section that was submitted.
 - Execution reuses the existing pipeline: `LlmMemoryTriggerService::normalizeFormActionPayload()` + `dispatchForRuleIds(..., async = true)`. The request only starts one detached worker per rule and memory key; missing or disabled rules are skipped; dedupe, ordering and failure handling are unchanged. Errors in the hook are logged (`LLM Memory: form rule trigger failed` / `survey rule trigger failed`) and never change the save result.
 - `LlmMemorySubmissionContextService` builds the labeled snapshot inside the save request (the worker has no session language and no live form model). `fields` stays the flat name → value map; `readable_text` carries the JSON context (question labels, readable choice texts) that `LlmMemoryUpdateService` adds to the prompt as `## Submission Context` for `form_action_submit` payloads.
@@ -285,13 +285,7 @@ Form-action job config example:
 
 **llmChat with data saving enabled** — use a form action on the generated `llmChat_*` data table, same as above.
 
-**llmChat with data saving disabled** — configure the section-level `memory_rule_keys` field:
-
-```
-sleep_form_finished, general_chat_update
-```
-
-When `memory_rule_keys` is set, only the listed rules fire. When empty, rules are matched by `source_type = llm_chat_form_submit`.
+**llmChat with data saving disabled** — select rules in the section field `memory_rule_ids` (multi-select of `llm_chat_form_submit` rules, v1.6.0). When empty, rules are matched by `source_type = llm_chat_form_submit`.
 
 **Login** — no configuration needed. Rules with `source_type = login` fire automatically after successful login. Example rule:
 
@@ -340,8 +334,8 @@ This works in `conversation_context`, LLM script prompts, `llmResponse` template
 2. Open the dedicated `LLM Memory` page.
 3. Create one or more rules in the `Rules` tab.
 4. Edit the rule prompt in Prompt Lab from that page.
-5. For core forms and surveys, select the rules in `llm_memory_rule_ids` on the section (or add a `llm_memory_update` form action and select the rule key).
-7. For `llmChat` without data saving, configure `memory_rule_keys` on the section.
+5. For core forms and surveys (including `formUserInputLogList` / `llmFormLogList`), select the rules in `llm_memory_rule_ids` on the section (or add a `llm_memory_update` form action and select the rule key).
+7. For `llmChat` without data saving, select rules in `memory_rule_ids` on the section (create rules with source `llm_chat_form_submit`).
 8. Load memory explicitly through `data_config` in prompts or content (see above).
 9. Use the dedicated memory page tabs to:
    - manage rules
