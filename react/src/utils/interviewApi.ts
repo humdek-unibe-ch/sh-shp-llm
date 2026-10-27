@@ -48,7 +48,9 @@ export function basePageUrl(): string {
 /**
  * Same-page URL for interview requests: record/sid markers are cleared
  * because the scope travels in the POST body - a stale address-bar
- * selection must never preload the wrong row server-side.
+ * selection must never preload the wrong row server-side. Every other
+ * query key (the URL parameters of the section's `extra_params`) stays on
+ * the URL, so the endpoint request resolves the same parameters as the page.
  */
 function requestUrl(_recordId: number | null): string {
   return basePageUrl();
@@ -57,7 +59,8 @@ function requestUrl(_recordId: number | null): string {
 /** URL to open the interview for a record (or 'new') on this section. */
 export function recordScopeUrl(config: InterviewConfig, record: string | number): string {
   // Resolve against the page URL, not origin: the router may emit an
-  // absolute URL or a base-path-relative one.
+  // absolute URL or a base-path-relative one. `urls.new` already carries
+  // the page's query (the URL parameters), the server builds it from it.
   const url = new URL(config.urls.new, window.location.href);
   url.searchParams.set(RECORD_PARAM, String(record));
   url.searchParams.set(SID_PARAM, String(config.sectionId));

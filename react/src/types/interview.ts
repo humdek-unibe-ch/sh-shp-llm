@@ -19,6 +19,8 @@ export interface InterviewFieldOption {
 export interface InterviewFieldDef {
   name: string;
   label: string;
+  /** The author's question prompt for the control (CMS placeholder); '' when none. */
+  hint?: string;
   style: string;
   input_type: string;
   required: boolean;

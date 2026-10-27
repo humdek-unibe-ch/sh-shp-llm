@@ -28,14 +28,23 @@
  *   --llm-iv-chat-width    chat pane width when beside the answers (default
  *                          min(28%, 22rem)); form takes the rest. e.g. 18rem
  *                          for a slim chat, 36rem / 40% for a wider one
- *   --llm-iv-cards-min     min card width in the cards grid (default 14rem);
- *                          columns wrap as more questions are added
+ *   --llm-iv-cards-cols    columns of the cards board (default 2, so four
+ *                          questions read as a 2x2); one column when the
+ *                          answers pane is narrow
+ *   --llm-iv-ink           text colour of answers and titles
+ *   --llm-iv-muted         quiet text: prompts, hints, pending questions
+ *   --llm-iv-soft          soft fill: answered cards, tracker, status chip
+ *   --llm-iv-track         tracker line and open step circles
+ *   --llm-iv-edited        colour of edited answers (default: the accent)
  *
  * Bubble colours and avatars come from the `llm_chat_appearance` field
  * (same JSON as llmChat). Class hooks for deeper CSS: .llm-iv-launcher,
- * .llm-iv-workspace (.is-modal, .is-chat-only, .pos-*), .llm-iv-collected,
- * .llm-iv-steps (-stepper|-cards|-list|-plain), .llm-iv-step (.is-done,
- * .is-asking, .is-edited, .is-flash), .llm-iv-chat, .llm-iv-transcript,
+ * .llm-iv-workspace (.is-modal, .is-chat-only, .pos-*), .llm-iv-collected
+ * (.is-board), .llm-iv-eyebrow, .llm-iv-status (.is-draft|ready|saved),
+ * .llm-iv-tracker (-step, -dot, -label), .llm-iv-steps
+ * (-stepper|-cards|-list|-plain), .llm-iv-step (.is-done, .is-asking,
+ * .is-edited, .is-flash; icon slot .llm-iv-step-icon, set per question
+ * with [data-field="name"]), .llm-iv-chat, .llm-iv-transcript,
  * .llm-iv-approvebar, .llm-iv-quick, .llm-iv-dialog, .llm-iv-ws-modal.
  *
  * Defaults are expressed as var() fallbacks, never declared on the
@@ -56,7 +65,13 @@
     --_icon-bg: var(--llm-iv-icon-bg, rgba(0, 123, 255, 0.12));
     --_tint: rgba(0, 123, 255, 0.07);
     --_flash: rgba(0, 123, 255, 0.24);
-    --_muted: #6c757d;
+    --_ink: var(--llm-iv-ink, #212529);
+    --_muted: var(--llm-iv-muted, #6c757d);
+    --_soft: var(--llm-iv-soft, #f1f3f5);
+    --_track: var(--llm-iv-track, #ced4da);
+    --_edited: var(--llm-iv-edited, var(--_accent));
+    --_edited-tint: rgba(0, 123, 255, 0.12);
+    --_done-tint: rgba(40, 167, 69, 0.14);
 }
 @supports (background: color-mix(in srgb, red 10%, transparent)) {
     .llm-interview-react,
@@ -64,6 +79,8 @@
         --_icon-bg: var(--llm-iv-icon-bg, color-mix(in srgb, var(--_accent) 14%, transparent));
         --_tint: color-mix(in srgb, var(--_accent) 7%, transparent);
         --_flash: color-mix(in srgb, var(--_accent) 24%, transparent);
+        --_edited-tint: color-mix(in srgb, var(--_edited) 16%, transparent);
+        --_done-tint: color-mix(in srgb, var(--_done) 14%, transparent);
     }
 }
 .llm-interview-react {
@@ -162,13 +179,22 @@
 }
 
 /* ---------- Modal window (show_form_in_modal) ----------
- * A real modal: header with the form's label and a close button, the list
- * stays on the page behind the backdrop. The body scrolls, never the page. */
+ * Header + close stay put; only the body scrolls. Cap the dialog to the
+ * viewport so the page behind never scrolls and panels do not spill. */
+.modal-dialog.llm-iv-ws-dialog {
+    max-width: min(96vw, 1140px);
+    max-height: calc(100vh - 1.5rem);
+    margin: 0.75rem auto;
+}
+.modal-dialog.llm-iv-ws-dialog.is-chat-only { max-width: min(96vw, 800px); }
 .llm-iv-ws-modal .modal-content {
     border: 0;
     border-radius: var(--_radius);
     box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.25);
     overflow: hidden;
+    max-height: calc(100vh - 1.5rem);
+    display: flex;
+    flex-direction: column;
 }
 .llm-iv-ws-modal .modal-header {
     flex: 0 0 auto;
@@ -178,21 +204,32 @@
 }
 .llm-iv-ws-modal .modal-title { font-size: 1.1rem; font-weight: 600; }
 .llm-iv-ws-modal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: var(--_gap);
     background: var(--llm-iv-modal-bg, #f4f6f8);
+    overflow-y: auto;
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
-.modal-dialog.llm-iv-ws-dialog { max-width: min(96vw, 1140px); }
-.modal-dialog.llm-iv-ws-dialog.is-chat-only { max-width: min(96vw, 800px); }
 .llm-iv-ws-modal .llm-iv-workspace { max-width: none; }
+/* Chat height: leave room for modal header + body padding */
 .llm-iv-ws-modal .llm-iv-workspace .llm-iv-chat {
     top: 0;
-    height: min(var(--_height), calc(100vh - 8rem));
+    height: min(var(--_height), calc(100vh - 10rem));
+    max-height: calc(100vh - 10rem);
 }
+/* Stacked chat (top/bottom): keep a compact pane so the coach header
+ * stays on screen with the answers below/above — a full --_height chat
+ * would fill the modal and scroll its own header out of view on focus. */
 .llm-iv-ws-modal .llm-iv-workspace.pos-top .llm-iv-chat,
-.llm-iv-ws-modal .llm-iv-workspace.pos-bottom .llm-iv-chat,
+.llm-iv-ws-modal .llm-iv-workspace.pos-bottom .llm-iv-chat {
+    height: min(18rem, 38vh);
+    max-height: min(18rem, 38vh);
+}
 .llm-iv-ws-modal .llm-iv-workspace.is-chat-only .llm-iv-chat {
-    height: min(var(--_height), calc(100vh - 8rem));
+    height: min(var(--_height), calc(100vh - 10rem));
+    max-height: calc(100vh - 10rem);
 }
 
 /* Dialogs opened from the workspace window sit above it (and get their own backdrop). */
@@ -218,9 +255,41 @@
     gap: 0.5rem;
     padding: 0.875rem 1.25rem;
     font-weight: 600;
+    background: var(--_surface);
     border-bottom: 1px solid var(--_border);
 }
-.llm-iv-pane-title { font-size: 1rem; letter-spacing: -0.01em; color: #212529; }
+.llm-iv-pane-heading { flex: 1 1 auto; min-width: 0; }
+.llm-iv-pane-titlerow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+}
+.llm-iv-pane-title { font-size: 1rem; letter-spacing: -0.01em; color: var(--_ink); }
+.llm-iv-eyebrow {
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.85rem;
+    font-weight: 400;
+    line-height: 1.3;
+    color: var(--_muted);
+}
+/* Where the entry stands: draft -> ready to save -> saved */
+.llm-iv-status {
+    display: inline-block;
+    flex: 0 0 auto;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    background: var(--_soft);
+    color: var(--_ink);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+.llm-iv-status.is-ready { background: var(--_done-tint); color: var(--_done); }
+.llm-iv-status.is-saved { background: var(--_icon-bg); color: var(--_accent); }
 .llm-iv-count {
     font-size: 0.75rem;
     font-weight: 600;
@@ -247,6 +316,7 @@
 .llm-iv-pane-foot.card-footer {
     flex: 0 0 auto;
     padding: 0.75rem 1.25rem;
+    background: var(--_surface);
     border-top: 1px solid var(--_border);
 }
 .llm-iv-save { font-weight: 600; }
@@ -426,12 +496,15 @@
     color: #212529;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    background: rgba(0, 0, 0, 0.035);
-    border-radius: calc(var(--_radius) * 0.55);
-    border-left: 3px solid var(--_done);
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
     animation: llm-iv-answer-in 0.4s ease-out;
 }
-.llm-iv-step.is-edited .llm-iv-step-answer { border-left-color: var(--_accent); }
+.llm-iv-step.is-edited .llm-iv-step-answer {
+    background: #fff;
+    border-color: #ced4da;
+}
 @keyframes llm-iv-answer-in {
     from { opacity: 0; transform: translateY(0.35rem); }
     to { opacity: 1; transform: none; }
@@ -520,36 +593,33 @@
     height: var(--_mark);
     border-width: 2px;
     font-size: 0.875rem;
-    background: var(--_panel);
-    box-shadow: 0 0 0 5px var(--_panel);
+    background: #fff;
+    /* Mask the rail behind the mark without a coloured halo */
+    box-shadow: 0 0 0 4px var(--_panel);
 }
 .llm-iv-steps-stepper .llm-iv-step.is-pending:not(.is-asking) .llm-iv-step-mark {
     border-color: #ced4da;
     color: #adb5bd;
-    background: var(--_panel);
+    background: #fff;
 }
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-mark {
-    width: calc(var(--_mark) + 0.25rem);
-    height: calc(var(--_mark) + 0.25rem);
-    margin-left: -0.125rem;
     background: var(--_accent);
     border-color: var(--_accent);
     color: #fff;
-    font-size: 0.9375rem;
-    box-shadow: 0 0 0 5px var(--_panel), 0 0 0 9px var(--_icon-bg);
-    animation: llm-iv-ask-pulse 2.4s ease-in-out infinite;
+    box-shadow: 0 0 0 4px var(--_panel);
+    animation: none;
 }
 .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-mark {
     background: var(--_done);
     border-color: var(--_done);
     color: #fff;
-    box-shadow: 0 0 0 5px var(--_panel);
+    box-shadow: 0 0 0 4px var(--_panel);
 }
 .llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-mark {
     background: var(--_accent);
     border-color: var(--_accent);
     color: #fff;
-    box-shadow: 0 0 0 5px var(--_panel);
+    box-shadow: 0 0 0 4px var(--_panel);
 }
 .llm-iv-steps-stepper .llm-iv-step.is-flash .llm-iv-step-mark {
     animation: llm-iv-mark-pop 0.45s cubic-bezier(0.34, 1.45, 0.64, 1);
@@ -559,14 +629,14 @@
     min-width: 0;
     padding: 0.2rem 0 0;
 }
-/* Room around the current step — positive margin, not overlapping neighbours */
+/* Current step: Bootstrap-like card — one border, no accent left bar */
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-main {
-    margin: 0.15rem 0 0.35rem;
+    margin: 0.25rem 0 0.5rem;
     padding: 1rem 1.15rem 1.15rem;
-    border-radius: calc(var(--_radius) * 0.9);
-    background: var(--_surface);
-    border: 1px solid var(--_border);
-    box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.06);
+    border-radius: 0.5rem;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.125);
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
 }
 
 .llm-iv-steps-stepper .llm-iv-step-label {
@@ -588,30 +658,27 @@
     font-weight: 600;
 }
 
-/* Collected answers: one quiet frame — no left accent bar (that doubles with border) */
+/* Collected answers: plain Bootstrap-ish text block */
 .llm-iv-steps-stepper .llm-iv-step-answer {
-    margin-top: 0.55rem;
-    padding: 0.65rem 0.85rem;
-    background: rgba(47, 158, 111, 0.06);
-    border: 1px solid var(--_border);
-    border-radius: calc(var(--_radius) * 0.65);
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
     color: #212529;
     font-size: 0.9375rem;
     line-height: 1.5;
     box-shadow: none;
 }
-@supports (background: color-mix(in srgb, red 10%, transparent)) {
-    .llm-iv-steps-stepper .llm-iv-step-answer {
-        background: color-mix(in srgb, var(--_done) 8%, var(--_surface));
-    }
-}
 .llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-answer {
-    background: var(--_tint);
+    background: #fff;
+    border-color: #ced4da;
 }
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-answer {
     margin-top: 0.65rem;
-    background: var(--_tint);
+    background: transparent;
     border: 0;
+    padding: 0;
 }
 .llm-iv-steps-stepper .llm-iv-step-empty {
     margin-top: 0.45rem;
@@ -626,56 +693,50 @@
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot {
     margin-top: 0.7rem;
 }
-/* Done + edit mode: one border on the toggle only; kill wrapper chrome */
+/* bootstrap-select puts .form-control on the WRAPPER — never border that
+ * node or you get a double frame (wrapper + .dropdown-toggle). */
 .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select,
-.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .bootstrap-select {
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .bootstrap-select,
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select,
+.llm-iv-steps-cards .llm-iv-step .llm-iv-step-slot .bootstrap-select,
+.llm-iv-steps-list .llm-iv-step .llm-iv-step-slot .bootstrap-select,
+.llm-iv-steps-plain .llm-iv-step .llm-iv-step-slot .bootstrap-select {
     border: 0 !important;
     box-shadow: none !important;
-    background: transparent;
+    background: transparent !important;
+    padding: 0 !important;
+    height: auto !important;
 }
-.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .form-control,
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .form-control:not(.bootstrap-select),
 .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpInput,
 .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpTextArea,
-.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
-    background: rgba(47, 158, 111, 0.06);
-    border: 1px solid var(--_border) !important;
-    box-shadow: none !important;
-    min-height: 2.5rem;
-}
-@supports (background: color-mix(in srgb, red 10%, transparent)) {
-    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .form-control,
-    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpInput,
-    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .selfhelpTextArea,
-    .llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
-        background: color-mix(in srgb, var(--_done) 8%, var(--_surface));
-    }
-}
-.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .form-control,
+.llm-iv-steps-stepper .llm-iv-step.is-done .llm-iv-step-slot .bootstrap-select > .dropdown-toggle,
+.llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .form-control:not(.bootstrap-select),
 .llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .selfhelpInput,
 .llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .selfhelpTextArea,
 .llm-iv-steps-stepper .llm-iv-step.is-edited .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
-    background: var(--_tint);
-    border: 1px solid var(--_border) !important;
+    background: #fff;
+    border: 1px solid #ced4da !important;
     box-shadow: none !important;
+    min-height: 2.5rem;
+    border-radius: 0.25rem;
 }
-/* Current step panel already frames the field — strip the inner control border */
-.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .form-control,
+/* Current step: one control border inside the card (toggle only for select) */
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .form-control:not(.bootstrap-select),
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .selfhelpInput,
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .selfhelpTextArea,
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot textarea,
 .llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
-    border: 0 !important;
+    border: 1px solid #ced4da !important;
     box-shadow: none !important;
-    background: var(--_tint);
-    min-height: 5.5rem;
-    padding: 0.75rem 0.9rem;
-}
-.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select > .dropdown-toggle {
+    background: #fff;
     min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.25rem;
 }
-.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .bootstrap-select {
-    border: 0 !important;
-    box-shadow: none !important;
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot textarea,
+.llm-iv-steps-stepper .llm-iv-step.is-asking .llm-iv-step-slot .selfhelpTextArea {
+    min-height: 5rem;
 }
 .llm-iv-steps-stepper .llm-iv-step.is-flash {
     animation: llm-iv-flash-rail 1.35s ease-out;
@@ -693,38 +754,218 @@
     100% { background-color: var(--_surface); }
 }
 
-/* cards: responsive grid - auto-fill columns from --llm-iv-cards-min so
- * 4 questions read as a 2×2 (like a WOOP board), 6 as 2×3 / 3×2, etc. */
+/* cards: the board - title row, step tracker, one card per question.
+ * --llm-iv-cards-cols columns (default 2: four questions read as a 2x2),
+ * one column while the pane is narrow, and an odd first card (the module
+ * question of the hub) takes a full row. The tracker carries the numbers,
+ * so a card has no mark of its own; its icon slot stays empty until a theme
+ * gives the question an icon. A card keeps its size in every state - only
+ * colours change - so nothing jumps when an answer arrives. */
+.llm-iv-collected.is-board { background: var(--_panel); }
+.is-board .llm-iv-pane-head {
+    display: block;
+    padding: 1.15rem 1.25rem 0.25rem;
+    background: transparent;
+    border-bottom: 0;
+}
+.is-board .llm-iv-pane-titlerow {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+}
+.is-board .llm-iv-pane-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--_accent);
+}
+.is-board .llm-iv-pane-body {
+    padding: 0.9rem 1.25rem 1.1rem;
+    container: llm-iv-answers / inline-size;
+}
+.is-board .llm-iv-pane-foot.card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.9rem;
+    padding: 0 1.25rem 1.25rem;
+    background: transparent;
+    border-top: 0;
+}
+.is-board .llm-iv-save-hint { margin: 0; }
+
+/* Step tracker: numbered circles joined by a line */
+.llm-iv-tracker {
+    --_dot: 2.25rem;
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0.9rem 1.25rem 0;
+}
+.llm-iv-tracker-step {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    text-align: center;
+}
+.llm-iv-tracker-step + .llm-iv-tracker-step::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--_dot) / 2 - 1px);
+    left: calc(-50% + var(--_dot) / 2 + 0.5rem);
+    right: calc(50% + var(--_dot) / 2 + 0.5rem);
+    height: 2px;
+    border-radius: 2px;
+    background: var(--_track);
+    transition: background-color 0.4s ease;
+}
+.llm-iv-tracker-step.is-done + .llm-iv-tracker-step::before { background: var(--_accent); }
+.llm-iv-tracker-dot {
+    box-sizing: border-box;
+    width: var(--_dot);
+    height: var(--_dot);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--_track);
+    border-radius: 50%;
+    background: var(--_surface);
+    color: var(--_muted);
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 1;
+    transition:
+        background-color 0.3s ease,
+        border-color 0.3s ease,
+        color 0.3s ease,
+        box-shadow 0.3s ease;
+}
+.llm-iv-tracker-dot i { font-size: 0.7rem; }
+.llm-iv-tracker-step.is-done .llm-iv-tracker-dot,
+.llm-iv-tracker-step.is-asking .llm-iv-tracker-dot {
+    background: var(--_accent);
+    border-color: var(--_accent);
+    color: #fff;
+}
+.llm-iv-tracker-step.is-asking .llm-iv-tracker-dot { box-shadow: 0 0 0 0.25rem var(--_icon-bg); }
+.llm-iv-tracker-step.is-edited .llm-iv-tracker-dot {
+    background: var(--_edited);
+    border-color: var(--_edited);
+    color: #fff;
+}
+.llm-iv-tracker-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+    color: var(--_ink);
+}
+.llm-iv-tracker-step.is-pending:not(.is-asking) .llm-iv-tracker-label { color: var(--_muted); }
+.llm-iv-tracker-step.is-asking .llm-iv-tracker-label { color: var(--_accent); font-weight: 600; }
+
 .llm-iv-steps-cards {
     display: grid;
-    grid-template-columns: repeat(
-        auto-fill,
-        minmax(min(100%, var(--llm-iv-cards-min, 14rem)), 1fr)
-    );
+    grid-template-columns: repeat(var(--llm-iv-cards-cols, 2), minmax(0, 1fr));
     gap: 0.75rem;
     align-items: stretch;
 }
+@container llm-iv-answers (max-width: 30rem) {
+    .llm-iv-steps-cards { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 575.98px) {
+    .llm-iv-steps-cards { grid-template-columns: minmax(0, 1fr); }
+}
+/* An odd first card (the hub's module question) spans the row, so the
+ * rest still reads as pairs. Hand-editable / wide controls keep a full row
+ * so inputs stay usable. */
+.llm-iv-steps-cards .llm-iv-step:first-child:nth-last-child(odd),
+.llm-iv-steps-cards .llm-iv-step.is-hosted { grid-column: 1 / -1; }
 .llm-iv-steps-cards .llm-iv-step {
-    --_mark: 1.75rem;
+    display: block;
     margin: 0;
     height: 100%;
-    padding: 0.875rem 1rem;
-    background: var(--_surface);
-    border: 1px solid var(--_border);
+    padding: 1rem 1.1rem 1.1rem;
+    background: var(--_soft);
+    border: 1px solid transparent;
     border-radius: calc(var(--_radius) * 0.85);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: none;
 }
-/* Hand-editable / wide controls keep a full row so inputs stay usable. */
-.llm-iv-steps-cards .llm-iv-step.is-hosted { grid-column: 1 / -1; }
-.llm-iv-steps-cards .llm-iv-step.is-done { border-left: 3px solid var(--_done); }
-.llm-iv-steps-cards .llm-iv-step.is-asking,
+.llm-iv-steps-cards .llm-iv-step-mark { display: none; }
+.llm-iv-steps-cards .llm-iv-step.is-pending,
+.llm-iv-steps-cards .llm-iv-step.is-none {
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--_track);
+}
+.llm-iv-steps-cards .llm-iv-step.is-asking {
+    background: var(--_surface);
+    border-style: solid;
+    border-color: var(--_accent);
+    box-shadow: 0 0 0 1px var(--_accent), 0 0 0 0.3rem var(--_icon-bg);
+}
 .llm-iv-steps-cards .llm-iv-step.is-edited {
     background: var(--_surface);
-    border-color: var(--_accent);
-    border-left-width: 3px;
-    box-shadow: 0 0 0 3px var(--_icon-bg);
+    border-style: solid;
+    border-color: var(--_edited);
+    box-shadow: 0 0 0 1px var(--_edited);
 }
-.llm-iv-steps-cards .llm-iv-step-main { padding-top: 0.1rem; }
+.llm-iv-steps-cards .llm-iv-step.is-flash { animation: llm-iv-flash-card 1.6s ease-out; }
+@keyframes llm-iv-flash-card {
+    0%, 35% { background-color: var(--_flash); }
+    100% { background-color: var(--_soft); }
+}
+.llm-iv-steps-cards .llm-iv-step-main { padding: 0; }
+.llm-iv-steps-cards .llm-iv-step-head {
+    flex-wrap: nowrap;
+    gap: 0.65rem;
+    min-height: 2.5rem;
+}
+.llm-iv-step-icon {
+    display: none;
+    flex: 0 0 auto;
+    width: 2.5rem;
+    height: 2.5rem;
+}
+.llm-iv-steps-cards .llm-iv-step-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--_accent);
+}
+.llm-iv-steps-cards .llm-iv-step.is-pending:not(.is-asking) .llm-iv-step-label {
+    font-weight: 700;
+    color: var(--_accent);
+}
+.llm-iv-steps-cards .llm-iv-asking-tag,
+.llm-iv-steps-cards .llm-iv-edited-badge { flex: 0 0 auto; margin-left: auto; }
+.llm-iv-steps-cards .llm-iv-step-answer {
+    margin-top: 0.6rem;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: var(--_ink);
+}
+.llm-iv-steps-cards .llm-iv-step.is-edited .llm-iv-step-answer {
+    background: transparent;
+    border: 0;
+}
+.llm-iv-steps-cards .llm-iv-step-empty {
+    margin-top: 0.6rem;
+    font-size: 0.9rem;
+    font-style: normal;
+    line-height: 1.5;
+    color: var(--_muted);
+}
 
 /* list: compact hairline rows */
 .llm-iv-steps-list .llm-iv-step {
@@ -763,7 +1004,7 @@
     white-space: nowrap;
     border: 0;
 }
-.llm-native-field .form-control,
+.llm-native-field .form-control:not(.bootstrap-select),
 .llm-native-field .selfhelpInput:not([type='checkbox']):not([type='radio']),
 .llm-native-field .selfhelpTextArea,
 .llm-native-field .bootstrap-select > .dropdown-toggle {
@@ -771,6 +1012,14 @@
     border-radius: calc(var(--_radius) * 0.6);
     background-color: var(--_surface);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+/* Wrapper must stay frameless — .form-control on it would double the toggle */
+.llm-native-field .bootstrap-select.form-control {
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    height: auto !important;
 }
 .llm-native-field .bootstrap-select { width: 100% !important; }
 .llm-native-field .bootstrap-select > .dropdown-toggle {
@@ -1024,12 +1273,30 @@
     .llm-iv-workspace.pos-bottom .llm-iv-chat {
         position: relative;
         top: auto;
-        height: min(75vh, 560px);
+        /* Compact enough that answers stay reachable without endless scroll */
+        height: min(42vh, 22rem);
+        max-height: min(42vh, 22rem);
     }
     .llm-iv-workspace.pos-left .llm-iv-chat { order: 0; }
-    .llm-iv-ws-modal .llm-iv-workspace .llm-iv-chat { height: min(70vh, 520px); }
-    .modal-dialog.llm-iv-ws-dialog { max-width: calc(100vw - 1rem); margin: 0.5rem auto; }
-    .llm-iv-ws-modal .modal-body { padding: 0.75rem; }
+    /* Modal: same compact chat; keep dialog inside the phone viewport */
+    .llm-iv-ws-modal .llm-iv-workspace .llm-iv-chat,
+    .llm-iv-ws-modal .llm-iv-workspace.pos-top .llm-iv-chat,
+    .llm-iv-ws-modal .llm-iv-workspace.pos-bottom .llm-iv-chat {
+        height: min(38vh, 18rem);
+        max-height: min(38vh, 18rem);
+    }
+    .llm-iv-ws-modal .llm-iv-workspace.is-chat-only .llm-iv-chat {
+        height: min(70vh, 28rem);
+        max-height: min(70vh, 28rem);
+    }
+    .modal-dialog.llm-iv-ws-dialog {
+        max-width: calc(100vw - 0.75rem);
+        max-height: calc(100vh - 0.75rem);
+        margin: 0.35rem auto;
+    }
+    .llm-iv-ws-modal .modal-content { max-height: calc(100vh - 0.75rem); }
+    .llm-iv-ws-modal .modal-body { padding: 0.65rem; }
+    .llm-iv-ws-modal .modal-header { padding: 0.55rem 0.85rem; }
     .llm-iv-launcher-actions { width: 100%; }
     .llm-iv-launcher-start { flex: 1 1 auto; }
     .llm-iv-record-row { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }

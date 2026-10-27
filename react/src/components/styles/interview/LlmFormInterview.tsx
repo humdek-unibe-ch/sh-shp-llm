@@ -101,7 +101,12 @@ const THEME_VARS = [
   '--llm-iv-icon-bg',
   '--llm-iv-height',
   '--llm-iv-chat-width',
-  '--llm-iv-cards-min',
+  '--llm-iv-cards-cols',
+  '--llm-iv-ink',
+  '--llm-iv-muted',
+  '--llm-iv-soft',
+  '--llm-iv-track',
+  '--llm-iv-edited',
   '--llm-iv-sticky-top',
   '--llm-iv-modal-bg',
 ];
@@ -999,8 +1004,9 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
     return names;
   }, [state?.fields, config.allowManualEdit]);
   const hasNativeFields = nativeNames.size > 0;
-  // With no answers list and nothing to edit by hand the chat is the whole workspace.
-  const chatOnly = config.progressLayout === 'none' && !hasNativeFields;
+  // CMS "none" = chat only: hide the answers pane entirely (hosted fields
+  // would otherwise force a plain form even when the author picked chat-only).
+  const chatOnly = config.progressLayout === 'none';
 
   // Page mode with the chat beside the answers: fill the viewport below
   // the workspace's top edge, so the composer is never cut off on the
@@ -1217,6 +1223,9 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
   // Modal mode: a real modal window above the page. The launcher and the
   // list stay where they are; the draft survives closing the window.
   const nested = approveOpen || clearOpen;
+  // The list's edit button label ("Open") is also the default header of the
+  // window; `editTitle` (llm_interview_labels) lets an open entry say more.
+  const windowTitle = recordId !== null ? labels.editTitle || config.labels.edit : config.labels.start;
   return (
     <>
       {launcher}
@@ -1233,10 +1242,10 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
         dialogClassName={`llm-iv-ws-dialog${chatOnly ? ' is-chat-only' : ''}`}
         data-llm-iv-modal={config.sectionId}
         style={modalTheme}
-        aria-label={recordId !== null ? config.labels.edit : config.labels.start}
+        aria-label={windowTitle}
       >
         <Modal.Header closeButton={!approving} closeLabel={labels.close}>
-          <Modal.Title>{recordId !== null ? config.labels.edit : config.labels.start}</Modal.Title>
+          <Modal.Title>{windowTitle}</Modal.Title>
         </Modal.Header>
         <Modal.Body className="llm-slim-scroll">{workspace}</Modal.Body>
       </Modal>
