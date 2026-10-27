@@ -132,7 +132,8 @@ class FakeFormModel
     public function get_children() { return $this->children; }
     public function getInterviewWritableHiddenFields() { return $this->hidden_allowlist; }
     public function isInterviewAllowManualEdit() { return $this->manual_edit; }
-    public function getScopeBoundFieldNames() { return $this->scope_bound; }
+    /** Pinned fields: name => URL value of a declared param that is also a field name. */
+    public function getScopeBoundValues() { return $this->scope_bound; }
 }
 
 /** Field model that counts how often a schema walk reads its condition. */
@@ -165,7 +166,7 @@ class ReloadableFormModel extends FakeFormModel
     public function get_children() { return $this->tree; }
     public function getInterviewWritableHiddenFields() { return $this->allowlist; }
     public function isInterviewAllowManualEdit() { return $this->manual; }
-    public function getScopeBoundFieldNames() { return array(); }
+    public function getScopeBoundValues() { return array(); }
 }
 
 function field($style, $name, array $extra = array(), $id = 0, $children = array(), $condition = true, $entry = array())
@@ -249,9 +250,9 @@ $children = array(
     field('input', 'week_no', array('type_input' => 'week', 'label' => 'Week'), 28)
 );
 
-// scope template `module:{{module_id}}` makes module_id scope-bound;
+// the URL parameter module_id=7 pins the module_id field (scope-bound);
 // secret_flag is hidden-allowlisted, secret_token is not.
-$form = new FakeFormModel($children, array('secret_flag', 'module_id'), true, array('module_id'));
+$form = new FakeFormModel($children, array('secret_flag', 'module_id'), true, array('module_id' => '7'));
 $schema = $svc->build($form);
 
 /* =========================================================================
@@ -500,6 +501,33 @@ check('multi: JSON default decoded to native array', $schema_m['tags']['initial_
 check('multi: entity-encoded JSON entry decoded', $schema_m['tags2']['initial_value'] === array('a'));
 check('defaults: explicit 0 preserved through loose default', $schema_m['zero']['initial_value'] === 0);
 check('defaults: explicit false preserved', $schema_m['falsy']['initial_value'] === false);
+
+/* =========================================================================
+ * Pinned fields: a declared URL parameter (extra_params) that is also a
+ * field name fixes that field to the URL value
+ * ========================================================================= */
+
+$form_pin = new FakeFormModel(array(
+    field('select', 'module_id', array(
+        'label' => 'Module', 'value' => 'module_2',
+        'items' => array(array('value' => 'module_1', 'text' => 'One'), array('value' => 'module_2', 'text' => 'Two'))
+    ), 61),
+    field('input', 'plan', array('type_input' => 'text', 'label' => 'Plan'), 62),
+    field('input', 'saved_module', array('type_input' => 'text', 'label' => 'Saved'), 63, array(), true, array('saved_module' => 'from-record'))
+), array(), true, array('module_id' => 'module_1', 'saved_module' => 'module_2', 'not_a_field' => 'x'));
+$schema_pin = $svc->build($form_pin);
+check('pinned: the URL value seeds the draft over the native default', $schema_pin['module_id']['initial_value'] === 'module_1');
+check('pinned: the field is hidden context, not a question', $schema_pin['module_id']['hidden'] === true && $schema_pin['module_id']['interview'] === false);
+check('pinned: scope-bound and writable by neither origin', $schema_pin['module_id']['scope_bound'] === true
+    && $schema_pin['module_id']['llm_writable'] === false && $schema_pin['module_id']['manual_writable'] === false);
+check('pinned: a saved record value wins over the URL', $schema_pin['saved_module']['initial_value'] === 'from-record');
+check('pinned: a parameter without a field is ignored', !isset($schema_pin['not_a_field']));
+check('pinned: other fields stay questions', $schema_pin['plan']['interview'] === true && $schema_pin['plan']['scope_bound'] === false);
+$res = $svc->normalizePatch($schema_pin, array('module_id' => 'module_2'), LlmFormSchemaService::ORIGIN_LLM);
+check('pinned: the model cannot change the pinned value', isset($res['errors']['module_id']));
+$res = $svc->normalizePatch($schema_pin, array('module_id' => 'module_1', 'plan' => 'Walk'), LlmFormSchemaService::ORIGIN_LLM);
+check('pinned: repeating the pinned value is ignored, real answers still merge',
+    !$res['errors'] && $res['values'] === array('plan' => 'Walk'));
 
 /* =========================================================================
  * Field-name shape + has_access gating

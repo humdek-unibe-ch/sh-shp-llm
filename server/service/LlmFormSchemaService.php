@@ -11,9 +11,9 @@ require_once __DIR__ . '/../../../../component/style/formField/FormFieldModel.ph
  * build($form_model) walks the resolved child component tree (same
  * get_children() -> get_model() traversal as
  * LlmMemorySubmissionContextService) and returns an ordered map
- *   name => {name, section_id, style, input_type, label, required, hidden,
- *            interview, llm_writable, manual_writable, native_only,
- *            options, constraints, initial_value}
+ *   name => {name, section_id, style, input_type, label, placeholder,
+ *            required, hidden, interview, llm_writable, manual_writable,
+ *            native_only, options, constraints, initial_value}
  * from the currently eligible tree: children whose own or an ancestor's
  * condition evaluated false are absent (not merely flagged), and hidden
  * inputs / d-none / display:none styling on the field or an ancestor
@@ -28,8 +28,10 @@ require_once __DIR__ . '/../../../../component/style/formField/FormFieldModel.ph
  *     llm_interview_allow_manual_edit is enabled;
  *   - native_only: unsupported/custom controls keep their native widgets
  *     and are never writable through the interview draft;
- *   - scope-bound names (referenced by the conversation scope template)
- *     are immutable for both origins.
+ *   - scope-bound (pinned) fields - a declared URL parameter (extra_params)
+ *     with a value whose name is also a form field - are hidden context:
+ *     never asked, immutable for both origins, seeded with the URL value
+ *     for a new draft (a saved record keeps its own value).
  */
 class LlmFormSchemaService
 {
@@ -110,7 +112,7 @@ class LlmFormSchemaService
     {
         $allowlist = $this->callList($form_model, 'getInterviewWritableHiddenFields');
         $manual = $this->callBool($form_model, 'isInterviewAllowManualEdit');
-        $scope_bound = $this->callList($form_model, 'getScopeBoundFieldNames');
+        $scope_bound = $this->callList($form_model, 'getScopeBoundValues');
         $key = null;
         if (is_object($form_model)) {
             // === on arrays compares child objects by identity.
@@ -204,7 +206,16 @@ class LlmFormSchemaService
                 : '';
             $input_type = $raw_type !== '' ? $raw_type : $style;
         }
-        $scope_bound = in_array($name, $scope_bound, true);
+        $pinned_value = array_key_exists($name, $scope_bound) ? (string)$scope_bound[$name] : null;
+        $scope_bound = $pinned_value !== null;
+        // A pinned field is context fixed by the URL, never a question.
+        $hidden = $hidden || $scope_bound;
+        // The question prompt the author wrote for the control. A select has
+        // no placeholder field; its `alt` (the empty option's text) plays that role.
+        $prompt = (string)$field_model->get_db_field('placeholder', '');
+        if ($prompt === '' && $style === 'select') {
+            $prompt = (string)$field_model->get_db_field('alt', '');
+        }
         $hidden_allowed = $hidden && in_array($name, $allowlist, true) && !$scope_bound;
         $section_id = method_exists($child, 'get_id_section')
             ? (int)$child->get_id_section()
@@ -215,6 +226,8 @@ class LlmFormSchemaService
             'style' => $style,
             'input_type' => $input_type,
             'label' => $this->fieldLabel($field_model),
+            // Shown as the quiet text of a question that has no answer yet.
+            'placeholder' => $this->plainText($prompt),
             'required' => (bool)(int)$field_model->get_db_field('is_required', 0),
             'hidden' => $hidden,
             'interview' => !$hidden && !$native_only,
@@ -224,7 +237,7 @@ class LlmFormSchemaService
             'scope_bound' => $scope_bound,
             'options' => $this->fieldOptions($field_model, $input_type),
             'constraints' => $this->fieldConstraints($field_model, $input_type),
-            'initial_value' => $this->fieldInitialValue($field_model, $input_type)
+            'initial_value' => $this->fieldInitialValue($field_model, $input_type, $pinned_value)
         );
     }
 
@@ -310,19 +323,23 @@ class LlmFormSchemaService
     }
 
     /**
-     * Current entry-record value, then the native CMS `value` default: the
-     * saved row wins for edits, the configured default seeds new drafts.
+     * Current entry-record value, then the URL value of a pinned field,
+     * then the native CMS `value` default: the saved row wins for edits,
+     * the URL (pinned field) or the configured default seeds new drafts.
      * Multiple-select values arrive JSON-encoded (see SelectView) and are
      * decoded to native arrays. Raw `value` is read via get_db_field_full so
      * explicit 0/false survive get_db_field's loose-default handling.
      */
-    private function fieldInitialValue($field_model, $input_type)
+    private function fieldInitialValue($field_model, $input_type, $pinned_value = null)
     {
         $entry = method_exists($field_model, 'get_form_field_value')
             ? $field_model->get_form_field_value()
             : null;
         if ($entry !== null) {
             return $this->normalizeInitialValue($input_type, $entry);
+        }
+        if ($pinned_value !== null) {
+            return $this->normalizeInitialValue($input_type, $pinned_value);
         }
         $full = method_exists($field_model, 'get_db_field_full')
             ? $field_model->get_db_field_full('value')

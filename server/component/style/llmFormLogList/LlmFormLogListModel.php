@@ -13,13 +13,20 @@ require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
  * Extends the core formUserInputLogList model so the list, quick actions,
  * history and record-selection semantics stay identical; adds the
  * interview configuration getters used by LlmFormSchemaService and the
- * interview runtime. The `llm_interview_context` and
- * `llm_conversation_scope` values are kept as the raw CMS templates from
- * fetch_section_fields - draft placeholders are resolved server-side at
- * scope-build time, while all other fields keep the core interpolation.
+ * interview runtime. `llm_interview_context` is kept as the raw CMS
+ * template from fetch_section_fields (placeholders resolve at send time).
+ * URL parameters come from the core `extra_params` field (see
+ * StyleModel::accept_url_params()): the effective values partition the
+ * unsaved drafts and pin same-named form fields.
  */
 class LlmFormLogListModel extends FormUserInputLogListModel
 {
+    /**
+     * Query keys of the interview endpoints (see interviewApi.ts), on top
+     * of the core ones: a URL parameter must not shadow them.
+     */
+    const INTERVIEW_QUERY_KEYS = array('conversation_id', 'peek', 'revision', 'record_id', 'action');
+
     /**
      * Raw (uninterpolated) section field contents keyed by field name, for
      * fields that must keep draft placeholders intact.
@@ -171,33 +178,31 @@ class LlmFormLogListModel extends FormUserInputLogListModel
     }
 
     /**
-     * Raw `llm_conversation_scope` template (e.g. `module:{{module_id}}`),
-     * uninterpolated; resolved server-side when the interview opens.
-     *
-     * @return string
+     * The interview endpoint keys are reserved on top of the core ones.
      */
-    public function getConversationScopeTemplate()
+    protected function url_params_reserved()
     {
-        return (string)$this->rawFieldValue('llm_conversation_scope');
+        return array_merge(parent::url_params_reserved(), self::INTERVIEW_QUERY_KEYS);
     }
 
     /**
-     * Field names referenced by `{{name}}` placeholders in the scope
-     * template. They are scope-bound and therefore immutable for both LLM
-     * and manual patches.
+     * Declared URL parameters with a value whose name is also a form field.
+     * Those controls are scope-bound ("pinned"): the URL fixes the value,
+     * so they are immutable for the coach and for manual patches (see
+     * LlmFormSchemaService).
      *
-     * @return array
+     * @return array name => URL value
      */
-    public function getScopeBoundFieldNames()
+    public function getScopeBoundValues()
     {
-        $template = $this->getConversationScopeTemplate();
-        if ($template === '') {
-            return array();
+        $field_set = array_flip($this->getInterviewFieldNames());
+        $bound = array();
+        foreach ($this->get_url_params() as $name => $value) {
+            if ($value !== '' && isset($field_set[$name])) {
+                $bound[$name] = $value;
+            }
         }
-        if (!preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', $template, $m)) {
-            return array();
-        }
-        return array_values(array_unique($m[1]));
+        return $bound;
     }
 
     /**
@@ -393,6 +398,10 @@ class LlmFormLogListModel extends FormUserInputLogListModel
             'clearInput' => 'Clear',
             'readyToSave' => 'All set. Review your answers and save when you are ready.',
             'collectedTitle' => 'Your answers',
+            'collectedEyebrow' => '',
+            'statusDraft' => 'Draft',
+            'statusReady' => 'Ready to save',
+            'statusSaved' => 'Saved',
             'progressLabel' => 'Progress',
             'collectedHint' => 'Your answers appear here while you chat.',
             'editingHint' => 'You are editing a saved entry. Changed answers are marked.',
@@ -445,6 +454,9 @@ class LlmFormLogListModel extends FormUserInputLogListModel
                 'clearInput' => 'Leeren',
                 'readyToSave' => 'Alles beantwortet. Prüfe deine Antworten und speichere, wenn du bereit bist.',
                 'collectedTitle' => 'Deine Antworten',
+                'statusDraft' => 'Entwurf',
+                'statusReady' => 'Bereit zum Speichern',
+                'statusSaved' => 'Gespeichert',
                 'progressLabel' => 'Fortschritt',
                 'collectedHint' => 'Deine Antworten erscheinen hier, während du schreibst.',
                 'editingHint' => 'Du bearbeitest einen gespeicherten Eintrag. Geänderte Antworten sind markiert.',
@@ -498,6 +510,9 @@ class LlmFormLogListModel extends FormUserInputLogListModel
                 'clearInput' => 'Effacer',
                 'readyToSave' => 'Tout est rempli. Vérifiez vos réponses et enregistrez quand vous êtes prêt.',
                 'collectedTitle' => 'Vos réponses',
+                'statusDraft' => 'Brouillon',
+                'statusReady' => 'Prêt à enregistrer',
+                'statusSaved' => 'Enregistré',
                 'progressLabel' => 'Progression',
                 'collectedHint' => 'Vos réponses apparaissent ici pendant la discussion.',
                 'editingHint' => 'Vous modifiez une entrée enregistrée. Les réponses modifiées sont marquées.',
@@ -977,11 +992,10 @@ class LlmFormLogListModel extends FormUserInputLogListModel
     }
 
     /**
-     * Resolve the interview context/scope template through the core
-     * interpolation pipeline: entry placeholders from the given
-     * draft-overlaid map (inactive fields masked out by the caller),
-     * then globals and data_config external bindings - identical to how
-     * every other section field resolves.
+     * Resolve an interview author template (e.g. llm_interview_context)
+     * through the core interpolation pipeline: entry placeholders from
+     * the given draft-overlaid map (inactive fields masked out by the
+     * caller), then globals and data_config external bindings.
      *
      * @param string $template Raw CMS template
      * @param array|null $interp_entry Entry values used for {{name}}

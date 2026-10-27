@@ -449,9 +449,11 @@ class InterviewFormModel
     public $section_id = 88;
     public $retention = 'continue';
     public $context_template = 'Tell the user about the form. Current answers: {{title}}';
-    public $scope_template = '';
+    /** Effective declared URL params (core `extra_params`): name => value. */
+    public $url_params = array();
     public $manual_edit = true;
     public $hidden_allowlist = array();
+    /** Pinned fields: declared URL param with a value that is also a field name => value. */
     public $scope_bound = array();
     public $include_history = false;
     public $history_log = false;
@@ -520,11 +522,11 @@ class InterviewFormModel
     }
     public function getInterviewChatRetention() { return $this->retention; }
     public function getInterviewContextTemplate() { return $this->context_template; }
-    public function getConversationScopeTemplate() { return $this->scope_template; }
+    public function get_url_params() { return $this->url_params; }
     public function getInterviewIncludeHistory() { return $this->include_history; }
     public function getInterviewWritableHiddenFields() { return $this->hidden_allowlist; }
     public function isInterviewAllowManualEdit() { return $this->manual_edit; }
-    public function getScopeBoundFieldNames() { return $this->scope_bound; }
+    public function getScopeBoundValues() { return $this->scope_bound; }
     public function getLlmModel() { return 'test-model'; }
     public function getConfiguredModel() { return $this->getLlmModel(); }
     public function getLlmTemperature() { return 0.7; }
@@ -533,6 +535,10 @@ class InterviewFormModel
     public function getUserLanguage() { return $this->language; }
     public function useUserLanguage() { return $this->use_user_language; }
     public function getInterviewApproveLabel() { return 'Save it now'; }
+    // Danger detection (keyword pre-scan) is off for this stub.
+    public function isDangerDetectionEnabled() { return false; }
+    public function getDangerKeywords() { return ''; }
+    public function getDangerBlockedMessage() { return 'blocked'; }
 
     public function rebuildInterviewChildren(array $draft = array())
     {
@@ -799,7 +805,7 @@ $db_a->seedMessage(array('id_llmConversations' => $conv_a, 'role' => 'assistant'
 
 // required missing → approval blocked (distinct scope so it is a fresh draft)
 $model_incomplete = new InterviewFormModel();
-$model_incomplete->scope_template = 'incomplete-scope';
+$model_incomplete->url_params = array('scope' => 'incomplete');
 $res_inc = $svc_a->open($model_incomplete, null, 'tok-inc');
 $db_a->begin_transaction();
 $prep = $svc_a->prepareApproval($model_incomplete, null, $res_inc['state']['conversation_id'], 0, 'req-a');
@@ -1087,19 +1093,49 @@ check('echo: unchanged read-only value does not reject the turn',
 check('echo: writable value of the same turn still merged', $res['state']['draft']['title'] === 'Echo ok');
 check('echo: read-only value stays out of the projection', !array_key_exists('secret', $res['state']['draft']));
 
-// Unresolvable placeholders never leak into the scope key.
+// The declared URL params (core `extra_params`) are the context key: sorted
+// `name=value&...`, every declared name counts (empty when absent), and a
+// key above the VARCHAR(191) column is hashed instead of rejected.
 list($db_k, $cache_k, $services_k, $llm_k, $state_k, $schema_k, $svc_k) = env();
 $model_k = new InterviewFormModel();
-$model_k->scope_template = 'woop:{{module_scope}}';
+$model_k->url_params = array('module_id' => '', 'list_status' => 'active');
 $res = $svc_k->open($model_k, null, 'tok-k');
-check('scope key: unresolved loop token is blanked', !empty($res['ok'])
-    && $db_k->conversations[$res['state']['conversation_id']]['context_key'] === 'woop:');
-$model_k2 = new InterviewFormModel(array('module_scope' => 'resilienz'));
-$model_k2->scope_template = 'woop:{{module_scope}}';
+check('url params key: sorted, a declared-but-absent param is empty', !empty($res['ok'])
+    && $db_k->conversations[$res['state']['conversation_id']]['context_key'] === 'list_status=active&module_id=');
+$model_k2 = new InterviewFormModel();
+$model_k2->url_params = array('module_id' => 'module_1', 'list_status' => 'active');
 $res2 = $svc_k->open($model_k2, null, 'tok-k2');
-check('scope key: resolved loop value keeps modules apart', !empty($res2['ok'])
-    && $db_k->conversations[$res2['state']['conversation_id']]['context_key'] === 'woop:resilienz'
+check('url params key: another value keeps the modules apart', !empty($res2['ok'])
+    && $db_k->conversations[$res2['state']['conversation_id']]['context_key'] === 'list_status=active&module_id=module_1'
     && $res2['state']['conversation_id'] !== $res['state']['conversation_id']);
+$model_k3 = new InterviewFormModel();
+$model_k3->url_params = array('list_status' => 'active', 'module_id' => 'module_1');
+$res3 = $svc_k->open($model_k3, null, 'tok-k3');
+check('url params key: declaration order is irrelevant, the module draft is resumed', !empty($res3['ok'])
+    && $res3['state']['conversation_id'] === $res2['state']['conversation_id']);
+$model_k4 = new InterviewFormModel();
+$model_k4->url_params = array(
+    'a_long_parameter_name_one' => str_repeat('x', 64),
+    'a_long_parameter_name_two' => str_repeat('y', 64),
+    'a_long_parameter_name_three' => str_repeat('z', 64),
+);
+$res4 = $svc_k->open($model_k4, null, 'tok-k4');
+$key4 = !empty($res4['ok']) ? $db_k->conversations[$res4['state']['conversation_id']]['context_key'] : '';
+check('url params key: a key above 191 chars is hashed to fit the column',
+    strpos($key4, 'p:') === 0 && strlen($key4) === 66);
+
+// A pinned field (declared URL param that is also a field) is seeded into the
+// new draft and never asked: the required title is satisfied by the URL value.
+$model_p = new InterviewFormModel();
+$model_p->url_params = array('title' => 'Walk');
+$model_p->scope_bound = array('title' => 'Walk');
+$res_p = $svc_k->open($model_p, null, 'tok-p');
+$stored_p = json_decode($db_k->conversations[$res_p['state']['conversation_id']]['state'], true);
+check('pinned: the URL value seeds the stored draft but is never asked',
+    !empty($res_p['ok']) && $stored_p['payload']['draft']['title'] === 'Walk'
+    && !isset($res_p['state']['fields']['title']));
+check('pinned: the seeded value satisfies the required field',
+    $res_p['state']['progress']['required_total'] === 0 && $res_p['state']['progress']['ready_for_approval'] === true);
 
 /* =========================================================================
  * 15. Language rule is on by default (`llm_use_user_language`); off disables it

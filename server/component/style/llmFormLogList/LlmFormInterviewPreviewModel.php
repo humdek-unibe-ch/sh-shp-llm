@@ -63,14 +63,6 @@ class LlmFormInterviewPreviewModel extends LlmFormLogListModel
         return parent::getInterviewContextTemplate();
     }
 
-    public function getConversationScopeTemplate()
-    {
-        if (array_key_exists('llm_conversation_scope', $this->preview_overrides)) {
-            return (string)$this->preview_overrides['llm_conversation_scope'];
-        }
-        return parent::getConversationScopeTemplate();
-    }
-
     public function get_db_field($key, $default = "")
     {
         if (array_key_exists($key, $this->preview_overrides)) {
@@ -81,7 +73,7 @@ class LlmFormInterviewPreviewModel extends LlmFormLogListModel
 
     /**
      * Raw CMS field reads go through the playground overrides first, so
-     * data_config/scope/context/condition resolve against the edited
+     * data_config/context/condition resolve against the edited
      * descriptor exactly like interpolated get_db_field values do.
      */
     protected function rawFieldValue($key)

@@ -259,7 +259,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'llm_reasoning_effort',
                 'llm_interview_include_history',
                 'llm_interview_writable_hidden_fields',
-                'llm_conversation_scope',
+                'extra_params',
                 'llm_use_user_language',
                 'data_config'
             );
@@ -444,7 +444,8 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'include_history' => $this->toBoolString($runtime_values['llm_interview_include_history'] ?? null),
                 'use_user_language' => $this->toBoolString($runtime_values['llm_use_user_language'] ?? null),
                 'writable_hidden_fields' => $this->decodeJsonValue($runtime_values['llm_interview_writable_hidden_fields'] ?? null),
-                'conversation_scope' => $runtime_values['llm_conversation_scope'] ?? null,
+                // The URL parameter declaration (name=default&...), not resolved values.
+                'extra_params' => $runtime_values['extra_params'] ?? null,
                 'data_config' => $this->decodeJsonValue($runtime_values['data_config'] ?? null)
             );
         }

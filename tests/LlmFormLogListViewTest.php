@@ -134,7 +134,7 @@ class ViewFakeFormModel
     public function get_entry_record() { return $this->entry; }
     public function getInterviewWritableHiddenFields() { return array(); }
     public function isInterviewAllowManualEdit() { return true; }
-    public function getScopeBoundFieldNames() { return array(); }
+    public function getScopeBoundValues() { return array(); }
 }
 
 /* =========================================================================

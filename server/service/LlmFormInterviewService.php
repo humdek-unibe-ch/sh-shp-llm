@@ -1288,7 +1288,7 @@ class LlmFormInterviewService
     {
         $required = array('get_section_id', 'rebuildInterviewChildren', 'get_db_field',
             'get_form_entry_record', 'getInterviewChatRetention', 'getInterviewContextTemplate',
-            'getConversationScopeTemplate', 'getLlmModel', 'getConfiguredModel',
+            'get_url_params', 'getLlmModel', 'getConfiguredModel',
             'set_entry_record', 'get_entry_record', 'get_entry_value',
             'setInterviewBaseEntry');
         foreach ($required as $method) {
@@ -1362,27 +1362,18 @@ class LlmFormInterviewService
     }
 
     /**
-     * Resolve the server-only context key for unbound (create) scopes:
-     * the configured scope template interpolated with immutable resolved
-     * values, or a sha256 fallback over sorted immutable hidden values.
+     * The server-only context key of an unbound (create) scope without
+     * declared URL parameters: a sha256 fingerprint over the sorted
+     * immutable values (pinned and read-only hidden fields) of the eligible
+     * schema. Client-posted context_key values are never trusted.
      */
-    private function resolveContextKey($model, array $schema)
+    private function resolveContextKey(array $schema)
     {
         $values = array();
         foreach ($schema as $name => $def) {
             if (is_array($def)) {
                 $values[$name] = $def['initial_value'];
             }
-        }
-        $template = trim((string)$model->getConversationScopeTemplate());
-        if ($template !== '') {
-            $resolved = method_exists($model, 'resolveInterviewTemplate')
-                ? $model->resolveInterviewTemplate($template, $values)
-                : $model->get_entry_value($values, $template);
-            // A token that resolves nowhere (e.g. a loop variable on a page
-            // without that loop) must not leak into the key literally.
-            $resolved = preg_replace('/\{\{[^{}]*\}\}/', '', (string)$resolved);
-            return $this->state_service->normalizeContextKey($resolved);
         }
         $immutable = array();
         foreach ($schema as $name => $def) {
@@ -1398,17 +1389,43 @@ class LlmFormInterviewService
     }
 
     /**
-     * The immutable opening scope for an unbound (create) thread: the
-     * base-entry child tree resolved fresh, so the context key reflects
-     * current external/hidden bindings rather than the draft or the
-     * conversation's own stored key.
+     * Canonical context_key of the declared URL parameters (core
+     * `extra_params`): sorted `name=value&…`. Every declared name counts,
+     * empty when absent, so drafts do not silently merge across URLs. The
+     * column is VARCHAR(191): a longer list is hashed.
+     *
+     * @param array $params name => effective value
+     * @return string
+     */
+    private function contextKeyFromUrlParams(array $params)
+    {
+        ksort($params);
+        $pairs = array();
+        foreach ($params as $name => $value) {
+            $pairs[] = $name . '=' . $value;
+        }
+        $key = implode('&', $pairs);
+        if (strlen($key) > 191) {
+            $key = 'p:' . hash('sha256', $key);
+        }
+        return $this->state_service->normalizeContextKey($key);
+    }
+
+    /**
+     * The immutable opening scope for an unbound (create) thread. Declared
+     * URL params need no schema rebuild; the auto-fingerprint path still
+     * resolves the base-entry child tree so hidden bindings are current.
      */
     private function openingContextKey($model)
     {
+        $params = $model->get_url_params();
+        if (!empty($params)) {
+            return $this->contextKeyFromUrlParams($params);
+        }
         $model->rebuildInterviewChildren(array());
         $schema = $this->schema_service->build($model);
         $this->requireValidSchema($schema);
-        return $this->resolveContextKey($model, $schema);
+        return $this->resolveContextKey($schema);
     }
 
     /**
@@ -2143,6 +2160,7 @@ class LlmFormInterviewService
             $visible_defs[$name] = array(
                 'name' => $name,
                 'label' => $def['label'],
+                'hint' => isset($def['placeholder']) ? $def['placeholder'] : '',
                 'style' => $def['style'],
                 'input_type' => $def['input_type'],
                 'required' => $def['required'],
