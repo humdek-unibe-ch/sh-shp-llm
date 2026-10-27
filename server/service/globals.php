@@ -325,8 +325,10 @@ define('LLM_MEMORY_SOURCE_FORM_ACTION', 'form_action_submit');
 define('LLM_MEMORY_SOURCE_LLM_CHAT_FORM', 'llm_chat_form_submit');
 define('LLM_MEMORY_SOURCE_LOGIN', 'login');
 define('LLM_MEMORY_SOURCE_PROFILE_NAME', 'profile_name_change');
-// CMS field on form / SurveyJS styles: comma-separated memory rule ids that run after a finished submission
+// CMS field on form / SurveyJS / LogList styles: comma-separated memory rule ids that run after a finished submission
 define('LLM_MEMORY_FIELD_RULE_IDS', 'llm_memory_rule_ids');
+// CMS field on llmChat: same multi-select widget, but lists llm_chat_form_submit rules (data-saving-off fallback)
+define('LLM_MEMORY_FIELD_CHAT_RULE_IDS', 'memory_rule_ids');
 define('LLM_MEMORY_STATUS_APPLIED', 'applied');
 define('LLM_MEMORY_STATUS_DUPLICATE', 'ignored_duplicate');
 define('LLM_MEMORY_STATUS_STALE', 'ignored_stale');

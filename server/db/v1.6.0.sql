@@ -40,7 +40,15 @@
 --      the participant's selected system language is appended to the
 --      prompt as a language rule - matching the always-on 1.5.0 behaviour.
 --      When unticked, only the author's context decides the language.
---   8. Bumps the plugin version LAST so a failed DDL statement can never
+--   8. Memory rule picker UX:
+--      - Converts llmChat `memory_rule_ids` from free-text to the shared
+--        `select-llm-memory-rules` multi-select (lists `llm_chat_form_submit`
+--        rules only; values stay comma-separated ids).
+--      - Attaches `llm_memory_rule_ids` to core `formUserInputLogList`
+--        (SelfHelp 7.12+) so the same form-finish picker works there; the
+--        existing FormUserInputModel save/update hooks already cover it
+--        because LogList calls parent::save_user_input / update_user_input.
+--   9. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
 -- NOTE: Apart from the help refresh of the released `llm_chat_shortcuts`
@@ -355,6 +363,39 @@ VALUES (
     'I noticed some concerning content in your message. While I want to help, I''m not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you''re in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*',
     'Message shown when danger keywords are detected (or when the interview conversation is blocked for safety). Supports markdown. The conversation is blocked and further messages cannot be sent.'
 );
+
+-- =====================================================
+-- 8. Memory rule picker UX (llmChat + core LogList)
+-- =====================================================
+-- NOTE: styles, fields and hooks are cached - clear the SelfHelp cache after
+-- running this migration.
+
+-- llmChat fallback field: keep the legacy name `memory_rule_ids` (and its
+-- stored comma-separated ids) but switch the CMS widget to the shared
+-- multi-select. The select-llm-memory-rules hook filters by field name so
+-- this lists llm_chat_form_submit rules, not form_action_submit.
+UPDATE `fields` f
+INNER JOIN `fieldType` ft ON ft.name = 'select-llm-memory-rules'
+SET f.`id_type` = ft.id
+WHERE f.`name` = 'memory_rule_ids'
+  AND (f.`id_type` IS NULL OR f.`id_type` = 0 OR f.`id_type` <> ft.id);
+
+UPDATE `styles_fields`
+SET `help` = 'Memory rules to run when a chat form is submitted and data saving is OFF on this section (fallback when the UserInput / form-action pipeline is unavailable). Only rules with source `llm_chat_form_submit` are listed. Leave empty to auto-match all enabled rules of that source. When data saving is ON, use a form action with job type `llm_memory_update` on the chat data table instead — this field is ignored.'
+WHERE `id_styles` = get_style_id('llmChat')
+  AND `id_fields` = get_field_id('memory_rule_ids');
+
+-- Core formUserInputLogList (SelfHelp 7.12+): same picker as the other form
+-- styles. Skipped when the core style is not installed. No new hooks: LogList
+-- saves through FormUserInputModel::save_user_input / update_user_input.
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
+SELECT
+    s.`id`,
+    get_field_id('llm_memory_rule_ids'),
+    '',
+    'Memory rules to run in the background after this form is finished. Leave empty to disable. Form actions with job type llm_memory_update still run in addition.'
+FROM `styles` s
+WHERE s.`name` = 'formUserInputLogList';
 
 -- Version bump last: a failed DDL statement above must never mark v1.6.0
 -- as installed (DDL commits implicitly, so ordering is the only guard).

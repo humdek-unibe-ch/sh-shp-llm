@@ -114,6 +114,14 @@ clear the SelfHelp cache (**Admin > Cache > Clear all**).
   stores `script_id`, `script_name` and `script_updated_at` next to the
   full `script_template` snapshot so admin inspection can see which row
   revision was used after edits (`llm_scripts` has no version column).
+- **`llm_memory_rule_ids` on core `formUserInputLogList`.** Same multi-select
+  as the other form styles (v1.5.0). The existing
+  `FormUserInputModel::save_user_input` / `update_user_input` hooks already
+  cover LogList because it calls `parent::`. `llmFormLogList` already had
+  the field; plain LogList sections can now pick rules without a form action.
+- **`llm_chat_form_submit` in the Memory Rules editor.** The Rules tab source
+  dropdown now offers “llmChat form submit” so chat-fallback rules can be
+  created in the UI (not only via SQL / import).
 
 ### Fixed
 
@@ -137,6 +145,11 @@ clear the SelfHelp cache (**Admin > Cache > Clear all**).
 
 ### Changed
 
+- **`llmChat` `memory_rule_ids` is a multi-select.** The legacy free-text
+  field now uses `select-llm-memory-rules` and lists only
+  `llm_chat_form_submit` rules (stored values stay comma-separated ids).
+  Still a data-saving-off fallback; with data saving on, use a form action
+  `llm_memory_update` on the chat table.
 - **The language rule is configurable (default on).** In 1.5.0 every
   conversation was told to answer in the participant's language. That
   behaviour stays the default via `llm_use_user_language` (ticked). Untick

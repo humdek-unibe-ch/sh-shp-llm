@@ -654,6 +654,7 @@ class LlmMemoryRuleService extends BaseLlmService
         $llm_config = $this->getLlmConfig();
         $source_type_options = array(
             array('value' => LLM_MEMORY_SOURCE_FORM_ACTION, 'label' => 'Form / survey submit'),
+            array('value' => LLM_MEMORY_SOURCE_LLM_CHAT_FORM, 'label' => 'llmChat form submit'),
             array('value' => LLM_MEMORY_SOURCE_LOGIN, 'label' => 'Login'),
             array('value' => LLM_MEMORY_SOURCE_PROFILE_NAME, 'label' => 'Profile name change'),
         );

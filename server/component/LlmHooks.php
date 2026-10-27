@@ -304,9 +304,11 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Build the multi select of memory rules for the llm_memory_rule_ids CMS field.
-     * Only rules of source type form_action_submit are offered (same filter as the
-     * form action job config); disabled rules stay visible so saved ids are not lost.
+     * Build the multi select of memory rules for the shared select-llm-memory-rules CMS widget.
+     * Field name picks the source-type filter:
+     * - llm_memory_rule_ids (forms / surveys / LogList) → form_action_submit
+     * - memory_rule_ids (llmChat fallback) → llm_chat_form_submit
+     * Disabled rules stay visible so saved ids are not lost.
      *
      * @param object $args
      * @param int $disabled
@@ -317,14 +319,19 @@ class LlmHooks extends BaseHooks
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
 
-        if (($field['name'] ?? '') !== LLM_MEMORY_FIELD_RULE_IDS) {
+        $field_name = $field['name'] ?? '';
+        if ($field_name === LLM_MEMORY_FIELD_RULE_IDS) {
+            $source_type = LLM_MEMORY_SOURCE_FORM_ACTION;
+        } elseif ($field_name === LLM_MEMORY_FIELD_CHAT_RULE_IDS) {
+            $source_type = LLM_MEMORY_SOURCE_LLM_CHAT_FORM;
+        } else {
             return $res;
         }
 
         $config_service = new LlmMemoryConfigService($this->services);
         $items = array();
         foreach ($config_service->getRules() as $rule) {
-            if (($rule['source_type'] ?? '') !== LLM_MEMORY_SOURCE_FORM_ACTION) {
+            if (($rule['source_type'] ?? '') !== $source_type) {
                 continue;
             }
             $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
@@ -550,7 +557,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for llm_memory_rule_ids (edit).
+     * CMS multi select of memory rules for llm_memory_rule_ids / memory_rule_ids (edit).
      *
      * @param object $args
      * @return object
@@ -561,7 +568,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for llm_memory_rule_ids (view).
+     * CMS multi select of memory rules for llm_memory_rule_ids / memory_rule_ids (view).
      *
      * @param object $args
      * @return object
