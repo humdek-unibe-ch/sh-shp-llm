@@ -317,7 +317,7 @@ export const InterviewChat: React.FC<InterviewChatProps> = ({
       ) : null}
 
       {!hideComposer ? (
-        <Card.Footer className="bg-white border-0 p-3 llm-chat-footer llm-iv-footer">
+        <Card.Footer className="llm-chat-footer llm-iv-footer">
           {canApprove ? (
             <div className="llm-iv-approvebar" role="status">
               <span className="llm-iv-approvebar-text">
@@ -366,6 +366,7 @@ export const InterviewChat: React.FC<InterviewChatProps> = ({
             autoFocus
             speech={speech}
             micLabels={micLabels}
+            variant="field"
           />
         </Card.Footer>
       ) : null}

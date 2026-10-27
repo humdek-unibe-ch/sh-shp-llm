@@ -28,6 +28,11 @@
  *   --llm-iv-chat-width    chat pane width when beside the answers (default
  *                          min(28%, 22rem)); form takes the rest. e.g. 18rem
  *                          for a slim chat, 36rem / 40% for a wider one
+ *   --llm-iv-composer-radius      corner radius of the message field
+ *                          (default 1.25rem)
+ *   --llm-iv-composer-max-height  height the message field grows to before it
+ *                          scrolls, a pixel-based length (default
+ *                          min(12rem, 30vh))
  *   --llm-iv-cards-cols    columns of the cards board (default 2, so four
  *                          questions read as a 2x2); one column when the
  *                          answers pane is narrow
@@ -922,8 +927,9 @@
 }
 .llm-iv-steps-cards .llm-iv-step-main { padding: 0; }
 .llm-iv-steps-cards .llm-iv-step-head {
-    flex-wrap: nowrap;
-    gap: 0.65rem;
+    /* wrap: in a narrow card the "current question" tag drops below the title instead of squeezing it letter by letter */
+    flex-wrap: wrap;
+    gap: 0.35rem 0.65rem;
     min-height: 2.5rem;
 }
 .llm-iv-step-icon {
@@ -1100,10 +1106,27 @@
 .llm-iv-notice-md ol { padding-left: 1.25rem; }
 .llm-iv-launcher .llm-iv-notice-md { max-width: 48rem; }
 
+/* Footer: quick replies + composer sit on the transcript's own surface, so
+ * header-to-composer reads as one chat; the message field (the surface
+ * colour) is what stands out. */
 .llm-iv-footer.card-footer {
     flex: 0 0 auto;
-    background: var(--_surface);
-    box-shadow: 0 -1px 0 var(--_border);
+    padding: 0.5rem 0.75rem 0.75rem;
+    background: var(--_chat);
+    border: 0;
+}
+
+/* Composer: shared/MessageInput in its "field" variant (see chat/LlmChat.css),
+ * fed from the interview theme. */
+.llm-iv-chat {
+    --llm-composer-bg: var(--_surface);
+    --llm-composer-border: var(--_border);
+    --llm-composer-accent: var(--_accent);
+    --llm-composer-ring: var(--_icon-bg);
+    --llm-composer-ink: var(--_ink);
+    --llm-composer-muted: var(--_muted);
+    --llm-composer-radius: var(--llm-iv-composer-radius, 1.25rem);
+    --llm-composer-max-height: var(--llm-iv-composer-max-height, min(12rem, 30vh));
 }
 
 /* Save call-to-action inside the chat: shown once everything needed is there */

@@ -1009,10 +1009,11 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
   const chatOnly = config.progressLayout === 'none';
 
   // Page mode with the chat beside the answers: fill the viewport below
-  // the workspace's top edge, so the composer is never cut off on the
-  // first view. Once the page has scrolled that far, `position: sticky`
-  // keeps the chat pinned at --llm-iv-sticky-top. (A modal sizes the
-  // chat in CSS - its body scrolls instead of the page.)
+  // the workspace's top edge (as tall as the screen allows, never a fixed
+  // cap), so the composer is never cut off on the first view and no free
+  // space is left under the chat. Once the page has scrolled that far,
+  // `position: sticky` keeps the chat pinned at --llm-iv-sticky-top.
+  // (A modal sizes the chat in CSS - its body scrolls instead of the page.)
   useEffect(() => {
     const workspace = workspaceRef.current;
     const beside = config.chatPosition === 'left' || config.chatPosition === 'right';
@@ -1023,7 +1024,7 @@ export const LlmFormInterview: React.FC<LlmFormInterviewProps> = ({
       frame = 0;
       const pinned = chat ? parseFloat(getComputedStyle(chat).top) || 0 : 0;
       const top = Math.max(pinned, workspace.getBoundingClientRect().top);
-      const free = Math.round(Math.min(680, Math.max(360, window.innerHeight - top - 16)));
+      const free = Math.round(Math.max(360, window.innerHeight - top - 16));
       workspace.style.setProperty('--llm-iv-chat-h', `${free}px`);
     };
     const schedule = () => {
