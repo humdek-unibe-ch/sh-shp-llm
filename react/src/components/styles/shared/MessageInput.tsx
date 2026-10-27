@@ -102,6 +102,25 @@ interface MessageInputProps {
   speech?: { endpoint?: string; requestFields?: Record<string, string> };
   /** Tooltips of the microphone button. */
   micLabels?: { start: string; stop: string; busy: string };
+  /**
+   * Look of the composer. `bar` (default): text box above a tinted tool bar.
+   * `field`: one rounded field - the text grows with what is typed and the
+   * tools sit on a quiet row underneath (themed by the --llm-composer-* custom
+   * properties, see LlmChat.css).
+   */
+  variant?: 'bar' | 'field';
+}
+
+/**
+ * Grow the text box with its content, up to the CSS `max-height` (so a theme
+ * can change the cap); beyond that it scrolls inside. A cap that is not a
+ * pixel length (none, %) leaves the height unlimited.
+ */
+function fitTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto';
+  const maxHeight = getComputedStyle(textarea).maxHeight;
+  const cap = maxHeight.endsWith('px') ? parseFloat(maxHeight) : Infinity;
+  textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 24), cap)}px`;
 }
 
 /**
@@ -121,6 +140,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   autoFocus = false,
   speech: speechOptions,
   micLabels,
+  variant = 'bar',
 }, ref) {
   // Local state
   const [message, setMessage] = useState('');
@@ -168,9 +188,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
       if (textarea) {
         textarea.focus();
         textarea.setSelectionRange(newCursorPos, newCursorPos);
-        textarea.style.height = 'auto';
-        const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
-        textarea.style.height = `${newHeight}px`;
+        fitTextarea(textarea);
       }
     });
   }, []);
@@ -231,13 +249,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
    * Auto-resize textarea - smoothly scales up to max height then scrolls
    */
   const adjustTextareaHeight = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      // Reset to auto to get proper scrollHeight
-      textarea.style.height = 'auto';
-      // Calculate new height (min 24px, max 120px for textarea itself)
-      const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 120);
-      textarea.style.height = `${newHeight}px`;
+    if (textareaRef.current) {
+      fitTextarea(textareaRef.current);
     }
   }, []);
   
@@ -477,6 +490,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   // Character count
   const charCount = message.length;
   const isNearLimit = charCount > maxLength * 0.9;
+  const field = variant === 'field';
 
   // In form mode, hide the text input entirely
   if (config.enableFormMode) {
@@ -532,7 +546,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
       
       {/* Message Input Container */}
       <div
-        className={`message-input-container p-1 border rounded ${isDragging && config.isVisionModel ? 'border-primary bg-light' : ''}`}
+        className={`message-input-container ${field ? 'is-field' : 'p-1 border rounded'} ${isDragging && config.isVisionModel ? 'border-primary bg-light' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -559,11 +573,10 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
           maxLength={maxLength}
           rows={1}
           className="border-0 rounded-0 message-input-textarea llm-slim-scroll"
-          style={{ resize: 'none', minHeight: '44px', maxHeight: '120px' }}
         />
         
         {/* Action Buttons */}
-        <div className="d-flex justify-content-between align-items-center p-2 border-top bg-light message-input-actions">
+        <div className={`message-input-actions ${field ? '' : 'd-flex justify-content-between align-items-center p-2 border-top bg-light'}`}>
           {/* Left side - Attachment and Microphone buttons */}
           <div className="d-flex align-items-center">
             {config.enableFileUploads && config.isVisionModel && (

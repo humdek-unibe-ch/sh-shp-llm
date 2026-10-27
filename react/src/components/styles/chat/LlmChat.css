@@ -127,10 +127,92 @@
   background: transparent;
   line-height: 1.45;
   overflow-y: auto;
+  resize: none;
+  min-height: 44px;
+  /* The box grows with the text up to this height (a pixel length), then scrolls. */
+  max-height: 120px;
 }
 
 .message-input-textarea:focus {
   box-shadow: none;
+}
+
+/* Composer variant "field" (<MessageInput variant="field">)
+ * One rounded field instead of a text box above a tinted tool bar: the text
+ * uses the full width and grows with what is typed, the tools sit on a quiet
+ * row underneath. Themed with custom properties (fallbacks are Bootstrap's):
+ *   --llm-composer-bg, -border, -accent, -ring (focus glow), -ink, -muted,
+ *   -hover (tool hover), -radius, -max-height (a pixel length) */
+.message-input-container.is-field {
+  display: flex;
+  flex-direction: column;
+  background: var(--llm-composer-bg, #fff);
+  border: 1px solid var(--llm-composer-border, #dee2e6);
+  border-radius: var(--llm-composer-radius, 1.25rem);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.message-input-container.is-field:focus-within {
+  border-color: var(--llm-composer-accent, #007bff);
+  box-shadow: 0 0 0 0.2rem var(--llm-composer-ring, rgba(0, 123, 255, 0.18));
+}
+
+/* Bootstrap greys disabled / read-only fields; here the field is the surface. */
+.message-input-container.is-field .message-input-textarea {
+  max-height: var(--llm-composer-max-height, min(12rem, 30vh));
+  padding: 0.75rem 1rem 0.25rem;
+  background: transparent;
+  color: var(--llm-composer-ink, #495057);
+}
+
+.message-input-container.is-field .message-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.125rem 0.5rem 0.5rem;
+}
+
+/* The character count only matters close to the limit; clear only with text. */
+.message-input-container.is-field .message-input-actions > small:not(.text-warning),
+.message-input-container.is-field .message-input-textarea:placeholder-shown ~ .message-input-actions .message-clear-btn {
+  display: none;
+}
+
+.message-input-container.is-field .message-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  color: var(--llm-composer-muted, #6c757d);
+}
+
+.message-input-container.is-field .message-action-btn:hover:not(:disabled),
+.message-input-container.is-field .message-action-btn:focus:not(:disabled) {
+  background: var(--llm-composer-hover, rgba(0, 0, 0, 0.06));
+  color: var(--llm-composer-ink, #212529);
+}
+
+.message-input-container.is-field .message-action-btn.btn-danger,
+.message-input-container.is-field .message-action-btn.btn-danger:hover:not(:disabled) {
+  background: #dc3545;
+  color: #fff;
+}
+
+.message-input-container.is-field .message-send-btn,
+.message-input-container.is-field .message-send-btn:hover:not(:disabled),
+.message-input-container.is-field .message-send-btn:focus:not(:disabled) {
+  background: var(--llm-composer-accent, #007bff);
+  color: #fff;
+}
+
+.message-input-container.is-field .message-send-btn:disabled {
+  opacity: 0.4;
 }
 
 /* ===== File Attachments ===== */
