@@ -111,8 +111,12 @@ export interface Message {
   content: string;
   /** Message creation timestamp (ISO format) */
   timestamp: string;
-  /** Number of tokens used (for assistant messages) */
+  /** Total tokens used (for assistant messages) */
   tokens_used?: number;
+  /** Prompt / input tokens (admin monitor; null on older messages) */
+  prompt_tokens?: number | null;
+  /** Completion / output tokens (admin monitor; null on older messages) */
+  completion_tokens?: number | null;
   /** JSON string of file attachments */
   attachments?: string;
   /** Model used for this message */
