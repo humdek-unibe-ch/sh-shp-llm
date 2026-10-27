@@ -82,7 +82,8 @@ clear the SelfHelp cache (**Admin > Cache > Clear all**).
   drafts (`context_key`, hashed above 191 characters) and a name that is also
   a form field **pins** it (hidden, read-only, seeded from the URL). Module or
   status filtering is plain page composition - `button` sections whose `url`
-  carries the parameters, e.g. rendered by one `loop` over a catalog table -
+  carries the parameters, e.g. rendered by one `loop` over a list of codes
+  (the translated texts are Global Values keyed by the code, no data table) -
   not style logic. See [doc/llm-form-interview.md](doc/llm-form-interview.md#url-parameters-extra_params).
 - **Prompt Lab `interview_runtime` profile.** Tests `llm_interview_context`
   against a read-only preview with the production context assembly, schema
@@ -160,6 +161,23 @@ clear the SelfHelp cache (**Admin > Cache > Clear all**).
   ([doc/llm-chat-shortcuts.md](doc/llm-chat-shortcuts.md)).
 - **Inline `llmChat` looks like the floating chat.** Same panel header, one
   shared slim scrollbar.
+- **The interview composer is one field.** The shared `MessageInput` got a
+  second look, `variant="field"` (used by the interview chat; `llmChat` keeps
+  the `bar` look): one rounded, bordered, auto-growing message field - it
+  grows with the text up to `--llm-iv-composer-max-height` (default
+  `min(12rem, 30vh)`) and then scrolls - with the microphone, clear and send
+  buttons on a quiet row inside it. No grey strip behind the buttons; the
+  footer now sits on the chat's own surface (`--llm-iv-chat-bg`), so header,
+  transcript and composer read as one panel. Theme the corner radius with
+  `--llm-iv-composer-radius` (default `1.25rem`); the shared
+  `--llm-composer-*` properties (`bg`, `border`, `accent`, `ring`, `ink`,
+  `muted`, `hover`, `radius`, `max-height`) are fed from the interview theme.
+- **The interview chat uses the free height.** Beside the answers the chat
+  panel is as tall as the screen allows below the workspace's top edge
+  (minimum 360px), instead of stopping at 680px and leaving empty space
+  under it; it stays pinned while the page scrolls.
+- **Cards board: the "current question" tag wraps.** In a narrow card the tag
+  moves below the title instead of squeezing the title letter by letter.
 
 ### Fixed
 

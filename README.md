@@ -395,7 +395,8 @@ with `show_form_in_modal`, in a real modal window over the list: the
 answers (stepper, cards, list or none) that grow with their content and
 highlight the current question, plus a Save button, next to the chat (chat
 left, right, top or bottom, or chat only) - no floating chat bubble.
-The chat uses the same header, bubbles and composer as `llmChat`; the
+The chat uses the same header, bubbles and composer as `llmChat` (the
+composer as one rounded, auto-growing field); the
 default look is plain Bootstrap 4.6 and is themed through `--llm-iv-*`
 custom properties and the `llm_chat_appearance` JSON; the list shows the
 core's default look in both layouts (table and cards), themed by the same

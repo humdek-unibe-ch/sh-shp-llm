@@ -66,7 +66,8 @@ core's - the interview is an additional presentation of the same form:
   returns a receipt.
 - The workspace looks and behaves like the rest of the plugin: the panel
   header, bubbles, avatars, quick replies and composer are the very same
-  components `llmChat` uses (see [Theming](#theming)). It is inline in the
+  components `llmChat` uses (the composer in its one-field look, see
+  [Theming](#theming)). It is inline in the
   page or a real modal window - never a floating viewport-corner bubble
   (`llmChat` floating mode is untouched).
 
@@ -200,9 +201,12 @@ shows a short success note next to the refreshed list.
   value) and counts them in the header.
 - **Chat pane** - the shared panel header (icon, title, subtitle, *Start
   over*, minimize), the transcript (it scrolls inside the pane, the page
-  never grows), closed questions as quick-reply buttons, the shared
-  composer with character counter, clear button and the optional
-  microphone. When everything required is answered and there is something
+  never grows), closed questions as quick-reply buttons and the message
+  field: one rounded field that grows with the text (up to
+  `--llm-iv-composer-max-height`, then it scrolls) with the optional
+  microphone, the clear button (once there is text) and send on a quiet row
+  inside it; the character counter appears near the limit. When everything
+  required is answered and there is something
   to save, a bar above the composer says so (`readyToSave`) and offers
   the **Save** button right there - the only approve path when the answers
   pane is hidden.
@@ -299,9 +303,11 @@ built-in, translated texts.
   `right`/`left` put the answers pane and the chat side by side: the
   answers pane takes the free width and grows with its content (no inner
   scrollbar); the chat is a narrower column (`--llm-iv-chat-width`, default
-  about a chat sidebar) with a fixed height (in page mode fitted to the
-  visible viewport, so the composer is never cut off) and stays pinned at
-  `--llm-iv-sticky-top` while the page scrolls past a tall answers pane.
+  about a chat sidebar). In page mode its height is whatever the screen
+  leaves below the workspace's top edge (at least 360 px, no fixed upper
+  cap - there is no empty space under the chat and the composer is never
+  cut off); it stays pinned at `--llm-iv-sticky-top` while the page scrolls
+  past a tall answers pane.
   `top`/`bottom` stack the panes, the chat at `--llm-iv-height`
   (`top` = chat first). With manual editing on, the native controls live in
   the answers pane under their question (and span the full row in the
@@ -348,6 +354,7 @@ Set any of these custom properties on the section, an ancestor or
 | `--llm-iv-sticky-top` | distance of the pinned chat from the viewport top (default `1rem`) |
 | `--llm-iv-modal-bg` | background of the modal window body (default `#f4f6f8`) |
 | `--llm-iv-chat-width` | width of the chat when it sits beside the answers (default `min(28%, 22rem)`). The answers pane takes the rest. Use e.g. `18rem` for a slim chat, `36rem` or `40%` for a wider one. Ignored when the chat is `top`/`bottom` or the only pane. |
+| `--llm-iv-composer-radius`, `--llm-iv-composer-max-height` | corner radius of the message field (default `1.25rem`) and the height it grows to before it scrolls (a pixel-based length, default `min(12rem, 30vh)`). The field's colours come from the interview theme (surface, border, accent, ink, muted); the underlying `--llm-composer-*` properties (`bg`, `border`, `accent`, `ring`, `ink`, `muted`, `hover`, `radius`, `max-height`) can also be set directly. |
 | `--llm-iv-cards-cols` | number of columns of the `cards` board (default `2`: four questions read as a 2×2; an odd first card, e.g. the hub's module question, spans the row). One column when the answers pane is narrower than 30rem / below 576 px. |
 | `--llm-iv-ink`, `--llm-iv-muted`, `--llm-iv-soft`, `--llm-iv-track`, `--llm-iv-edited` | board colours: answer/title text, prompts and hints, soft fill of answered cards / tracker / status chip, tracker line and open step circles, edited answers (default: the accent) |
 
@@ -512,11 +519,21 @@ names (`{{__module_id__}}`). Empty values count as absent; `0` is a value.
 - **Filtering is page composition, not style logic.** Put ordinary `button`
   sections on the page whose `url` carries the parameters
   (`|my-page?module_id=module_1`, `|my-page?list_status=archived`) -
-  typically rendered by one `loop` over a small catalog data table, so no
-  module id is hardcoded anywhere. The list keeps the page query when it
-  builds its New / Edit links and the interview sends it with every
-  request, so a filtered list stays filtered and the endpoint resolves the
-  same parameters as the page.
+  typically rendered by one `loop` over a short list of **codes** written in
+  the loop itself (`[{"module_id":"module_1"},{"module_id":"module_2"}]`), so
+  no module id is hardcoded in a button and no data table is needed. The
+  loop holds only the codes; the translated texts are **Global Values**
+  keyed by the code and read with double interpolation:
+  `{{label_{{module.module_id}}}}` inside a loop with scope `module`,
+  `{{label_{{__module_id__}}}}` anywhere in the section (titles, hints,
+  select option texts and - since core 7.12.0 - `values_map` cell templates
+  of the list, where the row code is `{{value}}` or `{{field}}`). The list
+  keeps the page query when it builds its New / Edit links and the
+  interview sends it with every request, so a filtered list stays filtered
+  and the endpoint resolves the same parameters as the page.
+  A syntactically valid code without matching Global Values (a typo in a
+  link) shows its placeholder text unresolved and, on a select field, is not
+  an allowed option - fix the link, nothing wrong is saved.
 - **Draft partition.** Unsaved drafts (`context_key`) are partitioned by the
   declared parameters: sorted `name=value&…`, frozen at open - a draft
   opened for `module_id=module_1` is never reused for `module_2`. Every
