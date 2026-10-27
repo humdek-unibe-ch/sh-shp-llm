@@ -219,6 +219,8 @@ class LlmAdminService extends LlmService
                 m.attachments,
                 m.model,
                 m.tokens_used,
+                m.prompt_tokens,
+                m.completion_tokens,
                 m.timestamp,
                 m.sent_context,
                 m.is_validated,

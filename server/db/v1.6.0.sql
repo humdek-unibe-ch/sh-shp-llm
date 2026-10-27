@@ -48,7 +48,10 @@
 --        (SelfHelp 7.12+) so the same form-finish picker works there; the
 --        existing FormUserInputModel save/update hooks already cover it
 --        because LogList calls parent::save_user_input / update_user_input.
---   9. Bumps the plugin version LAST so a failed DDL statement can never
+--   9. Adds nullable `prompt_tokens` / `completion_tokens` on llmMessages
+--      for new assistant logs (no backfill). `tokens_used` stays the total.
+--      Admin conversation monitor reads the split; participant chat does not.
+--  10. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
 -- NOTE: Apart from the help refresh of the released `llm_chat_shortcuts`
@@ -396,6 +399,26 @@ SELECT
     'Memory rules to run in the background after this form is finished. Leave empty to disable. Form actions with job type llm_memory_update still run in addition.'
 FROM `styles` s
 WHERE s.`name` = 'formUserInputLogList';
+
+-- =====================================================
+-- 9. Token usage split on llmMessages (new writes only)
+-- =====================================================
+-- prompt_tokens / completion_tokens are filled by
+-- LlmService::addAssistantMessageFromApiResponse from the normalized
+-- provider usage object. Old rows stay NULL; admin UI falls back to
+-- tokens_used alone. No backfill from raw_response.
+
+CALL add_table_column(
+    'llmMessages',
+    'prompt_tokens',
+    'INT DEFAULT NULL COMMENT ''Prompt / input tokens from provider usage (new messages only)'''
+);
+
+CALL add_table_column(
+    'llmMessages',
+    'completion_tokens',
+    'INT DEFAULT NULL COMMENT ''Completion / output tokens from provider usage (new messages only)'''
+);
 
 -- Version bump last: a failed DDL statement above must never mark v1.6.0
 -- as installed (DDL commits implicitly, so ordering is the only guard).

@@ -123,6 +123,11 @@ clear the SelfHelp cache (**Admin > Cache > Clear all**).
 - **`llm_chat_form_submit` in the Memory Rules editor.** The Rules tab source
   dropdown now offers “llmChat form submit” so chat-fallback rules can be
   created in the UI (not only via SQL / import).
+- **Prompt / completion token split on new messages.** `llmMessages` gains
+  nullable `prompt_tokens` and `completion_tokens` (filled from the normalized
+  provider usage when an assistant reply is logged). `tokens_used` remains the
+  total. No backfill for older rows. The admin conversation monitor shows
+  `in · out · total` when the split is present; participant chat is unchanged.
 
 ### Fixed
 

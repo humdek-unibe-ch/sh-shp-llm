@@ -614,17 +614,19 @@ class LlmService extends BaseLlmService
      * @param string $content Message content (must be clean text only)
      * @param array|string|null $attachments File attachments metadata
      * @param string|null $model AI model used
-     * @param int|null $tokens_used Token count
+     * @param int|null $tokens_used Token count (total)
      * @param array|null $raw_response Raw API response data
      * @param array|null $sent_context Context messages sent with this message
      * @param string|null $reasoning Optional reasoning from LLM
      * @param bool $is_validated Whether the message passed schema validation (default: true)
      * @param array|null $request_payload The request payload sent to LLM API (for debugging)
+     * @param int|null $prompt_tokens Prompt / input tokens (nullable; new writes only)
+     * @param int|null $completion_tokens Completion / output tokens (nullable; new writes only)
      * @return int Message ID
      * @throws LlmValidationException If content is invalid
      * @throws LlmException If conversation not found
      */
-    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null, $is_validated = true, $request_payload = null)
+    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null, $is_validated = true, $request_payload = null, $prompt_tokens = null, $completion_tokens = null)
     {
         // Validate content
         $content = LlmValidator::messageContent($content);
@@ -661,6 +663,8 @@ class LlmService extends BaseLlmService
             'attachments' => $attachmentsData,
             'model' => $model,
             'tokens_used' => $tokens_used,
+            'prompt_tokens' => $prompt_tokens,
+            'completion_tokens' => $completion_tokens,
             'raw_response' => $rawResponseData,
             'sent_context' => $sentContextData,
             'reasoning' => $reasoning,
@@ -699,7 +703,7 @@ class LlmService extends BaseLlmService
      * - request_payload
      * - raw_response
      * - reasoning
-     * - token usage
+     * - token usage (total + prompt/completion split when the provider reports it)
      *
      * @param int $conversation_id
      * @param string $content Assistant message content
@@ -712,12 +716,27 @@ class LlmService extends BaseLlmService
     public function addAssistantMessageFromApiResponse($conversation_id, $content, $model, $sent_context = null, $api_response = null, $is_validated = true)
     {
         $tokens_used = null;
+        $prompt_tokens = null;
+        $completion_tokens = null;
         $raw_response = null;
         $reasoning = null;
         $request_payload = null;
 
         if (is_array($api_response)) {
-            $tokens_used = $api_response['usage']['total_tokens'] ?? null;
+            $usage = (isset($api_response['usage']) && is_array($api_response['usage']))
+                ? $api_response['usage']
+                : array();
+            if (array_key_exists('prompt_tokens', $usage)) {
+                $prompt_tokens = (int)$usage['prompt_tokens'];
+            }
+            if (array_key_exists('completion_tokens', $usage)) {
+                $completion_tokens = (int)$usage['completion_tokens'];
+            }
+            if (array_key_exists('total_tokens', $usage)) {
+                $tokens_used = (int)$usage['total_tokens'];
+            } elseif ($prompt_tokens !== null || $completion_tokens !== null) {
+                $tokens_used = (int)$prompt_tokens + (int)$completion_tokens;
+            }
             $raw_response = $api_response['raw_response'] ?? $api_response;
             $reasoning = $api_response['reasoning'] ?? null;
             $request_payload = $api_response['request_payload'] ?? null;
@@ -734,7 +753,9 @@ class LlmService extends BaseLlmService
             $sent_context,
             $reasoning,
             $is_validated,
-            $request_payload
+            $request_payload,
+            $prompt_tokens,
+            $completion_tokens
         );
     }
 
