@@ -4,9 +4,10 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ## [1.6.0] Work in progress
 
-Requires **SelfHelp core v7.12.0** (extension seams of the core
-`formUserInputLogList`). Run `server/db/v1.6.0.sql` once, then clear the
-SelfHelp cache (**Admin > Cache > Clear all**).
+Requires **SelfHelp core v7.12.0** (extension seams and the `extra_params`
+URL parameters of the core `formUserInputLogList`; apply the core migration
+`44_update_v7.11.0_v7.12.0.sql` first). Run `server/db/v1.6.0.sql` once, then
+clear the SelfHelp cache (**Admin > Cache > Clear all**).
 
 ### Added
 
@@ -23,10 +24,19 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   the URL (`?record=new|<id>&sid=<section>`) and keeps an unfinished draft
   across reloads. Quick replies for closed questions, the question being
   asked is marked, edited answers show their previous value.
-  - Answers render as `stepper`, `cards` (responsive multi-column grid),
-    `list` or `none` (`llm_interview_progress_layout`). Beside the answers
-    the chat stays a sidebar (`--llm-iv-chat-width`); card density uses
-    `--llm-iv-cards-min`.
+  - Answers render as `stepper`, `cards`, `list` or `none`
+    (`llm_interview_progress_layout`). Beside the answers the chat stays a
+    sidebar (`--llm-iv-chat-width`).
+  - **`cards` is a board**: eyebrow + title with a status chip, a numbered
+    step tracker and one card per question (`--llm-iv-cards-cols`, default
+    2 = a 2×2 board; one column on narrow panes). Answered questions keep
+    their card and answer in every state - create, edit and completed - and
+    cards never change size when an answer arrives. Unanswered cards show
+    the question's prompt (a textarea/input `placeholder`, or the `alt` of a
+    select). New theme variables `--llm-iv-ink`, `--llm-iv-muted`,
+    `--llm-iv-soft`, `--llm-iv-track`, `--llm-iv-edited`; new labels
+    `collectedEyebrow`, `statusDraft`, `statusReady`, `statusSaved` and the
+    optional `editTitle` (modal title while editing).
   - Save dialog (`llm_interview_confirm`: `edit`, `always`, `never`) with a
     before/after table for edits.
   - `llm_interview_chat_retention` (`continue`, `new_on_open`,
@@ -62,7 +72,18 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   section's CSS field to drop the look and style the list from scratch.
 - **Shared forms.** One interview form can be reused on many pages through a
   reference section inside a `loop`; loop variables interpolate into the
-  context, scope, titles, values, filter and `values_map`.
+  context, titles, values, filter and `values_map`.
+- **URL parameters: `extra_params`.** The core `formUserInputLogList` (v7.12.0,
+  migration 44) accepts URL parameters declared as `name=default&name2=default2`
+  (route parameter, then `?name=`, then the default; strictly validated).
+  `llmFormLogList` inherits the field and uses the effective values: they are
+  `{{__name__}}` placeholders in every field of the section and its children
+  (`filter`, `data_config`, texts, button URLs), they partition the unsaved
+  drafts (`context_key`, hashed above 191 characters) and a name that is also
+  a form field **pins** it (hidden, read-only, seeded from the URL). Module or
+  status filtering is plain page composition - `button` sections whose `url`
+  carries the parameters, e.g. rendered by one `loop` over a catalog table -
+  not style logic. See [doc/llm-form-interview.md](doc/llm-form-interview.md#url-parameters-extra_params).
 - **Prompt Lab `interview_runtime` profile.** Tests `llm_interview_context`
   against a read-only preview with the production context assembly, schema
   validation and draft merge - no participant state, approval or memory
@@ -107,6 +128,12 @@ SelfHelp cache (**Admin > Cache > Clear all**).
   single-quoted `data-content` without escaping, so the apostrophe broke
   the attribute. Help wording no longer uses that apostrophe; core must
   escape help for the popover attribute (see Core companion fixes).
+- **Interview answers board.** Answers stay visible on their card in every
+  state (new, edit, saved); an open question shows the author's prompt
+  (`placeholder`, or the select's `alt`) instead of an empty box, so it never
+  looks like an answer that was lost. On a phone the stacked board is no
+  longer scrolled when the coach moves on, which used to push the composer
+  out of view.
 
 ### Changed
 

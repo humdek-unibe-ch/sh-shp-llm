@@ -413,7 +413,12 @@ before/after view of the changes (saved records) or saves at once,
 participant's current UI language; uncheck it so the author context alone
 decides. `enable_speech_to_text` adds a Whisper microphone. The form can be shared across pages with a CMS reference
 section inside a loop, and combined with a hidden `status`, quick actions
-and `history_log` into an archive/restore pattern. See
+and `history_log` into an archive/restore pattern. The field `extra_params`
+(`module_id=&list_status=active`, core field of `formUserInputLogList`) makes
+the section accept URL parameters: they are `{{__name__}}` placeholders in
+its fields (filter, texts, button URLs), partition the unsaved drafts and pin
+a form field of the same name - module filters are plain `button` sections
+whose URL carries the parameters. See
 [doc/llm-form-interview.md](doc/llm-form-interview.md).
 
 ### moduleLlmAdminConsole (Module)

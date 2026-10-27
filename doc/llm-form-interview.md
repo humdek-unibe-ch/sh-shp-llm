@@ -32,6 +32,7 @@ to `dataRows` before that approval.
 - [Theming](#theming)
 - [Language, quick replies and speech](#language-quick-replies-and-speech)
 - [Shared forms, loops and reference sections](#shared-forms-loops-and-reference-sections)
+- [URL parameters (`extra_params`)](#url-parameters-extra_params)
 - [Pattern: status, archive, restore and history](#pattern-status-archive-restore-and-history)
 - [Conversation scope and state](#conversation-scope-and-state)
 - [Drafts, approval and retention](#drafts-approval-and-retention)
@@ -99,7 +100,9 @@ view hooks and the `selfhelp:loglist:before-replace` /
    for a new record and "what would you like to change?" for an existing
    one (built-in start instructions, `assets/prompts/core/form-interview/`);
    the author context tailors that.
-5. Optionally set **`llm_conversation_scope`** (see below).
+5. Optionally set **`extra_params`** - the URL parameters the section
+   accepts, e.g. `module_id=&list_status=active` (see
+   [URL parameters](#url-parameters-extra_params)).
 6. Enable `history_log` if you want the record's edit history (and,
    combined with `llm_interview_include_history`, bounded history context
    in the prompt).
@@ -127,7 +130,7 @@ Every field also appears in the CMS with its own help text.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `llm_interview_context` | - | Author prompt (Prompt Lab `llm_prompt` field). Resolved per turn against draft + base entry + `data_config` + globals. |
-| `llm_conversation_scope` | - | Scope template for unbound drafts, e.g. `module:{{module_id}}`. Resolved server-side at open and **frozen**; empty = canonical fingerprint of immutable server-bound hidden context. |
+| `extra_params` | - | The **URL parameters** the section accepts, `name=default&name2=default2` (core field of `formUserInputLogList`, here with interview semantics). Per name the value is the route parameter, else `?name=` of the page URL, else the default. Available as `{{__name__}}` in every field of the section and its children (`filter`, `data_config`, `css`, texts, button URLs). They also **partition the unsaved drafts** (`context_key`, frozen at open) and a name that is also a form field **pins** that field. Empty = one unbound draft bucket per section (fingerprint of immutable server-bound hidden context). See [URL parameters](#url-parameters-extra_params). |
 | `llm_interview_include_history` | `0` | With `history_log` on, include the last <=3 record history snapshots (<=8000 chars, eligible fields only) in the prompt as read-only `RECORD HISTORY`. |
 | `llm_interview_progress_layout` | `stepper` | Answers overview, always with the collected values and a highlighted current question: `stepper` (numbered steps on a line) / `cards` (responsive multi-column grid - four questions read as a 2×2 board; more wrap into extra rows) / `list` / `none`. `none` shows no progress and no answers; without native controls (manual editing off) it leaves the **chat only** - the participant approves from the chat bar. |
 | `llm_interview_chat_retention` | `continue` | See [Drafts, approval and retention](#drafts-approval-and-retention): `continue`, `new_on_open`, `new_after_save`. |
@@ -247,13 +250,18 @@ English. Keys: `launcherIcon` (FontAwesome class), `launcherTitle`,
 `launcherText`, `resumeText` (`{done}` `{total}`), `resume`, `restart`,
 `restartConfirm`, `minimize`, `close`, `back`, `thinking`, `coachTitle`,
 `coachStatus`, `choose`, `mic`, `micStop`, `micBusy`, `retry`, `errorEmpty`,
-`clearInput`, `readyToSave`, `collectedTitle`, `progressLabel`,
+`clearInput`, `readyToSave`, `collectedEyebrow`, `collectedTitle`,
+`progressLabel`, `statusDraft`, `statusReady`, `statusSaved` (the status
+chip beside the board title: new draft / all answered / saved entry),
 `collectedHint`, `editingHint`, `editedBadge`, `valueBefore`, `valueAfter`, `valueEmpty`,
 `notAnswered`, `required`, `stepDone`, `stepActive`, `stepPending`,
 `approveHint`, `noChanges`, `reviewTitleNew`, `reviewTitleEdit`,
 `reviewValues`, `reviewChanges`, `reviewUnchanged` (`{count}`),
 `savedTitle`, `savedText`, `unsupportedFiles` (`{fields}`), `errorGeneric`,
 `errorBusy`, `errorRate`, `errorConflict`, `errorInvalid`, `errorSave`.
+Optional extra key `editTitle`: the title of the modal window while an
+existing record is edited (default: the section's `label_edit`, which is
+usually the list's "Open" button text).
 
 ## Saving: confirmation and edits
 
@@ -298,8 +306,13 @@ built-in, translated texts.
   (`top` = chat first). With manual editing on, the native controls live in
   the answers pane under their question (and span the full row in the
   `cards` grid). Set `llm_interview_progress_layout` to `cards` for a
-  WOOP-style board: columns auto-fill from `--llm-iv-cards-min` as
-  questions are added.
+  WOOP-style **board**: an eyebrow + title with a status chip, a numbered
+  step tracker and one card per question in `--llm-iv-cards-cols` columns
+  (default 2, so four questions read as a 2×2). Every answer stays on its
+  card - the coach only fills it in, an edit shows the previous value as
+  "before" - and a card keeps its size in every state, so nothing jumps
+  when an answer arrives. A card shows the question's prompt (a textarea /
+  input `placeholder`, or the `alt` of a select) until it is answered.
 - **Modal window** (`show_form_in_modal = 1`): up to 1140 px wide (800 px
   for the chat only), the window body scrolls - never the page behind it -
   and the chat height is capped to the window.
@@ -310,7 +323,10 @@ built-in, translated texts.
   560px)`, in the modal `min(70vh, 520px)`) below them - only `top` puts the
   chat first. The modal uses nearly the full width, the record and
   before/after rows of the save dialog stack their columns and quick replies
-  wrap in rows.
+  wrap in rows. The `cards` board shows one card per row (also whenever the
+  answers pane itself is narrower than 30rem). On a phone the board is not
+  scrolled into view when the coach moves to the next question, so the
+  composer stays where it is.
 - Mobile JSON output keeps the inherited structure; the interview config is
   included for clients that want it - there is no separate native app
   format.
@@ -332,7 +348,8 @@ Set any of these custom properties on the section, an ancestor or
 | `--llm-iv-sticky-top` | distance of the pinned chat from the viewport top (default `1rem`) |
 | `--llm-iv-modal-bg` | background of the modal window body (default `#f4f6f8`) |
 | `--llm-iv-chat-width` | width of the chat when it sits beside the answers (default `min(28%, 22rem)`). The answers pane takes the rest. Use e.g. `18rem` for a slim chat, `36rem` or `40%` for a wider one. Ignored when the chat is `top`/`bottom` or the only pane. |
-| `--llm-iv-cards-min` | minimum card width in the `cards` progress layout (default `14rem`). Columns auto-fill from this; raise it for fewer columns, lower it for denser boards. |
+| `--llm-iv-cards-cols` | number of columns of the `cards` board (default `2`: four questions read as a 2×2; an odd first card, e.g. the hub's module question, spans the row). One column when the answers pane is narrower than 30rem / below 576 px. |
+| `--llm-iv-ink`, `--llm-iv-muted`, `--llm-iv-soft`, `--llm-iv-track`, `--llm-iv-edited` | board colours: answer/title text, prompts and hints, soft fill of answered cards / tracker / status chip, tracker line and open step circles, edited answers (default: the accent) |
 
 Class hooks for deeper CSS: `.llm-iv-launcher` (`-icon`, `-title`,
 `-text`, `-start`), `.llm-iv-workspace` (`.pos-left|right|top|bottom`,
@@ -413,9 +430,12 @@ number of pages through a CMS **reference section** (`refContainer`), and
 wrap that reference in a **loop** section per page to hand page-specific
 values (a module key, a topic, a colour) to the shared form. Loop
 variables are interpolated into **every field of the descendant sections**
-- `llm_interview_context`, `llm_conversation_scope`, title/subtitle, input
-`value`s, `filter`, `values_map` - before the list renders, so one form can
-filter its list, prefill an input and brief the coach per page.
+- `llm_interview_context`, title/subtitle, input `value`s, `filter`,
+  `values_map` - before the list renders, so one form can filter its list,
+  prefill an input and brief the coach per page. Loop variables are
+  *outgoing* page configuration; for values that arrive **from the URL**
+  (a module chosen by a button, a list status) use
+  [`extra_params`](#url-parameters-extra_params) instead.
 
 Rules that avoid the usual surprises:
 
@@ -423,20 +443,23 @@ Rules that avoid the usual surprises:
    `values_map` template is a *row* value; if a loop variable has the same
    name it replaces the template before any row exists. Prefix loop
    variables (`module_key`, `module_label`, ...).
-2. **A `{{token}}` in `llm_conversation_scope` that equals a field name
-   makes that field scope-bound**, i.e. read-only for the coach. Scope on a
-   loop variable that is not a field name (`woop:{{module_key}}`), and let
-   the coach set the field through `llm_interview_writable_hidden_fields`
-   or a normal question.
-3. **Each (participant, section, record, scope key) is its own thread.**
-   Two loop values give two independent conversations.
+2. **A name in `extra_params` that also exists as a form field with a
+   value pins that field**: it becomes hidden, read-only context (the coach
+   never asks for it and cannot change it) and is seeded from the URL value
+   for a new draft. Use a name that is *not* a data column when the
+   parameter is only a filter (`list_status`), and the column name itself
+   (`module_id`) when the saved record should carry the value. A saved
+   record keeps its own value.
+3. **Each (participant, section, record, URL parameters) is its own
+   thread.** Two different parameter values give two independent unbound
+   drafts.
 4. **Core list limitation:** the list `filter` is applied to the pivoted
    result, so every column used in `filter` must also be selected for the
    list (reference it in a `values_map` template, `fields_map` or a quick
    action `set`).
 5. **Field languages.** Fields flagged language-neutral in the CMS
    (`values_map`, `filter`, `loop`, `quick_actions`, input `value`,
-   `llm_conversation_scope`, `llm_chat_appearance`,
+   `extra_params`, `llm_chat_appearance`,
    `llm_interview_writable_hidden_fields`, `llm_use_user_language`) hold one
    value for all languages; translatable ones (`fields_map`, `label*`,
    `items`, `confirmation_*`, `delete_*`, `empty_*`, `quick_actions_labels`,
@@ -446,6 +469,77 @@ Rules that avoid the usual surprises:
    `{{module_topic_en}}` in English).
 6. Deleting a list entry keeps the finished conversation for the admin
    audit; a new interview for the same scope starts a fresh thread.
+
+## URL parameters (`extra_params`)
+
+`extra_params` is a field of the core `formUserInputLogList` (so of
+`llmFormLogList` as well) and the **incoming** twin of the Qualtrics
+`extra_params`, which are *appended* to a survey link. It declares the URL
+parameters the section accepts, in the same `name=default&name2=default2`
+notation:
+
+```
+module_id=&list_status=active
+```
+
+Per name the value is, in this order: a **route parameter** of that name,
+`?name=` of the **query string**, the **default**. A default may use
+placeholders: the entry or loop row (`{{cat_module}}`) and earlier declared
+names (`{{__module_id__}}`). Empty values count as absent; `0` is a value.
+
+- **Available everywhere in the section.** Every declared name is always
+  defined (possibly empty) as `{{__name__}}` in all fields of the section
+  and its descendants - `filter`, `data_config`, `css`, texts, the `url` of a
+  child `button` - and as `#name` in a `data_config`. Sibling sections do not
+  see it. One form can therefore be an "active" list on one URL and an
+  "archived" list on another, or filter by a module:
+
+  ```
+  extra_params: module_id=&list_status=active
+  filter:       AND IFNULL(status, 'active') = '{{__list_status__}}'
+                AND ('{{__module_id__}}' = '' OR module_id = '{{__module_id__}}')
+  ```
+
+  The core drops a `filter` that still contains an unresolved `{{...}}` (the
+  list would show everything); declared parameters are always resolved, so
+  that cannot happen for them.
+- **Strict values, because they reach SQL.** Names match
+  `[A-Za-z][A-Za-z0-9_]*` (at most 64 characters), values `[A-Za-z0-9_.-]*`
+  (at most 64); anything else counts as absent and the default applies.
+  Never accepted: `record`, `sid`, `section_id`, `parent_id`, `relation` and
+  the interview endpoint keys `conversation_id`, `peek`, `revision`,
+  `record_id`, `action`. A repeated name keeps its first declaration.
+- **Filtering is page composition, not style logic.** Put ordinary `button`
+  sections on the page whose `url` carries the parameters
+  (`|my-page?module_id=module_1`, `|my-page?list_status=archived`) -
+  typically rendered by one `loop` over a small catalog data table, so no
+  module id is hardcoded anywhere. The list keeps the page query when it
+  builds its New / Edit links and the interview sends it with every
+  request, so a filtered list stays filtered and the endpoint resolves the
+  same parameters as the page.
+- **Draft partition.** Unsaved drafts (`context_key`) are partitioned by the
+  declared parameters: sorted `name=value&…`, frozen at open - a draft
+  opened for `module_id=module_1` is never reused for `module_2`. Every
+  declared parameter counts, also a pure filter such as `list_status`.
+  Without `extra_params` the key is a fingerprint of the immutable
+  server-bound hidden context. A key above the 191 character column limit
+  is hashed.
+- **Pinned fields.** A declared parameter with a value whose name is also a
+  form field **pins** that field (rule 2 above): hidden, read-only for the
+  coach and for manual edits, seeded from the URL for a new draft and saved
+  with the record. This replaces the old trick of a `d-none` field filled
+  by the page.
+
+Dev databases that already ran an earlier 1.6.0 work-in-progress script keep
+an orphan `llm_conversation_scope` field. It is unused and can be removed:
+
+```sql
+DELETE FROM `sections_fields_translation` WHERE `id_fields` = get_field_id('llm_conversation_scope');
+DELETE FROM `styles_fields` WHERE `id_fields` = get_field_id('llm_conversation_scope');
+DELETE FROM `fields` WHERE `id` = get_field_id('llm_conversation_scope');
+```
+
+Clear the CMS cache after the migrations (field and style registrations).
 
 ## Pattern: status, archive, restore and history
 
@@ -470,12 +564,13 @@ just keeps working with it:
    ```
 
    and `actions_order` (`["edit", "archive", "activate", "delete"]`).
-3. Filter the list by status. The filter is a template, so the same form
-   can be an "active" list on one page and an "archived" list on another
-   (loop variable `list_status`):
+3. Filter the list by status with a URL parameter
+   ([`extra_params`](#url-parameters-extra_params) `list_status=active`):
+   the same form is the "active" list by default and the "archived" list
+   behind a plain button (`|my-page?list_status=archived`):
 
    ```
-   AND IFNULL(status, 'active') = '{{list_status}}'
+   AND IFNULL(status, 'active') = '{{__list_status__}}'
    ```
 
 4. Enable `history_log` (every change keeps the previous values) and
@@ -485,9 +580,9 @@ just keeps working with it:
    (`delete_title`, `delete_content`) and cannot be undone from the UI -
    point the participant to *Archive* in the confirmation text.
 
-The Forest WOOP kit (a hub, six module pages and an archive page that
-share one interview form through a reference section) is built on exactly
-this pattern.
+The Forest WOOP kit (one page whose shared interview form is filtered by
+module and by status through plain buttons with URL parameters) is built on
+exactly this pattern.
 
 ## Conversation scope and state
 
@@ -499,10 +594,12 @@ actor (id_users) + section (id_sections) + source + record (id_dataRows)
 ```
 
 plus, for unbound create drafts, an immutable `context_key` recomputed
-server-side from the scope template (or from scope-bound hidden values).
-Draft-scope identity is frozen at open: a conversation opened for
-`module:1` can never be reused for `module:2`, and client-supplied
-`context_key` values are never trusted.
+server-side from the declared URL parameters of `extra_params` (sorted
+`name=value&…`, hashed above 191 characters) or, when none are declared,
+from a fingerprint of immutable server-bound hidden values. Draft-scope identity
+is frozen at open: a conversation opened for `module_id=1` can never be
+reused for `module_id=2`, and client-supplied `context_key` values are
+never trusted.
 
 The interview state lives in the conversation's `state` column as an
 envelope `{format_version: 1, revision, payload}`; `payload` is the
@@ -612,11 +709,13 @@ profile. The playground uses the standard chat message editor; a run:
 
 The edited draft prompt, model/temperature/max_tokens/reasoning_effort,
 `llm_interview_include_history`, `llm_interview_writable_hidden_fields`,
-`llm_conversation_scope`, `llm_use_user_language` and `data_config` are
-the profile's companion fields - overridden for the run (including the raw
-`data_config` template the runtime resolves), snapshotted with the
-version. Preview never touches interview state, participant rows,
-approval or memory.
+`extra_params` (the declaration, not resolved values), `llm_use_user_language`
+and `data_config` are the profile's companion fields - overridden for the
+run (including the raw `data_config` template the runtime resolves),
+snapshotted with the version. A preview has no page URL: `{{__name__}}`
+URL parameters resolve to the defaults of the stored section declaration,
+page-specific values come from the playground variables. Preview never
+touches interview state, participant rows, approval or memory.
 
 ## Admin console
 
