@@ -97,7 +97,7 @@ This installs React dependencies and builds UMD bundles, including:
 
 1. Go to **Admin > Pages** and find the auto-created module page (`sh_module_llm`)
 2. Set the required fields:
-   - `llm_api_keys` — JSON API key manager with one or more servers (`name`, `base_url`, `api_key`)
+   - `llm_api_keys` — API key manager with one or more servers (`name`, `base_url`, `api_key`); see [API Key Protection](#api-key-protection)
    - `llm_default_model` — Default model name (e.g., `qwen3-vl-8b-instruct`)
 3. Optionally adjust `llm_timeout`, `llm_max_tokens`, and `llm_temperature`
 
@@ -109,7 +109,7 @@ These apply globally to all chat sections and are configured on the module page.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `llm_api_keys` | json-llm-api-keys | `[]` | Array of server configs: `[{name, base_url, api_key}]` |
+| `llm_api_keys` | json-llm-api-keys | `[]` | Array of server configs: `[{id, name, base_url, api_key}]`. `api_key` is stored encrypted (`enc:v1:...`) or as an `env:LLM_NAME` reference and is never sent to a browser ([API Key Protection](#api-key-protection)) |
 | `llm_default_model` | select | `qwen3-vl-8b-instruct` | Default model for all chats |
 | `llm_timeout` | number | `30` | API request timeout in seconds |
 | `llm_max_tokens` | number | `2048` | Maximum tokens per response |
@@ -122,6 +122,29 @@ The same backend catalog (`LlmService::getAvailableModels(..., 'llm'|'audio')`) 
 - `select-llm-model` dropdowns
 - `select-audio-model` dropdowns
 - runtime server/model resolution for API requests
+
+### API Key Protection
+
+Saved API keys are never shown again: the settings console and the CMS field
+editor display `Key: …1234` (the last four characters, only for keys of 12 or
+more characters) and an empty key field on save means "keep the current key".
+Keys are protected in one of two ways:
+
+| Option | How |
+|--------|-----|
+| Encrypted at rest | Set the environment variable (or PHP constant, e.g. in `globals_untracked.php`) `LLM_SECRET_KEY` to a secret of at least 16 characters. New and changed keys are then stored as `enc:v1:...` (AES-256-GCM). Keys saved earlier in plain text keep working; **Encrypt stored keys now** on the settings page converts them. If the secret is lost or changed, encrypted keys cannot be read any more - enter them again. |
+| Environment reference | Type `env:LLM_API_KEY_MAIN` instead of a key. Nothing secret is stored; the server reads the variable at run time. Names must start with `LLM_` (and cannot be `LLM_SECRET_KEY`). |
+
+Base URLs must use `https` (plain `http` is only accepted for `localhost`) and
+carry no credentials, query string or fragment. A stored key is only kept
+while the server address (scheme, host, port) is unchanged; after changing the
+host enter the key again. Set `LLM_ALLOWED_API_HOSTS` - a PHP constant (array
+or comma separated string) or an environment variable - to pin the hosts the
+keys may be sent to, e.g. `gpustack.example.com,*.models.example.org`.
+Numeric settings are validated server side: temperature 0-2, max tokens
+1-200000, timeout 1-600 seconds. Changing settings needs the `update` ACL on
+the module page and a POST with the session CSRF token; every change is
+written to the transaction log (names of the changed settings, never values).
 
 ### Section-Level Settings (llmChat style)
 
@@ -351,6 +374,12 @@ This works in `conversation_context`, LLM script prompts, `llmResponse` template
 4. Set ACL permissions for the page
 5. Save and visit the page
 
+Anonymous visitors (guests) share one SelfHelp account, so a guest's
+conversations belong to the visitor's browser session only: every new guest
+starts with an empty chat and never sees another guest's conversations. Guests
+get no file upload, no speech input and no saved records or memories, and the
+`llmFormRecord` / `llmFormLog` / `llmFormLogList` styles ask them to log in.
+
 ### Adding an LLM Response Display
 
 1. Add a section with style **`llmResponse`** to any page
@@ -365,6 +394,13 @@ Navigate to **Admin > Modules > LLM Admin Console** to:
 - View messages with validation status and sent context
 - Inspect the full API payload for any message
 - Block or unblock conversations
+
+The page ACL decides what a group can do: `select` browses conversations and
+messages, `update` blocks / unblocks conversations and also shows the sent
+context and request payload of each message, `delete` deletes conversations.
+Changes are POST only with the session CSRF token, and the transaction log
+names the acting admin. The `v1.6.0.sql` migration grants `update` and
+`delete` to the admin group; grant them to other moderator groups in the CMS.
 
 ## Components
 
@@ -445,7 +481,6 @@ Scripts are reusable prompt templates that can be executed programmatically or v
 Scripts can be triggered:
 - **Manually** — Via the "Test" button in the scripts UI
 - **Via Job Scheduler** — Assign a script as a scheduled job action (`llm_script` job type)
-- **Via Callback** — Through the `CallbackLlm.php` endpoint for async results
 
 Each script maintains a single conversation in `llmConversations` (linked via `id_llm_scripts`). Successive executions append messages to the same conversation.
 
@@ -476,7 +511,6 @@ sh-shp-llm/
 │   │   ├── provider/                      # Provider abstraction layer
 │   │   └── ...                            # Additional services
 │   ├── db/v1.0.0.sql                      # Database schema
-│   ├── callback/CallbackLlm.php           # Async callback endpoint
 │   └── constants/LlmResponseSchema.php    # Schema loader
 ├── react/src/                             # React + TypeScript frontend
 ├── schemas/llm-response.schema.json       # Response JSON schema
@@ -587,6 +621,9 @@ The provider is auto-detected from the selected server's `base_url`. To add a ne
 | Speech-to-text not available | Missing config | Enable `enable_speech_to_text` AND select a `speech_to_text_model` |
 | Schema validation failures | Model not following schema | Check admin console payload inspector; consider a more capable model |
 | Blank admin console | JS not built | Run `npm run build` in `gulp/` |
+| Admin console: block / unblock / delete answer 403 | Missing `update` / `delete` ACL, or the page was opened before the upgrade (no CSRF token yet) | Grant the ACL on the console page; reload the page |
+| Server marked "cannot be read - enter the key again" | The key was stored encrypted and `LLM_SECRET_KEY` is missing or changed | Restore the secret, or enter the key again ([API Key Protection](#api-key-protection)) |
+| Settings save is rejected (422) | A value failed validation (non-https URL, host not in `LLM_ALLOWED_API_HOSTS`, out-of-range number) | Fix the listed fields; nothing was stored |
 
 Check SelfHelp logs and `data/clockwork` for detailed error traces.
 

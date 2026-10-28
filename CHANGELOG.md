@@ -197,6 +197,138 @@ clear the SelfHelp cache (**Admin > Cache > Clear all**).
   form on the same page) as an empty message. Only requests with an `action`
   (or the legacy bare `message`) are handled now.
 
+### Security
+
+Result of the full plugin audit (API keys, guests, admin console, form
+endpoints, files, error messages). Run `server/db/v1.6.0.sql` (idempotent;
+environments that already ran an earlier draft of it run it again, it also
+adjusts the admin group ACL, see *Admin console*) and clear the SelfHelp
+cache.
+
+- **API keys are never returned to a browser and can be encrypted.** The
+  settings console (`get_config`) and the CMS field editor used to send every
+  key in plain text to anyone with read access. They now receive `has_key`,
+  the last four characters (keys of 12+ characters), the key source and an
+  entry `id` only. On save, an empty key field keeps the stored key (matched
+  by `id`, and only while scheme, host and port of the server are unchanged,
+  so a stored key cannot be redirected to another host), a typed key replaces
+  it, "Remove the stored key" clears it. Keys are stored AES-256-GCM
+  encrypted (`enc:v1:...`) when the environment variable / PHP constant
+  `LLM_SECRET_KEY` (16+ characters) is set, or not stored at all with an
+  `env:LLM_NAME` reference. Plain text keys keep working until **Encrypt
+  stored keys now** (settings page) converts them; changing the secret
+  makes encrypted keys unreadable. Details:
+  [README > API Key Protection](README.md#api-key-protection). New:
+  `LlmSecretService`, `LlmApiKeysConfigService`, `LlmSettingsValidator`;
+  `BaseLlmService` resolves keys in memory only.
+  - Every setting is validated on the server before anything is stored; one
+    invalid value rejects the whole request (HTTP 422, messages per field).
+    Base URLs: `https` (plain `http` only for localhost), no credentials,
+    query or fragment, optional host allow-list `LLM_ALLOWED_API_HOSTS`.
+    Temperature 0-2, max tokens 1-200000, timeout 1-600 s; server names are
+    unique and must not contain ` :: `; keys may not contain whitespace or
+    control characters (header injection).
+  - `save_config` and `protect_keys` are POST only, need the `update` ACL and
+    the session CSRF token (`X-CSRF-Token`, the settings page sends it), and
+    write an audit entry (names of the changed settings, never values).
+  - The CMS editor of `llm_api_keys` saves through the existing
+    `CmsModel::update_db` hook (`syncPromptVersionOnCmsSave`): the key-less
+    list is validated and merged with the stored one first, so saving the CMS
+    page can never blank or leak keys. No new hook registration and no cache
+    clearing are needed for this part.
+- **Participant input could be read as a file path (critical).** The
+  `attachments` column also carries the `form_submission` payload built from
+  participant input, and the API formatter treated any `path` in it as a file
+  to send to the model. Only real attachment lists are read now, and only
+  files that resolve (realpath: `..`, absolute paths, symlinks) inside the
+  plugin upload folder.
+- **"Safe" is never invented.** A response without a model-produced safety
+  assessment, or one rebuilt after a failed validation, used to be reported
+  as `is_safe = true`. It now carries `safety.assessed = false` and
+  `is_safe = null` (tri-state), every consumer treats only `false` as unsafe,
+  and the gap is logged for admins. Keyword detection is unchanged.
+- **Blocked conversations stay blocked.** Every `llmChat` action that sends,
+  regenerates, auto-starts or continues a message goes through one blocked-
+  conversation guard, in front of the single place that calls the model.
+- **Guests start fresh and cannot see each other.** All anonymous visitors
+  share one account (`GUEST_USER_ID`), so a guest used to see, continue and
+  delete the previous guest's conversations. Guest conversations now belong
+  to the visitor's browser session (`llm_guest_conversations`): list, load,
+  delete and the concurrent-conversation limit only see the session's own
+  conversations; rate limits are per session plus a site-wide guest ceiling
+  (`LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE`). Guests get no file
+  upload, no speech input and no saved records/memories (all keyed by the
+  shared user id), and `llmFormRecord` / `llmFormLog` / the interview reject
+  them. Visitors without a session cookie (some mobile clients) start a new
+  conversation with each request.
+- **Admin console: per-action ACL, CSRF, audit actor.** `select` lists and
+  reads conversations; `update` blocks / unblocks them and shows the sent
+  context and request payload of each message; `delete` deletes. Changes are
+  POST only with the session CSRF token, and the audit entry names the acting
+  admin. The migration grants `update` and `delete` to the admin group on
+  `moduleLlmAdminConsole` when it only had `select`; grant them to other
+  moderator groups in the CMS.
+- **Danger alert emails.** The matched keywords and the message excerpt
+  (user input) are escaped before they reach the Markdown-to-HTML mailer;
+  the sender is the address configured in the core mail settings. Phrases
+  tolerate typos ("kill myslef") and matching is UTF-8 aware (`töten`
+  matches `TÖTEN`); single words stay exact so "skill" never matches "kill".
+- **No internals for participants.** Exceptions (provider errors, SQL,
+  runtime) are logged server side; participants get a generic notice. Only
+  messages written for them (rate limit, validation, conversation not found)
+  pass through. Applies to `llmChat`, the form endpoints, speech-to-text and
+  the response fallback.
+- **Form endpoints.** `llmFormRecord` / `llmFormLog` answer only requests
+  addressed to their own section (`section_id`), rate limit their LLM calls,
+  and load the requested `record_id` exactly or not at all (no silent
+  fallback to the latest record).
+- **CSRF in one place.** `LlmCsrfService` (`$_SESSION['csrf_token']`, POST
+  field `csrf_token` or header `X-CSRF-Token`) replaces the copies in the
+  Prompt Lab, the Scripts / Memory / Settings pages, the hooks and the form
+  log list. It is strict: a session without a token, or a request without
+  one, is refused - never skipped. The Prompt Lab now refuses sessions that
+  never received a token (reload the page once).
+- **Interview.** The participant lock is a MySQL advisory lock (`GET_LOCK`)
+  instead of `SELECT ... FOR UPDATE` on the core `users` row, which blocked
+  core login/profile writes. Danger blocking and the alert email run after
+  the lock and the transaction are released. A broken CMS field definition
+  no longer leaks its field errors to participants.
+
+### Changed (audit)
+
+- **Message handling.** `LlmService::addMessage` no longer cuts a stored
+  message at the first `{"id":` it contains (pasted JSON or structured
+  answers were truncated); only raw provider stream chunks are reported.
+- **Context layers.** The form, floating and strict-conversation modes are
+  applied together (form -> floating -> strict; the strict guardrail ends up
+  first, then floating, then form) instead of the first enabled one winning.
+  The docblock of `LlmContextService` describes the real order.
+- **Schema retries.** `LLM_RESPONSE_MAX_ATTEMPTS` (default 3) bounds the
+  attempts. A retry asks again with the rejected answer and the errors as
+  the latest user turn (the system prompt stays first, nothing stacks up),
+  and failures that asking again cannot fix (rate limit, bad request,
+  rejected credentials) are not retried.
+- **Workers.** `llm_async_worker.php` and `llm_memory_worker.php` share one
+  bootstrap (`llm_worker_bootstrap.php`) instead of two near-identical copies.
+- `LlmFormModel` / `LlmFormLogListModel` read the module defaults once per
+  model instead of building a service in every getter.
+
+### Removed
+
+- `LlmAutoStartService` and `LlmChatModel::generateContextAwareAutoStartMessage()`
+  (unused since 1.4.1; restore from git history to mix context topics into
+  the greeting again).
+- `CallbackLlm` (unused; compared the callback key without a constant-time
+  comparison).
+- `LlmFileNamingService::buildFileUrl()` and the `url` entry of upload
+  payloads: it pointed to a `?file_path=` endpoint that does not exist.
+  Uploaded files are read server side from the stored `path`.
+- The deprecated `llm_is_vision_model()`, `llm_validate_mime_type()`,
+  `llm_get_file_type_category()` and `llm_is_non_chat_model()` wrappers in
+  `globals.php`: use `LlmModelCapabilities::isVisionModel()`,
+  `validateMimeType()`, `getFileTypeCategory()` and `isNonChatModel()`.
+- Stale `@version` docblock tags.
+
 ### Core companion fixes
 
 Recommended with this release, not required:
