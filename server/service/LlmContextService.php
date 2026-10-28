@@ -62,13 +62,15 @@ class LlmContextService
     /**
      * Build the complete context messages based on configuration
      *
-     * Priority order:
-     * 1. Unified response schema with safety detection (ALWAYS applied)
+     * Layers, in the order they are applied:
+     * 1. Basic context - the parsed conversation context
      * 2. Language rule (only when `llm_use_user_language` is enabled)
-     * 3. Floating mode - if floating button is enabled
-     * 4. Strict conversation mode - if enabled and has context
-     * 5. Form mode context - if enabled
-     * 6. Basic context - the parsed conversation context
+     * 3. Unified response schema with safety detection (ALWAYS applied)
+     * 4. "No suggestions" instruction (only when hint suggestions are disabled)
+     * 5. Form mode, floating mode and strict conversation mode (the latter only when
+     *    enabled and the chat has context). They are independent: every enabled mode
+     *    applies. Each prepends its system message and they run form -> floating ->
+     *    strict, so the strict guardrail ends up first, then floating, then form.
      *
      * @param int|null $conversation_id Optional conversation ID for progress tracking
      * @param int|null $section_id Optional section ID for progress tracking
@@ -112,20 +114,22 @@ class LlmContextService
         // never reach the user.
         $context_messages = $this->applySuppressSuggestionsContext($context_messages);
 
-        // Apply additional modes on top of structured response
+        // Mode instructions stack: each builder prepends its own system message, so
+        // every enabled mode takes effect. Applied form -> floating -> strict, which
+        // leaves the strict guardrail first, then floating, then form, then the rest.
+        if ($this->model->isFormModeEnabled()) {
+            $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
+        }
+
         if ($this->model->isFloatingButtonEnabled()) {
-            return $this->floating_mode_service->buildFloatingModeContext($context_messages);
+            $context_messages = $this->floating_mode_service->buildFloatingModeContext($context_messages);
         }
 
         if ($this->model->shouldApplyStrictMode()) {
-            return $this->strict_conversation_service->buildStrictModeContext(
+            $context_messages = $this->strict_conversation_service->buildStrictModeContext(
                 $context_messages,
                 $this->model->getConversationContext()
             );
-        }
-
-        if ($this->model->isFormModeEnabled()) {
-            return $this->form_mode_service->buildFormModeContext($context_messages);
         }
 
         return $context_messages;
