@@ -11,11 +11,10 @@
  * covering page routing, rate limiting, API configuration, file handling,
  * model capabilities, memory subsystem, and evaluation types.
  *
- * Backward-compatible wrapper functions for LlmModelCapabilities are
- * defined at the bottom; new code should call the static class directly.
+ * The static class LlmModelCapabilities (model and file-type helpers) is
+ * loaded at the bottom of this file.
  *
  * @package LLM Plugin
- * @version 1.1.0
  * @see LlmModelCapabilities For model-related utility methods
  */
 
@@ -40,6 +39,10 @@ define('LLM_RATE_LIMIT_REQUESTS_PER_MINUTE', 10);
 define('LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS', 3);
 define('LLM_RATE_LIMIT_COOLDOWN_SECONDS', 60);
 
+// Guests (GUEST_USER_ID) are throttled per browser session; this is the
+// site-wide ceiling for all guest sessions together, per minute.
+define('LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE', 60);
+
 /* =========================================================================
  * DEFAULT LLM PARAMETERS
  * Applied when CMS fields are empty or not configured.
@@ -49,6 +52,9 @@ define('LLM_DEFAULT_MODEL', 'gpt-oss-120b');
 define('LLM_DEFAULT_TEMPERATURE', 1);
 define('LLM_DEFAULT_MAX_TOKENS', 2048);
 define('LLM_DEFAULT_TIMEOUT', 30);
+// Attempts per LLM request when the reply fails schema validation or the
+// provider hits a transient error (1 = never retry).
+define('LLM_RESPONSE_MAX_ATTEMPTS', 3);
 define('LLM_MODELS_FETCH_TIMEOUT', 5);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
@@ -335,53 +341,14 @@ define('LLM_MEMORY_STATUS_STALE', 'ignored_stale');
 define('LLM_MEMORY_STATUS_FAILED', 'failed');
 
 /* =========================================================================
- * BACKWARD-COMPATIBLE WRAPPERS
+ * MODEL CAPABILITIES
  *
- * Real logic lives in LlmModelCapabilities (static utility class).
- * These thin global functions exist only for backward compatibility;
- * new code should call LlmModelCapabilities::method() directly.
+ * Model and file-type helpers live in the static class LlmModelCapabilities;
+ * call LlmModelCapabilities::method() directly. It is loaded here so every
+ * caller can rely on it.
  * ========================================================================= */
 
 require_once __DIR__ . '/LlmModelCapabilities.php';
 
-/** @deprecated Use LlmModelCapabilities::getFileTypeCategory() */
-function llm_get_file_type_category($extension) {
-    return LlmModelCapabilities::getFileTypeCategory($extension);
-}
-
-/** @deprecated Use LlmModelCapabilities::isVisionModel() */
-function llm_is_vision_model($model) {
-    return LlmModelCapabilities::isVisionModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::isEmbeddingModel() */
-function llm_is_embedding_model($model) {
-    return LlmModelCapabilities::isEmbeddingModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::isRerankerModel() */
-function llm_is_reranker_model($model) {
-    return LlmModelCapabilities::isRerankerModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::isNonChatModel() */
-function llm_is_non_chat_model($model) {
-    return LlmModelCapabilities::isNonChatModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::getModelCapabilities() */
-function llm_get_model_capabilities($model) {
-    return LlmModelCapabilities::getModelCapabilities($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::modelHasCapability() */
-function llm_model_has_capability($model, $capability) {
-    return LlmModelCapabilities::modelHasCapability($model, $capability);
-}
-
-/** @deprecated Use LlmModelCapabilities::validateMimeType() */
-function llm_validate_mime_type($extension, $mimeType) {
-    return LlmModelCapabilities::validateMimeType($extension, $mimeType);
-}
-
+require_once __DIR__ . '/globals_untracked.php';
 ?>
