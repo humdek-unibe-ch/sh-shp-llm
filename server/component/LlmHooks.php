@@ -14,6 +14,8 @@ require_once __DIR__ . "/../service/LlmMemoryConfigService.php";
 require_once __DIR__ . "/../service/LlmMemoryTriggerService.php";
 require_once __DIR__ . "/../service/LlmMemoryRuleService.php";
 require_once __DIR__ . "/../service/LlmMemorySubmissionContextService.php";
+require_once __DIR__ . "/../service/LlmCsrfService.php";
+require_once __DIR__ . "/../service/LlmApiKeysConfigService.php";
 
 /**
  * The class to define the hooks for the LLM plugin.
@@ -1259,7 +1261,7 @@ class LlmHooks extends BaseHooks
                 "metaInputName" => $field_name_prefix . "[meta]",
                 "jsonConfig" => json_encode(array(
                     'endpoint' => $endpoint,
-                    'csrfToken' => $this->resolveCsrfToken(),
+                    'csrfToken' => LlmCsrfService::getToken(),
                     'disabled' => $disabled ? 1 : 0,
                     'ownerType' => LLM_PROMPT_OWNER_STYLE_FIELD,
                     'ownerId' => $cms_model->get_active_section_id(),
@@ -1286,25 +1288,6 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
-    /**
-     * Resolve CSRF token from known core session keys.
-     *
-     * @return string
-     */
-    private function resolveCsrfToken()
-    {
-        if (!empty($_SESSION['csrf_token'])) {
-            return (string)$_SESSION['csrf_token'];
-        }
-        if (!empty($_SESSION['token'])) {
-            return (string)$_SESSION['token'];
-        }
-        if (!empty($_SESSION['security_token'])) {
-            return (string)$_SESSION['security_token'];
-        }
-
-        return '';
-    }
 
     /**
      * Output custom prompt field in edit mode.
@@ -1329,13 +1312,21 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Sync prompt version history after the normal CMS field save completed.
+     * Hook on CmsModel::update_db. Before the normal CMS field save it
+     * validates, merges and encrypts the API keys list (the editor only knows
+     * servers without keys); after the save it syncs the prompt version
+     * history.
      *
      * @param array $args
      * @return mixed
      */
     public function syncPromptVersionOnCmsSave($args)
     {
+        $args = $this->protectApiKeysBeforeCmsSave($args);
+        if ($args === false) {
+            return false;
+        }
+
         $res = $this->execute_private_method($args);
 
         if ($res !== true) {
@@ -1365,6 +1356,56 @@ class LlmHooks extends BaseHooks
         }
 
         return $res;
+    }
+
+    /**
+     * The CMS editor of the `llm_api_keys` field posts the list it was given:
+     * servers without their keys (LlmApiKeysConfigService::toClient). Merge it
+     * with the stored list so keys are kept, new keys are encrypted and
+     * nothing invalid is stored.
+     *
+     * @param array $args update_db hook arguments
+     * @return array|false The arguments to continue with (content replaced by
+     *                     the merged JSON), or false to store nothing
+     */
+    private function protectApiKeysBeforeCmsSave($args)
+    {
+        if ($this->get_param_by_name($args, 'relation') !== RELATION_PAGE_FIELD) {
+            return $args;
+        }
+
+        $field_id = (int)$this->get_param_by_name($args, 'id');
+        $field = $this->services->get_db()->query_db_first(
+            "SELECT name FROM fields WHERE id = :id",
+            array(':id' => $field_id)
+        );
+        if (!$field || $field['name'] !== 'llm_api_keys') {
+            return $args;
+        }
+
+        $stored = $this->services->get_db()->query_db_first(
+            "SELECT content FROM pages_fields_translation
+             WHERE id_pages = :page AND id_fields = :field AND id_languages = :lang",
+            array(
+                ':page' => $args['hookedClassInstance']->get_active_page_id(),
+                ':field' => $field_id,
+                ':lang' => (int)$this->get_param_by_name($args, 'id_language')
+            )
+        );
+
+        $errors = array();
+        $merged = LlmApiKeysConfigService::prepareForSave(
+            (string)$this->get_param_by_name($args, 'content'),
+            $stored['content'] ?? '',
+            $errors
+        );
+        if ($merged === null) {
+            error_log('[LLM] The API keys were not saved: ' . implode(' ', $errors));
+            return false;
+        }
+
+        $args['content'] = $merged;
+        return $args;
     }
 
     /**
@@ -1559,10 +1600,8 @@ class LlmHooks extends BaseHooks
             return $res;
         }
 
-        $entries = json_decode($field['content'] ?? '[]', true);
-        if (!is_array($entries)) {
-            $entries = [];
-        }
+        // Never hand the stored keys to the browser: servers without keys.
+        $json_value = LlmApiKeysConfigService::toClientJson($field['content'] ?? '');
 
         $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
         $inputName = $field_name_prefix . "[content]";
@@ -1574,7 +1613,7 @@ class LlmHooks extends BaseHooks
                 "uid" => $uid,
                 "fieldNamePrefix" => $field_name_prefix,
                 "inputName" => $inputName,
-                "jsonValue" => json_encode($entries, JSON_UNESCAPED_SLASHES),
+                "jsonValue" => $json_value,
                 "disabled" => $disabled,
                 "fieldId" => $field['id'] ?? '',
                 "fieldType" => $field['type'] ?? '',
