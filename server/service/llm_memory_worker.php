@@ -7,45 +7,16 @@
  * CLI worker for async LLM memory updates.
  *
  * Spawned by LlmMemoryTriggerService when a rule uses llm_summarize mode.
- * Reads job arguments from a temp JSON file, bootstraps SelfHelp services,
- * executes the memory update, and persists results.
+ * Reads job arguments from a temp JSON file, bootstraps SelfHelp services
+ * (llm_worker_bootstrap.php), executes the memory update, and persists results.
  *
  * Usage: php llm_memory_worker.php <path_to_args_json_file>
  */
 
-if (php_sapi_name() !== 'cli') {
-    die('This script must be run from the command line.');
-}
+require_once __DIR__ . '/llm_worker_bootstrap.php';
 
-if (!isset($argv[1]) || empty($argv[1])) {
-    fwrite(STDERR, "Usage: php llm_memory_worker.php <args_file>\n");
-    exit(1);
-}
-
-$args_file = $argv[1];
-
-if (!file_exists($args_file)) {
-    fwrite(STDERR, "LLM Memory Worker: Args file not found: $args_file\n");
-    exit(1);
-}
-
-$args_json = file_get_contents($args_file);
-$args = json_decode($args_json, true);
-
-if (!$args || !is_array($args)) {
-    fwrite(STDERR, "LLM Memory Worker: Failed to parse args file\n");
-    @unlink($args_file);
-    exit(1);
-}
-
-@unlink($args_file);
-
-if (function_exists('uopz_allow_exit')) {
-    uopz_allow_exit(true);
-}
-
-ini_set('log_errors', '1');
-ini_set('display_errors', '0');
+$args_file = isset($argv[1]) ? $argv[1] : '';
+$args = llm_worker_read_args($argv, 'llm_memory_worker.php', 'LLM Memory Worker');
 
 function llm_memory_worker_log_file()
 {
@@ -77,69 +48,12 @@ llm_memory_worker_log('worker bootstrapping', array(
     'raw_args_keys' => array_keys($args),
 ));
 
-$project_root = realpath(__DIR__ . '/../../../../../');
-if (!$project_root) {
-    fwrite(STDERR, "LLM Memory Worker: Cannot determine project root\n");
-    exit(1);
-}
-
-$_SERVER['DOCUMENT_ROOT'] = $project_root;
-$_SERVER['HTTP_HOST'] = $args['http_host'] ?? 'localhost';
-$_SERVER['REQUEST_URI'] = '/';
-$_SERVER['REQUEST_METHOD'] = 'GET';
-$_SERVER['SERVER_NAME'] = $_SERVER['HTTP_HOST'];
-$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
-$_SERVER['HTTP_USER_AGENT'] = 'LLM-Memory-Worker/1.0';
-
-$_SESSION = [];
-if (isset($args['user_id'])) {
-    $_SESSION['id_user'] = $args['user_id'];
-}
-
-require_once $project_root . "/server/service/globals.php";
-require_once $project_root . "/server/service/PageDb.php";
-require_once $project_root . "/server/service/jobs/Mailer.php";
-require_once $project_root . "/server/service/Transaction.php";
-require_once $project_root . "/server/service/Router.php";
-require_once $project_root . "/server/service/UserInput.php";
-require_once $project_root . "/server/service/conditions/Condition.php";
-require_once $project_root . "/server/service/JobScheduler.php";
-require_once $project_root . "/server/service/Services.php";
-
-$plugins_folder = realpath($project_root . '/server/plugins/');
-ob_start();
-if ($plugins_folder !== false && is_dir($plugins_folder)) {
-    if ($handle = opendir($plugins_folder)) {
-        while (false !== ($dir = readdir($handle))) {
-            $plugin_dir = $plugins_folder . DIRECTORY_SEPARATOR . $dir;
-            if (is_dir($plugin_dir) && $dir !== '.' && $dir !== '..') {
-                $component_dir = $plugin_dir . '/server/component/';
-                if (is_dir($component_dir)) {
-                    if ($component_handle = opendir($component_dir)) {
-                        while (false !== ($file = readdir($component_handle))) {
-                            if (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-                                $class_name = pathinfo($file, PATHINFO_FILENAME);
-                                if (substr($class_name, -5) === 'Hooks') {
-                                    require_once $component_dir . $file;
-                                    $globals_file = $plugin_dir . '/server/service/globals.php';
-                                    if (file_exists($globals_file)) {
-                                        require_once $globals_file;
-                                    }
-                                }
-                            }
-                        }
-                        closedir($component_handle);
-                    }
-                }
-            }
-        }
-        closedir($handle);
-    }
-}
-ob_end_clean();
-
 try {
-    $services = new Services(false);
+    $services = llm_worker_boot_services(
+        'LLM-Memory-Worker/1.0',
+        $args['http_host'] ?? 'localhost',
+        $args['user_id'] ?? null
+    );
 } catch (Exception $e) {
     llm_memory_worker_log('services initialization failed', array('error' => $e->getMessage()));
     fwrite(STDERR, "LLM Memory Worker: Failed to initialize services: " . $e->getMessage() . "\n");
