@@ -7,6 +7,8 @@
 require_once __DIR__ . "/../../../../../component/BaseModel.php";
 require_once __DIR__ . "/../../service/LlmService.php";
 require_once __DIR__ . "/../../service/LlmModelCapabilities.php";
+require_once __DIR__ . "/../../service/LlmApiKeysConfigService.php";
+require_once __DIR__ . "/../../service/LlmSettingsValidator.php";
 
 /**
  * Model for the LLM Settings module.
@@ -69,12 +71,18 @@ class Sh_module_llmModel extends BaseModel
     {
         $fields = $this->getPageFields();
 
+        // The browser never receives a stored key: only has_key / last four
+        // characters / source per server (see LlmApiKeysConfigService).
+        $apiKeysField = $this->buildField('llm_api_keys', $fields, 'json', 'API Keys',
+            'Configure one or more LLM API servers. Each server needs a name, an https base URL and an API key. Stored keys are never shown again: leave the key empty to keep the current one.');
+        $apiKeysField['value'] = LlmApiKeysConfigService::toClientJson($fields['llm_api_keys'] ?? '');
+        $apiKeysField['meta'] = $this->getSecretsStatus();
+
         return [
             'api' => [
                 'label' => 'API Configuration',
                 'fields' => [
-                    $this->buildField('llm_api_keys', $fields, 'json', 'API Keys',
-                        'Configure one or more LLM API servers. Each server needs a name, base URL, and API key.'),
+                    $apiKeysField,
                 ],
             ],
             'model_defaults' => [
@@ -104,6 +112,80 @@ class Sh_module_llmModel extends BaseModel
                 ],
             ],
         ];
+    }
+
+    /**
+     * Encryption status of the stored API keys for the settings UI (no keys).
+     *
+     * @return array{encryption_available:bool,plain_keys:int,master_key_name:string}
+     */
+    public function getSecretsStatus()
+    {
+        $fields = $this->getPageFields();
+        return [
+            'encryption_available' => LlmSecretService::isEncryptionAvailable(),
+            'plain_keys' => LlmApiKeysConfigService::countPlainKeys($fields['llm_api_keys'] ?? ''),
+            'master_key_name' => LlmSecretService::MASTER_KEY_NAME,
+        ];
+    }
+
+    /**
+     * Validate posted settings. Nothing is stored here: the caller stores
+     * `values` only when `errors` is empty.
+     *
+     * @param array $posted setting name => raw value (names already whitelisted)
+     * @return array{values:array<string,string>,errors:array<string,string[]>}
+     */
+    public function validateSettings(array $posted)
+    {
+        $context = [
+            'reasoning_codes' => LlmModelCapabilities::getReasoningEffortCodes($this->db),
+            'storage_modes' => array_column($this->getStorageModeOptions(), 'value'),
+        ];
+
+        $values = [];
+        $errors = [];
+        foreach ($posted as $name => $raw) {
+            if ($name === 'llm_api_keys') {
+                $messages = [];
+                $json = LlmApiKeysConfigService::prepareForSave(
+                    is_string($raw) ? $raw : '',
+                    $this->getPageFields()['llm_api_keys'] ?? '',
+                    $messages
+                );
+                if ($json === null) {
+                    $errors[$name] = $messages;
+                } else {
+                    $values[$name] = $json;
+                }
+                continue;
+            }
+
+            $result = LlmSettingsValidator::validate($name, $raw, $context);
+            if ($result['error'] !== null) {
+                $errors[$name] = [$result['error']];
+            } else {
+                $values[$name] = $result['value'];
+            }
+        }
+
+        return ['values' => $values, 'errors' => $errors];
+    }
+
+    /**
+     * Encrypt the API keys that are still stored as plain text.
+     * The caller checks LlmSecretService::isEncryptionAvailable() first.
+     *
+     * @return int Number of keys that were encrypted
+     */
+    public function protectStoredApiKeys()
+    {
+        $converted = 0;
+        $json = LlmApiKeysConfigService::protectStoredKeys($this->getPageFields()['llm_api_keys'] ?? '', $converted);
+        if ($converted > 0) {
+            $this->saveSetting('llm_api_keys', $json);
+        }
+        return $converted;
     }
 
     /**

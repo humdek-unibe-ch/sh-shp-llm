@@ -7,6 +7,8 @@
 require_once __DIR__ . "/../../../../../component/BaseController.php";
 require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../service/LlmService.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
+require_once __DIR__ . "/../../service/LlmSecretService.php";
 
 /**
  * Controller for the LLM Settings module.
@@ -46,7 +48,13 @@ class Sh_module_llmController extends BaseController
                 break;
             case 'save_config':
                 $this->requireAccess('update');
+                $this->requirePostWithCsrf();
                 $this->handleSaveConfig();
+                break;
+            case 'protect_keys':
+                $this->requireAccess('update');
+                $this->requirePostWithCsrf();
+                $this->handleProtectKeys();
                 break;
             case 'models':
                 $this->requireAccess('select');
@@ -68,6 +76,20 @@ class Sh_module_llmController extends BaseController
         if (!$this->checkAccess($mode)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             exit;
+        }
+    }
+
+    /**
+     * Changes are POST only and carry the session CSRF token (header
+     * X-CSRF-Token); sends 405 / 403 and exits otherwise.
+     */
+    private function requirePostWithCsrf()
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            $this->sendJsonResponse(['error' => 'Method not allowed'], 405);
+        }
+        if (!LlmCsrfService::verifyRequest()) {
+            $this->sendJsonResponse(['error' => 'Invalid CSRF token. Reload the page and try again.'], 403);
         }
     }
 
@@ -101,13 +123,17 @@ class Sh_module_llmController extends BaseController
         }
     }
 
-    /** Persist whitelisted config fields from the JSON request body. */
+    /**
+     * Validate and persist whitelisted config fields from the JSON request
+     * body. Every posted field is validated first; when one is not valid
+     * nothing is saved and the messages are returned per field (422).
+     */
     private function handleSaveConfig()
     {
         try {
             $raw = file_get_contents('php://input');
             $data = json_decode($raw, true);
-            if (!is_array($data) || empty($data['fields'])) {
+            if (!is_array($data) || empty($data['fields']) || !is_array($data['fields'])) {
                 $this->sendJsonResponse(['error' => 'No fields provided'], 400);
                 return;
             }
@@ -119,16 +145,30 @@ class Sh_module_llmController extends BaseController
                 'llm_memory_storage_mode',
             ];
 
+            $posted = [];
+            foreach ($data['fields'] as $name => $value) {
+                if (in_array($name, $allowedFields, true)) {
+                    $posted[$name] = $value;
+                }
+            }
+
+            $validation = $this->model->validateSettings($posted);
+            if (!empty($validation['errors'])) {
+                $this->sendJsonResponse([
+                    'success' => false,
+                    'error' => 'Some settings are not valid. Nothing was saved.',
+                    'errors' => $validation['errors'],
+                ], 422);
+                return;
+            }
+
             $saved = [];
             $failed = [];
             $styleDefaultFields = ['llm_default_model', 'llm_temperature', 'llm_max_tokens', 'llm_reasoning_effort'];
             $shouldSyncStyleDefaults = false;
 
-            foreach ($data['fields'] as $name => $value) {
-                if (!in_array($name, $allowedFields, true)) {
-                    continue;
-                }
-                $ok = $this->model->saveSetting($name, (string)$value);
+            foreach ($validation['values'] as $name => $value) {
+                $ok = $this->model->saveSetting($name, $value);
                 if ($ok) {
                     $saved[] = $name;
                     if (in_array($name, $styleDefaultFields, true)) {
@@ -143,6 +183,10 @@ class Sh_module_llmController extends BaseController
                 $this->model->syncStyleFieldDefaultsFromModuleSettings();
             }
 
+            if (!empty($saved)) {
+                $this->logSettingsChange('LLM settings updated: ' . implode(', ', $saved));
+            }
+
             $this->sendJsonResponse([
                 'success' => empty($failed),
                 'saved' => $saved,
@@ -150,6 +194,51 @@ class Sh_module_llmController extends BaseController
             ]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /** Encrypt the API keys that are still stored as plain text. */
+    private function handleProtectKeys()
+    {
+        if (!LlmSecretService::isEncryptionAvailable()) {
+            $this->sendJsonResponse([
+                'error' => 'No master secret is configured. Set the environment variable '
+                    . LlmSecretService::MASTER_KEY_NAME . ' (at least 16 characters) first.',
+            ], 409);
+            return;
+        }
+
+        try {
+            $converted = $this->model->protectStoredApiKeys();
+            if ($converted > 0) {
+                $this->logSettingsChange('LLM API keys encrypted: ' . $converted);
+            }
+            $this->sendJsonResponse(['success' => true, 'converted' => $converted]);
+        } catch (Exception $e) {
+            error_log('[LLM] Encrypting the stored API keys failed: ' . $e->getMessage());
+            $this->sendJsonResponse(['error' => 'The API keys could not be encrypted.'], 500);
+        }
+    }
+
+    /**
+     * Audit trail for settings changes: which settings, never their values.
+     *
+     * @param string $details
+     */
+    private function logSettingsChange($details)
+    {
+        try {
+            $this->model->get_services()->get_transaction()->add_transaction(
+                transactionTypes_update,
+                TRANSACTION_BY_LLM_PLUGIN,
+                $_SESSION['id_user'] ?? null,
+                'pages_fields_translation',
+                $this->pageId,
+                false,
+                $details
+            );
+        } catch (Exception $e) {
+            error_log('[LLM] Settings audit log failed: ' . $e->getMessage());
         }
     }
 
