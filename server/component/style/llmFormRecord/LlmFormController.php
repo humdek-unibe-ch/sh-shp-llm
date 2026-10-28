@@ -30,7 +30,11 @@ class LlmFormController extends FormUserInputController
     {
         $this->prompt_assets = new LlmPromptAssetLoader();
 
-        if (isset($_POST['__llm_action']) && in_array($_POST['__llm_action'], ['regenerate', 'retry', 'generate_feedback'])) {
+        // Every LLM form on the page builds a controller for the same request, and a
+        // JSON response ends it: each instance acts only on requests addressed to its
+        // own section (the action posts `section_id`, a submit posts `__form_name`).
+        if (isset($_POST['__llm_action']) && in_array($_POST['__llm_action'], ['regenerate', 'retry', 'generate_feedback'])
+            && (int)($_POST['section_id'] ?? 0) === (int)$model->get_section_id()) {
             $this->model = $model;
             $this->success = false;
             $this->fail = false;
@@ -42,9 +46,18 @@ class LlmFormController extends FormUserInputController
             return;
         }
 
+        // Decided before parent::__construct(), which consumes `__form_name`
+        $is_llm_submit = isset($_POST['__llm_form']) && $_POST['__llm_form'] === '1' && $model->isLlmEnabled()
+            && isset($_POST['__form_name']) && $_POST['__form_name'] === $model->get_db_field('name');
+        if ($is_llm_submit && $this->isGuestSession()) {
+            // Nothing is saved: guests share one account, so their records and LLM results
+            // could not be kept apart.
+            $this->sendJsonResponse(['success' => false, 'error' => 'Please log in to use this form'], 401);
+        }
+
         parent::__construct($model);
 
-        if (isset($_POST['__llm_form']) && $_POST['__llm_form'] === '1' && $model->isLlmEnabled()) {
+        if ($is_llm_submit) {
             if ($model->isManualFeedbackEnabled()) {
                 $this->sendJsonResponse([
                     'success' => $this->success && !$this->fail,
@@ -72,13 +85,25 @@ class LlmFormController extends FormUserInputController
     /* Private Methods *********************************************************/
 
     /**
+     * Anonymous visitors all share the guest account, so records and LLM results
+     * cannot be kept apart per person: logged-in users only.
+     *
+     * @return bool True when there is no logged-in user
+     */
+    private function isGuestSession()
+    {
+        $user_id = $_SESSION['id_user'] ?? null;
+        return !$user_id || (defined('GUEST_USER_ID') && (int)$user_id === (int)GUEST_USER_ID);
+    }
+
+    /**
      * Handle manual feedback generation.
      * Reads form field values from POST without saving, calls LLM, returns result.
      */
     private function handleGenerateFeedback($model)
     {
         $user_id = $_SESSION['id_user'] ?? null;
-        if (!$user_id) {
+        if ($this->isGuestSession()) {
             $this->sendJsonResponse(['success' => false, 'error' => 'Not authenticated'], 401);
             return;
         }
@@ -115,7 +140,7 @@ class LlmFormController extends FormUserInputController
     private function handleLlmAction($model)
     {
         $user_id = $_SESSION['id_user'] ?? null;
-        if (!$user_id) {
+        if ($this->isGuestSession()) {
             $this->sendJsonResponse(['success' => false, 'error' => 'Not authenticated'], 401);
             return;
         }
@@ -298,10 +323,14 @@ class LlmFormController extends FormUserInputController
             return [];
         }
 
-        if ($record_id) {
-            $filter = " AND record_id = " . intval($record_id);
+        // An explicitly requested record is loaded exactly or not at all: a wrong or foreign
+        // id must not silently resolve to (and later overwrite) the user's latest record.
+        // Only a request without a record id falls back to the latest one.
+        $record_id = $this->normalize_post_id($record_id);
+        if ($record_id > 0) {
+            $filter = " AND record_id = " . $record_id;
             $data = $user_input->get_data($form_id, $filter, true, $user_id, true);
-            if (!empty($data)) return $data;
+            return !empty($data) ? $data : [];
         }
 
         // Get the latest record (ORDER BY record_id DESC) for the user
@@ -427,6 +456,9 @@ class LlmFormController extends FormUserInputController
         $section_id = $model->get_section_id();
 
         try {
+            // Same per-user throttle as the chat endpoints; every LLM call here costs money
+            $rate_data = $llm_service->checkRateLimit($user_id);
+
             $conversation_id = $llm_service->getOrCreateConversationForModel(
                 $user_id,
                 $llm_model,
@@ -438,6 +470,8 @@ class LlmFormController extends FormUserInputController
             if (!$conversation_id) {
                 throw new Exception('Failed to resolve conversation for LLM form logging');
             }
+
+            $llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
 
             $sent_context = [
                 ['role' => 'system', 'content' => $system_prompt],
@@ -494,6 +528,11 @@ class LlmFormController extends FormUserInputController
             ];
         } catch (\Exception $e) {
             error_log("LLM Form API error: " . $e->getMessage());
+            // The rate-limit text is meant for the participant; provider/DB/internal
+            // messages stay in the server log.
+            $participant_error = $e instanceof LlmRateLimitException
+                ? $e->getMessage()
+                : 'The assistant could not generate a response. Please try again.';
             return [
                 'success' => false,
                 'llm_result' => '',
@@ -504,10 +543,10 @@ class LlmFormController extends FormUserInputController
                     'tokens_used' => 0,
                     'timestamp' => date('Y-m-d H:i:s'),
                     'status' => 'error',
-                    'error' => $e->getMessage(),
+                    'error' => $participant_error,
                     'language' => $user_language,
                 ],
-                'error' => $e->getMessage(),
+                'error' => $participant_error,
             ];
         }
     }

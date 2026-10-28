@@ -252,8 +252,14 @@ class LlmChatModel extends StyleModel
     {
         return $this->get_db_field('always_start_new_conversation', '0') === '1';
     }
+    /**
+     * Whether the visitor is the shared guest account. Guests get no per-user storage
+     * (uploads, audio, saved records), so those features are hidden and refused for them.
+     * @return bool
+     */
+    public function isGuestSession() { return $this->llm_service->isGuestUser($this->user_id); }
     /** @return bool Whether file upload button is available in the chat input. */
-    public function isFileUploadsEnabled() { return $this->get_db_field('enable_file_uploads', '0') == '1'; }
+    public function isFileUploadsEnabled() { return !$this->isGuestSession() && $this->get_db_field('enable_file_uploads', '0') == '1'; }
     /** @return bool Whether to reload the full page after conversation actions (delete, new). */
     public function isFullPageReloadEnabled() { return $this->get_db_field('enable_full_page_reload', '0') == '1'; }
 
@@ -278,7 +284,7 @@ class LlmChatModel extends StyleModel
             $llmService = new LlmService($this->services);
             return $llmService->modelSupportsVision($model);
         } catch (Exception $e) {
-            return llm_is_vision_model($model);
+            return LlmModelCapabilities::isVisionModel($model);
         }
     }
 
@@ -356,25 +362,6 @@ class LlmChatModel extends StyleModel
         }
 
         return $messages;
-    }
-
-    /**
-     * Resolve the opening assistant message for auto-start.
-     *
-     * Default (v1.4.1+): returns the CMS `auto_start_message` as authored.
-     * Conversation context is still attached as system context elsewhere; it is
-     * not mixed into this greeting.
-     *
-     * To mix context topics into the greeting again, use
-     * `LlmAutoStartService::generateAutoStartMessage()` — see the class docblock
-     * in `server/service/LlmAutoStartService.php` for the re-enable snippet.
-     * That service is intentionally kept for that reuse path.
-     *
-     * @return string Auto-start message
-     */
-    public function generateContextAwareAutoStartMessage()
-    {
-        return $this->getAutoStartMessage();
     }
 
     // ===== Feature Flags =====
@@ -614,7 +601,8 @@ class LlmChatModel extends StyleModel
      */
     public function isSpeechToTextEnabled()
     {
-        return $this->get_db_field('enable_speech_to_text', '0') === '1'
+        return !$this->isGuestSession()
+            && $this->get_db_field('enable_speech_to_text', '0') === '1'
             && !empty($this->get_db_field('speech_to_text_model', ''));
     }
 
