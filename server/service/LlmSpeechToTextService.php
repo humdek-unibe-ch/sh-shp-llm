@@ -29,7 +29,6 @@ require_once __DIR__ . '/LlmService.php';
  * @see LlmFileNamingService for full naming documentation
  * 
  * @package LLM Plugin
- * @version 1.0.0
  */
 class LlmSpeechToTextService extends BaseLlmService
 {
@@ -150,9 +149,10 @@ class LlmSpeechToTextService extends BaseLlmService
         try {
             LlmFileNamingService::ensureUserDirectoryExists($userId);
         } catch (Exception $e) {
+            error_log("Speech-to-text: could not create upload directory: " . $e->getMessage());
             return [
                 'success' => false,
-                'error' => 'Failed to create upload directory: ' . $e->getMessage()
+                'error' => 'Failed to save audio file'
             ];
         }
         
@@ -182,7 +182,6 @@ class LlmSpeechToTextService extends BaseLlmService
         $result['audio_file'] = [
             'filename' => $filename,
             'path' => $relativePath,
-            'url' => LlmFileNamingService::buildFileUrl($relativePath),
             'size' => $fileSize,
             'type' => $mimeType,
             'extension' => $extension,
@@ -360,7 +359,7 @@ class LlmSpeechToTextService extends BaseLlmService
                 
                 return [
                     'success' => false,
-                    'error' => 'Speech recognition service error: ' . $errorMsg
+                    'error' => 'Speech recognition service error'
                 ];
             }
             
@@ -397,7 +396,7 @@ class LlmSpeechToTextService extends BaseLlmService
             error_log("Speech-to-text exception: " . $e->getMessage());
             return [
                 'success' => false,
-                'error' => 'Speech recognition failed: ' . $e->getMessage()
+                'error' => 'Speech recognition failed. Please try again.'
             ];
         }
     }

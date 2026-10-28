@@ -35,7 +35,6 @@ require_once __DIR__ . '/globals.php';
  *     - All files for this user
  * 
  * @package LLM Plugin
- * @version 1.0.0
  */
 class LlmFileNamingService
 {
@@ -310,17 +309,6 @@ class LlmFileNamingService
     public static function buildFullPath($userId, $filename)
     {
         return self::getUserUploadFullPath($userId) . '/' . $filename;
-    }
-
-    /**
-     * Build the URL for accessing a file
-     * 
-     * @param string $relativePath Relative path from plugin root
-     * @return string URL query string for file access
-     */
-    public static function buildFileUrl($relativePath)
-    {
-        return '?file_path=' . urlencode($relativePath);
     }
 
     /**
