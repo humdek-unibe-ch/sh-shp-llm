@@ -63,6 +63,8 @@ class LlmFormInterviewService
     const ORIGIN_LLM = 'llm';
     const MAX_HISTORY_SNAPSHOTS = 3;
     const MAX_HISTORY_CHARS = 8000;
+    /** Seconds an open waits for another open of the same participant */
+    const ACTOR_LOCK_TIMEOUT_SECONDS = 10;
 
     private $services;
     private $llm_service;
@@ -255,8 +257,10 @@ class LlmFormInterviewService
                     );
                 }
                 $this->db->commit();
+                $this->unlockActor($actor);
             } catch (Exception $e) {
                 $this->db->rollback();
+                $this->unlockActor($actor);
                 throw $e;
             }
             return $this->ok(array('state' => $this->project($model, $record_id, $conversation)));
@@ -521,16 +525,19 @@ class LlmFormInterviewService
                 // detection (and its audit/email) survives this transaction.
                 if (!$start && trim($message) !== '') {
                     $danger = new LlmDangerDetectionService($this->services, $model);
-                    $check = $danger->checkMessage($message, $actor, (int)$conversation['id']);
-                    if (empty($check['safe'])) {
+                    $detected = $danger->detectKeywords($message);
+                    if (!empty($detected)) {
+                        // Nothing was written yet: release the conversation lock
+                        // first, then block, audit and alert, so the alert email
+                        // (SMTP) never runs inside the lock window.
+                        $this->db->commit();
+                        $check = $danger->handleDetection($detected, $message, $actor, (int)$conversation['id']);
                         $safety = isset($check['message']) ? (string)$check['message']
                             : $model->getDangerBlockedMessage();
-                        $this->db->commit();
                         return $this->err('danger_detected', $safety, array(
                             'blocked' => true,
                             'safety_message' => $safety,
-                            'detected_keywords' => isset($check['detected_keywords'])
-                                ? $check['detected_keywords'] : array(),
+                            'detected_keywords' => $detected,
                             'state' => $this->project($model, $record_id, $conversation),
                         ));
                     }
@@ -786,7 +793,7 @@ class LlmFormInterviewService
                     'safety_message' => $msg,
                     'state' => $state,
                 );
-                if (!$safety['is_safe'] || $safety['danger_level'] !== null) {
+                if ($safety['is_safe'] === false || $safety['danger_level'] !== null) {
                     $out['safety'] = $safety;
                 }
                 if (!empty($safety['detected_concerns']) && is_array($safety['detected_concerns'])) {
@@ -795,7 +802,7 @@ class LlmFormInterviewService
                 return $this->err('danger_detected', $msg, $out);
             }
             $out = array('state' => $state);
-            if (!$safety['is_safe'] || $safety['danger_level'] !== null) {
+            if ($safety['is_safe'] === false || $safety['danger_level'] !== null) {
                 $out['safety'] = $safety;
             }
             return $this->ok($out);
@@ -1580,10 +1587,12 @@ class LlmFormInterviewService
     private function requireValidSchema(array $schema)
     {
         if (!empty($schema[LlmFormSchemaService::ERRORS_KEY])) {
+            // The field-level details are for the CMS author, not the participant
+            error_log('[LLM] Interview form misconfigured: '
+                . implode('; ', (array)$schema[LlmFormSchemaService::ERRORS_KEY]));
             throw new LlmFormInterviewAbort(
                 'misconfigured',
-                'The form contains invalid interview fields: '
-                . implode('; ', (array)$schema[LlmFormSchemaService::ERRORS_KEY])
+                'This interview is not set up correctly. Please contact the site administrator.'
             );
         }
     }
@@ -1617,15 +1626,41 @@ class LlmFormInterviewService
         }
     }
 
+    /**
+     * Serialize concurrent opens of one participant with a named lock instead
+     * of a row lock on the core `users` table, which would block core
+     * login/profile writes for the whole open. It must be the first statement
+     * of the open transaction (no read view exists yet), so every read that
+     * follows sees what the previous holder committed. The caller releases it
+     * with unlockActor() after commit/rollback; it also ends with the DB
+     * connection.
+     */
     private function lockActor($actor)
     {
         $row = $this->db->query_db_first(
-            'SELECT id FROM users WHERE id = :id FOR UPDATE',
-            array(':id' => (int)$actor)
+            'SELECT GET_LOCK(:name, :timeout) AS acquired',
+            array(':name' => $this->actorLockName($actor), ':timeout' => self::ACTOR_LOCK_TIMEOUT_SECONDS)
         );
-        if (!is_array($row)) {
-            throw new LlmFormInterviewAbort('unauthenticated', 'Not authenticated');
+        if (!is_array($row) || (int)$row['acquired'] !== 1) {
+            throw new LlmFormInterviewAbort('conflict', 'Another interview request is in progress');
         }
+    }
+
+    private function unlockActor($actor)
+    {
+        try {
+            $this->db->query_db_first(
+                'SELECT RELEASE_LOCK(:name) AS released',
+                array(':name' => $this->actorLockName($actor))
+            );
+        } catch (Exception $e) {
+            error_log('[LLM] Interview actor lock release failed: ' . $e->getMessage());
+        }
+    }
+
+    private function actorLockName($actor)
+    {
+        return 'llm_interview_open_' . (int)$actor;
     }
 
     /**

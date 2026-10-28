@@ -28,6 +28,15 @@ if (!defined('transactionTypes_update')) define('transactionTypes_update', 'upda
 if (!defined('LLM_CACHE_USER_CONVERSATIONS')) define('LLM_CACHE_USER_CONVERSATIONS', 'llm_user_conversations');
 if (!defined('LLM_CACHE_CONVERSATION_MESSAGES')) define('LLM_CACHE_CONVERSATION_MESSAGES', 'llm_conversation_messages');
 if (!defined('TRANSACTION_BY_LLM_PLUGIN')) define('TRANSACTION_BY_LLM_PLUGIN', 'llm_plugin');
+if (!defined('LLM_RESPONSE_MAX_ATTEMPTS')) define('LLM_RESPONSE_MAX_ATTEMPTS', 3);
+// Core constants the danger-alert mail path reads
+if (!defined('jobTypes')) define('jobTypes', 'jobTypes');
+if (!defined('jobTypes_email')) define('jobTypes_email', 'email');
+if (!defined('scheduledJobsStatus')) define('scheduledJobsStatus', 'scheduledJobsStatus');
+if (!defined('scheduledJobsStatus_queued')) define('scheduledJobsStatus_queued', 'queued');
+if (!defined('transactionBy_by_system')) define('transactionBy_by_system', 'by_system');
+if (!defined('SH_EMAIL')) define('SH_EMAIL', 'email');
+if (!defined('PF_EMAIL_ACTIVATE_EMAIL_ADDRESS')) define('PF_EMAIL_ACTIVATE_EMAIL_ADDRESS', 'email_activate_email_address');
 if (!defined('SELECTED_RECORD_ID')) define('SELECTED_RECORD_ID', 'selected_record_id');
 if (!defined('USER_INPUT_HISTORY_LOG_COL')) define('USER_INPUT_HISTORY_LOG_COL', '_history_log');
 if (!defined('PLUGIN_PATH')) define('PLUGIN_PATH', '/server/plugins');
@@ -59,6 +68,33 @@ class InterviewFakeDb
     }
 
     public function get_cache() { return new InterviewFakeRawCache(); }
+
+    /** @var array held named locks (GET_LOCK) => hold count */
+    public $locks = array();
+    /** @var array [action, lock name, transaction depth] per GET_LOCK/RELEASE_LOCK */
+    public $lock_log = array();
+    /** @var bool false makes GET_LOCK time out */
+    public $lock_available = true;
+    /** @var array page info rows by keyword for fetch_page_info() */
+    public $page_info = array();
+    /** @var array [table, data, where, transaction depth] per update_by_ids() */
+    public $updates = array();
+
+    public function txDepth() { return count($this->tx_stack); }
+
+    public function fetch_page_info($keyword)
+    {
+        return isset($this->page_info[$keyword]) ? $this->page_info[$keyword] : null;
+    }
+
+    public function update_by_ids($table, $data, $where)
+    {
+        $this->updates[] = array($table, $data, $where, count($this->tx_stack));
+        if ($table === 'llmConversations' && isset($where['id'], $this->conversations[(int)$where['id']])) {
+            $this->conversations[(int)$where['id']] = array_merge($this->conversations[(int)$where['id']], $data);
+        }
+        return true;
+    }
 
     public function begin_transaction()
     {
@@ -160,6 +196,22 @@ class InterviewFakeDb
     {
         $sql = $this->norm($sql);
         $this->queries[] = $sql;
+        if (strpos($sql, 'get_lock(') !== false) {
+            $this->lock_log[] = array('get', $args[':name'], count($this->tx_stack));
+            if (!$this->lock_available) {
+                return array('acquired' => 0);
+            }
+            $this->locks[$args[':name']] = (isset($this->locks[$args[':name']]) ? $this->locks[$args[':name']] : 0) + 1;
+            return array('acquired' => 1);
+        }
+        if (strpos($sql, 'release_lock(') !== false) {
+            $this->lock_log[] = array('release', $args[':name'], count($this->tx_stack));
+            $held = isset($this->locks[$args[':name']]);
+            if ($held && --$this->locks[$args[':name']] <= 0) {
+                unset($this->locks[$args[':name']]);
+            }
+            return array('released' => $held ? 1 : 0);
+        }
         if (strpos($sql, 'from users') !== false && strpos($sql, 'where id = :id') !== false) {
             return isset($this->users[(int)$args[':id']]) ? $this->users[(int)$args[':id']] : null;
         }
@@ -272,14 +324,34 @@ class InterviewFakeTransaction
     }
 }
 
+class InterviewFakeJobScheduler
+{
+    /** @var array [job data, transaction depth at send time] */
+    public $jobs = array();
+    private $db;
+    public function __construct($db) { $this->db = $db; }
+    public function add_and_execute_job($data, $by)
+    {
+        $this->jobs[] = array($data, $this->db->txDepth());
+        return true;
+    }
+}
+
 class InterviewFakeServices
 {
     private $db;
     private $cache;
-    public function __construct($db, $cache) { $this->db = $db; $this->cache = $cache; }
+    public $scheduler;
+    public function __construct($db, $cache)
+    {
+        $this->db = $db;
+        $this->cache = $cache;
+        $this->scheduler = new InterviewFakeJobScheduler($db);
+    }
     public function get_db() { return $this->db; }
     public function get_transaction() { return new InterviewFakeTransaction(); }
     public function get_cache() { return $this->cache; }
+    public function get_job_scheduler() { return $this->scheduler; }
 }
 
 /**
@@ -1280,6 +1352,84 @@ $db_n->begin_transaction();
 $prep_n2 = $svc_n->prepareApproval($model_n, null, $conv_n, $up_n['state']['revision'], 'req-n1');
 $db_n->rollback();
 check('nothing to save: approval passes once something is answered', !empty($prep_n2['ok']));
+
+/* =========================================================================
+ * Actor lock + danger alert outside the lock window
+ * ========================================================================= */
+
+class InterviewDangerModel extends InterviewFormModel
+{
+    public function isDangerDetectionEnabled() { return true; }
+    public function getDangerKeywords() { return 'harm myself, suicide'; }
+    public function getDangerBlockedMessage() { return 'blocked-danger'; }
+    public function getDangerNotificationEmails() { return array('admin@example.org'); }
+    public function getSectionId() { return $this->get_section_id(); }
+}
+
+$_SESSION = array('id_user' => 5);
+list($db_l, , , , , , $svc_l) = env();
+$model_l = new InterviewFormModel();
+$res_l = $svc_l->open($model_l, null, 'tok-l');
+check('actor lock: open succeeds', !empty($res_l['ok']));
+check('actor lock: named lock is the first statement inside the open transaction',
+    $db_l->lock_log[0] === array('get', 'llm_interview_open_5', 1));
+check('actor lock: released after the transaction ended, nothing left held',
+    end($db_l->lock_log) === array('release', 'llm_interview_open_5', 0) && empty($db_l->locks));
+$user_queries = array_filter($db_l->queries, function ($q) { return strpos($q, 'from users') !== false; });
+check('actor lock: the core users row is never read or locked', count($user_queries) === 0);
+
+$db_l->lock_available = false;
+$busy = $svc_l->open($model_l, null, 'tok-l2');
+check('actor lock: a busy lock fails closed as conflict',
+    empty($busy['ok']) && $busy['error']['type'] === 'conflict');
+check('actor lock: nothing left held after a failed acquire', empty($db_l->locks));
+
+// Keyword pre-scan: the block, audit and alert email run after the transaction ended
+list($db_d, , $services_d, $llm_d, , , $svc_d) = env();
+$db_d->page_info = array('email' => array('email_activate_email_address' => 'system@example.org'));
+$model_d = new InterviewDangerModel();
+$res_d = $svc_d->open($model_d, null, 'tok-d');
+$conv_d = $res_d['state']['conversation_id'];
+$out_d = $svc_d->turn($model_d, null, $conv_d, $res_d['state']['revision'],
+    'I want to harm myslef <script>alert(1)</script>', array(), 'req-d');
+check('danger pre-scan: a typo of a keyword phrase is caught',
+    empty($out_d['ok']) && $out_d['error']['type'] === 'danger_detected');
+check('danger pre-scan: no LLM call was made', $llm_d->api_calls === 0);
+check('danger pre-scan: conversation blocked after the transaction ended',
+    count($db_d->updates) === 1 && $db_d->updates[0][0] === 'llmConversations'
+    && (int)$db_d->updates[0][1]['blocked'] === 1 && $db_d->updates[0][3] === 0);
+$alerts_d = $services_d->scheduler->jobs;
+check('danger pre-scan: one alert email, sent outside any transaction',
+    count($alerts_d) === 1 && $alerts_d[0][1] === 0);
+check('danger pre-scan: alert sender is the core system sender, not a recipient',
+    $alerts_d[0][0]['from_email'] === 'system@example.org'
+    && $alerts_d[0][0]['reply_to'] === 'system@example.org'
+    && $alerts_d[0][0]['recipient_emails'] === 'admin@example.org');
+// The core mailer renders the body as Markdown -> HTML (safe mode off): render it the same way
+$body_d = $alerts_d[0][0]['body'];
+$parsedown_file = dirname(__DIR__, 3) . '/service/ext/Parsedown.php';
+if (is_file($parsedown_file)) {
+    require_once $parsedown_file;
+    $parsedown_d = new Parsedown();
+    $parsedown_d->setSafeMode(false);
+    $html_d = $parsedown_d->text($body_d);
+    $injection_safe = strpos($html_d, '<script') === false && strpos($html_d, '&lt;script&gt;') !== false;
+} else {
+    $injection_safe = (bool)preg_match('/`[^`]*<script>[^`]*`/', $body_d);
+}
+check('danger pre-scan: participant text cannot inject markup into the alert', $injection_safe);
+
+// No sender configured on the core email page: core default noreply@<host>
+list($db_f, , $services_f, , , , $svc_f) = env();
+$_SERVER['HTTP_HOST'] = 'cms.example.test:8443';
+$model_f = new InterviewDangerModel();
+$res_f = $svc_f->open($model_f, null, 'tok-f');
+$svc_f->turn($model_f, null, $res_f['state']['conversation_id'], $res_f['state']['revision'],
+    'I think about suicide', array(), 'req-f');
+$alerts_f = $services_f->scheduler->jobs;
+check('danger pre-scan: unconfigured sender falls back to noreply@host',
+    count($alerts_f) === 1 && $alerts_f[0][0]['from_email'] === 'noreply@cms.example.test');
+unset($_SERVER['HTTP_HOST']);
 
 /* =========================================================================
  * Done
