@@ -54,6 +54,9 @@ class LlmFormLogListModel extends FormUserInputLogListModel
      */
     private $interview_approval = false;
 
+    /** @var array|null Module defaults for empty model/temperature/token/effort fields, read on first use. */
+    private $module_defaults = null;
+
     /**
      * @param object $services
      * @param int $id
@@ -83,14 +86,9 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         if (!empty($model)) {
             return $model;
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if (!empty($defaults['model'])) {
-                return $defaults['model'];
-            }
-        } catch (Exception $e) {
-            // fall through to constant
+        $defaults = $this->getModuleDefaults();
+        if (!empty($defaults['model'])) {
+            return $defaults['model'];
         }
         return defined('LLM_DEFAULT_MODEL') ? LLM_DEFAULT_MODEL : 'gpt-oss-120b';
     }
@@ -102,14 +100,9 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         if ($temperature !== '' && $temperature !== null) {
             return floatval($temperature);
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if ($defaults['temperature'] !== '') {
-                return floatval($defaults['temperature']);
-            }
-        } catch (Exception $e) {
-            // fall through
+        $defaults = $this->getModuleDefaults();
+        if (isset($defaults['temperature']) && $defaults['temperature'] !== '') {
+            return floatval($defaults['temperature']);
         }
         return floatval(defined('LLM_DEFAULT_TEMPERATURE') ? LLM_DEFAULT_TEMPERATURE : 1);
     }
@@ -121,14 +114,9 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         if ($max_tokens !== '' && $max_tokens !== null) {
             return intval($max_tokens);
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if ($defaults['max_tokens'] !== '') {
-                return intval($defaults['max_tokens']);
-            }
-        } catch (Exception $e) {
-            // fall through
+        $defaults = $this->getModuleDefaults();
+        if (isset($defaults['max_tokens']) && $defaults['max_tokens'] !== '') {
+            return intval($defaults['max_tokens']);
         }
         return intval(defined('LLM_DEFAULT_MAX_TOKENS') ? LLM_DEFAULT_MAX_TOKENS : 2048);
     }
@@ -140,16 +128,31 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         if ($effort !== '' && $effort !== null) {
             return (string)$effort;
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if (isset($defaults['reasoning_effort']) && $defaults['reasoning_effort'] !== '') {
-                return (string)$defaults['reasoning_effort'];
-            }
-        } catch (Exception $e) {
-            // fall through
+        $defaults = $this->getModuleDefaults();
+        if (isset($defaults['reasoning_effort']) && $defaults['reasoning_effort'] !== '') {
+            return (string)$defaults['reasoning_effort'];
         }
         return defined('LLM_REASONING_EFFORT_DEFAULT') ? LLM_REASONING_EFFORT_DEFAULT : '';
+    }
+
+    /**
+     * Module-wide model/temperature/token/effort defaults, read once per model.
+     * An unreadable config yields no defaults, so callers fall back to the
+     * LLM_DEFAULT_* constants.
+     *
+     * @return array
+     */
+    private function getModuleDefaults()
+    {
+        if ($this->module_defaults === null) {
+            try {
+                $llmService = new LlmService($this->services);
+                $this->module_defaults = $llmService->getModuleDefaults();
+            } catch (Exception $e) {
+                $this->module_defaults = array();
+            }
+        }
+        return $this->module_defaults;
     }
 
     /* Interview configuration **********************************************/

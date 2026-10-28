@@ -40,6 +40,9 @@ class LlmFormModel extends FormUserInputModel
     private $llm_feedback_button_label;
     private $llm_feedback_button_color;
 
+    /** @var array|null Module defaults for empty model/temperature/token/effort fields, read on first use. */
+    private $module_defaults = null;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -98,14 +101,9 @@ class LlmFormModel extends FormUserInputModel
         if (!empty($this->llm_model)) {
             return $this->llm_model;
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if (!empty($defaults['model'])) {
-                return $defaults['model'];
-            }
-        } catch (Exception $e) {
-            // fall through to constant
+        $defaults = $this->getModuleDefaults();
+        if (!empty($defaults['model'])) {
+            return $defaults['model'];
         }
         return defined('LLM_DEFAULT_MODEL') ? LLM_DEFAULT_MODEL : 'gpt-oss-120b';
     }
@@ -116,14 +114,9 @@ class LlmFormModel extends FormUserInputModel
         if ($this->llm_temperature !== '' && $this->llm_temperature !== null) {
             return floatval($this->llm_temperature);
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if ($defaults['temperature'] !== '') {
-                return floatval($defaults['temperature']);
-            }
-        } catch (Exception $e) {
-            // fall through
+        $defaults = $this->getModuleDefaults();
+        if (isset($defaults['temperature']) && $defaults['temperature'] !== '') {
+            return floatval($defaults['temperature']);
         }
         return floatval(defined('LLM_DEFAULT_TEMPERATURE') ? LLM_DEFAULT_TEMPERATURE : 1);
     }
@@ -134,14 +127,9 @@ class LlmFormModel extends FormUserInputModel
         if ($this->llm_max_tokens !== '' && $this->llm_max_tokens !== null) {
             return intval($this->llm_max_tokens);
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if ($defaults['max_tokens'] !== '') {
-                return intval($defaults['max_tokens']);
-            }
-        } catch (Exception $e) {
-            // fall through
+        $defaults = $this->getModuleDefaults();
+        if (isset($defaults['max_tokens']) && $defaults['max_tokens'] !== '') {
+            return intval($defaults['max_tokens']);
         }
         return intval(defined('LLM_DEFAULT_MAX_TOKENS') ? LLM_DEFAULT_MAX_TOKENS : 2048);
     }
@@ -156,16 +144,31 @@ class LlmFormModel extends FormUserInputModel
         if ($this->llm_reasoning_effort !== '' && $this->llm_reasoning_effort !== null) {
             return (string)$this->llm_reasoning_effort;
         }
-        try {
-            $llmService = new LlmService($this->services);
-            $defaults = $llmService->getModuleDefaults();
-            if (isset($defaults['reasoning_effort']) && $defaults['reasoning_effort'] !== '') {
-                return (string)$defaults['reasoning_effort'];
-            }
-        } catch (Exception $e) {
-            // fall through
+        $defaults = $this->getModuleDefaults();
+        if (isset($defaults['reasoning_effort']) && $defaults['reasoning_effort'] !== '') {
+            return (string)$defaults['reasoning_effort'];
         }
         return defined('LLM_REASONING_EFFORT_DEFAULT') ? LLM_REASONING_EFFORT_DEFAULT : '';
+    }
+
+    /**
+     * Module-wide model/temperature/token/effort defaults, read once per model.
+     * An unreadable config yields no defaults, so callers fall back to the
+     * LLM_DEFAULT_* constants.
+     *
+     * @return array
+     */
+    private function getModuleDefaults()
+    {
+        if ($this->module_defaults === null) {
+            try {
+                $llmService = new LlmService($this->services);
+                $this->module_defaults = $llmService->getModuleDefaults();
+            } catch (Exception $e) {
+                $this->module_defaults = array();
+            }
+        }
+        return $this->module_defaults;
     }
 
     /** @return string System prompt / context template with optional `{{field}}` placeholders. */
