@@ -26,7 +26,6 @@ require_once __DIR__ . '/../exception/LlmValidationException.php';
  * ```
  * 
  * @package LLM Plugin
- * @version 1.0.0
  */
 class LlmValidator
 {

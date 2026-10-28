@@ -10,7 +10,6 @@ require_once __DIR__ . '/../service/prompt/LlmPromptAssetLoader.php';
  * The frontend React components parse responses according to this schema.
  * 
  * @see doc/response-schema.md for complete documentation
- * @version 1.0.0
  */
 
 class LlmResponseSchema

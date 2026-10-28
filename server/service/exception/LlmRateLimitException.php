@@ -24,7 +24,6 @@ require_once __DIR__ . '/LlmException.php';
  * ```
  * 
  * @package LLM Plugin
- * @version 1.0.0
  */
 class LlmRateLimitException extends LlmException
 {
