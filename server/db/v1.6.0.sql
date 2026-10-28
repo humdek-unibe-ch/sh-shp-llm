@@ -420,6 +420,24 @@ CALL add_table_column(
     'INT DEFAULT NULL COMMENT ''Completion / output tokens from provider usage (new messages only)'''
 );
 
+-- =====================================================
+-- 10. Admin console: ACL per action
+-- =====================================================
+-- The conversation admin console now asks for more than `select`:
+-- `update` to block/unblock conversations and to see the sent context /
+-- request payload of each message, `delete` to delete a conversation.
+-- `select` alone still lists and reads conversations. v1.0.0 gave the
+-- admin group `select` only, which used to be enough for everything: keep
+-- the admin group able to moderate. Other groups keep exactly what they
+-- have (grant update/delete on the moduleLlmAdminConsole page in the CMS to
+-- let them moderate).
+
+UPDATE `acl_groups`
+SET `acl_update` = '1', `acl_delete` = '1'
+WHERE `id_groups` = (SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1)
+  AND `id_pages` = (SELECT id FROM `pages` WHERE `keyword` = 'moduleLlmAdminConsole' LIMIT 1)
+  AND `acl_select` = '1' AND `acl_update` = '0' AND `acl_delete` = '0';
+
 -- Version bump last: a failed DDL statement above must never mark v1.6.0
 -- as installed (DDL commits implicitly, so ordering is the only guard).
 UPDATE plugins SET version = 'v1.6.0' WHERE `name` = 'llm';

@@ -7,6 +7,7 @@
 require_once __DIR__ . "/../../../../../component/BaseController.php";
 require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 
 /**
  * Controller for the LLM Admin Console module.
@@ -17,6 +18,10 @@ require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
  *
  * Actions are dispatched via the `action` GET/POST parameter. All responses
  * are returned as JSON through LlmJsonResponseTrait.
+ *
+ * Access: the page ACL (`select`) lets a user in and read. Each action then asks
+ * for its own ACL mode on the page - `update` to block/unblock, `delete` to
+ * delete - and the changing actions must be POSTs carrying the session CSRF token.
  *
  * @package LLM Plugin
  * @see ModuleLlmAdminConsoleModel For data retrieval logic
@@ -50,6 +55,35 @@ class ModuleLlmAdminConsoleController extends BaseController
         $action = $_GET['action'] ?? $_POST['action'] ?? null;
         if (!$action) {
             return;
+        }
+
+        // ACL mode every action needs on this page (the page itself only asks for `select`)
+        $required_mode = [
+            'admin_filters' => 'select',
+            'admin_conversations' => 'select',
+            'admin_messages' => 'select',
+            'admin_block_conversation' => 'update',
+            'admin_unblock_conversation' => 'update',
+            'admin_delete_conversation' => 'delete',
+        ];
+        if (!is_string($action) || !isset($required_mode[$action])) {
+            $this->sendJsonResponse(['error' => 'Unknown action'], 400);
+            return;
+        }
+        if (!$this->model->hasPageAccess($required_mode[$action])) {
+            $this->sendJsonResponse(['error' => 'Access denied'], 403);
+            return;
+        }
+        if ($required_mode[$action] !== 'select') {
+            // Changing actions: POST only, with the session CSRF token
+            if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+                $this->sendJsonResponse(['error' => 'Method not allowed'], 405);
+                return;
+            }
+            if (!LlmCsrfService::verifyRequest()) {
+                $this->sendJsonResponse(['error' => 'Invalid CSRF token'], 403);
+                return;
+            }
         }
 
         switch ($action) {
@@ -161,8 +195,9 @@ class ModuleLlmAdminConsoleController extends BaseController
     /**
      * Return the full message history for a specific conversation.
      *
-     * Includes all messages (validated and unvalidated) with raw_response,
-     * sent_context, reasoning, and request_payload for admin inspection.
+     * Includes all messages (validated and unvalidated). The sent context and
+     * request payload of each message (the prompts and settings behind the
+     * answers) are only included for users with `update` access.
      *
      * Requires GET parameter: conversation_id.
      */
@@ -175,7 +210,7 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
 
         try {
-            $result = $this->model->getAdminConversationMessages($conversation_id);
+            $result = $this->model->getAdminConversationMessages($conversation_id, $this->model->hasPageAccess('update'));
             if ($result === null) {
                 $this->sendJsonResponse(['error' => 'Conversation not found'], 404);
                 return;

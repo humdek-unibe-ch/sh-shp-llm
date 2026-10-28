@@ -112,10 +112,33 @@ class ModuleLlmAdminConsoleModel extends BaseModel
 
     /**
      * Get messages for a specific conversation (admin view)
+     *
+     * @param int $conversation_id
+     * @param bool $include_debug Include each message's sent context and request payload
      */
-    public function getAdminConversationMessages($conversation_id)
+    public function getAdminConversationMessages($conversation_id, $include_debug = false)
     {
-        return $this->llm_admin_service->getAdminConversationMessages($conversation_id);
+        return $this->llm_admin_service->getAdminConversationMessages($conversation_id, $include_debug);
+    }
+
+    /**
+     * Whether the current user holds an ACL mode on the admin console page.
+     *
+     * The page itself only asks for `select`. The console works with finer
+     * grained rights: `update` to block/unblock conversations and to see the
+     * prompts and request payloads behind the answers, `delete` to delete a
+     * conversation.
+     *
+     * @param string $mode select, insert, update or delete
+     * @return bool
+     */
+    public function hasPageAccess($mode)
+    {
+        $user_id = $_SESSION['id_user'] ?? 0;
+        if (!$user_id || !$this->id_page) {
+            return false;
+        }
+        return (bool)$this->services->get_acl()->has_access($user_id, $this->id_page, $mode);
     }
 
     /**

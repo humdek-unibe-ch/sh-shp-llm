@@ -17,6 +17,28 @@ class LlmAdminService extends LlmService
 {
     /* Private Methods *********************************************************/
 
+    /**
+     * Audit entry for a moderation action. The transaction's user is the actor,
+     * so it is the admin who acted - not the participant who owns the conversation
+     * (the owner is named in the text instead).
+     *
+     * @param string $operation Transaction type constant
+     * @param array $conversation Row with at least id and id_users
+     * @param int|null $admin_user_id The acting admin (session user when empty)
+     * @param string $details What happened
+     */
+    private function logAdminAction($operation, $conversation, $admin_user_id, $details)
+    {
+        $actor = $admin_user_id ?: ($_SESSION['id_user'] ?? null);
+        $this->logTransaction(
+            $operation,
+            'llmConversations',
+            $conversation['id'],
+            $actor ?: $conversation['id_users'],
+            $details . " (owner user ID: {$conversation['id_users']})"
+        );
+    }
+
     /* Public Methods *********************************************************/
 
     /**
@@ -75,6 +97,10 @@ class LlmAdminService extends LlmService
      */
     public function getAdminConversations($filters = [], $page = 1, $per_page = 50)
     {
+        // Both end up in LIMIT/OFFSET: keep them positive and bounded
+        $page = max(1, min((int)$page, 100000));
+        $per_page = max(1, min((int)$per_page, 100));
+
         $where = [];
         $params = [];
 
@@ -170,8 +196,13 @@ class LlmAdminService extends LlmService
     /**
      * Get messages for a specific conversation (admin view)
      * Enhanced with validation code information
+     *
+     * @param int $conversation_id
+     * @param bool $include_debug Include the sent context and request payload of each
+     *  message (the prompts and settings behind the answers); only for users who may
+     *  change the console's data.
      */
-    public function getAdminConversationMessages($conversation_id)
+    public function getAdminConversationMessages($conversation_id, $include_debug = false)
     {
         // Get conversation details
         $conversation = $this->db->query_db_first(
@@ -195,7 +226,7 @@ class LlmAdminService extends LlmService
 
         // Get ALL messages including unvalidated ones (admin view)
         // Use getAdminMessages instead of getConversationMessages to include failed attempts
-        $messages = $this->getAdminMessages($conversation_id);
+        $messages = $this->getAdminMessages($conversation_id, LLM_DEFAULT_MESSAGE_LIMIT, $include_debug);
 
         return [
             'conversation' => $conversation,
@@ -208,9 +239,12 @@ class LlmAdminService extends LlmService
      * 
      * Returns ALL messages including unvalidated ones (failed schema validation attempts).
      * This is for debugging purposes - users only see validated messages.
+     *
+     * @param bool $include_debug Add sent_context and request_payload to every row
      */
-    public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
+    public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT, $include_debug = false)
     {
+        $debug_columns = $include_debug ? ", m.sent_context, m.request_payload" : "";
         return $this->db->query_db(
             "SELECT
                 m.id,
@@ -222,9 +256,8 @@ class LlmAdminService extends LlmService
                 m.prompt_tokens,
                 m.completion_tokens,
                 m.timestamp,
-                m.sent_context,
-                m.is_validated,
-                m.request_payload
+                m.is_validated
+                {$debug_columns}
              FROM llmMessages m
              WHERE m.id_llmConversations = :conversation_id
              ORDER BY m.timestamp ASC, m.id ASC
@@ -268,14 +301,7 @@ class LlmAdminService extends LlmService
                 ['id_llmConversations' => $conversation_id]
             );
             
-            // Log the action
-            $this->logTransaction(
-                transactionTypes_delete,
-                'llmConversations',
-                $conversation_id,
-                $conversation['id_users'],
-                'Admin deleted conversation' . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
-            );
+            $this->logAdminAction(transactionTypes_delete, $conversation, $admin_user_id, 'Admin deleted conversation');
         }
         
         return $result;
@@ -320,14 +346,7 @@ class LlmAdminService extends LlmService
         );
         
         if ($result) {
-            // Log the action
-            $this->logTransaction(
-                transactionTypes_update,
-                'llmConversations',
-                $conversation_id,
-                $conversation['id_users'],
-                "Admin blocked conversation. Reason: {$block_reason}" . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
-            );
+            $this->logAdminAction(transactionTypes_update, $conversation, $admin_user_id, "Admin blocked conversation. Reason: {$block_reason}");
         }
         
         return $result;
@@ -369,14 +388,7 @@ class LlmAdminService extends LlmService
         );
         
         if ($result) {
-            // Log the action
-            $this->logTransaction(
-                transactionTypes_update,
-                'llmConversations',
-                $conversation_id,
-                $conversation['id_users'],
-                'Admin unblocked conversation' . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
-            );
+            $this->logAdminAction(transactionTypes_update, $conversation, $admin_user_id, 'Admin unblocked conversation');
         }
         
         return $result;
