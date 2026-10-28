@@ -5,6 +5,7 @@
 
 require_once __DIR__ . "/../../../../../../component/style/formUserInputLogList/FormUserInputLogListView.php";
 require_once __DIR__ . "/../../../service/LlmFormSchemaService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 
 /**
  * View for llmFormLogList: inherits the core list/actions/CMS rendering and
@@ -153,7 +154,7 @@ class LlmFormLogListView extends FormUserInputLogListView
                 'continue' => $this->model->cmsText('confirmation_continue', ''),
                 'cancel' => $this->model->cmsText('label_cancel', ''),
             ),
-            'csrfToken' => $this->getCsrfToken(),
+            'csrfToken' => LlmCsrfService::getToken(),
             'chatPosition' => $this->model->getInterviewChatPosition(),
             'progressLayout' => $this->model->getInterviewProgressLayout(),
             'allowManualEdit' => $this->model->isInterviewAllowManualEdit(),
@@ -186,18 +187,6 @@ class LlmFormLogListView extends FormUserInputLogListView
         return trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
     }
 
-    /**
-     * Session CSRF token for interview mutations; generated once per session.
-     *
-     * @return string
-     */
-    private function getCsrfToken()
-    {
-        if (empty($_SESSION['csrf_token'])) {
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(16));
-        }
-        return $_SESSION['csrf_token'];
-    }
 
     /**
      * Render one field's native control fragment by name - used by the

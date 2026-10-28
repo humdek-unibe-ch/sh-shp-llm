@@ -10,6 +10,7 @@ require_once __DIR__ . '/../service/LlmPromptBuilderService.php';
 require_once __DIR__ . '/../service/LlmPromptRuntimeValueService.php';
 require_once __DIR__ . '/../service/LlmDatasetService.php';
 require_once __DIR__ . '/../service/LlmEvaluationService.php';
+require_once __DIR__ . '/../service/LlmCsrfService.php';
 
 class AjaxLlmPromptLab extends BaseAjax
 {
@@ -1133,12 +1134,13 @@ class AjaxLlmPromptLab extends BaseAjax
     }
 
     /**
-     * Validate the CSRF token from POST data or HTTP header against session tokens.
+     * Validate the CSRF token from POST data or HTTP header against the session token.
      *
-     * Silently skips if no session token is available (some installations omit CSRF for plugins).
+     * Strict: a session without a token is refused too. Every page that talks to this
+     * endpoint gets its token from LlmCsrfService::getToken().
      *
      * @param array $post POST data with 'csrf_token' or 'token'.
-     * @throws Exception If a session token exists but does not match.
+     * @throws Exception If the token is missing or does not match.
      */
     private function assertCsrf($post)
     {
@@ -1146,31 +1148,9 @@ class AjaxLlmPromptLab extends BaseAjax
             ?? $post['token']
             ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
 
-        $session_tokens = array_values(array_filter(array(
-            $_SESSION['csrf_token'] ?? '',
-            $_SESSION['token'] ?? '',
-            $_SESSION['security_token'] ?? ''
-        ), function ($value) {
-            return is_string($value) && trim($value) !== '';
-        }));
-
-        // Some installations do not expose a session CSRF token to plugin AJAX.
-        // In that case keep ACL protection and skip token comparison.
-        if (empty($session_tokens)) {
-            return;
-        }
-
-        if (!is_string($token) || trim($token) === '') {
+        if (!LlmCsrfService::isValid($token)) {
             throw new Exception('Invalid CSRF token');
         }
-
-        foreach ($session_tokens as $session_token) {
-            if (hash_equals((string)$session_token, (string)$token)) {
-                return;
-            }
-        }
-
-        throw new Exception('Invalid CSRF token');
     }
 
     /**

@@ -7,6 +7,7 @@
 require_once __DIR__ . "/../../../../../component/BaseView.php";
 require_once __DIR__ . "/../../../../../component/style/BaseStyleComponent.php";
 require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 
 /**
  * View for the LLM Scripts module.
@@ -87,25 +88,9 @@ class ModuleLlmScriptView extends BaseView
         }
 
         return json_encode([
-            'csrfToken' => $this->resolveCsrfToken(),
+            'csrfToken' => LlmCsrfService::getToken(),
             'promptLabEndpoint' => $prompt_endpoint,
         ]);
-    }
-
-    /** @return string CSRF token from session. */
-    private function resolveCsrfToken()
-    {
-        if (!empty($_SESSION['csrf_token'])) {
-            return (string)$_SESSION['csrf_token'];
-        }
-        if (!empty($_SESSION['token'])) {
-            return (string)$_SESSION['token'];
-        }
-        if (!empty($_SESSION['security_token'])) {
-            return (string)$_SESSION['security_token'];
-        }
-
-        return '';
     }
 }
 ?>

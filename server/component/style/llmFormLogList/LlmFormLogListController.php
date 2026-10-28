@@ -7,6 +7,7 @@ require_once __DIR__ . "/../../../../../../component/style/formUserInputLogList/
 require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmFormInterviewService.php";
 require_once __DIR__ . "/../../../service/LlmSpeechToTextService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/LlmFormLogListView.php";
 
 /**
@@ -30,8 +31,6 @@ class LlmFormLogListController extends FormUserInputLogListController
 
     const ACTION_PARAM = '__llm_interview_action';
     const SECTION_PARAM = 'section_id';
-    const CSRF_PARAM = 'csrf_token';
-    const CSRF_SESSION_KEY = 'csrf_token';
 
     private $interview_service;
     private $approval_prep = null;
@@ -478,18 +477,12 @@ class LlmFormLogListController extends FormUserInputLogListController
     /* Request helpers ********************************************************/
 
     /**
-     * Strict CSRF: the session token must exist and the posted token must
-     * match it exactly; no alternates and no "missing session" bypass.
+     * Strict CSRF (LlmCsrfService): the session token must exist and the
+     * posted token must match it exactly; no "missing session" bypass.
      */
     private function verifyCsrf()
     {
-        $session_token = isset($_SESSION[self::CSRF_SESSION_KEY])
-            ? (string)$_SESSION[self::CSRF_SESSION_KEY] : '';
-        $posted = isset($_POST[self::CSRF_PARAM]) ? $_POST[self::CSRF_PARAM] : '';
-        return $session_token !== ''
-            && is_scalar($posted)
-            && (string)$posted !== ''
-            && hash_equals($session_token, (string)$posted);
+        return LlmCsrfService::isValid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '');
     }
 
     /**
