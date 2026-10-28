@@ -19,10 +19,15 @@ require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
  * 5. Provides context injection text for LLM safety instructions
  *
  * @author SelfHelp Team
- * @version 1.1.0
  */
 class LlmDangerDetectionService extends BaseLlmService
 {
+    /**
+     * Other words allowed between two words of a keyword phrase
+     * ("kill really myself" still matches the keyword "kill myself")
+     */
+    const PHRASE_MAX_GAP_WORDS = 1;
+
     /**
      * @var object Model instance for configuration access
      */
@@ -64,7 +69,7 @@ class LlmDangerDetectionService extends BaseLlmService
      * 
      * This is the main entry point for danger detection. It:
      * 1. Scans the message for configured danger keywords
-     * 2. If detected, logs the detection and sends notifications
+     * 2. If detected, blocks the conversation, logs the detection and sends notifications
      * 3. Returns a result array indicating if the message is safe
      * 
      * @param string $message The user message to check
@@ -77,27 +82,7 @@ class LlmDangerDetectionService extends BaseLlmService
      */
     public function checkMessage($message, $user_id, $conversation_id = null)
     {
-        // If danger detection is not enabled, message is safe
-        if (!$this->isEnabled()) {
-            return [
-                'safe' => true,
-                'message' => null,
-                'detected_keywords' => []
-            ];
-        }
-
-        // Get configured keywords
-        $keywords = $this->getKeywords();
-        if (empty($keywords)) {
-            return [
-                'safe' => true,
-                'message' => null,
-                'detected_keywords' => []
-            ];
-        }
-
-        // Scan message for danger keywords
-        $detected = $this->scanMessage($message, $keywords);
+        $detected = $this->detectKeywords($message);
 
         if (empty($detected)) {
             return [
@@ -107,7 +92,43 @@ class LlmDangerDetectionService extends BaseLlmService
             ];
         }
 
-        // Danger detected! Log, notify, and block conversation
+        return $this->handleDetection($detected, $message, $user_id, $conversation_id);
+    }
+
+    /**
+     * Scan a message for the configured danger keywords without any side effect
+     * (no blocking, audit log or email), so callers that hold a database lock can
+     * decide first and run handleDetection() after releasing it.
+     *
+     * @param string $message The user message to scan
+     * @return array Detected keywords (empty when safe or when detection is disabled)
+     */
+    public function detectKeywords($message)
+    {
+        if (!$this->isEnabled()) {
+            return [];
+        }
+
+        $keywords = $this->getKeywords();
+        if (empty($keywords)) {
+            return [];
+        }
+
+        return $this->scanMessage($message, $keywords);
+    }
+
+    /**
+     * Apply the consequences of a keyword detection: block the conversation (if it
+     * exists), write the audit log and send the alert emails.
+     *
+     * @param array $detected Keywords returned by detectKeywords()
+     * @param string $message The user message that triggered the detection
+     * @param int $user_id The user ID
+     * @param int|null $conversation_id The conversation ID (may be null for new conversations)
+     * @return array Blocked result, same shape as checkMessage() with 'safe' => false
+     */
+    public function handleDetection($detected, $message, $user_id, $conversation_id = null)
+    {
         $section_id = $this->model->getSectionId();
 
         // Block the conversation if it exists
@@ -174,9 +195,12 @@ class LlmDangerDetectionService extends BaseLlmService
             return $this->keywords_cache;
         }
 
-        // Parse comma-separated keywords, trim whitespace, lowercase, deduplicate
+        // Parse comma-separated keywords, trim whitespace, lowercase (UTF-8 aware, so
+        // non-English keywords such as "töten" match "TÖTEN"), deduplicate
         $keywords = array_map('trim', explode(',', $keywords_str));
-        $keywords = array_map('strtolower', $keywords);
+        $keywords = array_map(function ($keyword) {
+            return mb_strtolower($keyword, 'UTF-8');
+        }, $keywords);
         $keywords = array_filter($keywords); // Remove empty strings
         $keywords = array_unique($keywords);
         $keywords = array_values($keywords); // Re-index
@@ -263,6 +287,15 @@ class LlmDangerDetectionService extends BaseLlmService
     {
         $safety = $response_service->assessSafety($parsed_response);
 
+        if (!$safety['assessed']) {
+            // No model-produced assessment for this turn: "unknown", not "safe".
+            // Keyword detection (checkMessage) is the only check that ran, so leave a trace.
+            if ($this->isEnabled()) {
+                $this->logSafetyUnavailable($user_id, $conversation_id, $section_id);
+            }
+            return;
+        }
+
         if ($safety['is_safe'] && $safety['danger_level'] === null) {
             return;
         }
@@ -288,6 +321,41 @@ class LlmDangerDetectionService extends BaseLlmService
                 $conversation_id,
                 $section_id
             );
+        }
+    }
+
+    /**
+     * Record that an LLM turn carried no safety assessment (the model omitted it or the
+     * response had to be rebuilt from a failed validation), so admins can see the gap.
+     *
+     * @param int $user_id User ID
+     * @param int $conversation_id Conversation ID
+     * @param int $section_id Section ID
+     */
+    private function logSafetyUnavailable($user_id, $conversation_id, $section_id)
+    {
+        $this->logWarning('Safety assessment unavailable for LLM response', [
+            'conversation_id' => $conversation_id,
+            'section_id' => $section_id
+        ]);
+
+        try {
+            $this->services->get_transaction()->add_transaction(
+                transactionTypes_insert,
+                TRANSACTION_BY_LLM_PLUGIN,
+                $user_id,
+                'llm_safety_unavailable',
+                $section_id,
+                false,
+                json_encode([
+                    'event' => 'llm_safety_unavailable',
+                    'conversation_id' => $conversation_id,
+                    'section_id' => $section_id,
+                    'timestamp' => date('Y-m-d H:i:s')
+                ], JSON_UNESCAPED_UNICODE)
+            );
+        } catch (Exception $e) {
+            $this->logError('Failed to log safety-unavailable transaction', $e);
         }
     }
 
@@ -335,9 +403,9 @@ class LlmDangerDetectionService extends BaseLlmService
     /**
      * Scan a message for danger keywords
      * 
-     * Uses word-boundary matching to avoid false positives.
-     * For example, "skill" should not match "kill".
-     * Also includes typo tolerance for common misspellings.
+     * Single words use word-boundary matching to avoid false positives
+     * (e.g. "skill" must not match "kill"). Phrases tolerate typos, see
+     * phraseMatchesWithTypos(). Matching is UTF-8 aware and case-insensitive.
      * 
      * @param string $message The message to scan
      * @param array $keywords The keywords to look for
@@ -346,81 +414,150 @@ class LlmDangerDetectionService extends BaseLlmService
     private function scanMessage($message, $keywords)
     {
         $detected = [];
-        $message_lower = strtolower($message);
-
+        $message_lower = mb_strtolower($message, 'UTF-8');
 
         foreach ($keywords as $keyword) {
-            // Escape regex special characters in keyword
-            $escaped_keyword = preg_quote($keyword, '/');
-
-            // Use word boundary matching for single words
-            // For phrases (containing spaces), use simple contains check
             if (strpos($keyword, ' ') !== false) {
-                // Phrase: check if it exists in message (with typo tolerance)
                 if ($this->phraseMatchesWithTypos($message_lower, $keyword)) {
                     $detected[] = $keyword;
                 }
             } else {
-                // Single word: use word boundary matching
-                $pattern = '/\b' . $escaped_keyword . '\b/iu';
+                $pattern = '/\b' . preg_quote($keyword, '/') . '\b/iu';
                 if (preg_match($pattern, $message_lower)) {
                     $detected[] = $keyword;
                 }
             }
         }
 
-
-        return array_unique($detected);
+        return array_values(array_unique($detected));
     }
 
     /**
-     * Check if a phrase matches with typo tolerance
-     * 
-     * Allows for simple typos like "myslef" matching "myself"
-     * 
-     * @param string $message The message to check
-     * @param string $phrase The phrase to look for
-     * @return bool True if phrase matches (with or without typos)
+     * Check if a keyword phrase occurs in a message, tolerating typos.
+     *
+     * The exact phrase always matches. Otherwise every word of the phrase must match a
+     * message word, in order, with at most PHRASE_MAX_GAP_WORDS other words in between.
+     * A word matches when it is within a small edit distance of the keyword word (see
+     * wordMatchesWithTypos()), so "kill myslef" still matches "kill myself".
+     *
+     * @param string $message Lowercased message
+     * @param string $phrase Lowercased keyword phrase
+     * @return bool True if the phrase matches (with or without typos)
      */
     private function phraseMatchesWithTypos($message, $phrase)
     {
-        // Direct match
         if (strpos($message, $phrase) !== false) {
             return true;
         }
 
-        // For critical phrases, check with typo tolerance
-        // Split phrase into words and check if all words appear nearby (within 5 characters)
-        $words = explode(' ', $phrase);
-        if (count($words) <= 1) {
+        $phrase_words = $this->splitWords($phrase);
+        if (count($phrase_words) < 2) {
+            return false;
+        }
+        $message_words = $this->splitWords($message);
+        $message_word_count = count($message_words);
+
+        foreach ($message_words as $start => $word) {
+            if (!$this->wordMatchesWithTypos($word, $phrase_words[0])) {
+                continue;
+            }
+
+            $position = $start;
+            $all_found = true;
+            for ($i = 1; $i < count($phrase_words); $i++) {
+                $found = false;
+                $last_candidate = min($position + 1 + self::PHRASE_MAX_GAP_WORDS, $message_word_count - 1);
+                for ($next = $position + 1; $next <= $last_candidate; $next++) {
+                    if ($this->wordMatchesWithTypos($message_words[$next], $phrase_words[$i])) {
+                        $position = $next;
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    $all_found = false;
+                    break;
+                }
+            }
+
+            if ($all_found) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Split text into words (Unicode letters and digits).
+     *
+     * @param string $text Text to split
+     * @return array List of words
+     */
+    private function splitWords($text)
+    {
+        return preg_split('/[^\p{L}\p{N}]+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
+    }
+
+    /**
+     * Check whether a message word equals a keyword word, allowing typos.
+     *
+     * Allowed edits scale with the keyword length: none up to 4 letters (short words
+     * collide with ordinary ones, "kill" vs "will"), 1 from 5 letters, 2 from 9 letters.
+     *
+     * @param string $word Word from the message
+     * @param string $target Word from the keyword phrase
+     * @return bool True if the words match
+     */
+    private function wordMatchesWithTypos($word, $target)
+    {
+        if ($word === $target) {
+            return true;
+        }
+
+        $target_length = mb_strlen($target, 'UTF-8');
+        $max_edits = $target_length >= 9 ? 2 : ($target_length >= 5 ? 1 : 0);
+        if ($max_edits === 0 || abs(mb_strlen($word, 'UTF-8') - $target_length) > $max_edits) {
             return false;
         }
 
-        // For multi-word phrases, use a more lenient check
-        // Check if all words appear in order within a reasonable distance
-        $lastPos = -1;
-        foreach ($words as $word) {
-            // Allow for 1 character variation (typo) in each word
-            $escapedWord = preg_quote($word, '/');
-            // Simple typo pattern: allow up to 2 characters different
-            $pattern = '/' . $escapedWord . '/i';
-            
-            $pos = strpos($message, $word, $lastPos + 1);
-            if ($pos === false) {
-                // Word not found exactly - try with one character variation
-                // For now, just return false (can be enhanced with Levenshtein distance)
-                return false;
-            }
-            
-            // Check if word is within reasonable distance (max 10 characters from previous word)
-            if ($lastPos !== -1 && $pos - $lastPos > 10) {
-                return false;
-            }
-            
-            $lastPos = $pos;
+        return $this->editDistance($word, $target) <= $max_edits;
+    }
+
+    /**
+     * Edit distance between two UTF-8 strings: insertions, deletions, substitutions and
+     * swaps of two neighbouring letters ("myslef" -> "myself" is 1 edit).
+     *
+     * @param string $a First string
+     * @param string $b Second string
+     * @return int Number of edits
+     */
+    private function editDistance($a, $b)
+    {
+        $a = preg_split('//u', $a, -1, PREG_SPLIT_NO_EMPTY);
+        $b = preg_split('//u', $b, -1, PREG_SPLIT_NO_EMPTY);
+        $rows = count($a);
+        $cols = count($b);
+
+        $d = [];
+        for ($i = 0; $i <= $rows; $i++) {
+            $d[$i][0] = $i;
+        }
+        for ($j = 0; $j <= $cols; $j++) {
+            $d[0][$j] = $j;
         }
 
-        return true;
+        for ($i = 1; $i <= $rows; $i++) {
+            for ($j = 1; $j <= $cols; $j++) {
+                $cost = $a[$i - 1] === $b[$j - 1] ? 0 : 1;
+                $d[$i][$j] = min($d[$i - 1][$j] + 1, $d[$i][$j - 1] + 1, $d[$i - 1][$j - 1] + $cost);
+                if ($i > 1 && $j > 1 && $a[$i - 1] === $b[$j - 2] && $a[$i - 2] === $b[$j - 1]) {
+                    $d[$i][$j] = min($d[$i][$j], $d[$i - 2][$j - 2] + 1);
+                }
+            }
+        }
+
+        return $d[$rows][$cols];
     }
 
     /**
@@ -504,6 +641,9 @@ class LlmDangerDetectionService extends BaseLlmService
 
             $body = $this->buildEmailBody($keywords_str, $user_id, $conversation_id, $section_id, $timestamp, $message_excerpt);
 
+            // Same sender the core uses for its own system emails
+            $sender = $this->getSystemSenderAddress();
+
             // Send to each email address
             $sent = false;
             foreach ($emails as $email) {
@@ -516,9 +656,9 @@ class LlmDangerDetectionService extends BaseLlmService
                     'id_jobTypes' => $this->db->get_lookup_id_by_value(jobTypes, jobTypes_email),
                     'id_jobStatus' => $this->db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
                     'date_to_be_executed' => date('Y-m-d H:i:s', time()), // Immediate execution
-                    'from_email' => $this->getFromEmail(),
+                    'from_email' => $sender,
                     'from_name' => 'SelfHelp Safety Alert',
-                    'reply_to' => $this->getReplyToEmail(),
+                    'reply_to' => $sender,
                     'recipient_emails' => $email,
                     'subject' => '[SAFETY ALERT] Danger keyword detected in LLM conversation',
                     'body' => $body,
@@ -558,6 +698,10 @@ class LlmDangerDetectionService extends BaseLlmService
 
     /**
      * Build email notification body
+     *
+     * The core mailer renders the body as Markdown -> HTML (safe mode off). The detected
+     * terms and the message excerpt come from users or from the model, so they are
+     * neutralised first (see escapeForAlert()); ids are cast to integers.
      * 
      * @param string $keywords_str Comma-separated detected keywords
      * @param int $user_id User ID
@@ -569,7 +713,11 @@ class LlmDangerDetectionService extends BaseLlmService
      */
     private function buildEmailBody($keywords_str, $user_id, $conversation_id, $section_id, $timestamp, $message_excerpt)
     {
-        $conversation_str = $conversation_id ? $conversation_id : 'N/A (new conversation)';
+        $keywords_str = $this->escapeForAlert($keywords_str);
+        $message_excerpt = $this->escapeForAlert($message_excerpt);
+        $user_id = (int) $user_id;
+        $section_id = (int) $section_id;
+        $conversation_str = $conversation_id ? (string) (int) $conversation_id : 'N/A (new conversation)';
 
         return <<<EOT
 # SAFETY ALERT - Danger Word Detection
@@ -601,37 +749,41 @@ EOT;
     }
 
     /**
-     * Get the from email address for notifications
-     * Uses the first configured notification email address
+     * Neutralise untrusted text for the alert email: collapsed to one line and wrapped in a
+     * Markdown code span, which the mailer HTML-escapes and which is never parsed for
+     * links, emphasis, tags, headings or table cells.
      *
-     * @return string From email address
+     * @param string $text Untrusted text
+     * @return string Code span that renders the text literally
      */
-    private function getFromEmail()
+    private function escapeForAlert($text)
     {
-        $emails = $this->model->getDangerNotificationEmails();
-        if (!empty($emails)) {
-            // Use the first configured email as the from address
-            return $emails[0];
-        }
-        // Fallback to default
-        return 'selfhelp@unibe.ch';
+        $text = trim(preg_replace('/\s+/u', ' ', (string) $text));
+        $text = str_replace('`', "'", $text);
+
+        return '`' . ($text === '' ? '-' : $text) . '`';
     }
 
     /**
-     * Get the reply-to email address for notifications
-     * Uses the first configured notification email address
+     * Sender address for safety alerts: the address the core system uses for its own
+     * emails (CMS `email` page, "activate email" sender), or the core default
+     * noreply@<host> when none is configured.
      *
-     * @return string Reply-to email address
+     * @return string From / reply-to email address
      */
-    private function getReplyToEmail()
+    private function getSystemSenderAddress()
     {
-        $emails = $this->model->getDangerNotificationEmails();
-        if (!empty($emails)) {
-            // Use the first configured email as reply-to
-            return $emails[0];
+        $email_page = $this->db->fetch_page_info(SH_EMAIL);
+        $from = isset($email_page[PF_EMAIL_ACTIVATE_EMAIL_ADDRESS]) ? trim($email_page[PF_EMAIL_ACTIVATE_EMAIL_ADDRESS]) : '';
+        if ($from !== '' && filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            return $from;
         }
-        // Fallback to default
-        return 'noreply@unibe.ch';
+
+        $host = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? '');
+        if (!preg_match('/^[A-Za-z0-9.-]+$/', $host)) {
+            $host = 'localhost';
+        }
+        return 'noreply@' . $host;
     }
 }
 ?>
