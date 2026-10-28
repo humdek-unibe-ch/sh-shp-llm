@@ -23,6 +23,8 @@ interface FieldDef {
   help: string;
   value: string;
   options?: { value: string; label: string }[];
+  /** Extra information from the server (API keys: encryption status). */
+  meta?: any;
 }
 
 interface SettingsGroup {
@@ -48,6 +50,15 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Record<string, string>>({});
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [protecting, setProtecting] = useState(false);
+
+  /** Headers of the requests that change data: JSON body + session CSRF token. */
+  const postHeaders = (): Record<string, string> => ({
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+    'X-CSRF-Token': config.csrfToken ?? '',
+  });
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -87,21 +98,56 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
     setSuccess(null);
   };
 
+  /** "Label: message" lines for the per-field messages of a rejected save. */
+  const flattenErrors = (errors: Record<string, string[]>): string[] => {
+    const labelOf = (name: string): string => {
+      for (const group of Object.values(data?.settings ?? {})) {
+        const found = group.fields.find(f => f.name === name);
+        if (found) return found.label;
+      }
+      return name;
+    };
+    return Object.entries(errors).flatMap(([name, messages]) =>
+      (Array.isArray(messages) ? messages : [String(messages)]).map(m => `${labelOf(name)}: ${m}`)
+    );
+  };
+
+  const handleProtectKeys = async () => {
+    try {
+      setProtecting(true);
+      setError(null);
+      setSuccess(null);
+      setValidationErrors([]);
+      const res = await fetch(window.location.pathname + '?action=protect_keys', {
+        method: 'POST',
+        headers: postHeaders(),
+        body: '{}',
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setSuccess(`Encrypted ${json.converted ?? 0} API key(s).`);
+      fetchConfig();
+    } catch (e: any) {
+      setError(e.message || 'Failed to encrypt the API keys');
+    } finally {
+      setProtecting(false);
+    }
+  };
+
   const handleSave = async () => {
     if (Object.keys(dirty).length === 0) return;
     try {
       setSaving(true);
       setError(null);
       setSuccess(null);
+      setValidationErrors([]);
       const res = await fetch(window.location.pathname + '?action=save_config', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
+        headers: postHeaders(),
         body: JSON.stringify({ fields: dirty }),
       });
       const json = await res.json();
+      if (json.errors) setValidationErrors(flattenErrors(json.errors));
       if (json.error) throw new Error(json.error);
       if (json.failed?.length) {
         throw new Error(`Failed to save: ${json.failed.join(', ')}`);
@@ -146,7 +192,12 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
     <div className="llm-settings-app">
       {error && <div className="alert alert-danger alert-dismissible fade show" role="alert">
         {error}
-        <button type="button" className="close" onClick={() => setError(null)} aria-label="Close">
+        {validationErrors.length > 0 && (
+          <ul className="mb-0 mt-2 pl-3">
+            {validationErrors.map((message, i) => <li key={i}>{message}</li>)}
+          </ul>
+        )}
+        <button type="button" className="close" onClick={() => { setError(null); setValidationErrors([]); }} aria-label="Close">
           <span aria-hidden="true">&times;</span>
         </button>
       </div>}
@@ -163,6 +214,8 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
         value={getVal('api', 'llm_api_keys')}
         onChange={v => handleChange('llm_api_keys', v)}
         disabled={!canUpdate}
+        onProtectKeys={handleProtectKeys}
+        protecting={protecting}
       />
 
       <ModelDefaultsSection
