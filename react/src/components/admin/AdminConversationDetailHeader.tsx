@@ -18,6 +18,10 @@ interface AdminConversationDetailHeaderProps {
   onBlockConversation: (conversationId: string) => void;
   onUnblockConversation: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
+  /** Show block/unblock (update ACL). The server refuses them otherwise. */
+  canModerate?: boolean;
+  /** Show delete (delete ACL). The server refuses it otherwise. */
+  canDelete?: boolean;
 }
 
 /** AdminConversationDetailHeader component. */
@@ -27,6 +31,8 @@ export const AdminConversationDetailHeader: React.FC<AdminConversationDetailHead
   onBlockConversation,
   onUnblockConversation,
   onDeleteConversation,
+  canModerate = true,
+  canDelete = true,
 }) => {
   return (
     <div className="d-flex justify-content-between align-items-start">
@@ -103,45 +109,49 @@ export const AdminConversationDetailHeader: React.FC<AdminConversationDetailHead
           <i className="fas fa-comment-dots mr-1"></i>
           {conversation.message_count || 0}
         </Badge>
-        <div className="dropdown">
-          <button
-            className="btn btn-outline-secondary btn-sm dropdown-toggle"
-            type="button"
-            data-toggle="dropdown"
-            aria-haspopup="true"
-            aria-expanded="false"
-          >
-            <i className="fas fa-cog mr-1"></i>
-            Actions
-          </button>
-          <div className="dropdown-menu dropdown-menu-right">
-            {conversation.blocked ? (
-              <button
-                className="dropdown-item text-success"
-                onClick={() => onUnblockConversation(conversation.id.toString())}
-              >
-                <i className="fas fa-check-circle mr-2"></i>
-                Unblock Conversation
-              </button>
-            ) : (
-              <button
-                className="dropdown-item text-warning"
-                onClick={() => onBlockConversation(conversation.id.toString())}
-              >
-                <i className="fas fa-ban mr-2"></i>
-                Block Conversation
-              </button>
-            )}
-            <div className="dropdown-divider"></div>
+        {(canModerate || canDelete) && (
+          <div className="dropdown">
             <button
-              className="dropdown-item text-danger"
-              onClick={() => onDeleteConversation(conversation.id.toString())}
+              className="btn btn-outline-secondary btn-sm dropdown-toggle"
+              type="button"
+              data-toggle="dropdown"
+              aria-haspopup="true"
+              aria-expanded="false"
             >
-              <i className="fas fa-trash-alt mr-2"></i>
-              Delete Conversation
+              <i className="fas fa-cog mr-1"></i>
+              Actions
             </button>
+            <div className="dropdown-menu dropdown-menu-right">
+              {canModerate && (conversation.blocked ? (
+                <button
+                  className="dropdown-item text-success"
+                  onClick={() => onUnblockConversation(conversation.id.toString())}
+                >
+                  <i className="fas fa-check-circle mr-2"></i>
+                  Unblock Conversation
+                </button>
+              ) : (
+                <button
+                  className="dropdown-item text-warning"
+                  onClick={() => onBlockConversation(conversation.id.toString())}
+                >
+                  <i className="fas fa-ban mr-2"></i>
+                  Block Conversation
+                </button>
+              ))}
+              {canModerate && canDelete && <div className="dropdown-divider"></div>}
+              {canDelete && (
+                <button
+                  className="dropdown-item text-danger"
+                  onClick={() => onDeleteConversation(conversation.id.toString())}
+                >
+                  <i className="fas fa-trash-alt mr-2"></i>
+                  Delete Conversation
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

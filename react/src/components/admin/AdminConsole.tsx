@@ -379,7 +379,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         hideConfirmation();
         setLoading(true);
         try {
-          const response = await adminApi.deleteConversation(conversationId);
+          const response = await adminApi.deleteConversation(conversationId, config.csrfToken);
           if (response.error) {
             throw new Error(response.error);
           }
@@ -409,7 +409,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         hideConfirmation();
         setLoading(true);
         try {
-          const response = await adminApi.blockConversation(conversationId, blockReason || undefined);
+          const response = await adminApi.blockConversation(conversationId, blockReason || undefined, config.csrfToken);
           if (response.error) {
             throw new Error(response.error);
           }
@@ -444,7 +444,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         hideConfirmation();
         setLoading(true);
         try {
-          const response = await adminApi.unblockConversation(conversationId);
+          const response = await adminApi.unblockConversation(conversationId, config.csrfToken);
           if (response.error) {
             throw new Error(response.error);
           }
@@ -780,6 +780,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       onBlockConversation={handleBlockConversation}
                       onUnblockConversation={handleUnblockConversation}
                       onDeleteConversation={handleDeleteConversation}
+                      canModerate={config.permissions?.canModerate !== false}
+                      canDelete={config.permissions?.canDelete !== false}
                     />
                   )}
                 </Card.Header>

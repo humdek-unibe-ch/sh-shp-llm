@@ -670,6 +670,17 @@ export interface AdminConfig {
     dateToLabel: string;
   };
   csrfToken?: string;
+  /**
+   * What the current user may do on the console page. The server enforces the
+   * same ACL modes; the UI only hides the actions it would refuse.
+   * Missing = everything shown.
+   */
+  permissions?: {
+    /** Block and unblock conversations (update ACL). */
+    canModerate: boolean;
+    /** Delete conversations (delete ACL). */
+    canDelete: boolean;
+  };
 }
 
 /** A user or entity option for admin filter dropdowns. */

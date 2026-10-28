@@ -804,11 +804,13 @@ export const adminApi = {
   /**
    * Delete a conversation (soft delete - sets deleted flag)
    * @param conversationId - The conversation ID to delete
+   * @param csrfToken - Session CSRF token handed over by the page
    */
-  async deleteConversation(conversationId: string): Promise<AdminActionResponse> {
+  async deleteConversation(conversationId: string, csrfToken?: string): Promise<AdminActionResponse> {
     const formData = new FormData();
     formData.append('action', 'admin_delete_conversation');
     formData.append('conversation_id', conversationId);
+    formData.append('csrf_token', csrfToken ?? '');
     return apiPost<AdminActionResponse>(formData);
   },
 
@@ -816,25 +818,29 @@ export const adminApi = {
    * Block a conversation
    * @param conversationId - The conversation ID to block
    * @param reason - Optional reason for blocking
+   * @param csrfToken - Session CSRF token handed over by the page
    */
-  async blockConversation(conversationId: string, reason?: string): Promise<AdminActionResponse> {
+  async blockConversation(conversationId: string, reason?: string, csrfToken?: string): Promise<AdminActionResponse> {
     const formData = new FormData();
     formData.append('action', 'admin_block_conversation');
     formData.append('conversation_id', conversationId);
     if (reason) {
       formData.append('reason', reason);
     }
+    formData.append('csrf_token', csrfToken ?? '');
     return apiPost<AdminActionResponse>(formData);
   },
 
   /**
    * Unblock a conversation
    * @param conversationId - The conversation ID to unblock
+   * @param csrfToken - Session CSRF token handed over by the page
    */
-  async unblockConversation(conversationId: string): Promise<AdminActionResponse> {
+  async unblockConversation(conversationId: string, csrfToken?: string): Promise<AdminActionResponse> {
     const formData = new FormData();
     formData.append('action', 'admin_unblock_conversation');
     formData.append('conversation_id', conversationId);
+    formData.append('csrf_token', csrfToken ?? '');
     return apiPost<AdminActionResponse>(formData);
   },
 
