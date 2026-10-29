@@ -88,13 +88,18 @@ async function apiGet<T>(action: string, params: Record<string, string> = {}): P
   return response.json();
 }
 
-async function apiPost<T>(formData: FormData): Promise<T> {
+/**
+ * POST an action. The server only accepts changes that carry the session CSRF
+ * token; a header works for every body type.
+ */
+async function apiPost<T>(formData: FormData, csrfToken?: string): Promise<T> {
   const response = await fetch(window.location.pathname, {
     method: 'POST',
     body: formData,
     headers: {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
+      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
     },
     credentials: 'same-origin',
   });
@@ -108,7 +113,9 @@ async function apiPost<T>(formData: FormData): Promise<T> {
 }
 
 /** API client for create scripts api. */
-export function createScriptsApi() {
+export function createScriptsApi(csrfToken?: string) {
+  const post = <T>(formData: FormData) => apiPost<T>(formData, csrfToken);
+
   return {
     async list(): Promise<LlmScript[]> {
       const res = await apiGet<{ scripts: LlmScript[] }>('list');
@@ -124,7 +131,7 @@ export function createScriptsApi() {
     async create(): Promise<LlmScript> {
       const formData = new FormData();
       formData.append('action', 'create');
-      const res = await apiPost<{ script: LlmScript; error?: string }>(formData);
+      const res = await post<{ script: LlmScript; error?: string }>(formData);
       if (res.error) throw new Error(res.error);
       return res.script;
     },
@@ -137,7 +144,7 @@ export function createScriptsApi() {
           formData.append(key, String(value));
         }
       });
-      const res = await apiPost<{ script: LlmScript; error?: string }>(formData);
+      const res = await post<{ script: LlmScript; error?: string }>(formData);
       if (res.error) throw new Error(res.error);
       return res.script;
     },
@@ -146,7 +153,7 @@ export function createScriptsApi() {
       const formData = new FormData();
       formData.append('action', 'delete');
       formData.append('sid', String(sid));
-      const res = await apiPost<{ success?: boolean; error?: string }>(formData);
+      const res = await post<{ success?: boolean; error?: string }>(formData);
       if (res.error) throw new Error(res.error);
     },
 
@@ -168,7 +175,7 @@ export function createScriptsApi() {
           formData.append(key, String(value));
         }
       });
-      return apiPost<Record<string, unknown>>(formData);
+      return post<Record<string, unknown>>(formData);
     },
 
     async getConfig(): Promise<LlmDefaults> {

@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseController.php";
 require_once __DIR__ . "/../LlmJsonResponseTrait.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 require_once __DIR__ . "/ModuleLlmMemoryModel.php";
 require_once __DIR__ . "/../../service/LlmMemoryAdminService.php";
 require_once __DIR__ . "/../../service/LlmMemoryConfigService.php";
@@ -57,7 +58,8 @@ class ModuleLlmMemoryController extends BaseController
      * Dispatch incoming request to the appropriate handler.
      *
      * All actions require ACL permission on the memory admin page.
-     * Read operations require 'select'; mutations require 'insert', 'update', or 'delete'.
+     * Read operations require 'select'; mutations require 'insert', 'update', or 'delete'
+     * and, on top of that, POST with the session CSRF token (requireMutation()).
      */
     private function handleRequest()
     {
@@ -85,19 +87,19 @@ class ModuleLlmMemoryController extends BaseController
                 $this->handleRuleGet();
                 break;
             case 'rule_create':
-                $this->requireAccess('insert');
+                $this->requireMutation('insert');
                 $this->handleRuleCreate();
                 break;
             case 'rule_update':
-                $this->requireAccess('update');
+                $this->requireMutation('update');
                 $this->handleRuleUpdate();
                 break;
             case 'rule_delete':
-                $this->requireAccess('delete');
+                $this->requireMutation('delete');
                 $this->handleRuleDelete();
                 break;
             case 'rule_duplicate':
-                $this->requireAccess('insert');
+                $this->requireMutation('insert');
                 $this->handleRuleDuplicate();
                 break;
             case 'sources':
@@ -109,7 +111,7 @@ class ModuleLlmMemoryController extends BaseController
                 $this->handleMemoryConfigGet();
                 break;
             case 'memory_config_save':
-                $this->requireAccess('update');
+                $this->requireMutation('update');
                 $this->handleMemoryConfigSave();
                 break;
             case 'memory_keys':
@@ -121,7 +123,7 @@ class ModuleLlmMemoryController extends BaseController
                 $this->handleMemoryActivity();
                 break;
             case 'memory_key_delete':
-                $this->requireAccess('delete');
+                $this->requireMutation('delete');
                 $this->handleMemoryKeyDelete();
                 break;
             case 'memory_users':
@@ -137,19 +139,19 @@ class ModuleLlmMemoryController extends BaseController
                 $this->handleMemoryUserHistory();
                 break;
             case 'memory_rerun_rule':
-                $this->requireAccess('update');
+                $this->requireMutation('update');
                 $this->handleMemoryRerunRule();
                 break;
             case 'memory_rebuild':
-                $this->requireAccess('update');
+                $this->requireMutation('update');
                 $this->handleMemoryRebuild();
                 break;
             case 'memory_edit':
-                $this->requireAccess('update');
+                $this->requireMutation('update');
                 $this->handleMemoryEdit();
                 break;
             case 'memory_delete':
-                $this->requireAccess('delete');
+                $this->requireMutation('delete');
                 $this->handleMemoryDelete();
                 break;
             default:
@@ -168,6 +170,27 @@ class ModuleLlmMemoryController extends BaseController
     {
         if (!$this->checkAccess($mode)) {
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
+            exit;
+        }
+    }
+
+    /**
+     * Access check for an action that changes data: the ACL mode, then POST
+     * only with the session CSRF token (POST field or X-CSRF-Token header,
+     * which the JSON config save uses). Sends 403 / 405 and exits otherwise.
+     *
+     * @param string $mode ACL mode ('insert', 'update', 'delete').
+     * @return void Exits on failure.
+     */
+    private function requireMutation($mode)
+    {
+        $this->requireAccess($mode);
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            $this->sendJsonResponse(['error' => 'Method not allowed'], 405);
+            exit;
+        }
+        if (!LlmCsrfService::verifyRequest()) {
+            $this->sendJsonResponse(['error' => 'Invalid CSRF token. Reload the page and try again.'], 403);
             exit;
         }
     }

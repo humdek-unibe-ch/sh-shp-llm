@@ -135,7 +135,7 @@ function getEmptyForm(): ScriptFormState {
 
 /** ScriptsManager component. */
 export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) => {
-  const api = useRef(createScriptsApi());
+  const api = useRef(createScriptsApi(config.csrfToken));
   const promptApi = useMemo(
     () => createPromptLabApi(config.promptLabEndpoint || window.location.pathname, config.csrfToken),
     [config.csrfToken, config.promptLabEndpoint],
