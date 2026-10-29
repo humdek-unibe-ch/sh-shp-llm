@@ -14,6 +14,7 @@
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { Container, Row, Col, Alert, Card, Dropdown } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { MessageInput } from '../shared/MessageInput';
 import type { MessageInputHandle } from '../shared/MessageInput';
 import { ChatPanelHeader } from '../shared/ChatPanelHeader';
@@ -435,6 +436,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
         
         // Refresh messages
         await loadConversationMessages(conversationId);
+
+        // No usable reply (provider failure): the reload shows nothing new, so say so.
+        // After the reload, which clears the error.
+        if (result.notice) {
+          setError(result.notice);
+        }
       } finally {
         setIsProcessing(false);
         setIsFormSubmitting(false);
@@ -501,6 +508,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
         if (config.enableConversationsList) {
           await loadConversations();
         }
+      }
+
+      // No usable reply (provider failure): the reload shows nothing new, so say so.
+      // After the reloads, which clear the error.
+      if (result.notice) {
+        setError(result.notice);
       }
     } catch (error) {
       console.error('Failed to submit form:', error);
@@ -771,11 +784,13 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
             {/* Message Input */}
             <Card.Footer className="bg-white border-0 p-3 llm-chat-footer">
               {isConversationBlocked ? (
-                <Alert variant="warning" className="mb-0">
-                  <i className="fas fa-ban mr-2"></i>
-                  <span dangerouslySetInnerHTML={{
-                    __html: config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'
-                  }} />
+                <Alert variant="warning" className="mb-0 d-flex align-items-start">
+                  <i className="fas fa-ban mr-2 mt-1"></i>
+                  <div className="flex-grow-1">
+                    <MarkdownRenderer
+                      content={config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'}
+                    />
+                  </div>
                 </Alert>
               ) : (
                 <MessageInput

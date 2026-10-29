@@ -440,6 +440,11 @@ export function useChatState(config: LlmChatConfig): UseChatStateReturn {
           }
         }
 
+        // No usable reply (provider failure): the reload shows nothing new, so say so
+        if (response.notice) {
+          setError(response.notice);
+        }
+
         // Return the full response including progress data
         return {
           conversation_id: responseIdStr,

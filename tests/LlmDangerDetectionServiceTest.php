@@ -162,6 +162,12 @@ class FakeDb
 {
     public $updates = array();
     public $email_page = array();
+    /** @var array[] llmConversations rows the blocked lookup can see */
+    public $conversations = array();
+    /** @var array[] [sql, params] of every query_db_first() call */
+    public $queries = array();
+    /** @var Throwable|null thrown by query_db_first() */
+    public $fail = null;
 
     public function update_by_ids($table, $set, $where)
     {
@@ -169,8 +175,26 @@ class FakeDb
         return true;
     }
 
+    /**
+     * Understands only the blocked lookup: it answers the way the SQL it was
+     * given would, so a missing `id_users` condition shows up as a foreign row.
+     */
     public function query_db_first($sql, $params = array())
     {
+        $this->queries[] = array($sql, $params);
+        if ($this->fail !== null) {
+            throw $this->fail;
+        }
+        $scoped = strpos($sql, 'id_users = :id_users') !== false;
+        foreach ($this->conversations as $row) {
+            if ((int)$row['id'] !== (int)$params['id']) {
+                continue;
+            }
+            if ($scoped && (int)$row['id_users'] !== (int)$params['id_users']) {
+                continue;
+            }
+            return array('blocked' => $row['blocked']);
+        }
         return false;
     }
 
@@ -478,6 +502,46 @@ list($service, $services) = make('kill', array('safety@example.org'));
 $response->safety = $intervention;
 $service->processSafetyDetection($response, array(), 55, 7, 31);
 check('an intervention below critical mails without blocking', $services->db->updates === array() && count($services->scheduler->jobs) === 1);
+
+/* =========================================================================
+ * Blocked lookup: scoped to the acting user, never fails open
+ * ========================================================================= */
+
+list($service, $services) = make('kill');
+$services->db->conversations = array(
+    array('id' => 55, 'id_users' => 7, 'blocked' => 1),
+    array('id' => 56, 'id_users' => 7, 'blocked' => 0),
+    array('id' => 57, 'id_users' => 8, 'blocked' => 1),
+);
+check('own blocked conversation is blocked', $service->isConversationBlocked(55, 7) === true);
+check('own open conversation is not blocked', $service->isConversationBlocked(56, 7) === false);
+check('somebody else\'s blocked conversation is not reported (no oracle)', $service->isConversationBlocked(57, 7) === false);
+check('the owner still sees it as blocked', $service->isConversationBlocked(57, 8) === true);
+check('an unknown conversation is not blocked', $service->isConversationBlocked(99, 7) === false);
+$services->db->queries = array();
+check('no conversation id: false without a query', $service->isConversationBlocked(0, 7) === false
+    && $service->isConversationBlocked(null, 7) === false && $services->db->queries === array());
+check('no acting user: false without a query', $service->isConversationBlocked(55, 0) === false
+    && $service->isConversationBlocked(55, null) === false && $services->db->queries === array());
+$service->isConversationBlocked(55, 7);
+check('the lookup is parameterized and scoped by id_users',
+    count($services->db->queries) === 1
+    && strpos($services->db->queries[0][0], 'id_users = :id_users') !== false
+    && strpos($services->db->queries[0][0], '55') === false
+    && $services->db->queries[0][1] === array('id' => 55, 'id_users' => 7));
+
+$services->db->fail = new PDOException('server has gone away');
+$thrown = null;
+$result = null;
+try {
+    $result = $service->isConversationBlocked(55, 7);
+} catch (Throwable $t) {
+    $thrown = $t;
+}
+check('a database error is not turned into "not blocked"', $result === null && $thrown instanceof PDOException);
+check('a database error is logged', in_array('Failed to check if conversation is blocked', $GLOBALS['T']['errors'], true));
+$services->db->fail = null;
+check('the service works again once the database does', $service->isConversationBlocked(55, 7) === true);
 
 echo "\n$total checks, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

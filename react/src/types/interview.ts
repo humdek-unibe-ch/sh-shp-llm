@@ -88,7 +88,8 @@ export interface InterviewState {
 
 /** LLM structured safety assessment returned on interview turns. */
 export interface InterviewSafety {
-  is_safe?: boolean;
+  /** true / false, or null when the model gave no assessment */
+  is_safe?: boolean | null;
   danger_level?: null | 'warning' | 'critical' | 'emergency';
   detected_concerns?: string[];
   requires_intervention?: boolean;

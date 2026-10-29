@@ -23,6 +23,7 @@
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/../constants/LlmResponseSchema.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 
 class LlmResponseService
 {
@@ -30,6 +31,12 @@ class LlmResponseService
      * Characters of a failed reply echoed back to the model in the retry turn
      */
     const RETRY_ECHO_MAX_CHARS = 8000;
+
+    /**
+     * Fixed text a participant sees when a turn produced no usable answer: the provider
+     * failed, or no reply passed the response schema. Never the model's text or the reason.
+     */
+    const NO_ANSWER_NOTICE = 'There was an issue getting a response. Please try again.';
 
     /**
      * @var object Model instance for configuration
@@ -109,7 +116,7 @@ class LlmResponseService
             $schema = LlmResponseSchema::getSchema();
             $schema_json = json_encode($schema, JSON_PRETTY_PRINT);
         } catch (Exception $e) {
-            error_log('Failed to load JSON schema file: ' . $e->getMessage());
+            LlmErrorReporter::log('Loading the response JSON schema', $e);
             throw $e;
         }
 
@@ -296,10 +303,20 @@ class LlmResponseService
                 'safety_message' => null
             ];
         }
-        
+
+        // A block without an explicit flag is never "safe": a danger level alone
+        // means "not safe" (as in normalizeResponse()), nothing at all means unassessed
+        $isSafe = $safety['is_safe'] ?? null;
+        if (!is_bool($isSafe)) {
+            if (empty($safety['danger_level'])) {
+                return $this->unassessedSafety();
+            }
+            $isSafe = false;
+        }
+
         return [
             'assessed' => true,
-            'is_safe' => $safety['is_safe'] ?? true,
+            'is_safe' => $isSafe,
             'danger_level' => $safety['danger_level'] ?? null,
             'detected_concerns' => $safety['detected_concerns'] ?? [],
             'requires_intervention' => $safety['requires_intervention'] ?? false,
@@ -355,14 +372,19 @@ class LlmResponseService
             // The model gave no assessment: record that, do not invent "safe"
             $parsed['safety'] = $this->unassessedSafety();
         } elseif (!is_array($parsed['safety'])) {
-            $safeStr = is_string($parsed['safety']) ? strtolower($parsed['safety']) : '';
-            $isSafe = in_array($safeStr, ['safe', 'low', 'none', '']);
-            $parsed['safety'] = [
-                'is_safe' => $isSafe,
-                'danger_level' => $isSafe ? null : 'warning',
-                'detected_concerns' => [],
-                'requires_intervention' => false
-            ];
+            $safeStr = is_string($parsed['safety']) ? strtolower(trim($parsed['safety'])) : '';
+            if ($safeStr === '') {
+                // An empty string, a bare boolean or a number says nothing: record the gap, do not invent "safe"
+                $parsed['safety'] = $this->unassessedSafety();
+            } else {
+                $isSafe = in_array($safeStr, ['safe', 'low', 'none'], true);
+                $parsed['safety'] = [
+                    'is_safe' => $isSafe,
+                    'danger_level' => $isSafe ? null : 'warning',
+                    'detected_concerns' => [],
+                    'requires_intervention' => false
+                ];
+            }
         } else {
             // Safety is array but might have non-standard keys
             $s = $parsed['safety'];
@@ -515,8 +537,9 @@ class LlmResponseService
     {
         $output = [];
 
-        // Handle safety message if dangerous
-        if (isset($structured['safety']) && !$structured['safety']['is_safe']) {
+        // Handle safety message if dangerous. `is_safe` is tri-state: only an explicit
+        // false is "not safe"; null means the model gave no assessment.
+        if (isset($structured['safety']) && ($structured['safety']['is_safe'] ?? null) === false) {
             if (!empty($structured['safety']['safety_message'])) {
                 $output[] = "⚠️ **Safety Notice**: " . $structured['safety']['safety_message'];
                 $output[] = "";
@@ -719,8 +742,7 @@ class LlmResponseService
                 usleep(500000); // 0.5 seconds
 
             } catch (Exception $e) {
-                $error_msg = 'LLM API call failed on attempt ' . $attempt . ': ' . $e->getMessage();
-                error_log($error_msg);
+                LlmErrorReporter::log('LLM API call on attempt ' . $attempt, $e);
                 $last_error = $e;
                 $attempt_data['error'] = $e->getMessage();
                 
@@ -1083,7 +1105,7 @@ class LlmResponseService
                     'text_blocks' => [
                         [
                             'type' => 'warning',
-                            'content' => 'There was an issue getting a response. Please try again.',
+                            'content' => self::NO_ANSWER_NOTICE,
                             'style' => 'default'
                         ]
                     ],

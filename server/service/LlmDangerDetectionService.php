@@ -246,27 +246,34 @@ class LlmDangerDetectionService extends BaseLlmService
     }
 
     /**
-     * Check if a conversation is blocked
-     * 
+     * Check if one of the user's own conversations is blocked.
+     *
+     * The lookup is scoped to the acting user, so the answer cannot be used to
+     * find out whether somebody else's conversation id is blocked. A database
+     * error is never turned into "not blocked": it is logged and thrown, and the
+     * caller decides how to stop (the chat answers with its generic error).
+     *
      * @param int $conversation_id Conversation ID
-     * @return bool True if conversation is blocked
+     * @param int $user_id Acting user
+     * @return bool True if the user's conversation is blocked
+     * @throws Exception When the lookup fails
      */
-    public function isConversationBlocked($conversation_id)
+    public function isConversationBlocked($conversation_id, $user_id)
     {
-        if (!$conversation_id) {
+        if (!$conversation_id || !$user_id) {
             return false;
         }
-        
+
         try {
             $conversation = $this->db->query_db_first(
-                'SELECT blocked FROM llmConversations WHERE id = :id',
-                ['id' => $conversation_id]
+                'SELECT blocked FROM llmConversations WHERE id = :id AND id_users = :id_users',
+                ['id' => $conversation_id, 'id_users' => $user_id]
             );
-            
+
             return ($conversation && $conversation['blocked'] == 1);
         } catch (Exception $e) {
             $this->logError('Failed to check if conversation is blocked', $e);
-            return false;
+            throw $e;
         }
     }
 
