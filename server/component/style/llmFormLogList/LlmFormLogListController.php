@@ -8,6 +8,8 @@ require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmFormInterviewService.php";
 require_once __DIR__ . "/../../../service/LlmSpeechToTextService.php";
 require_once __DIR__ . "/../../../service/LlmCsrfService.php";
+require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
+require_once __DIR__ . "/../../../service/LlmTransaction.php";
 require_once __DIR__ . "/LlmFormLogListView.php";
 
 /**
@@ -96,14 +98,17 @@ class LlmFormLogListController extends FormUserInputLogListController
             ));
         }
         if (!empty($result['ok'])) {
-            $db->commit();
+            // The approval is durable once this returns: only then does what
+            // must not outlive a failed approval (memory updates queued by the
+            // save hooks) start.
+            LlmTransaction::commit($db);
             $this->sendJsonResponse(array(
                 'success' => true,
                 'approval' => $result['approval'],
                 'state' => $result['state'],
             ));
         }
-        $db->rollback();
+        $this->rollbackApproval($db);
         $this->sendJsonResponse(array(
             'success' => false,
             'error' => isset($result['error']) ? $result['error'] : array(
@@ -226,7 +231,8 @@ class LlmFormLogListController extends FormUserInputLogListController
                 'error' => array('type' => 'forbidden', 'message' => 'This form is not available'),
             ), 403);
         }
-        if ($is_mutation && !$this->verifyCsrf()) {
+        // Same strict check as admin / scripts / memory: POST field or X-CSRF-Token header.
+        if ($is_mutation && !LlmCsrfService::verifyRequest()) {
             $this->sendJsonResponse(array(
                 'success' => false,
                 'error' => array('type' => 'csrf', 'message' => 'Invalid CSRF token'),
@@ -364,7 +370,7 @@ class LlmFormLogListController extends FormUserInputLogListController
                 $model->getInterviewSpeechModel(), $speech->getUserLanguage(), false
             );
         } catch (Throwable $t) {
-            error_log('Interview speech transcription error: ' . $t->getMessage());
+            LlmErrorReporter::log('Interview speech transcription', $t);
             $result = array('success' => false);
         }
         if (!empty($result['success'])) {
@@ -372,6 +378,19 @@ class LlmFormLogListController extends FormUserInputLogListController
                 'success' => true,
                 'text' => isset($result['text']) ? trim((string)$result['text']) : '',
             ));
+        }
+        $status = LlmSpeechToTextService::failureStatus($result);
+        if ($status === 429) {
+            $this->sendJsonResponse(array(
+                'success' => false,
+                'error' => array('type' => 'rate_limited', 'message' => (string)$result['error']),
+            ), 429);
+        }
+        if ($status === 400) {
+            $this->sendJsonResponse(array(
+                'success' => false,
+                'error' => array('type' => 'bad_request', 'message' => 'Unsupported or oversized audio'),
+            ), 400);
         }
         if (isset($result['error'])) {
             error_log('Interview speech transcription failed: ' . (is_string($result['error']) ? $result['error'] : json_encode($result['error'])));
@@ -406,17 +425,20 @@ class LlmFormLogListController extends FormUserInputLogListController
         $native_patch = $this->paramPatch('native_patch');
         $db = $model->get_services()->get_db();
         try {
-            $db->begin_transaction();
+            // Side effects that need a committed approval (memory workers)
+            // queue in this transaction until after_successful_write() commits.
+            LlmTransaction::begin($db);
             $prep = $this->interview_service->prepareApproval(
                 $model, $record_id, $conversation_id, $revision, $request_token,
                 $patch, $native_patch
             );
             if (empty($prep['ok'])) {
-                $db->rollback();
+                // Nothing from the core write path ran yet.
+                LlmTransaction::rollback($db);
                 $this->sendInterviewResult($prep, 409);
             }
             if (!empty($prep['already_completed'])) {
-                $db->commit();
+                LlmTransaction::commit($db);
                 $this->sendJsonResponse(array(
                     'success' => true,
                     'approval' => $prep['receipt'],
@@ -430,7 +452,7 @@ class LlmFormLogListController extends FormUserInputLogListController
             try {
                 $this->execute();
             } catch (Throwable $t) {
-                $db->rollback();
+                $this->rollbackApproval($db);
                 $this->sendJsonResponse(array(
                     'success' => false,
                     'error' => array(
@@ -440,7 +462,7 @@ class LlmFormLogListController extends FormUserInputLogListController
                 ), 500);
             }
             if ($this->fail || !$this->success) {
-                $db->rollback();
+                $this->rollbackApproval($db);
                 $this->sendJsonResponse(array(
                     'success' => false,
                     'error' => array(
@@ -451,7 +473,7 @@ class LlmFormLogListController extends FormUserInputLogListController
                 ), 422);
             }
             // Success path answers JSON inside after_successful_write().
-            $db->rollback();
+            $this->rollbackApproval($db);
             $this->sendJsonResponse(array(
                 'success' => false,
                 'error' => array(
@@ -460,10 +482,7 @@ class LlmFormLogListController extends FormUserInputLogListController
                 ),
             ), 500);
         } catch (Throwable $t) {
-            try {
-                $db->rollback();
-            } catch (Throwable $rollback_e) {
-            }
+            $this->rollbackApproval($db);
             $this->sendJsonResponse(array(
                 'success' => false,
                 'error' => array(
@@ -474,16 +493,19 @@ class LlmFormLogListController extends FormUserInputLogListController
         }
     }
 
-    /* Request helpers ********************************************************/
-
     /**
-     * Strict CSRF (LlmCsrfService): the session token must exist and the
-     * posted token must match it exactly; no "missing session" bypass.
+     * Roll a failed approval back without core's global cache wipe
+     * (BaseDb::rollback() clears the whole APCu cache). The core write path
+     * may already have run inside the transaction, and core fills its
+     * user-input cache on reads there, so exactly that cache type is
+     * cleared; queued after-commit work is discarded by the rollback.
      */
-    private function verifyCsrf()
+    private function rollbackApproval($db)
     {
-        return LlmCsrfService::isValid(isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '');
+        LlmTransaction::rollback($db, array($db->get_cache()::CACHE_TYPE_USER_INPUT));
     }
+
+    /* Request helpers ********************************************************/
 
     /**
      * Strict integer request parameter: only plain digit strings (or

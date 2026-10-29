@@ -81,7 +81,29 @@ class FakeDb
         array_pop($this->tx_stack);
     }
 
+    /** @var int BaseDb::rollback() calls: core's version wipes the whole APCu cache */
+    public $wipes = 0;
+
+    /** Mirrors BaseDb::rollback(): PDO rollback + typeless clear_cache(). */
     public function rollback()
+    {
+        $this->wipes++;
+        $this->restoreSnapshot();
+        $this->raw_cache->clear_cache();
+    }
+
+    /** Mirrors BaseDb::get_dbh(): the PDO handle rolls back without touching the cache. */
+    public function get_dbh()
+    {
+        return new FakeDbh($this);
+    }
+
+    public function inTransaction()
+    {
+        return count($this->tx_stack) > 0;
+    }
+
+    public function restoreSnapshot()
     {
         $snapshot = array_pop($this->tx_stack);
         if ($snapshot !== null) {
@@ -234,9 +256,25 @@ class FakeDb
     }
 }
 
+/** PDO handle stand-in: inTransaction()/rollBack() only, like ExtendedPdo. */
+class FakeDbh
+{
+    private $db;
+
+    public function __construct(FakeDb $db) { $this->db = $db; }
+    public function inTransaction() { return $this->db->inTransaction(); }
+    public function rollBack() { $this->db->restoreSnapshot(); return true; }
+}
+
 class FakeRawCache
 {
+    const CACHE_TYPE_USER_INPUT = 'USER_INPUT';
+    const CACHE_TYPE_SECTIONS = 'CACHE_SECTIONS';
+
     public $cleared = array();
+
+    /** True when some caller asked for the typeless (global) clear. */
+    public function wasWiped() { return in_array(null, $this->cleared, true); }
 
     public function get($key) { return false; }
     public function set($key, $value, $ttl = 0) { return true; }
@@ -259,25 +297,36 @@ class FakeServices
 {
     private $db;
     private $cache;
+    /** @var FakeTransaction One audit trail per environment, so tests can read it. */
+    public $transaction;
 
     public function __construct(FakeDb $db, FakeCacheManager $cache)
     {
         $this->db = $db;
         $this->cache = $cache;
+        $this->transaction = new FakeTransaction();
     }
 
     public function get_db() { return $this->db; }
-    public function get_transaction() { return new FakeTransaction(); }
+    public function get_transaction() { return $this->transaction; }
     public function get_cache() { return $this->cache; }
 }
 
+/** Core Transaction::add_transaction() signature; records what was audited. */
 class FakeTransaction
 {
     public $logs = array();
 
-    public function add_transaction($type, $table, $by_user, $by_ip, $user_id, $mid, $id, $name = '')
+    public function add_transaction($tran_type, $tran_by, $user_id = null, $table_name = null, $entry_id = null, $log_row = false, $verbal_log = null)
     {
-        $this->logs[] = array($type, $table, $id, $name);
+        $this->logs[] = array('type' => $tran_type, 'user' => $user_id, 'table' => $table_name, 'id' => $entry_id, 'text' => $verbal_log);
+        return true;
+    }
+
+    /** @return string[] The audit texts, in order. */
+    public function texts()
+    {
+        return array_map(function ($log) { return (string)$log['text']; }, $this->logs);
     }
 }
 
@@ -286,6 +335,8 @@ class FakeLlmService
     private $db;
     public $created = array();
     public $fail_create = false;
+    /** @var \Throwable|null thrown by createConversation() (e.g. a PHP Error) */
+    public $throw_on_create = null;
 
     public function __construct(FakeDb $db)
     {
@@ -297,6 +348,9 @@ class FakeLlmService
         $source_type = LLM_CONV_SOURCE_CHAT)
     {
         $this->created[] = func_get_args();
+        if ($this->throw_on_create !== null) {
+            throw $this->throw_on_create;
+        }
         if ($this->fail_create) {
             return false;
         }
@@ -369,6 +423,11 @@ $conv_a = $svc->createScopedConversation(5, 88, LLM_CONV_SOURCE_FORM_INTERVIEW, 
     'context_key' => 'module:a',
     'payload' => array('collected' => array('a' => 'x'), 'cursor' => 'a')
 ));
+check('A: creation is audited once, naming the source and the participant', count($services->transaction->logs) === 1
+    && $services->transaction->logs[0]['type'] === transactionTypes_insert
+    && $services->transaction->logs[0]['table'] === 'llmConversations'
+    && (int)$services->transaction->logs[0]['id'] === $conv_a && (int)$services->transaction->logs[0]['user'] === 5
+    && $services->transaction->logs[0]['text'] === 'Scoped conversation created (source: ' . LLM_CONV_SOURCE_FORM_INTERVIEW . ')');
 $row = $db->conversations[$conv_a];
 check('A: conversation id returned', $conv_a > 0);
 check('A: tagged with form_interview source id 3', (int)$row['id_llm_conversation_sources'] === 3);
@@ -469,10 +528,17 @@ check('ctx: NULL section does not match section 88', $wrong_sec === null);
  * ========================================================================= */
 
 $bind_scope = scope();
+$audit_before_bind = count($services->transaction->logs);
 check('bind: draft binds to record 42', $svc->bindRecord($conv_a, $bind_scope, 42, 0) === true);
 check('bind: row now bound', (int)$db->conversations[$conv_a]['id_dataRows'] === 42);
 check('bind: second bind to another record rejected', $svc->bindRecord($conv_a, scope(array('id_dataRows' => 42)), 43, 0) === false);
 check('bind: re-bind same id is idempotent', $svc->bindRecord($conv_a, scope(array('id_dataRows' => 42)), 42, 0) === true);
+check('bind: audited once, naming the record (the idempotent repeat adds nothing)',
+    count($services->transaction->logs) === $audit_before_bind + 1
+    && end($services->transaction->logs)['text'] === 'Conversation bound to dataRows 42'
+    && end($services->transaction->logs)['table'] === 'llmConversations'
+    && (int)end($services->transaction->logs)['id'] === $conv_a
+    && (int)end($services->transaction->logs)['user'] === 5);
 check('bind: bound scope without context_key still scopes the row', $svc->getScopedConversation($conv_a, array(
     'user_id' => 5, 'section_id' => 88,
     'source_type' => LLM_CONV_SOURCE_FORM_INTERVIEW, 'id_dataRows' => 42
@@ -492,8 +558,11 @@ $write_scope = array(
     'user_id' => 5, 'section_id' => 88,
     'source_type' => LLM_CONV_SOURCE_FORM_INTERVIEW, 'id_dataRows' => 42
 );
+$audit_before_writes = count($services->transaction->logs);
 check('write: stale revision rejected', $svc->writeState($conv_a, $write_scope, 5, array('x' => 1)) === false);
 check('write: revision 0 -> 1 stored', $svc->writeState($conv_a, $write_scope, 0, array('collected' => array('a' => 'y'))) === true);
+check('write: a revision is bookkeeping, not an audited event (no row per autosave)',
+    count($services->transaction->logs) === $audit_before_writes);
 $env2 = $svc->readState($db->conversations[$conv_a]);
 check('write: payload updated', $env2 !== null && $env2['payload'] === array('collected' => array('a' => 'y')));
 check('write: revision bumped to 1', $env2 !== null && $env2['revision'] === 1);
@@ -513,6 +582,7 @@ check('write: list payload throws', throws_callable(function () use ($svc, $conv
     $svc->writeState($conv_a, $write_scope, 1, array('a', 'b'));
 }, 'LlmValidationException'));
 check('write: empty map payload allowed', $svc->writeState($conv_a, $write_scope, 1, array()) === true);
+check('write: still no audit rows after several writes', count($services->transaction->logs) === $audit_before_writes);
 $env3 = $svc->readState($db->conversations[$conv_a]);
 check('write: empty payload reads back as empty map', $env3 !== null && $env3['payload'] === array());
 check('write: cache invalidated on write', in_array(LLM_CACHE_CONVERSATION_MESSAGES, $db->raw_cache->cleared, true));
@@ -546,13 +616,17 @@ check('envelope: empty {} payload reads as empty map', $empty_obj !== null && $e
  * ========================================================================= */
 
 $done_scope = $write_scope;
+$audit_before_complete = count($services->transaction->logs);
 check('complete: marks completed_at', $svc->setCompleted($conv_a, $done_scope, 2) === true);
+check('complete: audited', array_slice($services->transaction->texts(), $audit_before_complete) === array('Conversation marked completed'));
 check('complete: timestamp set', $db->conversations[$conv_a]['completed_at'] !== null);
 check('complete: repeat at same revision is idempotent success', $svc->setCompleted($conv_a, $done_scope, 2) === true);
 check('complete: completed filter excludes it from open drafts', $svc->findScopedConversation($done_scope, false) === null);
 check('complete: completed filter finds it', ($c = $svc->findScopedConversation($done_scope, true)) !== null && (int)$c['id'] === $conv_a);
 check('complete: stale revision rejected', $svc->setCompleted($conv_a, $done_scope, 0, false) === false);
 check('complete: reopening clears timestamp', $svc->setCompleted($conv_a, $done_scope, 2, false) === true);
+check('complete: reopening is audited (repeats and stale attempts are not)',
+    array_slice($services->transaction->texts(), $audit_before_complete) === array('Conversation marked completed', 'Conversation reopened'));
 check('complete: timestamp cleared', $db->conversations[$conv_a]['completed_at'] === null);
 check('complete: re-reopen of open thread idempotent', $svc->setCompleted($conv_a, $done_scope, 2, false) === true);
 check('complete: wrong-scope reopen rejected', $svc->setCompleted($conv_a, array_merge($done_scope, array('id_dataRows' => 77)), 2, false) === false);
@@ -584,6 +658,8 @@ try {
 }
 check('tx: failed init update throws', $threw);
 check('tx: conversation rolled back (no row persisted)', count($db2->conversations) === 0);
+check('tx: rollback does not wipe the whole cache (BaseDb::rollback not used)',
+    $db2->wipes === 0 && !$db2->raw_cache->wasWiped());
 
 $llm2->fail_create = true;
 $threw = false;
@@ -594,6 +670,27 @@ try {
 }
 check('tx: failed createConversation throws', $threw);
 check('tx: no row persisted on create failure', count($db2->conversations) === 0);
+check('tx: second rollback does not wipe the whole cache either',
+    $db2->wipes === 0 && !$db2->raw_cache->wasWiped());
+
+// A PHP Error (not an Exception) inside the transaction is rolled back too
+// and reported as the LlmException callers already handle.
+$llm2->fail_create = false;
+$llm2->throw_on_create = new \TypeError('createConversation exploded');
+$thrown = null;
+try {
+    $svc2->createScopedConversation(5, 88, LLM_CONV_SOURCE_FORM_INTERVIEW);
+} catch (\Throwable $t) {
+    $thrown = $t;
+}
+$llm2->throw_on_create = null;
+check('tx: an Error inside the transaction is reported as LlmException', $thrown instanceof \LlmException);
+check('tx: an Error inside the transaction does not leave it open', !$db2->inTransaction());
+check('tx: an Error inside the transaction persists no row', count($db2->conversations) === 0);
+check('tx: an Error inside the transaction does not wipe the cache either',
+    $db2->wipes === 0 && !$db2->raw_cache->wasWiped());
+check('tx: the service stays usable after the Error',
+    $svc2->createScopedConversation(5, 88, LLM_CONV_SOURCE_FORM_INTERVIEW, array('context_key' => 'k2')) > 0);
 
 /* =========================================================================
  * 12. Malformed stored envelopes cannot be mutated into a valid v1 write

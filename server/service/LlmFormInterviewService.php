@@ -8,37 +8,13 @@ require_once __DIR__ . '/LlmConversationStateService.php';
 require_once __DIR__ . '/LlmFormSchemaService.php';
 require_once __DIR__ . '/LlmResponseService.php';
 require_once __DIR__ . '/LlmDangerDetectionService.php';
-require_once __DIR__ . '/LlmLanguageUtility.php';
-require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmFormInterviewAbort.php';
+require_once __DIR__ . '/LlmFormInterviewProjector.php';
+require_once __DIR__ . '/LlmFormInterviewContextBuilder.php';
 require_once __DIR__ . '/cache/LlmCacheManager.php';
+require_once __DIR__ . '/LlmTransaction.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 require_once __DIR__ . '/exception/LlmRateLimitException.php';
-
-/**
- * Typed control-flow abort for interview operations; converted into a
- * structured result at the public method boundary.
- */
-final class LlmFormInterviewAbort extends Exception
-{
-    private $error_type;
-    private $error_data;
-
-    public function __construct($type, $message, array $data = array())
-    {
-        parent::__construct($message);
-        $this->error_type = $type;
-        $this->error_data = $data;
-    }
-
-    public function errorType()
-    {
-        return $this->error_type;
-    }
-
-    public function errorData()
-    {
-        return $this->error_data;
-    }
-}
 
 /**
  * Interview runtime for the llmFormLogList style (v1.6.0).
@@ -55,14 +31,21 @@ final class LlmFormInterviewAbort extends Exception
  *   request ({id, status: pending|succeeded|failed}), draft,
  *   inactive_values, schema_signature, last_coach_signature,
  *   base_record_fingerprint, opening_context, active_field, approval.
+ *
+ * This class owns the write paths (open, draft, turn, approval, preview)
+ * and their scope, lock and state rules. What the participant sees is
+ * built by LlmFormInterviewProjector, the LLM context of a turn by
+ * LlmFormInterviewContextBuilder.
  */
 class LlmFormInterviewService
 {
     const ORIGIN_MANUAL = 'manual';
     const ORIGIN_NATIVE = 'native';
     const ORIGIN_LLM = 'llm';
-    const MAX_HISTORY_SNAPSHOTS = 3;
-    const MAX_HISTORY_CHARS = 8000;
+    /** Longest participant message of one turn, in characters */
+    const MAX_MESSAGE_LENGTH = 10000;
+    /** Longest request id / approval token kept in the conversation state */
+    const MAX_TOKEN_LENGTH = 191;
     /** Seconds an open waits for another open of the same participant */
     const ACTOR_LOCK_TIMEOUT_SECONDS = 10;
 
@@ -70,10 +53,10 @@ class LlmFormInterviewService
     private $llm_service;
     private $state_service;
     private $schema_service;
-    private $prompt_assets;
+    private $projector;
+    private $context_builder;
     private $db;
     private $cache_manager;
-    private $native_renderer = null;
 
     /**
      * @param object $services SelfHelp services container
@@ -92,7 +75,12 @@ class LlmFormInterviewService
         $this->schema_service = $schema_service !== null
             ? $schema_service
             : new LlmFormSchemaService();
-        $this->prompt_assets = new LlmPromptAssetLoader();
+        $this->projector = new LlmFormInterviewProjector(
+            $this->db, $this->llm_service, $this->state_service, $this->schema_service
+        );
+        $this->context_builder = new LlmFormInterviewContextBuilder(
+            $services, $this->llm_service, $this->schema_service, $this->projector
+        );
         $this->cache_manager = new LlmCacheManager($this->db->get_cache(), $this->db);
     }
 
@@ -104,7 +92,7 @@ class LlmFormInterviewService
      */
     public function setNativeRenderer($renderer)
     {
-        $this->native_renderer = is_callable($renderer) ? $renderer : null;
+        $this->projector->setNativeRenderer($renderer);
     }
 
     /* Public API *************************************************************/
@@ -145,8 +133,11 @@ class LlmFormInterviewService
             if ($open_token === '') {
                 throw new LlmFormInterviewAbort('validation', 'An open token is required');
             }
+            if (mb_strlen($open_token, 'UTF-8') > self::MAX_TOKEN_LENGTH) {
+                throw new LlmFormInterviewAbort('validation', 'The open token is too long');
+            }
 
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             try {
                 $this->lockActor($actor);
                 $model->setInterviewBaseEntry(is_array($entry) ? $entry : array());
@@ -227,7 +218,7 @@ class LlmFormInterviewService
                     $model->rebuildInterviewChildren(array());
                     $this->assertRootEligible($model);
                     $schema = $this->schema_service->build($model);
-                    $this->requireValidSchema($schema);
+                    LlmFormInterviewAbort::requireValidSchema($schema);
                     $payload = $this->newDraftPayload(
                         $model, $schema, $record_id, $entry, $open_token,
                         isset($scope['context_key']) ? $scope['context_key'] : null
@@ -256,18 +247,18 @@ class LlmFormInterviewService
                         'invalid_state', 'Scoped conversation could not be resolved'
                     );
                 }
-                $this->db->commit();
+                LlmTransaction::commit($this->db);
                 $this->unlockActor($actor);
-            } catch (Exception $e) {
-                $this->db->rollback();
+            } catch (Throwable $e) {
+                LlmTransaction::rollback($this->db);
                 $this->unlockActor($actor);
                 throw $e;
             }
-            return $this->ok(array('state' => $this->project($model, $record_id, $conversation)));
+            return $this->ok(array('state' => $this->projector->project($model, $record_id, $conversation)));
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('open', $e, isset($conversation) ? $conversation : null);
         }
     }
 
@@ -316,10 +307,10 @@ class LlmFormInterviewService
         $phase = $env !== null && isset($env['payload']['phase'])
             ? $env['payload']['phase'] : 'draft';
         if ($phase !== 'abandoned') {
-            return $this->project($model, $record_id, $conversation);
+            return $this->projector->project($model, $record_id, $conversation);
         }
         try {
-            return $this->project(
+            return $this->projector->project(
                 $model, $record_id,
                 $this->resolveLatestScopedConversation($model, $actor, $record_id)
             );
@@ -353,11 +344,11 @@ class LlmFormInterviewService
                     $model, $actor, $record_id, (int)$conversation_id
                 );
             }
-            return $this->ok(array('state' => $this->project($model, $record_id, $conversation)));
+            return $this->ok(array('state' => $this->projector->project($model, $record_id, $conversation)));
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('read', $e, isset($conversation) ? $conversation : null);
         }
     }
 
@@ -379,7 +370,7 @@ class LlmFormInterviewService
             $expected_revision = $this->normalizeRevision($expected_revision);
 
             $conversation = null;
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             try {
                 list($conversation, $scope) = $this->loadScopedConversation(
                     $model, $actor, $record_id, $conversation_id, true
@@ -404,7 +395,7 @@ class LlmFormInterviewService
                 $model->rebuildInterviewChildren($payload['draft']);
                 $this->assertRootEligible($model);
                 $schema = $this->schema_service->build($model);
-                $this->requireValidSchema($schema);
+                LlmFormInterviewAbort::requireValidSchema($schema);
                 if (!empty($native_patch)) {
                     $normalized = $this->schema_service->normalizePatch(
                         $schema, $native_patch, self::ORIGIN_NATIVE
@@ -436,9 +427,9 @@ class LlmFormInterviewService
                 )) {
                     throw new LlmFormInterviewAbort('conflict', 'Concurrent modification');
                 }
-                $this->db->commit();
+                LlmTransaction::commit($this->db);
             } catch (LlmFormInterviewAbort $abort) {
-                $this->db->rollback();
+                LlmTransaction::rollback($this->db);
                 // Conflicts carry the fresh projection so the UI can
                 // rebase instead of guessing the new revision.
                 if ($abort->errorType() === 'conflict' && $conversation !== null) {
@@ -448,15 +439,15 @@ class LlmFormInterviewService
                         ));
                 }
                 throw $abort;
-            } catch (Exception $e) {
-                $this->db->rollback();
+            } catch (Throwable $e) {
+                LlmTransaction::rollback($this->db);
                 throw $e;
             }
-            return $this->ok(array('state' => $this->project($model, $record_id, $conversation)));
+            return $this->ok(array('state' => $this->projector->project($model, $record_id, $conversation)));
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('update draft', $e, isset($conversation) ? $conversation : null);
         }
     }
 
@@ -483,13 +474,19 @@ class LlmFormInterviewService
             if ($request_id === '') {
                 throw new LlmFormInterviewAbort('validation', 'A request id is required');
             }
+            if (mb_strlen($request_id, 'UTF-8') > self::MAX_TOKEN_LENGTH) {
+                throw new LlmFormInterviewAbort('validation', 'The request id is too long');
+            }
             if (!$start && trim($message) === '') {
                 throw new LlmFormInterviewAbort('validation', 'Message must not be empty');
+            }
+            if (mb_strlen($message, 'UTF-8') > self::MAX_MESSAGE_LENGTH) {
+                throw new LlmFormInterviewAbort('validation', 'Message is too long');
             }
 
             $pre_merge_revision = null;
             $conversation = null;
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             try {
                 list($conversation, $scope) = $this->loadScopedConversation(
                     $model, $actor, $record_id, $conversation_id, true
@@ -509,10 +506,10 @@ class LlmFormInterviewService
                 if (isset($stored_request['id']) && $stored_request['id'] === $request_id
                     && isset($stored_request['status']) && $stored_request['status'] === 'succeeded'
                 ) {
-                    $this->db->commit();
+                    LlmTransaction::commit($this->db);
                     return $this->ok(array(
                         'replayed' => true,
-                        'state' => $this->project($model, $record_id, $conversation),
+                        'state' => $this->projector->project($model, $record_id, $conversation),
                     ));
                 }
                 $this->assertPhaseWritable($payload);
@@ -530,7 +527,7 @@ class LlmFormInterviewService
                         // Nothing was written yet: release the conversation lock
                         // first, then block, audit and alert, so the alert email
                         // (SMTP) never runs inside the lock window.
-                        $this->db->commit();
+                        LlmTransaction::commit($this->db);
                         $check = $danger->handleDetection($detected, $message, $actor, (int)$conversation['id']);
                         $safety = isset($check['message']) ? (string)$check['message']
                             : $model->getDangerBlockedMessage();
@@ -538,7 +535,7 @@ class LlmFormInterviewService
                             'blocked' => true,
                             'safety_message' => $safety,
                             'detected_keywords' => $detected,
-                            'state' => $this->project($model, $record_id, $conversation),
+                            'state' => $this->projector->project($model, $record_id, $conversation),
                         ));
                     }
                 }
@@ -551,7 +548,7 @@ class LlmFormInterviewService
                     $model->rebuildInterviewChildren($payload['draft']);
                     $this->assertRootEligible($model);
                     $schema = $this->schema_service->build($model);
-                    $this->requireValidSchema($schema);
+                    LlmFormInterviewAbort::requireValidSchema($schema);
                     if (!empty($native_patch)) {
                         $normalized = $this->schema_service->normalizePatch(
                             $schema, $native_patch, self::ORIGIN_NATIVE
@@ -587,15 +584,15 @@ class LlmFormInterviewService
                 }
                 if ($start) {
                     $this->llm_service->addMessage(
-                        (int)$conversation['id'], 'system', $this->startInstruction($record_id !== null)
+                        (int)$conversation['id'], 'system', $this->context_builder->startInstruction($record_id !== null)
                     );
                 } else {
                     $this->llm_service->addMessage((int)$conversation['id'], 'user', $message);
                 }
                 $pre_merge_revision = $expected_revision + 1;
-                $this->db->commit();
+                LlmTransaction::commit($this->db);
             } catch (LlmFormInterviewAbort $abort) {
-                $this->db->rollback();
+                LlmTransaction::rollback($this->db);
                 if ($abort->errorType() === 'conflict' && $conversation !== null) {
                     return $this->err('conflict', $abort->getMessage(),
                         $abort->errorData() + array(
@@ -603,8 +600,8 @@ class LlmFormInterviewService
                         ));
                 }
                 throw $abort;
-            } catch (Exception $e) {
-                $this->db->rollback();
+            } catch (Throwable $e) {
+                LlmTransaction::rollback($this->db);
                 throw $e;
             }
 
@@ -612,7 +609,7 @@ class LlmFormInterviewService
             // session released so concurrent native edits are not blocked.
             // Every remote attempt consumes one rate-limit slot up front,
             // including attempts that fail or are retried.
-            $api_messages = $this->buildTurnMessages(
+            $api_messages = $this->context_builder->buildTurnMessages(
                 $model, $payload, $conversation, $entry, $message, $start, $record_id
             );
             $response_service = new LlmResponseService($model, $this->services);
@@ -658,12 +655,12 @@ class LlmFormInterviewService
                 $this->markRequestFailed($model, $actor, $record_id, $conversation_id, $pre_merge_revision);
                 if ($rate_limited !== null) {
                     return $this->err('rate_limited', $rate_limited->getMessage(), array(
-                        'state' => $this->project($model, $record_id, $conversation),
+                        'state' => $this->projector->project($model, $record_id, $conversation),
                     ));
                 }
                 return $this->err('llm_invalid', 'The assistant response could not be validated', array(
                     'attempts' => $result['attempts'],
-                    'state' => $this->project($model, $record_id, $conversation),
+                    'state' => $this->projector->project($model, $record_id, $conversation),
                 ));
             }
 
@@ -679,7 +676,7 @@ class LlmFormInterviewService
                     $model, $actor, $record_id, $conversation_id, $pre_merge_revision
                 );
                 return $this->err('llm_invalid', 'The assistant response was not logged', array(
-                    'state' => $this->project($model, $record_id, $conversation),
+                    'state' => $this->projector->project($model, $record_id, $conversation),
                 ));
             }
 
@@ -689,14 +686,14 @@ class LlmFormInterviewService
             // marked validated only inside the same transaction, after the
             // state write succeeds, so stale text never reaches the
             // participant projection.
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             try {
                 list($conversation, $scope) = $this->loadScopedConversation(
                     $model, $actor, $record_id, $conversation_id, true
                 );
                 $env = $this->state_service->readState($conversation);
                 if ($env === null || (int)$env['revision'] !== $pre_merge_revision) {
-                    $this->db->commit();
+                    LlmTransaction::commit($this->db);
                     return $this->err('conflict', 'Draft changed while the assistant replied', array(
                         'state' => $this->conflictState($model, $actor, $record_id, $conversation),
                     ));
@@ -706,7 +703,7 @@ class LlmFormInterviewService
                 $model->rebuildInterviewChildren($payload['draft']);
                 $this->assertRootEligible($model);
                 $schema = $this->schema_service->build($model);
-                $this->requireValidSchema($schema);
+                LlmFormInterviewAbort::requireValidSchema($schema);
                 $patch = isset($interview['collected_fields']) && is_array($interview['collected_fields'])
                     ? $interview['collected_fields'] : array();
                 $normalized = $this->schema_service->normalizePatch($schema, $patch, self::ORIGIN_LLM);
@@ -715,10 +712,10 @@ class LlmFormInterviewService
                     $this->state_service->writeState(
                         (int)$conversation['id'], $scope, $pre_merge_revision, $payload
                     );
-                    $this->db->commit();
+                    LlmTransaction::commit($this->db);
                     return $this->err('llm_invalid', 'Assistant patch became invalid', array(
                         'field_errors' => $normalized['errors'],
-                        'state' => $this->project($model, $record_id, $conversation),
+                        'state' => $this->projector->project($model, $record_id, $conversation),
                     ));
                 }
                 $payload['draft'] = $normalized['values'] + $payload['draft'];
@@ -735,13 +732,13 @@ class LlmFormInterviewService
                 // Signature of the eligibility tree this answer was
                 // produced against; only an exact match may replay the
                 // last coach message on later turns.
-                $payload['last_coach_signature'] = $this->schemaSignature(
+                $payload['last_coach_signature'] = $this->context_builder->schemaSignature(
                     $this->schema_service->build($model)
                 );
                 if (!$this->state_service->writeState(
                     (int)$conversation['id'], $scope, $pre_merge_revision, $payload
                 )) {
-                    $this->db->commit();
+                    LlmTransaction::commit($this->db);
                     return $this->err('conflict', 'Draft changed while the assistant replied', array(
                         'state' => $this->conflictState($model, $actor, $record_id, $conversation),
                     ));
@@ -757,12 +754,12 @@ class LlmFormInterviewService
                         );
                     }
                 }
-                $this->db->commit();
+                LlmTransaction::commit($this->db);
             } catch (LlmFormInterviewAbort $abort) {
-                $this->db->rollback();
+                LlmTransaction::rollback($this->db);
                 throw $abort;
-            } catch (Exception $e) {
-                $this->db->rollback();
+            } catch (Throwable $e) {
+                LlmTransaction::rollback($this->db);
                 throw $e;
             }
             // After the merge commits: LLM safety may block the conversation
@@ -776,7 +773,7 @@ class LlmFormInterviewService
                 (int)$model->get_section_id()
             );
             $this->cache_manager->clearConversationMessageCache($conversation_id);
-            $state = $this->project($model, $record_id, $conversation);
+            $state = $this->projector->project($model, $record_id, $conversation);
             $safety = $response_service->assessSafety($data);
             $critical = in_array(
                 isset($safety['danger_level']) ? $safety['danger_level'] : null,
@@ -808,8 +805,8 @@ class LlmFormInterviewService
             return $this->ok($out);
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('turn', $e, isset($conversation) ? $conversation : null);
         }
     }
 
@@ -833,6 +830,9 @@ class LlmFormInterviewService
             $request_token = trim((string)$request_token);
             if ($request_token === '') {
                 throw new LlmFormInterviewAbort('validation', 'A request token is required');
+            }
+            if (mb_strlen($request_token, 'UTF-8') > self::MAX_TOKEN_LENGTH) {
+                throw new LlmFormInterviewAbort('validation', 'The request token is too long');
             }
 
             $conversation = null;
@@ -870,7 +870,7 @@ class LlmFormInterviewService
                     return $this->ok(array(
                         'already_completed' => true,
                         'receipt' => $receipt,
-                        'state' => $this->project($model, $record_id, $conversation),
+                        'state' => $this->projector->project($model, $record_id, $conversation),
                     ));
                 }
                 throw new LlmFormInterviewAbort(
@@ -896,7 +896,7 @@ class LlmFormInterviewService
             $model->rebuildInterviewChildren($payload['draft']);
             $this->assertRootEligible($model);
             $schema = $this->schema_service->build($model);
-            $this->requireValidSchema($schema);
+            LlmFormInterviewAbort::requireValidSchema($schema);
             if (!empty($native_patch)) {
                 $normalized = $this->schema_service->normalizePatch(
                     $schema, $native_patch, self::ORIGIN_NATIVE
@@ -923,7 +923,7 @@ class LlmFormInterviewService
             }
             $payload = $this->reconcile($model, $payload);
             $schema = $this->schema_service->build($model);
-            $this->requireValidSchema($schema);
+            LlmFormInterviewAbort::requireValidSchema($schema);
             $errors = $this->schema_service->validateValues($schema, $payload['draft'], true);
             if (!empty($errors)) {
                 throw new LlmFormInterviewAbort(
@@ -932,8 +932,8 @@ class LlmFormInterviewService
                     array('field_errors' => $errors)
                 );
             }
-            if (!$this->hasSavableContent(
-                $this->projectDraft($model, $payload, $record_id), $record_id !== null
+            if (!$this->projector->hasSavableContent(
+                $this->projector->projectDraft($model, $payload, $record_id), $record_id !== null
             )) {
                 throw new LlmFormInterviewAbort('validation', 'There is nothing to save yet');
             }
@@ -986,8 +986,8 @@ class LlmFormInterviewService
                     ));
             }
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('approval prepare', $e, isset($conversation) ? $conversation : null);
         }
     }
 
@@ -1087,12 +1087,12 @@ class LlmFormInterviewService
             $conversation['completed_at'] = date('Y-m-d H:i:s');
             return $this->ok(array(
                 'approval' => $payload['approval']['receipt'],
-                'state' => $this->project($model, $new_id, $conversation),
+                'state' => $this->projector->project($model, $new_id, $conversation),
             ));
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('approval complete', $e, isset($conversation) ? $conversation : null);
         }
     }
 
@@ -1159,126 +1159,6 @@ class LlmFormInterviewService
         return $errors;
     }
 
-    /**
-     * Build the LLM context for a turn: frozen interview protocol + unified
-     * schema instructions + interpolated author context + machine catalog +
-     * optional history, then last coach when eligibility is unchanged and
-     * the current participant text (or bootstrap system instruction).
-     *
-     * @return array Message list for callLlmApi
-     */
-    private function buildTurnMessages($model, array $payload, array $conversation, $entry, $message, $start,
-        $record_id = null)
-    {
-        $draft = isset($payload['draft']) ? $payload['draft'] : array();
-        $model->rebuildInterviewChildren($draft);
-        $schema = $this->schema_service->build($model);
-        $this->requireValidSchema($schema);
-
-        $messages = array();
-        $protocol = $this->prompt_assets->load('core.form_interview.system');
-        $messages[] = array('role' => 'system', 'content' => $protocol);
-
-        $interp = $this->interpolationEntry($model, $payload);
-        $author_template = trim((string)$model->getInterviewContextTemplate());
-        if ($author_template !== '') {
-            $resolved_author = method_exists($model, 'resolveInterviewTemplate')
-                ? $model->resolveInterviewTemplate($author_template, $interp)
-                : $model->get_entry_value($interp, $author_template);
-            $messages[] = array(
-                'role' => 'system',
-                'content' => $resolved_author,
-            );
-        }
-        $messages[] = array(
-            'role' => 'system',
-            'content' => $this->machineContext(
-                $model, $schema, $payload, $record_id !== null ? 'edit' : 'new'
-            ),
-        );
-        $history = $this->historyContext($model, $schema, $entry);
-        if ($history !== null) {
-            $messages[] = array('role' => 'system', 'content' => $history);
-        }
-
-        // The last coach message is replayed only while the eligibility
-        // tree it was produced against still matches exactly; a condition
-        // change invalidates it so obsolete questions are not replayed.
-        $signature = isset($payload['last_coach_signature']) ? $payload['last_coach_signature'] : '';
-        if ($signature !== '' && $signature === $this->schemaSignature($schema)) {
-            $logged = $this->llm_service->getConversationMessages((int)$conversation['id'], 50);
-            $last_coach = null;
-            for ($i = count($logged) - 1; $i >= 0; $i--) {
-                if (isset($logged[$i]['role']) && $logged[$i]['role'] === 'assistant') {
-                    $last_coach = $logged[$i]['content'];
-                    break;
-                }
-            }
-            if ($last_coach !== null && $last_coach !== '') {
-                $messages[] = array('role' => 'assistant', 'content' => $last_coach);
-            }
-        }
-
-        // Language rule LAST among system/context blocks (after the author
-        // prompt). Default-on (`llm_use_user_language`): the participant's
-        // current UI language wins — including English — even when the
-        // author context is German or asks to "speak Deutsch". Placing it
-        // after the author text stops that text from winning by recency.
-        // When the flag is off the author context alone decides language.
-        $language = method_exists($model, 'getUserLanguage') ? $model->getUserLanguage() : 'en';
-        $use_user_language = method_exists($model, 'useUserLanguage') && $model->useUserLanguage();
-        if ($use_user_language && $language !== '') {
-            $language_name = LlmLanguageUtility::getLanguageName($language);
-            $messages[] = array(
-                'role' => 'system',
-                'content' => 'CRITICAL LANGUAGE INSTRUCTION: '
-                    . LlmLanguageUtility::generateLanguageInstruction($language)
-                    . " Use {$language_name} and ONLY {$language_name} for all coach text and quick-reply suggestions,"
-                    . ' even when the author context, field labels, option labels or earlier messages are in another language,'
-                    . ' and even when the author context itself is written in another language or tells you to speak that language.'
-                    . ' This overrides any other instruction about language unless the participant explicitly asks to switch.'
-                    . ' Field names and option values inside interview.collected_fields stay exactly as supplied by the server.',
-            );
-        }
-
-        if ($start) {
-            $messages[] = array('role' => 'system', 'content' => $this->startInstruction($record_id !== null));
-        } else {
-            $messages[] = array('role' => 'user', 'content' => $message);
-        }
-
-        $response_service = new LlmResponseService($model, $this->services);
-        return $response_service->buildResponseContext(
-            $messages,
-            false,
-            array(),
-            $this->buildDangerConfig($model)
-        );
-    }
-
-    /**
-     * Danger config for schema/safety instructions (mirrors LlmContextService).
-     *
-     * @param object $model Interview model
-     * @return array{enabled:bool,keywords:string[]}
-     */
-    private function buildDangerConfig($model)
-    {
-        if (!method_exists($model, 'isDangerDetectionEnabled')
-            || !$model->isDangerDetectionEnabled()
-        ) {
-            return array('enabled' => false, 'keywords' => array());
-        }
-        $keywords_str = method_exists($model, 'getDangerKeywords')
-            ? $model->getDangerKeywords() : '';
-        if ($keywords_str === '' || $keywords_str === null) {
-            return array('enabled' => true, 'keywords' => array());
-        }
-        $keywords = array_map('trim', explode(',', (string)$keywords_str));
-        $keywords = array_values(array_unique(array_filter($keywords)));
-        return array('enabled' => true, 'keywords' => $keywords);
-    }
-
     /* Internals **************************************************************/
 
     private function ok(array $extra = array())
@@ -1289,6 +1169,26 @@ class LlmFormInterviewService
     private function err($type, $message, array $extra = array())
     {
         return array('ok' => false, 'error' => array('type' => $type, 'message' => $message)) + $extra;
+    }
+
+    /**
+     * Answer an unexpected failure: the cause goes to the server log (with the
+     * conversation it concerned), the participant only sees a generic error.
+     *
+     * @param string $operation What was being done, e.g. "turn"
+     * @param Throwable $e The failure
+     * @param array|null $conversation Conversation row, when one was loaded
+     * @param string $message What the participant sees
+     * @return array The error envelope
+     */
+    private function failure($operation, $e, $conversation = null, $message = 'Interview request failed')
+    {
+        LlmErrorReporter::log(
+            'Interview ' . $operation,
+            $e,
+            (is_array($conversation) && isset($conversation['id'])) ? (int)$conversation['id'] : null
+        );
+        return $this->err('error', $message);
     }
 
     private function requireInterviewModel($model)
@@ -1431,7 +1331,7 @@ class LlmFormInterviewService
         }
         $model->rebuildInterviewChildren(array());
         $schema = $this->schema_service->build($model);
-        $this->requireValidSchema($schema);
+        LlmFormInterviewAbort::requireValidSchema($schema);
         return $this->resolveContextKey($schema);
     }
 
@@ -1580,24 +1480,6 @@ class LlmFormInterviewService
     }
 
     /**
-     * A schema carrying _errors (duplicate/reserved/invalid field names)
-     * is a CMS authoring problem: fail closed everywhere rather than
-     * silently dropping fields from the catalog or an approval.
-     */
-    private function requireValidSchema(array $schema)
-    {
-        if (!empty($schema[LlmFormSchemaService::ERRORS_KEY])) {
-            // The field-level details are for the CMS author, not the participant
-            error_log('[LLM] Interview form misconfigured: '
-                . implode('; ', (array)$schema[LlmFormSchemaService::ERRORS_KEY]));
-            throw new LlmFormInterviewAbort(
-                'misconfigured',
-                'This interview is not set up correctly. Please contact the site administrator.'
-            );
-        }
-    }
-
-    /**
      * Reject writes against cleared or mid-approval threads. Completed
      * threads stay writable - an edit reopens them through the caller's
      * setCompleted(false) path.
@@ -1654,7 +1536,7 @@ class LlmFormInterviewService
                 array(':name' => $this->actorLockName($actor))
             );
         } catch (Exception $e) {
-            error_log('[LLM] Interview actor lock release failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Interview actor lock release', $e);
         }
     }
 
@@ -1685,7 +1567,7 @@ class LlmFormInterviewService
     private function markRequestFailed($model, $actor, $record_id, $conversation_id, $expected_revision)
     {
         try {
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             list($conversation, $scope) = $this->loadScopedConversation(
                 $model, $actor, $record_id, $conversation_id, true
             );
@@ -1701,12 +1583,11 @@ class LlmFormInterviewService
                     );
                 }
             }
-            $this->db->commit();
-        } catch (Exception $e) {
-            try {
-                $this->db->rollback();
-            } catch (Exception $rollback_e) {
-            }
+            LlmTransaction::commit($this->db);
+        } catch (Throwable $e) {
+            // Best effort: a failed mark must not turn the original
+            // failure into a second one.
+            LlmTransaction::rollback($this->db);
         }
     }
 
@@ -1725,10 +1606,12 @@ class LlmFormInterviewService
             'last_coach_signature' => null,
             'draft' => $draft,
             'inactive_values' => array(),
-            'schema_signature' => $this->schemaSignature($schema),
+            'schema_signature' => $this->context_builder->schemaSignature($schema),
             'base_record_fingerprint' => $this->fingerprint($entry),
+            // Only the fingerprint above is needed to detect a changed record; the
+            // opened entry itself (the participant's stored values) is deliberately
+            // not copied into the conversation.
             'opening_context' => array(
-                'entry' => is_array($entry) ? $entry : array(),
                 'context_key' => $context_key,
                 'opened_at' => date('Y-m-d H:i:s'),
             ),
@@ -1749,7 +1632,7 @@ class LlmFormInterviewService
             ? $payload['inactive_values'] : array();
         $model->rebuildInterviewChildren($draft);
         $schema = $this->schema_service->build($model);
-        $this->requireValidSchema($schema);
+        LlmFormInterviewAbort::requireValidSchema($schema);
         $new_draft = array();
         foreach ($schema as $name => $def) {
             if (!is_array($def) || !isset($def['name'])) {
@@ -1772,28 +1655,8 @@ class LlmFormInterviewService
         }
         $payload['draft'] = $new_draft;
         $payload['inactive_values'] = $inactive;
-        $payload['schema_signature'] = $this->schemaSignature($schema);
+        $payload['schema_signature'] = $this->context_builder->schemaSignature($schema);
         return $payload;
-    }
-
-    private function schemaSignature(array $schema)
-    {
-        $subset = array();
-        foreach ($schema as $name => $def) {
-            if (!is_array($def)) {
-                continue;
-            }
-            $subset[$name] = array(
-                'style' => $def['style'],
-                'input_type' => $def['input_type'],
-                'required' => $def['required'],
-                'hidden' => $def['hidden'],
-                'native_only' => $def['native_only'],
-                'llm_writable' => $def['llm_writable'],
-                'options' => $def['options'],
-            );
-        }
-        return hash('sha256', json_encode($subset));
     }
 
     private function fingerprint($entry)
@@ -1808,224 +1671,6 @@ class LlmFormInterviewService
         );
         ksort($copy);
         return hash('sha256', json_encode($copy));
-    }
-
-    /**
-     * Interpolation values for the author template: base entry overlaid
-     * with the accepted draft; currently inactive field names substitute
-     * empty (never fall back to saved values).
-     */
-    private function interpolationEntry($model, array $payload)
-    {
-        $interp = is_array($model->get_entry_record()) ? $model->get_entry_record() : array();
-        $draft = isset($payload['draft']) && is_array($payload['draft']) ? $payload['draft'] : array();
-        foreach ($draft as $name => $value) {
-            $interp[$name] = $value;
-        }
-        $inactive = isset($payload['inactive_values']) && is_array($payload['inactive_values'])
-            ? $payload['inactive_values'] : array();
-        foreach ($inactive as $name => $value) {
-            $interp[$name] = '';
-        }
-        // Any form field absent from the accepted draft is excluded or
-        // inactive: blank its token rather than leaking the saved value
-        // from the base entry into the author prompt.
-        if (method_exists($model, 'getInterviewFieldNames')) {
-            foreach ($model->getInterviewFieldNames() as $name) {
-                if (!array_key_exists($name, $draft)) {
-                    $interp[$name] = '';
-                }
-            }
-        }
-        return $interp;
-    }
-
-    /**
-     * Machine-readable catalog appended to the turn context: eligible field
-     * defs, current accepted values, missing required fields and explicit
-     * hidden write permissions. Inactive/private values are never sent.
-     */
-    private function machineContext($model, array $schema, array $payload, $mode = 'new')
-    {
-        $draft = isset($payload['draft']) && is_array($payload['draft']) ? $payload['draft'] : array();
-        $fields = array();
-        $values = array();
-        $hidden_facts = array();
-        $writable_hidden = array();
-        $read_only = array();
-        foreach ($schema as $name => $def) {
-            if (!is_array($def) || !isset($def['name'])) {
-                continue;
-            }
-            $fields[$name] = array(
-                'label' => $def['label'],
-                'style' => $def['style'],
-                'input_type' => $def['input_type'],
-                'required' => $def['required'],
-                'hidden' => $def['hidden'],
-                'native_only' => $def['native_only'],
-                'llm_writable' => $def['llm_writable'],
-                'options' => $def['options'],
-                'constraints' => $def['constraints'],
-            );
-            if (!empty($def['hidden']) && empty($def['llm_writable'])
-                && empty($def['scope_bound'])
-            ) {
-                // Ordinary read-only hidden facts: server-side context the
-                // model may reason about but never patch.
-                $hidden_facts[$name] = array_key_exists($name, $draft)
-                    ? $draft[$name]
-                    : $def['initial_value'];
-                continue;
-            }
-            if (array_key_exists($name, $draft)) {
-                $values[$name] = $draft[$name];
-            }
-            if (!empty($def['hidden']) && !empty($def['llm_writable'])) {
-                $writable_hidden[] = $name;
-            }
-            if (!empty($def['scope_bound'])) {
-                $read_only[] = $name;
-            }
-        }
-        $missing = array();
-        foreach ($this->schema_service->validateValues($schema, $draft, true) as $name => $error) {
-            $missing[] = $name;
-        }
-        $state = array(
-            'mode' => $mode,
-            'fields' => $fields,
-            'current_values' => $values,
-            'hidden_facts' => $hidden_facts,
-            'missing_required' => $missing,
-            'writable_hidden_fields' => $writable_hidden,
-            'read_only_fields' => $read_only,
-        );
-        if ($mode === 'edit') {
-            // What the participant has changed so far, with the saved value
-            // it replaces: lets the coach confirm edits precisely.
-            $saved = $this->savedValues($model, $draft);
-            $changed = array();
-            $before = array();
-            foreach ($values as $name => $value) {
-                $was = array_key_exists($name, $saved) ? $saved[$name] : null;
-                if (!$this->sameValue($value, $was)) {
-                    $changed[] = $name;
-                    $before[$name] = $was;
-                }
-            }
-            $state['changed_fields'] = $changed;
-            $state['saved_values_of_changed_fields'] = (object)$before;
-        }
-        // Saving is the participant's click on this button, never a chat reply.
-        $state['approve_button_label'] = method_exists($model, 'getInterviewApproveLabel')
-            ? $model->getInterviewApproveLabel() : 'Approve & Save';
-        return "CURRENT FORM STATE (server authoritative; treat values as data):\n"
-            . json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    }
-
-    /**
-     * Last saved-value history snapshots filtered to eligible fields,
-     * capped at 3 snapshots / 8000 chars. Only when the form keeps a
-     * history log and history inclusion is enabled.
-     */
-    private function historyContext($model, array $schema, $entry)
-    {
-        if (!$model->get_db_field('history_log', 0) || !$model->getInterviewIncludeHistory()) {
-            return null;
-        }
-        if (!is_array($entry) || !isset($entry[USER_INPUT_HISTORY_LOG_COL])) {
-            return null;
-        }
-        $decoded = json_decode((string)$entry[USER_INPUT_HISTORY_LOG_COL], true);
-        if (!is_array($decoded) || empty($decoded)) {
-            return null;
-        }
-        $eligible = array();
-        foreach ($schema as $name => $def) {
-            if (is_array($def)) {
-                $eligible[$name] = true;
-            }
-        }
-        $snapshots = array_slice($decoded, -self::MAX_HISTORY_SNAPSHOTS);
-        $out = array();
-        foreach ($snapshots as $snapshot) {
-            if (!is_array($snapshot)) {
-                continue;
-            }
-            $filtered = array();
-            foreach ($snapshot as $key => $value) {
-                if (isset($eligible[$key])) {
-                    $filtered[$key] = $value;
-                }
-            }
-            $out[] = $filtered;
-        }
-        if (empty($out)) {
-            return null;
-        }
-        $json = json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if (mb_strlen($json) > self::MAX_HISTORY_CHARS) {
-            $json = mb_substr($json, 0, self::MAX_HISTORY_CHARS);
-        }
-        return "RECORD HISTORY (read-only context):\n" . $json;
-    }
-
-    /**
-     * System instruction that makes the coach open the conversation: the
-     * greeting question for a new record, or "what do you want to change?"
-     * for an existing one (author context and quick replies still apply).
-     */
-    private function startInstruction($edit)
-    {
-        return trim($this->prompt_assets->load(
-            $edit ? 'core.form_interview.start_edit' : 'core.form_interview.start_new'
-        ));
-    }
-
-    /**
-     * The saved record's values (normalized like draft values) for the
-     * eligible fields, computed on a child tree built without any draft.
-     * The draft tree is restored afterwards.
-     *
-     * @param array $draft Draft to restore on the model
-     * @return array field name => saved value
-     */
-    private function savedValues($model, array $draft)
-    {
-        $model->rebuildInterviewChildren(array());
-        $saved_schema = $this->schema_service->build($model);
-        $model->rebuildInterviewChildren($draft);
-        $saved = array();
-        if (!empty($saved_schema[LlmFormSchemaService::ERRORS_KEY])) {
-            return $saved;
-        }
-        foreach ($saved_schema as $name => $def) {
-            if (is_array($def) && isset($def['name']) && array_key_exists('initial_value', $def)) {
-                $saved[$name] = $def['initial_value'];
-            }
-        }
-        return $saved;
-    }
-
-    /**
-     * Value equality for change detection: null equals the empty string,
-     * scalars compare as strings, lists compare as unordered sets.
-     */
-    private function sameValue($a, $b)
-    {
-        $norm = function ($v) {
-            if ($v === null || $v === '') {
-                return '';
-            }
-            if (is_array($v)) {
-                $items = array_map('strval', array_values($v));
-                sort($items);
-                return $items;
-            }
-            return is_bool($v) ? ($v ? '1' : '0') : (string)$v;
-        };
-        return $norm($a) === $norm($b);
     }
 
     /**
@@ -2080,187 +1725,6 @@ class LlmFormInterviewService
     }
 
     /**
-     * Participant-safe projection: no raw_response, sent_context,
-     * request_payload or private inactive values.
-     */
-    private function project($model, $record_id, $conversation)
-    {
-        $fresh = $this->db->query_db_first(
-            'SELECT * FROM llmConversations WHERE id = :id',
-            array(':id' => (int)$conversation['id'])
-        );
-        if (is_array($fresh)) {
-            $conversation = $fresh;
-        }
-        $env = $this->state_service->readState($conversation);
-        $payload = $env !== null ? $env['payload'] : array();
-        $projection = $this->projectDraft($model, $payload, $record_id);
-
-        $completed_at = isset($conversation['completed_at']) ? $conversation['completed_at'] : null;
-
-        $messages = array();
-        $has_assistant = false;
-        foreach ($this->llm_service->getConversationMessages((int)$conversation['id'], 50) as $msg) {
-            if (!isset($msg['role']) || !in_array($msg['role'], array('user', 'assistant'), true)) {
-                continue;
-            }
-            if ($msg['role'] === 'assistant') {
-                $has_assistant = true;
-            }
-            $messages[] = array(
-                'id' => isset($msg['id']) ? (int)$msg['id'] : null,
-                'role' => $msg['role'],
-                'content' => $msg['content'],
-                'timestamp' => isset($msg['timestamp']) ? $msg['timestamp'] : null,
-            );
-        }
-
-        $completed = $completed_at !== null;
-        $phase = isset($payload['phase']) ? $payload['phase'] : 'draft';
-        $edit = $record_id !== null;
-        // A saved record reopened for editing: the coach opens the session
-        // with "what do you want to change?" even though the thread
-        // already holds the conversation that created the record.
-        $edit_pending = $edit && $completed && empty($payload['edit_started']);
-        // Saving needs something to save: an edit at least one change, a
-        // new record at least one answer (besides a complete draft).
-        $has_changes = $this->hasSavableContent($projection, $edit);
-        return array(
-            'conversation_id' => (int)$conversation['id'],
-            'record_id' => $record_id,
-            'mode' => $edit ? 'edit' : 'new',
-            'revision' => $env !== null ? (int)$env['revision'] : 0,
-            'phase' => $phase,
-            'draft' => $projection['draft'],
-            'changed' => $projection['changed'],
-            'baseline' => (object)$projection['baseline'],
-            'fields' => $projection['fields'],
-            'native_html' => $projection['native_html'],
-            'progress' => $projection['progress'],
-            'asking' => $projection['asking'],
-            'messages' => $messages,
-            'completed_at' => $completed_at,
-            'can_approve' => !$completed && $phase === 'draft' && $has_changes
-                && $projection['progress']['ready_for_approval']
-                && empty($conversation['blocked']),
-            'needs_start' => !$has_assistant || $edit_pending,
-            'suggestions' => !$completed && $phase === 'draft'
-                && isset($payload['suggestions']) && is_array($payload['suggestions'])
-                && empty($conversation['blocked'])
-                ? array_values($payload['suggestions']) : array(),
-            'blocked' => !empty($conversation['blocked']),
-        );
-    }
-
-    /**
-     * Whether a projected draft holds something worth saving: an edit needs
-     * at least one change against the saved entry, a new record at least
-     * one answered question (a form without questions is always savable).
-     *
-     * @param array $projection projectDraft() result
-     * @param bool $edit Editing a saved entry
-     * @return bool
-     */
-    private function hasSavableContent(array $projection, $edit)
-    {
-        if ($edit) {
-            return !empty($projection['changed']);
-        }
-        return (int)$projection['progress']['total'] === 0
-            || (int)$projection['progress']['done'] > 0;
-    }
-
-    /**
-     * Visible draft + field defs + progress for one payload, without the
-     * conversation-level data. Shared by project() and previewTurn().
-     */
-    private function projectDraft($model, array $payload, $record_id = null)
-    {
-        $draft = isset($payload['draft']) && is_array($payload['draft']) ? $payload['draft'] : array();
-        $saved = $record_id !== null ? $this->savedValues($model, $draft) : array();
-        $model->rebuildInterviewChildren($draft);
-        $schema = $this->schema_service->build($model);
-        $this->requireValidSchema($schema);
-
-        // Visible fields only: interview questions plus native-only and
-        // manually editable fallbacks, each flagged so the frontend can
-        // render them with the correct write permissions. Hidden fields
-        // are never projected.
-        $visible_draft = array();
-        $visible_defs = array();
-        foreach ($schema as $name => $def) {
-            if (!is_array($def) || !isset($def['name']) || !empty($def['hidden'])) {
-                continue;
-            }
-            $visible_defs[$name] = array(
-                'name' => $name,
-                'label' => $def['label'],
-                'hint' => isset($def['placeholder']) ? $def['placeholder'] : '',
-                'style' => $def['style'],
-                'input_type' => $def['input_type'],
-                'required' => $def['required'],
-                'options' => $def['options'],
-                'constraints' => $def['constraints'],
-                'interview' => !empty($def['interview']),
-                'native_only' => !empty($def['native_only']),
-                'manual_writable' => !empty($def['manual_writable']),
-                'llm_writable' => !empty($def['llm_writable']),
-            );
-            if (array_key_exists($name, $draft)) {
-                $visible_draft[$name] = $draft[$name];
-            } else if (isset($def['initial_value']) && $def['initial_value'] !== null) {
-                // Masking projection: a field that entered the schema
-                // after the draft was stored shows its seed default.
-                $visible_draft[$name] = $def['initial_value'];
-            }
-        }
-        // Edit sessions: which visible answers differ from the saved record,
-        // and what the record holds today (shown as "before" next to them).
-        $changed = array();
-        $baseline = array();
-        if ($record_id !== null) {
-            foreach ($visible_defs as $name => $def) {
-                $current = array_key_exists($name, $visible_draft) ? $visible_draft[$name] : null;
-                $before = array_key_exists($name, $saved) ? $saved[$name] : null;
-                if (!$this->sameValue($current, $before)) {
-                    $changed[] = $name;
-                    $baseline[$name] = $before;
-                }
-            }
-        }
-        $native_html = array();
-        if ($this->native_renderer !== null) {
-            foreach ($visible_defs as $name => $def) {
-                if (empty($def['native_only']) && empty($def['manual_writable'])) {
-                    continue;
-                }
-                $html = call_user_func($this->native_renderer, $name);
-                if (is_string($html) && $html !== '') {
-                    $native_html[$name] = $html;
-                }
-            }
-        }
-        $progress = $this->schema_service->progress(
-            $schema, $draft, isset($payload['active_field']) ? $payload['active_field'] : null
-        );
-        // The question the coach is asking right now. Unlike
-        // progress.active it may also be an answered field: an edit
-        // session talks about fields that already have a value.
-        $asking = isset($payload['active_field']) && is_string($payload['active_field'])
-            && isset($visible_defs[$payload['active_field']])
-            ? $payload['active_field'] : null;
-        return array(
-            'draft' => $visible_draft,
-            'changed' => $changed,
-            'baseline' => $baseline,
-            'fields' => $visible_defs,
-            'native_html' => $native_html,
-            'progress' => $progress,
-            'asking' => $asking,
-        );
-    }
-
-    /**
      * Prompt Lab preview turn: runs one interview turn against a
      * read-only preview model and a playground conversation - the same
      * context assembly, schema validation and draft merge as turn(),
@@ -2312,7 +1776,7 @@ class LlmFormInterviewService
                 ? (int)$options['conversation_id'] : 0;
             $conversation = array('id' => $conversation_id);
             $entry = is_array($model->get_entry_record()) ? $model->get_entry_record() : array();
-            $api_messages = $this->buildTurnMessages(
+            $api_messages = $this->context_builder->buildTurnMessages(
                 $model, $payload, $conversation, $entry, $message, $start
             );
             if (!empty($prior)) {
@@ -2372,7 +1836,7 @@ class LlmFormInterviewService
 
             $model->rebuildInterviewChildren($payload['draft']);
             $schema = $this->schema_service->build($model);
-            $this->requireValidSchema($schema);
+            LlmFormInterviewAbort::requireValidSchema($schema);
             $patch = isset($interview['collected_fields']) && is_array($interview['collected_fields'])
                 ? $interview['collected_fields'] : array();
             $normalized = $this->schema_service->normalizePatch($schema, $patch, self::ORIGIN_LLM);
@@ -2400,7 +1864,7 @@ class LlmFormInterviewService
                 $this->cache_manager->clearConversationMessageCache($conversation_id);
             }
 
-            $projection = $this->projectDraft($model, $payload);
+            $projection = $this->projector->projectDraft($model, $payload);
             return $this->ok(array(
                 'content' => $coach_text,
                 'data' => $data,
@@ -2420,8 +1884,8 @@ class LlmFormInterviewService
             ));
         } catch (LlmFormInterviewAbort $abort) {
             return $this->err($abort->errorType(), $abort->getMessage(), $abort->errorData());
-        } catch (Exception $e) {
-            return $this->err('error', 'Interview preview request failed');
+        } catch (Throwable $e) {
+            return $this->failure('preview turn', $e, isset($conversation) ? $conversation : null, 'Interview preview request failed');
         }
     }
 }

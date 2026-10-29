@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . '/base/BaseLlmService.php';
+require_once __DIR__ . '/LlmTransaction.php';
 require_once __DIR__ . '/exception/LlmException.php';
 require_once __DIR__ . '/exception/LlmValidationException.php';
 
@@ -180,14 +181,14 @@ class LlmConversationStateService extends BaseLlmService
      */
     public function createScopedConversation($user_id, $section_id, $source_type, array $options = array())
     {
-        $this->db->begin_transaction();
+        LlmTransaction::begin($this->db);
         try {
             $conversation_id = $this->createScopedConversationRow(
                 $user_id, $section_id, $source_type, $options
             );
-            $this->db->commit();
+            LlmTransaction::commit($this->db);
         } catch (\Throwable $e) {
-            $this->db->rollback();
+            LlmTransaction::rollback($this->db);
             throw ($e instanceof \Exception) ? $e : new LlmException($e->getMessage());
         }
         $this->afterScopedCreate($user_id, $conversation_id, $source_type);
@@ -435,13 +436,11 @@ class LlmConversationStateService extends BaseLlmService
         $ok = ($affected === 1);
         if ($ok) {
             $this->invalidateConversationCache($scope['user_id'], (int)$conversation_id);
-            $this->logTransaction(
-                transactionTypes_update,
-                'llmConversations',
-                $conversation_id,
-                $scope['user_id'],
-                'Conversation state revision ' . ($revision + 1)
-            );
+            // No audit row here: a revision is bookkeeping, written on every
+            // draft autosave (400 ms debounce) and turn, and core's
+            // add_transaction() would store the whole session with each of
+            // them. The events that matter (creation, record binding,
+            // completion, messages) are audited by their own calls.
         }
         return $ok;
     }

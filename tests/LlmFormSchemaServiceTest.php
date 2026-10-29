@@ -630,6 +630,117 @@ unset($gone);
 check('memo: a collected model is not kept alive by the memo', $gone_ref->get() === null);
 
 /* =========================================================================
+ * Input ceilings: finite numbers, default text length, native-only
+ * values, patch size
+ * ========================================================================= */
+
+$limits_form = new FakeFormModel(array(
+    field('textarea', 'story', array('label' => 'Story'), 60),
+    field('input', 'short', array('type_input' => 'text', 'max' => 5), 61),
+    field('input', 'long_max', array('type_input' => 'text', 'max' => 20000), 62),
+    field('input', 'score', array('type_input' => 'number', 'label' => 'Score'), 63),
+    field('slider', 'level', array('label' => 'Level', 'min' => 1, 'max' => 5), 64),
+    field('autocomplete', 'city', array('label' => 'City'), 65),
+), array(), true, array());
+$limits = $svc->build($limits_form);
+check('limits: fixture builds without author errors', !isset($limits[LlmFormSchemaService::ERRORS_KEY]) && count($limits) === 6);
+
+$llm = LlmFormSchemaService::ORIGIN_LLM;
+$native = LlmFormSchemaService::ORIGIN_NATIVE;
+$max_len = LlmFormSchemaService::MAX_VALUE_LENGTH;
+check('limits: the shipped ceilings are the documented ones (10000 characters per answer, 200 list items)',
+    $max_len === 10000 && LlmFormSchemaService::MAX_LIST_ITEMS === 200);
+
+$res = $svc->normalizePatch($limits, array('story' => str_repeat('x', $max_len)), $llm);
+check('limits: text right at the default ceiling is accepted', !$res['errors'] && strlen($res['values']['story']) === $max_len);
+$res = $svc->normalizePatch($limits, array('story' => str_repeat('x', $max_len + 1)), $llm);
+check('limits: text above the default ceiling is rejected', isset($res['errors']['story']) && !$res['values']);
+$res = $svc->normalizePatch($limits, array('story' => str_repeat("\xC3\xA4", $max_len)), $llm);
+check('limits: the ceiling counts characters, not bytes', !$res['errors'] && mb_strlen($res['values']['story'], 'UTF-8') === $max_len);
+$res = $svc->normalizePatch($limits, array('story' => str_repeat("\xC3\xA4", $max_len + 1)), $llm);
+check('limits: multibyte text above the ceiling is rejected', isset($res['errors']['story']));
+$res = $svc->normalizePatch($limits, array('story' => str_repeat('x', $max_len + 1)), LlmFormSchemaService::ORIGIN_MANUAL);
+check('limits: the ceiling applies to manual edits too', isset($res['errors']['story']));
+
+$res = $svc->normalizePatch($limits, array('short' => 'abcde'), $llm);
+check('limits: an explicit max keeps working (at the limit)', !$res['errors'] && $res['values']['short'] === 'abcde');
+$res = $svc->normalizePatch($limits, array('short' => 'abcdef'), $llm);
+check('limits: an explicit max keeps working (above the limit)', isset($res['errors']['short']));
+$res = $svc->normalizePatch($limits, array('long_max' => str_repeat('x', 15000)), $llm);
+check('limits: an explicit max may exceed the default ceiling', !$res['errors'] && strlen($res['values']['long_max']) === 15000);
+$res = $svc->normalizePatch($limits, array('long_max' => str_repeat('x', 20001)), $llm);
+check('limits: an explicit max above the ceiling is still enforced', isset($res['errors']['long_max']));
+
+$res = $svc->normalizePatch($limits, array('score' => '1e999'), $llm);
+check('number: numeric string overflowing to INF is rejected', isset($res['errors']['score']) && !$res['values']);
+$res = $svc->normalizePatch($limits, array('score' => '-1e999'), $llm);
+check('number: numeric string overflowing to -INF is rejected', isset($res['errors']['score']));
+$res = $svc->normalizePatch($limits, array('score' => INF), $llm);
+check('number: INF float (JSON 1e999) is rejected', isset($res['errors']['score']));
+$res = $svc->normalizePatch($limits, array('score' => NAN), $llm);
+check('number: NAN is rejected', isset($res['errors']['score']));
+$res = $svc->normalizePatch($limits, array('level' => '1e999'), $llm);
+check('number: a slider rejects INF as well', isset($res['errors']['level']));
+$res = $svc->normalizePatch($limits, array('score' => '1e3'), $llm);
+check('number: a large finite value is still accepted', !$res['errors'] && $res['values']['score'] === 1000.0);
+$res = $svc->normalizePatch($limits, array('score' => 1.5), $llm);
+check('number: a plain float is still accepted', !$res['errors'] && $res['values']['score'] === 1.5);
+$decoded = json_decode('{"score": 1e999}', true);
+$res = $svc->normalizePatch($limits, $decoded, $llm);
+check('number: the decoded JSON overflow never reaches the state', isset($res['errors']['score']) && json_encode($res['values']) !== false);
+
+$res = $svc->normalizePatch($limits, array('city' => 'Zurich'), $native);
+check('native-only: a scalar is accepted', !$res['errors'] && $res['values']['city'] === 'Zurich');
+$res = $svc->normalizePatch($limits, array('city' => null), $native);
+check('native-only: null clears the value', !$res['errors'] && array_key_exists('city', $res['values']) && $res['values']['city'] === null);
+$res = $svc->normalizePatch($limits, array('city' => array()), $native);
+check('native-only: an empty list is accepted', !$res['errors'] && $res['values']['city'] === array());
+$res = $svc->normalizePatch($limits, array('city' => array('a', 2, 3.5, true)), $native);
+check('native-only: a flat list of scalars is accepted', !$res['errors'] && $res['values']['city'] === array('a', 2, 3.5, true));
+$res = $svc->normalizePatch($limits, array('city' => str_repeat('x', $max_len)), $native);
+check('native-only: a string right at the ceiling is accepted', !$res['errors']);
+$res = $svc->normalizePatch($limits, array('city' => str_repeat('x', $max_len + 1)), $native);
+check('native-only: a string above the ceiling is rejected', isset($res['errors']['city']) && !$res['values']);
+$res = $svc->normalizePatch($limits, array('city' => array('ok', str_repeat('x', $max_len + 1))), $native);
+check('native-only: a list item above the ceiling is rejected', isset($res['errors']['city']));
+$res = $svc->normalizePatch($limits, array('city' => array_fill(0, LlmFormSchemaService::MAX_LIST_ITEMS, 'x')), $native);
+check('native-only: a list right at the item ceiling is accepted', !$res['errors']);
+$res = $svc->normalizePatch($limits, array('city' => array_fill(0, LlmFormSchemaService::MAX_LIST_ITEMS + 1, 'x')), $native);
+check('native-only: a list above the item ceiling is rejected', isset($res['errors']['city']) && !$res['values']);
+$res = $svc->normalizePatch($limits, array('city' => INF), $native);
+check('native-only: INF is rejected', isset($res['errors']['city']));
+$res = $svc->normalizePatch($limits, array('city' => array(1, INF)), $native);
+check('native-only: INF inside a list is rejected', isset($res['errors']['city']));
+$res = $svc->normalizePatch($limits, array('city' => array('a' => 1)), $native);
+check('native-only: an associative array is rejected', isset($res['errors']['city']));
+$res = $svc->normalizePatch($limits, array('city' => array(array('nested'))), $native);
+check('native-only: a nested list is rejected', isset($res['errors']['city']));
+$res = $svc->normalizePatch($limits, array('city' => new stdClass()), $native);
+check('native-only: an object is rejected', isset($res['errors']['city']));
+
+$flood = array();
+for ($i = 0; $i < 1000; $i++) {
+    $flood['junk_' . $i] = 'x';
+}
+$res = $svc->normalizePatch($limits, $flood, $llm);
+check(
+    'patch size: a patch larger than the form is one error, not one per name',
+    count($res['errors']) === 1 && isset($res['errors'][LlmFormSchemaService::ERRORS_KEY]) && !$res['values']
+);
+$res = $svc->normalizePatch($limits, array('story' => 'ok') + $flood, $native);
+check('patch size: a valid entry in an oversized patch is not applied', !$res['values'] && count($res['errors']) === 1);
+$exact = array('story' => 'a', 'short' => 'b', 'long_max' => 'c', 'score' => 1, 'level' => 3, 'nope' => 'x');
+$res = $svc->normalizePatch($limits, $exact, $llm);
+check(
+    'patch size: as many entries as fields is not oversized',
+    !isset($res['errors'][LlmFormSchemaService::ERRORS_KEY]) && isset($res['errors']['nope'])
+        && count($res['values']) === 5
+);
+$exact['extra'] = 'x';
+$res = $svc->normalizePatch($limits, $exact, $llm);
+check('patch size: one entry more than the form has fields is oversized', isset($res['errors'][LlmFormSchemaService::ERRORS_KEY]) && !$res['values']);
+
+/* =========================================================================
  * Summary
  * ========================================================================= */
 

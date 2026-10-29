@@ -67,7 +67,16 @@ class InterviewFakeDb
         return isset($this->lookup_ids[$type][$value]) ? $this->lookup_ids[$type][$value] : null;
     }
 
-    public function get_cache() { return new InterviewFakeRawCache(); }
+    /** @var InterviewFakeRawCache|null one cache for the whole fake so a wipe stays visible */
+    private $raw_cache = null;
+
+    public function get_cache()
+    {
+        if ($this->raw_cache === null) {
+            $this->raw_cache = new InterviewFakeRawCache();
+        }
+        return $this->raw_cache;
+    }
 
     /** @var array held named locks (GET_LOCK) => hold count */
     public $locks = array();
@@ -103,7 +112,40 @@ class InterviewFakeDb
 
     public function commit() { array_pop($this->tx_stack); }
 
+    /** @var array nth CAS state write (see failStateWrite) => Throwable it throws */
+    private $fail_state_writes = array();
+    private $state_writes = 0;
+
+    /**
+     * Failure injection: the $nth state write from now on throws $throwable,
+     * inside whatever transaction happens to run it.
+     */
+    public function failStateWrite($nth, \Throwable $throwable)
+    {
+        $this->state_writes = 0;
+        $this->fail_state_writes = array((int)$nth => $throwable);
+    }
+
+    /** @var int BaseDb::rollback() calls: core's version wipes the whole APCu cache */
+    public $wipes = 0;
+
+    /** Mirrors BaseDb::rollback(): PDO rollback + typeless clear_cache(). */
     public function rollback()
+    {
+        $this->wipes++;
+        $this->restoreSnapshot();
+        $this->get_cache()->clear_cache();
+    }
+
+    /** Mirrors BaseDb::get_dbh(): the PDO handle rolls back without touching the cache. */
+    public function get_dbh()
+    {
+        return new InterviewFakeDbh($this);
+    }
+
+    public function inTransaction() { return count($this->tx_stack) > 0; }
+
+    public function restoreSnapshot()
     {
         $snapshot = array_pop($this->tx_stack);
         if ($snapshot !== null) {
@@ -268,6 +310,9 @@ class InterviewFakeDb
         }
         $is_state_write = strpos($sql, 'set state = :state') !== false
             && strpos($sql, 'extract(state') !== false;
+        if ($is_state_write && isset($this->fail_state_writes[++$this->state_writes])) {
+            throw $this->fail_state_writes[$this->state_writes];
+        }
         $is_bind = strpos($sql, 'id_datarows = :sc_new_row') !== false;
         $is_init = strpos($sql, 'context_key = :context_key') !== false;
         $changed = 0;
@@ -296,9 +341,25 @@ class InterviewFakeDb
     }
 }
 
+/** PDO handle stand-in: inTransaction()/rollBack() only, like ExtendedPdo. */
+class InterviewFakeDbh
+{
+    private $db;
+
+    public function __construct(InterviewFakeDb $db) { $this->db = $db; }
+    public function inTransaction() { return $this->db->inTransaction(); }
+    public function rollBack() { $this->db->restoreSnapshot(); return true; }
+}
+
 class InterviewFakeRawCache
 {
+    const CACHE_TYPE_USER_INPUT = 'USER_INPUT';
+    const CACHE_TYPE_SECTIONS = 'CACHE_SECTIONS';
+
     public $cleared = array();
+
+    /** True when some caller asked for the typeless (global) clear. */
+    public function wasWiped() { return in_array(null, $this->cleared, true); }
     public function get($key) { return false; }
     public function set($key, $value, $ttl = 0) { return true; }
     public function delete($key) { return true; }
@@ -366,6 +427,8 @@ class StubLlmService
     public $scripted = array();
     public $api_calls = 0;
     public $rate_limited = false;
+    /** @var bool updateMessage() reports failure (the merge cannot validate the reply) */
+    public $fail_update = false;
     public $on_call = null;
     /** @var array messages of the most recent callLlmApi */
     public $last_messages = array();
@@ -399,6 +462,9 @@ class StubLlmService
 
     public function updateMessage($message_id, $data)
     {
+        if ($this->fail_update) {
+            return false;
+        }
         if (isset($this->db->messages[$message_id])) {
             foreach ($data as $k => $v) {
                 $this->db->messages[$message_id][$k] = $v;
@@ -864,6 +930,31 @@ $res = $svc_e->read($model_99, 99, $res_b['state']['conversation_id']);
 check('scope: authorized-but-wrong record rejected', !$res['ok'] && $res['error']['type'] === 'not_found');
 
 /* =========================================================================
+ * 7b. The opened entry is not copied into the conversation
+ *
+ * base_record_fingerprint is what detects a changed record. A verbatim copy
+ * of the opened entry in the thread state (every stored column, not only the
+ * form fields) is never read, so it must not be stored. The draft itself
+ * legitimately holds the form fields' initial values.
+ * ========================================================================= */
+
+$entry_model = new InterviewFormModel(array(), array(
+    61 => array('record_id' => 61, 'title' => 'Participant answer', 'internal_note' => 'private-non-field-value', 'id_users' => 5),
+));
+$res_p = $svc_e->open($entry_model, 61, 'tok-p');
+check('opening_context: the bound record opens', !empty($res_p['ok']));
+$conv_p = $res_p['state']['conversation_id'];
+$env_p = $st_e->readState($db_e->conversations[$conv_p]);
+$opening = isset($env_p['payload']['opening_context']) ? $env_p['payload']['opening_context'] : null;
+check('opening_context: still records the context key and the open time',
+    is_array($opening) && array_key_exists('context_key', $opening) && !empty($opening['opened_at']));
+check('opening_context: the participant entry is not copied', is_array($opening) && !array_key_exists('entry', $opening));
+check('opening_context: entry data that is not a form field is nowhere in the stored state',
+    strpos((string)$db_e->conversations[$conv_p]['state'], 'private-non-field-value') === false);
+check('opening_context: the changed-record fingerprint is still stored',
+    !empty($env_p['payload']['base_record_fingerprint']));
+
+/* =========================================================================
  * 8. Approval: prepare + complete (outer tx), binding, receipt, idempotency
  * ========================================================================= */
 
@@ -881,7 +972,7 @@ $model_incomplete->url_params = array('scope' => 'incomplete');
 $res_inc = $svc_a->open($model_incomplete, null, 'tok-inc');
 $db_a->begin_transaction();
 $prep = $svc_a->prepareApproval($model_incomplete, null, $res_inc['state']['conversation_id'], 0, 'req-a');
-$db_a->rollback();
+LlmTransaction::rollback($db_a);
 check('approve: incomplete draft rejected with field errors', !$prep['ok']
     && $prep['error']['type'] === 'validation' && isset($prep['field_errors']['title']));
 
@@ -922,6 +1013,17 @@ $prep3 = $svc_a->prepareApproval($model_a, null, $conv_a, 99, 'req-other');
 check('approve: different token on completed conflicts', !$prep3['ok'] && $prep3['error']['type'] === 'conflict');
 $db_a->commit();
 
+// the token is stored in the conversation state: its length is capped
+$db_a->begin_transaction();
+$prep_long = $svc_a->prepareApproval($model_a, null, $conv_a, 99, str_repeat('t', LlmFormInterviewService::MAX_TOKEN_LENGTH + 1));
+LlmTransaction::rollback($db_a);
+check('approve: over-long request token rejected', !$prep_long['ok']
+    && $prep_long['error']['type'] === 'validation' && strpos($prep_long['error']['message'], 'too long') !== false);
+$db_a->begin_transaction();
+$prep_max = $svc_a->prepareApproval($model_a, null, $conv_a, 99, str_repeat('t', LlmFormInterviewService::MAX_TOKEN_LENGTH));
+$db_a->commit();
+check('approve: a request token at the length cap passes validation', !$prep_max['ok'] && $prep_max['error']['type'] === 'conflict');
+
 /* =========================================================================
  * 9. Rollback: failed completion restores draft state
  * ========================================================================= */
@@ -936,7 +1038,7 @@ $prep = $svc_r->prepareApproval($model_r, null, $conv_r, 1, 'req-r');
 check('rollback: prepare ok', !empty($prep['ok']));
 $bad = $svc_r->completeApproval($model_r, $prep, 0);
 check('rollback: bad write result fails', !$bad['ok']);
-$db_r->rollback();
+LlmTransaction::rollback($db_r);
 $row_r = $db_r->conversations[$conv_r];
 check('rollback: conversation still unbound', $row_r['id_dataRows'] === null);
 check('rollback: not completed', $row_r['completed_at'] === null);
@@ -963,7 +1065,7 @@ $model_b_stale = new InterviewFormModel(array('record_id' => 42, 'title' => 'Ori
 $db_b->begin_transaction();
 $prep_s = $svc_b->prepareApproval($model_b_stale, 42, $conv_b, 1, 'req-s');
 check('bound: stale record fingerprint conflicts', !$prep_s['ok'] && $prep_s['error']['type'] === 'conflict');
-$db_b->rollback();
+LlmTransaction::rollback($db_b);
 
 // fresh: same fingerprint approves; update carries SELECTED_RECORD_ID
 $db_b->begin_transaction();
@@ -1039,6 +1141,40 @@ $res = $svc_t->turn($m_cont, null, $rc['state']['conversation_id'], 3, '   ');
 check('input: empty message rejected', !$res['ok'] && $res['error']['type'] === 'validation');
 $res = $svc_t->turn($m_cont, null, $rc['state']['conversation_id'], 'abc', 'x');
 check('input: non-numeric revision rejected', !$res['ok'] && $res['error']['type'] === 'validation');
+
+// Size caps are answered before a transaction, lock or LLM call. A request
+// at the cap gets past validation (a stale revision then fails as a conflict).
+check('input: the shipped caps are the documented ones (10000-character message, 191-character tokens)',
+    LlmFormInterviewService::MAX_MESSAGE_LENGTH === 10000 && LlmFormInterviewService::MAX_TOKEN_LENGTH === 191);
+$queries_before = count($db_t->queries);
+$messages_before = count($db_t->messages);
+$res = $svc_t->turn($m_cont, null, $rc['state']['conversation_id'], 3,
+    str_repeat('x', LlmFormInterviewService::MAX_MESSAGE_LENGTH + 1), array(), 'req-long');
+check('input: over-long message rejected', !$res['ok'] && $res['error']['type'] === 'validation'
+    && strpos($res['error']['message'], 'Message is too long') !== false);
+$res = $svc_t->turn($m_cont, null, $rc['state']['conversation_id'], 3,
+    str_repeat("\xC3\xA4", LlmFormInterviewService::MAX_MESSAGE_LENGTH + 1), array(), 'req-long2');
+check('input: the message cap counts characters', !$res['ok'] && $res['error']['type'] === 'validation'
+    && strpos($res['error']['message'], 'Message is too long') !== false);
+$res = $svc_t->turn($m_cont, null, $rc['state']['conversation_id'], 3, 'hi',
+    array(), str_repeat('r', LlmFormInterviewService::MAX_TOKEN_LENGTH + 1));
+check('input: over-long request id rejected', !$res['ok'] && $res['error']['type'] === 'validation'
+    && strpos($res['error']['message'], 'request id is too long') !== false);
+$open_queries_before = count($db_t->queries);
+$res = $svc_t->open($m_cont, null, str_repeat('o', LlmFormInterviewService::MAX_TOKEN_LENGTH + 1));
+check('input: over-long open token rejected', !$res['ok'] && $res['error']['type'] === 'validation'
+    && strpos($res['error']['message'], 'open token is too long') !== false);
+check('input: open token size cap is answered before any database work',
+    count($db_t->queries) === $open_queries_before && $db_t->txDepth() === 0);
+check('input: size caps are answered before any database work',
+    count($db_t->queries) === $queries_before && count($db_t->messages) === $messages_before
+    && $db_t->txDepth() === 0);
+$res = $svc_t->turn($m_cont_bound, 778, $rc['state']['conversation_id'], 99,
+    str_repeat('x', LlmFormInterviewService::MAX_MESSAGE_LENGTH), array(), 'req-cap');
+check('input: a message at the cap passes validation', !$res['ok'] && $res['error']['type'] === 'conflict');
+$res = $svc_t->turn($m_cont_bound, 778, $rc['state']['conversation_id'], 99, 'hi',
+    array(), str_repeat('r', LlmFormInterviewService::MAX_TOKEN_LENGTH));
+check('input: a request id at the cap passes validation', !$res['ok'] && $res['error']['type'] === 'conflict');
 
 /* =========================================================================
  * 13. View escaping: quote + <script> payloads context-escaped
@@ -1343,14 +1479,14 @@ $conv_n = $res_n['state']['conversation_id'];
 check('nothing to save: an empty form without required fields is not savable', $res_n['state']['can_approve'] === false);
 $db_n->begin_transaction();
 $prep_n = $svc_n->prepareApproval($model_n, null, $conv_n, $res_n['state']['revision'], 'req-n0');
-$db_n->rollback();
+LlmTransaction::rollback($db_n);
 check('nothing to save: approval is refused server-side',
     empty($prep_n['ok']) && $prep_n['error']['type'] === 'validation');
 $up_n = $svc_n->updateDraft($model_n, null, $conv_n, $res_n['state']['revision'], array('title' => 'Something'));
 check('nothing to save: one answer makes it savable', $up_n['state']['can_approve'] === true);
 $db_n->begin_transaction();
 $prep_n2 = $svc_n->prepareApproval($model_n, null, $conv_n, $up_n['state']['revision'], 'req-n1');
-$db_n->rollback();
+LlmTransaction::rollback($db_n);
 check('nothing to save: approval passes once something is answered', !empty($prep_n2['ok']));
 
 /* =========================================================================
@@ -1430,6 +1566,398 @@ $alerts_f = $services_f->scheduler->jobs;
 check('danger pre-scan: unconfigured sender falls back to noreply@host',
     count($alerts_f) === 1 && $alerts_f[0][0]['from_email'] === 'noreply@cms.example.test');
 unset($_SERVER['HTTP_HOST']);
+
+/* =========================================================================
+ * Expected failures roll back through the PDO handle: no global cache wipe
+ * (BaseDb::rollback() would apcu_clear_cache() the whole application) and
+ * no transaction left open - not even for a PHP Error.
+ * ========================================================================= */
+
+/** Model whose child rebuild throws a PHP Error (TypeError-like) inside the transaction. */
+class InterviewErrorModel extends InterviewFormModel
+{
+    public $explode = false;
+
+    public function rebuildInterviewChildren(array $draft = array())
+    {
+        if ($this->explode) {
+            throw new \Error('boom inside the transaction');
+        }
+        return parent::rebuildInterviewChildren($draft);
+    }
+}
+
+function assert_quiet_rollback($label, InterviewFakeDb $db)
+{
+    check("$label: no global cache wipe", $db->wipes === 0 && !$db->get_cache()->wasWiped());
+    check("$label: no transaction left open", !$db->inTransaction());
+}
+
+list($db_w, , , , , , $svc_w) = env();
+$model_w = new InterviewErrorModel();
+$res_w = $svc_w->open($model_w, null, 'tok-w');
+$conv_w = $res_w['state']['conversation_id'];
+$rev_w = $res_w['state']['revision'];
+assert_quiet_rollback('wipe: open', $db_w);
+
+$stale_w = $svc_w->updateDraft($model_w, null, $conv_w, $rev_w + 7, array('title' => 'x'));
+check('wipe: stale draft update is a conflict',
+    empty($stale_w['ok']) && $stale_w['error']['type'] === 'conflict');
+assert_quiet_rollback('wipe: stale draft update', $db_w);
+
+$invalid_w = $svc_w->updateDraft($model_w, null, $conv_w, $rev_w, array('no_such_field' => 'x'));
+check('wipe: unknown field is a validation error',
+    empty($invalid_w['ok']) && $invalid_w['error']['type'] === 'validation');
+assert_quiet_rollback('wipe: invalid patch', $db_w);
+
+$turn_w = $svc_w->turn($model_w, null, $conv_w, $rev_w + 7, 'hello', array(), 'req-w1');
+check('wipe: stale turn is a conflict',
+    empty($turn_w['ok']) && $turn_w['error']['type'] === 'conflict');
+assert_quiet_rollback('wipe: stale turn', $db_w);
+
+$db_w->lock_available = false;
+$busy_w = $svc_w->open($model_w, null, 'tok-w2');
+check('wipe: busy actor lock is a conflict',
+    empty($busy_w['ok']) && $busy_w['error']['type'] === 'conflict');
+assert_quiet_rollback('wipe: busy actor lock', $db_w);
+$db_w->lock_available = true;
+
+$rows_before_w = $db_w->conversations;
+$model_w->explode = true;
+$escaped_w = null;
+try {
+    $svc_w->updateDraft($model_w, null, $conv_w, $rev_w, array('title' => 'x'));
+} catch (\Throwable $t) {
+    $escaped_w = $t;
+}
+$model_w->explode = false;
+check('wipe: an Error inside the transaction does not leave it open',
+    !$db_w->inTransaction());
+check('wipe: an Error inside the transaction rolled the writes back',
+    $db_w->conversations === $rows_before_w);
+check('wipe: an Error inside the transaction does not wipe the cache either',
+    $db_w->wipes === 0 && !$db_w->get_cache()->wasWiped());
+check('wipe: the service stays usable afterwards',
+    !empty($svc_w->updateDraft($model_w, null, $conv_w, $rev_w, array('title' => 'ok'))['ok']));
+
+/* =========================================================================
+ * The other transactions of the interview: open(), both transactions of
+ * turn(), the merge abort and the best-effort markRequestFailed(). A PHP
+ * Error (not only an Exception) rolls back through the PDO handle, leaves
+ * neither the transaction nor the actor lock open and never wipes the cache.
+ * ========================================================================= */
+
+function run_guarded(callable $fn)
+{
+    try {
+        return array($fn(), null);
+    } catch (\Throwable $t) {
+        return array(null, $t);
+    }
+}
+
+function request_status(InterviewFakeDb $db, $conversation_id)
+{
+    $env = json_decode($db->conversations[$conversation_id]['state'], true);
+    return isset($env['payload']['request']['status']) ? $env['payload']['request']['status'] : null;
+}
+
+// open(): an Error inside the transaction
+list($db_e1, , , , , , $svc_e1) = env();
+$model_e1 = new InterviewErrorModel();
+$model_e1->explode = true;
+run_guarded(function () use ($svc_e1, $model_e1) {
+    return $svc_e1->open($model_e1, null, 'tok-e1');
+});
+assert_quiet_rollback('open Error', $db_e1);
+check('open Error: nothing was created', count($db_e1->conversations) === 0);
+check('open Error: the actor lock is released', $db_e1->locks === array());
+$model_e1->explode = false;
+$retry_e1 = $svc_e1->open($model_e1, null, 'tok-e1');
+check('open Error: a retry after the failure succeeds', !empty($retry_e1['ok']));
+
+// turn(), first transaction (draft + participant message): an Error on the state write
+list($db_e2, , , $llm_e2, , , $svc_e2) = env();
+$model_e2 = new InterviewErrorModel();
+$conv_e2 = $svc_e2->open($model_e2, null, 'tok-e2')['state']['conversation_id'];
+$rows_e2 = $db_e2->conversations;
+$msgs_e2 = $db_e2->messages;
+$db_e2->failStateWrite(1, new \Error('state write failed in the first transaction'));
+run_guarded(function () use ($svc_e2, $model_e2, $conv_e2) {
+    return $svc_e2->turn($model_e2, null, $conv_e2, 0, 'hello', array(), 'req-e2');
+});
+assert_quiet_rollback('turn first transaction Error', $db_e2);
+check('turn first transaction Error: state and messages are rolled back',
+    $db_e2->conversations === $rows_e2 && $db_e2->messages === $msgs_e2);
+check('turn first transaction Error: the LLM was never called', $llm_e2->api_calls === 0);
+$llm_e2->scripted[] = valid_interview_response(array('title' => 'after retry'), 'title');
+$retry_e2 = $svc_e2->turn($model_e2, null, $conv_e2, 0, 'hello', array(), 'req-e2');
+check('turn first transaction Error: the same request can be retried', !empty($retry_e2['ok']));
+
+// turn(), merge transaction: an Error on the merge's state write
+list($db_e3, , , $llm_e3, , , $svc_e3) = env();
+$model_e3 = new InterviewErrorModel();
+$conv_e3 = $svc_e3->open($model_e3, null, 'tok-e3')['state']['conversation_id'];
+$llm_e3->scripted[] = valid_interview_response(array('title' => 'merged'), 'title');
+$pre_merge_e3 = null;
+$llm_e3->on_call = function () use ($db_e3, &$pre_merge_e3) {
+    $pre_merge_e3 = $db_e3->conversations;
+};
+$db_e3->failStateWrite(2, new \Error('state write failed in the merge'));
+run_guarded(function () use ($svc_e3, $model_e3, $conv_e3) {
+    return $svc_e3->turn($model_e3, null, $conv_e3, 0, 'hello', array(), 'req-e3');
+});
+assert_quiet_rollback('turn merge Error', $db_e3);
+check('turn merge Error: the merge is rolled back, the pre-merge state stands',
+    $pre_merge_e3 !== null && $db_e3->conversations === $pre_merge_e3);
+check('turn merge Error: the reply stays unvalidated (never shown to the participant)',
+    count(array_filter($db_e3->messages, function ($m) {
+        return $m['role'] === 'assistant' && (int)$m['is_validated'] === 1;
+    })) === 0);
+
+// turn(), merge transaction: the validated reply cannot be stored (abort, not an Error)
+list($db_e4, , , $llm_e4, , , $svc_e4) = env();
+$model_e4 = new InterviewErrorModel();
+$conv_e4 = $svc_e4->open($model_e4, null, 'tok-e4')['state']['conversation_id'];
+$llm_e4->scripted[] = valid_interview_response(array('title' => 'merged'), 'title');
+$llm_e4->fail_update = true;
+$pre_merge_e4 = null;
+$llm_e4->on_call = function () use ($db_e4, &$pre_merge_e4) {
+    $pre_merge_e4 = $db_e4->conversations;
+};
+$res_e4 = $svc_e4->turn($model_e4, null, $conv_e4, 0, 'hello', array(), 'req-e4');
+check('turn merge abort: the turn answers llm_invalid', empty($res_e4['ok']) && $res_e4['error']['type'] === 'llm_invalid');
+assert_quiet_rollback('turn merge abort', $db_e4);
+check('turn merge abort: the merge write is rolled back, the pre-merge state stands',
+    $pre_merge_e4 !== null && $db_e4->conversations === $pre_merge_e4);
+
+// markRequestFailed() (best effort): control first, then an Error inside it
+list($db_e5, , , $llm_e5, , , $svc_e5) = env();
+$model_e5 = new InterviewErrorModel();
+$conv_e5 = $svc_e5->open($model_e5, null, 'tok-e5')['state']['conversation_id'];
+for ($i = 0; $i < 4; $i++) {
+    $llm_e5->scripted[] = json_encode(array('not' => 'json-schema'));
+}
+$res_e5 = $svc_e5->turn($model_e5, null, $conv_e5, 0, 'hello', array(), 'req-e5');
+check('mark failed (control): an invalid reply answers llm_invalid', empty($res_e5['ok']) && $res_e5['error']['type'] === 'llm_invalid');
+check('mark failed (control): the request is marked failed', request_status($db_e5, $conv_e5) === 'failed');
+
+list($db_e6, , , $llm_e6, , , $svc_e6) = env();
+$model_e6 = new InterviewErrorModel();
+$conv_e6 = $svc_e6->open($model_e6, null, 'tok-e6')['state']['conversation_id'];
+for ($i = 0; $i < 4; $i++) {
+    $llm_e6->scripted[] = json_encode(array('not' => 'json-schema'));
+}
+$pre_mark_e6 = null;
+$llm_e6->on_call = function () use ($db_e6, &$pre_mark_e6) {
+    $pre_mark_e6 = $db_e6->conversations;
+};
+$db_e6->failStateWrite(2, new \Error('state write failed while marking the request failed'));
+list($res_e6, $thrown_e6) = run_guarded(function () use ($svc_e6, $model_e6, $conv_e6) {
+    return $svc_e6->turn($model_e6, null, $conv_e6, 0, 'hello', array(), 'req-e6');
+});
+check('mark failed Error: the failing best-effort mark does not change the outcome (llm_invalid, nothing thrown)',
+    $thrown_e6 === null && empty($res_e6['ok']) && $res_e6['error']['type'] === 'llm_invalid');
+assert_quiet_rollback('mark failed Error', $db_e6);
+check('mark failed Error: its write is rolled back (the request stays pending)',
+    $pre_mark_e6 !== null && $db_e6->conversations === $pre_mark_e6 && request_status($db_e6, $conv_e6) === 'pending');
+
+/* =========================================================================
+ * Unexpected failures: generic answer for the participant, cause in the log
+ *
+ * Every public entry point ends in a catch-all. It must (a) catch a PHP
+ * Error as well as an Exception, (b) answer with the generic error envelope
+ * instead of the exception text and (c) log the cause with the conversation
+ * it concerned - without quoting database driver messages, which can carry
+ * the participant's answers.
+ * ========================================================================= */
+
+/** Model that throws a PHP Error from the method named in $bomb. */
+class InterviewBombModel extends InterviewFormModel
+{
+    public $bomb = '';
+
+    private function maybeExplode($method)
+    {
+        if ($this->bomb === $method) {
+            throw new \Error('bomb: ' . $method);
+        }
+    }
+
+    public function rebuildInterviewChildren(array $draft = array())
+    {
+        $this->maybeExplode(__FUNCTION__);
+        return parent::rebuildInterviewChildren($draft);
+    }
+
+    public function setInterviewBaseEntry(array $entry)
+    {
+        $this->maybeExplode(__FUNCTION__);
+        return parent::setInterviewBaseEntry($entry);
+    }
+
+    public function get_form_entry_record($record_id, $own_entries_only)
+    {
+        $this->maybeExplode(__FUNCTION__);
+        return parent::get_form_entry_record($record_id, $own_entries_only);
+    }
+
+    /** Asked by assertRootEligible(), i.e. after the conversation row was loaded. */
+    public function get_condition_result()
+    {
+        $this->maybeExplode(__FUNCTION__);
+        return parent::get_condition_result();
+    }
+}
+
+/** A PDOException the way PDO throws it: the code is the SQLSTATE string. */
+function driver_error($message, $sqlstate)
+{
+    $e = new \PDOException($message);
+    $property = new \ReflectionProperty('Exception', 'code');
+    $property->setAccessible(true);
+    $property->setValue($e, $sqlstate);
+    return $e;
+}
+
+$failure_log = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'llm_interview_failure_' . getmypid() . '.log';
+ini_set('log_errors', '1');
+ini_set('error_log', $failure_log);
+register_shutdown_function(function () use ($failure_log) {
+    if (is_file($failure_log)) {
+        unlink($failure_log);
+    }
+});
+
+function failure_log_reset()
+{
+    global $failure_log;
+    file_put_contents($failure_log, '');
+}
+
+function failure_log()
+{
+    global $failure_log;
+    return is_file($failure_log) ? (string)file_get_contents($failure_log) : '';
+}
+
+function is_generic_failure($res, $message = 'Interview request failed')
+{
+    return is_array($res) && empty($res['ok']) && isset($res['error']['type'])
+        && $res['error']['type'] === 'error' && $res['error']['message'] === $message;
+}
+
+/**
+ * Run one entry point with a bomb armed and check the three promises.
+ *
+ * @param string $label Scenario name
+ * @param string $operation What the log line must say ("Interview <operation> failed")
+ * @param string $bomb Method of InterviewBombModel that throws
+ * @param int|null $conversation Conversation id the log line must carry (null: none expected)
+ */
+function check_failure_site($label, $operation, $bomb, callable $run, $conversation = null, $message = 'Interview request failed')
+{
+    failure_log_reset();
+    list($res, $thrown) = run_guarded($run);
+    $log = failure_log();
+    check("failure $label: the Error does not escape", $thrown === null);
+    check("failure $label: the participant gets the generic error", is_generic_failure($res, $message));
+    check("failure $label: the cause is logged with the operation",
+        strpos($log, "Interview $operation failed") !== false && strpos($log, "Error: bomb: $bomb") !== false);
+    check("failure $label: the conversation is logged" . ($conversation === null ? ' only when known' : ''),
+        $conversation === null
+            ? strpos($log, 'conversation') === false || preg_match('/\(conversation \d+\)/', $log) === 1
+            : strpos($log, "(conversation $conversation)") !== false);
+}
+
+// open()
+list($db_f1, , , , , , $svc_f1) = env();
+$model_f1 = new InterviewBombModel();
+$model_f1->bomb = 'rebuildInterviewChildren';
+check_failure_site('open', 'open', 'rebuildInterviewChildren', function () use ($svc_f1, $model_f1) {
+    return $svc_f1->open($model_f1, null, 'tok-f1');
+});
+assert_quiet_rollback('failure open', $db_f1);
+check('failure open: the actor lock is released', $db_f1->locks === array());
+
+// read()
+list($db_f2, , , , , , $svc_f2) = env();
+$model_f2 = new InterviewBombModel();
+$conv_f2 = $svc_f2->open($model_f2, null, 'tok-f2')['state']['conversation_id'];
+$model_f2->bomb = 'setInterviewBaseEntry';
+check_failure_site('read', 'read', 'setInterviewBaseEntry', function () use ($svc_f2, $model_f2, $conv_f2) {
+    return $svc_f2->read($model_f2, null, $conv_f2);
+});
+
+// updateDraft()
+list($db_f3, , , , , , $svc_f3) = env();
+$model_f3 = new InterviewBombModel();
+$opened_f3 = $svc_f3->open($model_f3, null, 'tok-f3')['state'];
+$model_f3->bomb = 'get_condition_result';
+check_failure_site('update draft', 'update draft', 'get_condition_result', function () use ($svc_f3, $model_f3, $opened_f3) {
+    return $svc_f3->updateDraft($model_f3, null, $opened_f3['conversation_id'], $opened_f3['revision'], array('title' => 'x'));
+}, $opened_f3['conversation_id']);
+assert_quiet_rollback('failure update draft', $db_f3);
+
+// turn(): a database error on the first state write; its message is not logged
+list($db_f4, , , $llm_f4, , , $svc_f4) = env();
+$model_f4 = new InterviewBombModel();
+$conv_f4 = $svc_f4->open($model_f4, null, 'tok-f4')['state']['conversation_id'];
+$db_f4->failStateWrite(1, driver_error("SQLSTATE[23000]: Duplicate entry 'jane.doe@example.org' for key 'answers'", '23000'));
+failure_log_reset();
+list($res_f4, $thrown_f4) = run_guarded(function () use ($svc_f4, $model_f4, $conv_f4) {
+    return $svc_f4->turn($model_f4, null, $conv_f4, 0, 'hello', array(), 'req-f4');
+});
+$log_f4 = failure_log();
+check('failure turn: the database error does not escape', $thrown_f4 === null);
+check('failure turn: the participant gets the generic error', is_generic_failure($res_f4)
+    && strpos(json_encode($res_f4), 'jane.doe') === false && stripos(json_encode($res_f4), 'sqlstate') === false);
+check('failure turn: logged with operation, class, SQLSTATE and conversation',
+    strpos($log_f4, 'Interview turn failed (conversation ' . $conv_f4 . '): PDOException: database error 23000') !== false);
+check('failure turn: the driver message (it quotes the answers) is not logged', strpos($log_f4, 'jane.doe') === false
+    && stripos($log_f4, 'Duplicate entry') === false);
+assert_quiet_rollback('failure turn', $db_f4);
+check('failure turn: the LLM was never called', $llm_f4->api_calls === 0);
+
+// prepareApproval() and completeApproval()
+list($db_f5, , , , , , $svc_f5) = env();
+$model_f5 = new InterviewBombModel();
+$conv_f5 = $svc_f5->open($model_f5, null, 'tok-f5')['state']['conversation_id'];
+$svc_f5->updateDraft($model_f5, null, $conv_f5, 0, array('title' => 'Done'));
+$model_f5->bomb = 'get_condition_result';
+$db_f5->begin_transaction();
+check_failure_site('approval prepare', 'approval prepare', 'get_condition_result', function () use ($svc_f5, $model_f5, $conv_f5) {
+    return $svc_f5->prepareApproval($model_f5, null, $conv_f5, 1, 'req-f5');
+}, $conv_f5);
+LlmTransaction::rollback($db_f5);
+
+$model_f5->bomb = '';
+$db_f5->begin_transaction();
+$prep_f5 = $svc_f5->prepareApproval($model_f5, null, $conv_f5, 1, 'req-f5');
+check('failure approval complete: setup - prepare succeeded', !empty($prep_f5['ok']));
+$model_f5->bomb = 'get_form_entry_record';
+check_failure_site('approval complete', 'approval complete', 'get_form_entry_record', function () use ($svc_f5, $model_f5, $prep_f5) {
+    return $svc_f5->completeApproval($model_f5, $prep_f5, 555);
+}, $conv_f5);
+LlmTransaction::rollback($db_f5);
+assert_quiet_rollback('failure approval', $db_f5);
+
+// previewTurn() (CMS editor test panel): its own envelope message
+list($db_f6, , , , , , $svc_f6) = env();
+$model_f6 = new InterviewBombModel();
+$model_f6->bomb = 'rebuildInterviewChildren';
+check_failure_site('preview turn', 'preview turn', 'rebuildInterviewChildren', function () use ($svc_f6, $model_f6) {
+    return $svc_f6->previewTurn($model_f6, array('title' => 'x'));
+}, null, 'Interview preview request failed');
+
+// Deliberate refusals are not failures: nothing is logged for them
+list($db_f7, , , , , , $svc_f7) = env();
+$model_f7 = new InterviewBombModel();
+$conv_f7 = $svc_f7->open($model_f7, null, 'tok-f7')['state']['conversation_id'];
+failure_log_reset();
+$stale_f7 = $svc_f7->updateDraft($model_f7, null, $conv_f7, 99, array('title' => 'x'));
+check('a conflict is answered as a conflict and is not logged as a failure',
+    empty($stale_f7['ok']) && $stale_f7['error']['type'] === 'conflict' && failure_log() === '');
 
 /* =========================================================================
  * Done

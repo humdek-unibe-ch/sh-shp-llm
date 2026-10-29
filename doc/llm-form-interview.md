@@ -629,6 +629,13 @@ producer-owned draft payload:
   base_record_fingerprint, opening_context, active_field, approval }
 ```
 
+`opening_context` is only `{context_key, opened_at}`: the participant's stored
+values are never copied into the conversation - the fingerprint alone detects
+a changed record. The
+`state` column is internal: neither the admin console API nor the mobile
+conversation row returns it, and draft revisions are not written to the core
+transaction log.
+
 Every write is a revision-based compare-and-swap - stale clients get a
 `conflict` result with the fresh projection so the UI can recover.
 

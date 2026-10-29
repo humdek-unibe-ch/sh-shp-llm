@@ -44,6 +44,14 @@ class LlmFormSchemaService
     /** Key under which author diagnostics are appended to the schema map. */
     const ERRORS_KEY = '_errors';
 
+    /**
+     * Ceilings for answers whose control declares no limit of its own (an
+     * explicit `max` constraint always wins): characters per text answer,
+     * items per native-only list.
+     */
+    const MAX_VALUE_LENGTH = 10000;
+    const MAX_LIST_ITEMS = 200;
+
     /** Styles the interview can read/write natively. */
     private static $SUPPORTED_STYLES = array(
         'input', 'textarea', 'select', 'radio', 'checkbox', 'slider'
@@ -404,6 +412,13 @@ class LlmFormSchemaService
             $errors[self::ERRORS_KEY] = "Unknown patch origin '$origin'";
             return array('values' => $values, 'errors' => $errors);
         }
+        // A patch can only address the form's own fields, so one with more
+        // entries than the form has fields always contains unknown names.
+        // Refuse it up front instead of answering with one error per name.
+        if (count($patch) > count($schema)) {
+            $errors[self::ERRORS_KEY] = 'Patch has more entries than the form has fields';
+            return array('values' => $values, 'errors' => $errors);
+        }
         foreach ($patch as $name => $raw) {
             $def = isset($schema[$name]) && is_array($schema[$name]) ? $schema[$name] : null;
             if ($def === null || !isset($def['name'])) {
@@ -438,13 +453,11 @@ class LlmFormSchemaService
                     continue;
                 }
                 if (!empty($def['native_only'])) {
-                    if ($raw === null || is_scalar($raw)
-                        || (is_array($raw) && array_is_list($raw)
-                            && !array_filter($raw, function ($v) { return !is_scalar($v); }))
-                    ) {
+                    $native_error = $this->nativeValueError($raw);
+                    if ($native_error === null) {
                         $values[$name] = $raw;
                     } else {
-                        $errors[$name] = 'Native fallback expects a scalar or flat list';
+                        $errors[$name] = $native_error;
                     }
                     continue;
                 }
@@ -465,6 +478,40 @@ class LlmFormSchemaService
             }
         }
         return array('values' => $values, 'errors' => $errors);
+    }
+
+    /**
+     * Native-only controls have no schema constraints, so their fallback
+     * values (null, a scalar or a flat list of scalars) only get the global
+     * ceilings.
+     *
+     * @return string|null Error message, null when the value is acceptable
+     */
+    private function nativeValueError($raw)
+    {
+        if ($raw === null) {
+            return null;
+        }
+        if (is_array($raw)) {
+            if (!array_is_list($raw)) {
+                return 'Native fallback expects a scalar or flat list';
+            }
+            if (count($raw) > self::MAX_LIST_ITEMS) {
+                return 'Native fallback list has too many items';
+            }
+        }
+        foreach (is_array($raw) ? $raw : array($raw) as $item) {
+            if (!is_scalar($item)) {
+                return 'Native fallback expects a scalar or flat list';
+            }
+            if (is_float($item) && !is_finite($item)) {
+                return 'Native fallback expects a finite number';
+            }
+            if (is_string($item) && mb_strlen($item, 'UTF-8') > self::MAX_VALUE_LENGTH) {
+                return 'Native fallback value is too long';
+            }
+        }
+        return null;
     }
 
     /**
@@ -716,6 +763,10 @@ class LlmFormSchemaService
                 return array('value' => null, 'error' => 'Expected a numeric value');
             }
             $num = $raw + 0;
+            // "1e999" is numeric but overflows to INF, which JSON cannot hold
+            if (is_float($num) && !is_finite($num)) {
+                return array('value' => null, 'error' => 'Expected a finite numeric value');
+            }
             if ($type === 'slider' && (float)$num !== (float)(int)$num) {
                 return array('value' => null, 'error' => 'Expected an integer value');
             }
@@ -735,6 +786,10 @@ class LlmFormSchemaService
             return array('value' => null, 'error' => 'Expected a scalar value');
         }
         $str = (string)$raw;
+        // Ceiling for controls that declare no maximum length of their own
+        if (!isset($constraints['max']) && mb_strlen($str, 'UTF-8') > self::MAX_VALUE_LENGTH) {
+            return array('value' => null, 'error' => 'Value is longer than the maximum length');
+        }
 
         switch ($type) {
             case 'date':
