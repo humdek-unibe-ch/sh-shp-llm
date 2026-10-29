@@ -19,6 +19,16 @@
 define('LLM_PATH', dirname(__DIR__) . '/server');
 $core_server = dirname(LLM_PATH, 3);
 
+// Core constants (server/service/globals.php).
+foreach (array(
+    'ENTRY_RECORD_ID' => 'record_id',
+    'USER_INPUT_HISTORY_LOG_COL' => '_history_log',
+) as $const => $value) {
+    if (!defined($const)) {
+        define($const, $value);
+    }
+}
+
 // The core files end with stray newlines after their closing tags.
 ob_start();
 require_once $core_server . '/service/PageDb.php';

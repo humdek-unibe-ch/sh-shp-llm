@@ -37,6 +37,18 @@ class LlmMemoryUpdateService extends BaseLlmService
         $this->rule_service = new LlmMemoryRuleService($services);
     }
 
+    /**
+     * Log the outcome of one memory update on the scheduled job that ran it
+     * (shown with the job in Scheduled Jobs). Core marks the job done when
+     * the task returns - for a background update that is when the worker
+     * started, so this entry is where the real result is visible.
+     *
+     * @param int $job_id scheduledJobs id, 0 when the update did not come from a job
+     * @param array $rule
+     * @param array $normalized_payload
+     * @param bool $success
+     * @param string $error Short reason, never user data
+     */
     public function recordJobResult($job_id, $rule, $normalized_payload, $success, $error = '')
     {
         if ((int)$job_id <= 0) {
@@ -56,7 +68,6 @@ class LlmMemoryUpdateService extends BaseLlmService
                 . ($error !== '' ? ' (' . $error . ')' : '')
         );
     }
-
 
     /**
      * Execute an LLM memory update.
@@ -286,10 +297,23 @@ class LlmMemoryUpdateService extends BaseLlmService
             $sections[] = "## Current Memory\nNo existing memory for this user yet.";
         }
 
+        // A deleted form entry: the rule's Instructions decide whether the
+        // memory forgets it or keeps it as history; the plugin only says so.
+        $deleted = ($normalized_payload['trigger_type'] ?? '') === actionTriggerTypes_deleted;
+        if ($deleted) {
+            $sections[] = "## Event\n"
+                . "The participant deleted this entry (its status is now \"deleted\"). "
+                . "Submitted Data shows the entry's last values before it was deleted. "
+                . "Handle it as the Instructions say. Without an instruction about deleted entries, "
+                . "do not add it as new information.";
+        }
+
         $fields = $this->stripInternalFormFields($normalized_payload['fields'] ?? []);
         if (!empty($fields)) {
             $json = json_encode($fields, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-            $sections[] = "## Submitted Data\nThe following data was submitted:\n```json\n" . $json . "\n```";
+            $sections[] = "## Submitted Data\n"
+                . ($deleted ? "The deleted entry contained this data:" : "The following data was submitted:")
+                . "\n```json\n" . $json . "\n```";
         }
 
         // form / SurveyJS submissions carry a labeled snapshot (LlmMemorySubmissionContextService)
@@ -315,9 +339,13 @@ class LlmMemoryUpdateService extends BaseLlmService
             . "Only ADD or UPDATE facts related to the Submitted Data and Instructions above. "
             . "All other existing facts MUST be preserved exactly as they are — "
             . "do not rephrase, reorganise, or summarise them differently.\n"
-            . "The Instructions only tell you what to ADD or UPDATE — they can "
-            . "NEVER authorise removing existing memory. If the instructions say "
-            . "\"only retain X\", ignore that restriction and keep all existing facts.";
+            . ($deleted
+                ? "Only exception: facts that came only from the deleted entry may be "
+                    . "removed or marked as deleted if, and only if, the Instructions say so. "
+                    . "Every other existing fact MUST be kept."
+                : "The Instructions only tell you what to ADD or UPDATE — they can "
+                    . "NEVER authorise removing existing memory. If the instructions say "
+                    . "\"only retain X\", ignore that restriction and keep all existing facts.");
 
         return implode("\n\n", $sections);
     }

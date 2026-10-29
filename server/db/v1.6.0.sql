@@ -54,7 +54,10 @@
 --  10. Admin console ACL per action (the admin group may update/delete).
 --  11. Registers the `interview_runtime` Prompt Lab execution profile, so a
 --      dataset can be created for the interview prompt.
---  12. Bumps the plugin version LAST so a failed DDL statement can never
+--  12. Registers the delete hook for memory rules picked on a form
+--      (FormUserInputModel::delete_user_input): rules that also run on
+--      "deleted" are queued when an entry is deleted.
+--  13. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
 -- NOTE: Apart from the help refresh of the released `llm_chat_shortcuts`
@@ -452,6 +455,28 @@ WHERE `id_groups` = (SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1)
 
 INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
 VALUES ('llm_eval_execution_profiles', 'interview_runtime', 'interview_runtime', 'Interview (llmFormLogList) runtime profile');
+
+-- =====================================================
+-- 12. Memory rules on form delete
+-- =====================================================
+-- After an entry of a form is deleted (status "deleted"), the memory rules
+-- picked on the form (llm_memory_rule_ids) whose trigger types include
+-- "deleted" run as one scheduled job with the entry's last values. The
+-- rule's instructions decide whether the memory forgets the entry or keeps
+-- it as history. Rules without "deleted" do nothing on delete.
+-- NOTE: hooks are cached - clear the SelfHelp cache after running this.
+
+INSERT IGNORE INTO `hooks` (`id_hookTypes`, `name`, `description`, `class`, `function`, `exec_class`, `exec_function`, `priority`)
+VALUES (
+    (SELECT id FROM lookups WHERE lookup_code = 'hook_overwrite_return'),
+    'llm-form-delete-memory-rules',
+    'Run the selected LLM memory rules that also run on delete after a form entry is deleted',
+    'FormUserInputModel',
+    'delete_user_input',
+    'LlmHooks',
+    'onFormDeletedMemoryRules',
+    20
+);
 
 -- Version bump last: a failed DDL statement above must never mark v1.6.0
 -- as installed (DDL commits implicitly, so ordering is the only guard).

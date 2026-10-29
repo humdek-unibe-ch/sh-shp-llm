@@ -844,6 +844,22 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                   <Row>
                     <Col md={12}><Form.Group className="mb-0"><Form.Label>Source Type</Form.Label><SearchableSelect options={sourceTypeOptions} value={draft.source_type} onChange={(value) => setDraftPatch({ source_type: value })} placeholder="Select source type" /><Form.Text className="text-muted">This decides whether the rule runs from login, profile updates, form actions, or llmChat fallback.</Form.Text></Form.Group></Col>
                   </Row>
+                  {draft.source_type === 'form_action_submit' ? (
+                    <Form.Group className="mb-0 mt-3">
+                      <Form.Check
+                        type="checkbox"
+                        id="memory-rule-run-on-delete"
+                        label="Also run when an entry is deleted"
+                        checked={draft.trigger_types.includes('deleted')}
+                        onChange={(event) => setDraftPatch({
+                          trigger_types: event.target.checked
+                            ? [...draft.trigger_types.filter((type) => type !== 'deleted'), 'deleted']
+                            : draft.trigger_types.filter((type) => type !== 'deleted'),
+                        })}
+                      />
+                      <Form.Text className="text-muted">For forms that select this rule: when the participant deletes an entry, the rule runs again with the entry&apos;s last values and is told it was deleted. Your instructions decide whether the memory forgets it or keeps it as history.</Form.Text>
+                    </Form.Group>
+                  ) : null}
                   {showAutomaticSourceHint ? <Alert variant="info" className="mb-0 mt-3">This source runs automatically from the system hook.</Alert> : <Alert variant="light" className="mb-0 mt-3">This rule runs only when it is explicitly attached to a form action, a form / survey section (Memory rules field), an llmChat fallback, or a matching source hook.</Alert>}
                 </Card.Body></Card>
 

@@ -94,6 +94,7 @@ What happens:
 - The participant never waits. The request only starts one background worker per rule; the LLM call and the memory write happen there. A failure in the background does not affect the saved answers.
 - Each submission creates one scheduled job "LLM Memory Update (form: ...)" that is executed immediately, so it appears under **Scheduled Jobs** and in the calendar like a form action. The job is marked done when the background worker starts; open the job to see the worker's result ("LLM memory update finished" or "failed", with the rule and memory key). The same applies to the memory rules of an `llmChat` form submit.
 - A rule that was deleted or disabled after it was selected is skipped.
+- Deleting an entry runs a rule only when **Also run when an entry is deleted** is ticked in the rule editor. The rule then gets the entry's last values and the note that the participant deleted it. Nothing is removed from memory automatically: write in the rule's instructions what should happen, for example "Remove the deleted WOOP from the memory" or "Keep deleted WOOPs and mark them as deleted". Without such an instruction the memory stays as it is.
 - Global memory must be enabled (Step 1). Submissions of guests (not logged in) are ignored, because memory is stored per user.
 - Identical submissions are not applied twice (see Deduplication).
 

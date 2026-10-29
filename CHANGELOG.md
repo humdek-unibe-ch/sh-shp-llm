@@ -129,6 +129,16 @@ chat improvements and token reporting.
   the background worker starts; the worker adds the real result ("LLM
   memory update finished / failed: rule #N, memory key ...") to the job's
   log. Login and profile-name triggers still run directly.
+- **Memory rules can also run when an entry is deleted.** New checkbox
+  "Also run when an entry is deleted" in the memory rule editor (adds
+  `deleted` to the rule's trigger types; off for existing rules). When a
+  participant deletes an entry of a form that selects such a rule, the rule
+  runs as a scheduled job with the entry's last values, and the memory
+  prompt says the entry was deleted. The rule's instructions decide whether
+  the memory forgets the entry or keeps it as history; the plugin removes
+  nothing on its own. Hook `LlmHooks::onFormDeletedMemoryRules` on
+  `FormUserInputModel::delete_user_input` (clear the SelfHelp cache after the
+  migration).
 - **Context layers combine.** The form, floating and strict-conversation
   modes are applied together, with the strict guardrail first, instead of
   only the first one that is enabled.

@@ -2177,6 +2177,60 @@ class LlmHooks extends BaseHooks
     }
 
     /**
+     * Run the memory rules selected on a form after one of its entries was
+     * deleted (status changed to deleted). Only the rules whose trigger types
+     * include "deleted" run ("Also run when an entry is deleted" in the rule
+     * editor). The memory prompt gets the entry's last values and is told the
+     * participant deleted it; whether the memory forgets it or keeps it as
+     * history is up to the rule's own instructions.
+     * Hook on FormUserInputModel::delete_user_input (hook_overwrite_return,
+     * priority 20). The entry is read before the delete runs; the delete
+     * itself is never changed and a failure here is only logged.
+     */
+    public function onFormDeletedMemoryRules($args)
+    {
+        $snapshot = null;
+        $rule_ids = array();
+        $record_id = (int)($args['record_id'] ?? 0);
+        $model = $args['hookedClassInstance'] ?? null;
+        try {
+            if ($record_id > 0 && is_object($model)) {
+                $rule_service = new LlmMemoryRuleService($this->services);
+                foreach ($this->getSubmissionMemoryRuleIds($model) as $rule_id) {
+                    $rule = $rule_service->getRuleById($rule_id);
+                    if ($rule && in_array(actionTriggerTypes_deleted, (array)($rule['trigger_types'] ?? array()), true)) {
+                        $rule_ids[] = (int)$rule_id;
+                    }
+                }
+                if (!empty($rule_ids)) {
+                    $snapshot = $model->get_form_entry_record($record_id, $model->get_db_field('own_entries_only', 1));
+                }
+            }
+        } catch (\Throwable $e) {
+            LlmErrorReporter::log('Memory form delete trigger', $e);
+        }
+
+        $res = $this->execute_private_method($args);
+        if (!$res || empty($rule_ids) || !is_array($snapshot) || empty($snapshot)) {
+            return $res;
+        }
+
+        try {
+            // the stored row carries bookkeeping columns next to the answers
+            foreach (array(ENTRY_RECORD_ID, 'entry_date', 'id_users', 'user_name', 'user_code',
+                'id_actionTriggerTypes', 'triggerType', '_history_log') as $system_key) {
+                unset($snapshot[$system_key]);
+            }
+            $context = (new LlmMemorySubmissionContextService())->buildFormContext($model, $snapshot, $record_id);
+            $this->queueSubmissionMemoryRules($rule_ids, $context, $record_id, actionTriggerTypes_deleted);
+        } catch (\Throwable $e) {
+            LlmErrorReporter::log('Memory form delete trigger', $e);
+        }
+
+        return $res;
+    }
+
+    /**
      * Run the memory rules selected on a SurveyJS section after a successful finished save.
      * Hook on SurveyJSModel::save_survey (hook_overwrite_return, priority 20); same
      * behavior as onFormSavedMemoryRules. The hooked model is the section the
