@@ -85,6 +85,7 @@ register_shutdown_function(function () use ($root) {
 // Real files, byte for byte
 foreach (array(
     'service/LlmService.php',
+    'service/LlmErrorReporter.php',
     'service/globals.php',
     'service/LlmModelCapabilities.php',
     'service/validation/LlmValidator.php',
@@ -498,6 +499,82 @@ check('a logged-in user is not held back by the guest ceiling', is_array($servic
 $service->updateRateLimit(7, null);
 check('a logged-in user does not draw from the guest budget', $services->cache->rate['guest_global']['requests'] === $global);
 check('a logged-in user\'s bucket is its user id', isset($services->cache->rate[7]) && $services->cache->rate[7]['requests'] === 1);
+
+/* =========================================================================
+ * Speech-to-text has a per-user budget of its own
+ * ========================================================================= */
+
+$speech_limit = LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE;
+$global_before = $services->cache->rate['guest_global']['requests'];
+check('speech: the shipped budget allows a recording but never more than the chat budget (paid model, 25 MB per upload)',
+    $speech_limit >= 1 && $speech_limit <= LLM_RATE_LIMIT_REQUESTS_PER_MINUTE);
+
+browser('Speaker');
+for ($i = 0; $i < $speech_limit; $i++) {
+    $service->consumeSpeechRateLimit(7);
+}
+check('speech: the budget counts one request per call, up to ' . $speech_limit,
+    $services->cache->rate['speech_7']['requests'] === $speech_limit);
+$limited = null;
+try {
+    $service->consumeSpeechRateLimit(7);
+} catch (LlmRateLimitException $e) {
+    $limited = $e;
+}
+check('speech: request ' . ($speech_limit + 1) . ' in the same minute is refused with a rate-limit error',
+    $limited !== null && $limited->getCode() === 429);
+check('speech: the refusal says how long to wait and which limit hit',
+    $limited->getRetryAfter() === LLM_RATE_LIMIT_COOLDOWN_SECONDS
+    && $limited->getLimitType() === 'speech_requests_per_minute' && $limited->getLimitValue() === $speech_limit);
+check('speech: the message is meant for the participant (no internals)',
+    strpos($limited->getMessage(), 'voice recordings') !== false);
+check('speech: a refused request is not counted', $services->cache->rate['speech_7']['requests'] === $speech_limit);
+check('speech: the same user\'s chat budget is untouched', $services->cache->rate[7]['requests'] === 1
+    && is_array($service->checkRateLimit(7)));
+check('speech: another user has a budget of its own', $service->consumeSpeechRateLimit(8) === null
+    && $services->cache->rate['speech_8']['requests'] === 1);
+
+// the other way around: a used-up chat budget does not stop dictation
+for ($i = 0; $i < $per_minute; $i++) {
+    $service->updateRateLimit(9, $service->checkRateLimit(9));
+}
+check('speech: a used-up chat budget does not block speech', throwsLlm(function () use ($service) {
+    $service->checkRateLimit(9);
+}) && $service->consumeSpeechRateLimit(9) === null);
+
+// guests: one budget per browser session, nothing drawn from the guest chat ceiling
+browser('GuestSpeaker1');
+for ($i = 0; $i < $speech_limit; $i++) {
+    $service->consumeSpeechRateLimit($GUEST);
+}
+check('speech: a guest session is limited like a user', throwsLlm(function () use ($service, $GUEST) {
+    $service->consumeSpeechRateLimit($GUEST);
+}, 429));
+browser('GuestSpeaker2');
+check('speech: another guest session has its own budget', $service->consumeSpeechRateLimit($GUEST) === null);
+check('speech: guest recordings do not use the guest chat ceiling',
+    $services->cache->rate['guest_global']['requests'] === $global_before);
+
+// the window is a minute: a new minute starts a new budget
+class MinuteCache extends FakeCache
+{
+    public $minute_over = false;
+
+    public function shouldResetRateLimit($data)
+    {
+        return $this->minute_over;
+    }
+}
+$minute_cache = new MinuteCache();
+$minute_services = new FakeServices();
+$minute_services->cache = $minute_cache;
+$minute_service = new LlmService($minute_services);
+for ($i = 0; $i < $speech_limit; $i++) {
+    $minute_service->consumeSpeechRateLimit(7);
+}
+$minute_cache->minute_over = true;
+$minute_service->consumeSpeechRateLimit(7);
+check('speech: a new minute starts a new budget', $minute_cache->rate['speech_7']['requests'] === 1);
 
 fwrite(STDOUT, "\n$total checks, $failed failed\n");
 exit($failed === 0 ? 0 : 1);

@@ -260,6 +260,36 @@ class LlmService extends BaseLlmService
         }
     }
 
+    /**
+     * Count one speech-to-text request against the user's own per-minute
+     * budget (a bucket separate from the chat one, see
+     * LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE). Check and count are one
+     * step: the request is counted the moment it is allowed.
+     *
+     * @param int $user_id User ID
+     * @return void
+     * @throws LlmRateLimitException If the budget for this minute is used up
+     */
+    public function consumeSpeechRateLimit($user_id)
+    {
+        $bucket = 'speech_' . $this->getRateLimitBucket($user_id);
+        $rate_data = $this->cacheManager->getRateLimitData($bucket);
+
+        if (!$rate_data || $this->cacheManager->shouldResetRateLimit($rate_data)) {
+            $rate_data = $this->cacheManager->initRateLimitData();
+        }
+        if ($rate_data['requests'] >= LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE) {
+            throw new LlmRateLimitException(
+                'Too many voice recordings. Please wait a minute and try again.',
+                LLM_RATE_LIMIT_COOLDOWN_SECONDS,
+                ['limit_type' => 'speech_requests_per_minute', 'limit' => LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE]
+            );
+        }
+
+        $rate_data['requests']++;
+        $this->cacheManager->setRateLimitData($bucket, $rate_data);
+    }
+
     /* =========================================================================
      * CONVERSATION MANAGEMENT
      * ========================================================================= */
@@ -1635,7 +1665,7 @@ class LlmService extends BaseLlmService
                     $payload
                 );
             } catch (Exception $logException) {
-                $this->logWarning('LLM API error auto-log failed', ['error' => $logException->getMessage()]);
+                LlmErrorReporter::log('LLM API error auto-log', $logException);
             }
             
             if ($http_code >= 400) {
@@ -1684,10 +1714,7 @@ class LlmService extends BaseLlmService
                 );
                 $normalized['logged_message_id'] = $logged_message_id;
             } catch (Exception $logException) {
-                $this->logWarning('LLM API auto-log failed', [
-                    'error' => $logException->getMessage(),
-                    'conversation_id' => $log_options['conversation_id']
-                ]);
+                LlmErrorReporter::log('LLM API auto-log', $logException, $log_options['conversation_id']);
             }
 
             return $normalized;
@@ -1707,9 +1734,9 @@ class LlmService extends BaseLlmService
                     $payload
                 );
             } catch (Exception $logException) {
-                $this->logWarning('LLM API normalization auto-log failed', ['error' => $logException->getMessage()]);
+                LlmErrorReporter::log('LLM API normalization auto-log', $logException);
             }
-            $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
+            LlmErrorReporter::log('Provider normalization', $e);
             throw LlmApiException::normalizationFailed($provider->getProviderName(), $e->getMessage(), $response, $payload);
         }
     }
