@@ -51,12 +51,15 @@
 --   9. Adds nullable `prompt_tokens` / `completion_tokens` on llmMessages
 --      for new assistant logs (no backfill). `tokens_used` stays the total.
 --      Admin conversation monitor reads the split; participant chat does not.
---  10. Bumps the plugin version LAST so a failed DDL statement can never
+--  10. Admin console ACL per action (the admin group may update/delete).
+--  11. Registers the `interview_runtime` Prompt Lab execution profile, so a
+--      dataset can be created for the interview prompt.
+--  12. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
 -- NOTE: Apart from the help refresh of the released `llm_chat_shortcuts`
--- field and the version bump this script only inserts: v1.6.0 was never
--- released, so there is nothing to convert.
+-- field, the admin ACL grant and the version bump this script only
+-- inserts: v1.6.0 was never released, so there is nothing to convert.
 -- NOTE: MySQL DDL (CREATE/ALTER/CALL add_table_column) is not rolled back
 -- by the surrounding transaction; the script is idempotent so re-running
 -- after a partial failure is safe.
@@ -437,6 +440,18 @@ SET `acl_update` = '1', `acl_delete` = '1'
 WHERE `id_groups` = (SELECT id FROM `groups` WHERE `name` = 'admin' LIMIT 1)
   AND `id_pages` = (SELECT id FROM `pages` WHERE `keyword` = 'moduleLlmAdminConsole' LIMIT 1)
   AND `acl_select` = '1' AND `acl_update` = '0' AND `acl_delete` = '0';
+
+-- =====================================================
+-- 11. Prompt Lab: interview execution profile
+-- =====================================================
+-- The llm_interview_context prompt of llmFormLogList resolves to the
+-- `interview_runtime` profile (LlmPromptExecutionProfileService). A dataset
+-- stores its profile as a lookup, so without this row "Create dataset" in
+-- the Prompt Lab fails with "Invalid execution profile" for that prompt.
+-- Its cases use the default text_only_case type, like memory_runtime.
+
+INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+VALUES ('llm_eval_execution_profiles', 'interview_runtime', 'interview_runtime', 'Interview (llmFormLogList) runtime profile');
 
 -- Version bump last: a failed DDL statement above must never mark v1.6.0
 -- as installed (DDL commits implicitly, so ordering is the only guard).
