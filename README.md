@@ -73,7 +73,7 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.6.0.sql
 ```
 
 This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
-It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached).
+It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached). The same core release provides `CORS_ALLOWED_ORIGINS`, the exact-match list of cross-origin clients that the chat and form endpoints trust without a CSRF token ([CSRF and cross-origin clients](#csrf-and-cross-origin-clients)).
 
 **Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.5.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It enables the memory rule selection on `surveyJS` sections (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
 
@@ -100,6 +100,7 @@ This installs React dependencies and builds UMD bundles, including:
    - `llm_api_keys` — API key manager with one or more servers (`name`, `base_url`, `api_key`); see [API Key Protection](#api-key-protection)
    - `llm_default_model` — Default model name (e.g., `qwen3-vl-8b-instruct`)
 3. Optionally adjust `llm_timeout`, `llm_max_tokens`, and `llm_temperature`
+4. Optionally copy `server/service/globals_untracked.default.php` to `server/service/globals_untracked.php` for per-installation values (`LLM_SECRET_KEY`, `LLM_ALLOWED_API_HOSTS`). The file is **optional** - the plugin installs and runs without it (defaults apply), the CLI workers and CI need none, and environment variables of the same names work as well. `globals_untracked.php` is ignored by git; never commit it.
 
 ## Configuration
 
@@ -145,6 +146,47 @@ Numeric settings are validated server side: temperature 0-2, max tokens
 1-200000, timeout 1-600 seconds. Changing settings needs the `update` ACL on
 the module page and a POST with the session CSRF token; every change is
 written to the transaction log (names of the changed settings, never values).
+
+### Security Model
+
+| Topic | Behavior |
+|-------|----------|
+| Access | Every endpoint checks the SelfHelp ACL of the page that carries it before it does anything. The Prompt Lab decides access for a CMS section from the pages that really show it (read from the database); a `page_id` sent by the browser can only pick one of them, and a section that no page shows is refused. |
+| CSRF | One session token (`LlmCsrfService`) is handed to each page and sent back as `csrf_token` or the `X-CSRF-Token` header. Admin console, settings, Prompt Lab, scripts, memory and interview mutations always require it. The chat and the LLM form styles (`llmChat`, `llmFormRecord`, `llmFormLog`) also accept a request without the token, because the native app has none, when it does not come from another website; the three cases, the core setting they read (`CORS_ALLOWED_ORIGINS`) and what to do about the session cookie are under [CSRF and cross-origin clients](#csrf-and-cross-origin-clients). Anything else gets a 403. |
+| Rate limits | Chat and form requests: `LLM_RATE_LIMIT_REQUESTS_PER_MINUTE` per user (guests: per session, plus a site-wide ceiling). Speech-to-text: 6 recordings per minute per user (`LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE`, answer 429); the audio type is decided from the file content and only valid audio uses up the budget. |
+| Output | Markdown from model output, participant messages and stored prompts is sanitized before it is rendered (no scripts, frames, forms, event handlers or `javascript:` URLs); the PHP `llmResponse` style escapes HTML. A Markdown image is still fetched from its host by the participant's browser. |
+| Data exposure | The admin console API never returns the interview `state` (draft answers, approval receipt, tokens), also not to users with only `select` access. Failed provider calls are kept for admins as unvalidated `[API ERROR]` messages and are never part of a participant's message list. |
+| Replay import | Prompt Lab dataset import (playground runs, form submissions, conversation messages, script fixtures) reads only records that the candidate list shows for the prompt's own owner. The ids in an import request come from the browser, so the import applies the same rule as the list (`LlmDatasetIngestionService`): a conversation, run or script that belongs to another section, script, memory rule or owner type is refused, whatever id is sent. See [prompt-replay-import-guide.md](doc/prompt-replay-import-guide.md). |
+| Errors | Exceptions (provider answers, SQL, paths) are logged on the server, always through `LlmErrorReporter`: one line with the context, the exception class, its message and `file:line` - a database error as its SQLSTATE code only (the driver text can carry table and column names) unless `DEBUG` is on - and never a stack trace; a client gets a generic message. `tests/LlmConventionsTest.php` fails when plugin code hands an exception text to `error_log()` directly. Only texts written for participants (rate limit, validation, "conversation not found") pass through. A chat turn that produced no usable answer (provider failure, reply that never matches the schema) is answered with the fixed `notice` only (as `notice` and `message`, no `structured` block) that the chat shows as an error banner; neither the model's text nor the reason is returned. |
+| Transactions | Plugin code opens, commits and rolls back transactions only through `LlmTransaction` (`begin` / `commit` / `rollback`); `tests/LlmConventionsTest.php` fails on a direct `begin_transaction()`, `commit()` or `rollback()` call anywhere else in the plugin. `LlmTransaction::rollback()` rolls the connection back itself and clears only the cache types the caller names; core's `BaseDb::rollback()` would drop the whole application cache, so a rejected request cannot cold-start the CMS. Memory updates that follow an interview approval or a form action are handed to `LlmTransaction::afterCommit($db, $task)`: they start when the outermost plugin transaction has committed, are dropped when it rolls back, and start at once when no transaction is open - nothing has to be opted into. A transaction that was opened by other code (core, another plugin) cannot be observed, so a task queued inside it is dropped and logged instead of being started early. Core's `UserInput::save_data()` keeps its own behavior: when it fails it rolls back through `BaseDb::rollback()`, which also clears the whole cache (the cache refills; no data is affected). |
+
+### CSRF and cross-origin clients
+
+The chat and LLM form endpoints (`llmChat`, `llmFormRecord`, `llmFormLog`) are also called by the native app, which has no CSRF token to send. So they accept a request without the token in exactly three cases, decided from the request alone (`LlmCsrfService::verifyRequestOrTrustedClient()`):
+
+| Request | Why it is accepted |
+|---------|--------------------|
+| `Sec-Fetch-Site: same-origin` | A page of this site, also one whose token went stale (for example after a re-login in another tab). |
+| Neither `Sec-Fetch-Site` nor `Origin` | Not a browser: the native app's HTTP client. |
+| An `Origin` that is exactly one entry of core's `CORS_ALLOWED_ORIGINS`, while core `CORS` is `true` | A client the installation itself allows to call it across origins, the mobile web preview (for example `https://localhost:8100`). |
+
+The third test is a strict comparison of the whole `Origin` string: scheme, host and port must match one entry. There is no prefix, substring, wildcard or case folding, and `Origin: null` never matches, so `https://selfhelp.philhum.unibe.ch.evil.example` is not `https://selfhelp.philhum.unibe.ch`. What core writes into `Access-Control-Allow-Origin` is never consulted: it is a response header of code this plugin does not own. Everything else - in particular `Sec-Fetch-Site: cross-site` from an origin that is not listed - needs the token and otherwise gets a 403. The admin console, settings, Prompt Lab, scripts, memory and interview endpoints never use this gate; they always need the token.
+
+What the installation has to provide (this is core configuration, not plugin configuration):
+
+- **`CORS_ALLOWED_ORIGINS`** (SelfHelp core v7.12.0 or later): the list of cross-origin clients, one exact origin per entry. The default is in core's `server/service/globals.php`; replace it for one installation with `define('CORS_ALLOWED_ORIGINS', array('https://localhost:8100', ...));` in core's `globals_untracked.php`. Core's `Selfhelp::cors()` approves the same list, so a client the plugin trusts is a client core answers. A core without the constant, or with `CORS` off, trusts no cross-origin client: such a client has to send the token.
+- **Session cookie**: web sessions are `SameSite=Lax`, so another website's request does not carry the session at all. Core gives the sessions opened by the mobile web preview (`mobile_web`, `Login::init_session()`) `SameSite=None; Secure` on purpose, because the preview runs on another site. For those sessions the exact origin list is what keeps other websites out, so list only the origins you run. A browser too old to send either `Sec-Fetch-Site` or `Origin` cannot be told apart from the native app; that only matters for a `SameSite=None` session. Do not relax `SameSite` for the normal web login.
+
+### Database engine
+
+The plugin tables are created without an `ENGINE` clause, so they use the server's default engine (InnoDB on a standard MySQL 8 install). The interview approval, the revision compare-and-swap of the conversation state and the other multi-statement writes rely on transactions; on a MyISAM table a rollback undoes nothing. After the migration, check that every plugin table is InnoDB:
+
+```sql
+SELECT table_name, engine FROM information_schema.tables
+WHERE table_schema = DATABASE() AND table_name LIKE 'llm%' AND engine <> 'InnoDB';
+```
+
+Convert each table that is listed with `ALTER TABLE <table_name> ENGINE=InnoDB;` (back up first).
 
 ### Section-Level Settings (llmChat style)
 
@@ -624,6 +666,10 @@ The provider is auto-detected from the selected server's `base_url`. To add a ne
 | Admin console: block / unblock / delete answer 403 | Missing `update` / `delete` ACL, or the page was opened before the upgrade (no CSRF token yet) | Grant the ACL on the console page; reload the page |
 | Server marked "cannot be read - enter the key again" | The key was stored encrypted and `LLM_SECRET_KEY` is missing or changed | Restore the secret, or enter the key again ([API Key Protection](#api-key-protection)) |
 | Settings save is rejected (422) | A value failed validation (non-https URL, host not in `LLM_ALLOWED_API_HOSTS`, out-of-range number) | Fix the listed fields; nothing was stored |
+| Chat / form request answers 403 "Security check failed" | The request came from another website, a custom client sends browser headers (`Origin`) without the token, or the mobile web preview runs on an origin that is not in core's `CORS_ALLOWED_ORIGINS` (or `CORS` is off) | Reload the page; a custom client sends `X-CSRF-Token` (the native app sends no `Origin`); add the exact origin (scheme, host, port) to `CORS_ALLOWED_ORIGINS` in core's `globals_untracked.php` ([CSRF and cross-origin clients](#csrf-and-cross-origin-clients)) |
+| Voice input answers 429 | More than 6 recordings in a minute | Wait a minute; the limit is `LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE` |
+| Prompt Lab answers "Access denied" or "Missing page context" | No ACL on a page that shows the section, or the section is not placed on any page | Grant the ACL on the page that shows the section, or place the section on a page |
+| Interview approval fails but plugin rows were changed | The `llm*` tables are not InnoDB, so the rollback cannot undo them | [Database engine](#database-engine) |
 
 Check SelfHelp logs and `data/clockwork` for detailed error traces.
 

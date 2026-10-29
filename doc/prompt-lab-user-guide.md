@@ -113,6 +113,8 @@ The `Datasets` modal lets you:
 - `chat_runtime`
 - `form_runtime`
 - `script_runtime`
+- `memory_runtime`
+- `interview_runtime` (the interview prompt of `llmFormLogList`)
 - `text_only`
 
 Recommended editor workflow:

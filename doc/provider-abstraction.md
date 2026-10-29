@@ -253,7 +253,7 @@ Providers handle errors during normalization:
 try {
     $normalized = $provider->normalizeResponse($response);
 } catch (Exception $e) {
-    error_log('Provider normalization error: ' . $e->getMessage());
+    LlmErrorReporter::log('Provider response normalization', $e);
     throw new Exception('Failed to normalize LLM response');
 }
 ```

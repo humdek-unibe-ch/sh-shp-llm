@@ -56,6 +56,8 @@ The UI also shows a dataset `Profile`. This is not cosmetic. It is the runtime e
 - `chat_runtime`
 - `form_runtime`
 - `script_runtime`
+- `memory_runtime`
+- `interview_runtime` (the interview prompt of `llmFormLogList`)
 - `text_only`
 
 Datasets can only move/promote cases into other datasets with the same profile.
