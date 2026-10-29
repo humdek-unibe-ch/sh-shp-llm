@@ -183,37 +183,13 @@ class LlmMemoryTriggerService extends BaseLlmService
         }
 
         $source_type = $normalized_payload['source_type'];
-        $match_criteria = $normalized_payload['match_criteria'] ?? [];
-        $rules = $this->config_service->findMatchingRules($source_type, $match_criteria);
-        $this->appendWorkerLog('dispatchMemoryUpdate rules resolved', array(
-            'source_type' => (string)$source_type,
-            'rule_ids' => array_values(array_map(function ($rule) {
-                return (int)($rule['id'] ?? 0);
-            }, (array)$rules)),
-        ));
-
+        $rules = $this->findRulesForPayload($normalized_payload);
         if (empty($rules)) {
-            $this->appendWorkerLog('dispatchMemoryUpdate no matching rules', array(
-                'source_type' => (string)$source_type,
-                'match_criteria' => $match_criteria,
-            ));
             return [];
         }
 
         $dispatched = [];
         foreach ($rules as $rule) {
-            $trigger_type = $normalized_payload['trigger_type'] ?? '';
-            if (!empty($rule['trigger_types']) && !empty($trigger_type)) {
-                if (!in_array($trigger_type, $rule['trigger_types'])) {
-                    $this->appendWorkerLog('dispatchMemoryUpdate skipped by trigger type', array(
-                        'rule_id' => (int)($rule['id'] ?? 0),
-                        'trigger_type' => (string)$trigger_type,
-                        'allowed_trigger_types' => $rule['trigger_types'],
-                    ));
-                    continue;
-                }
-            }
-
             $rule = $this->applyRuleOverrides($rule, $rule_overrides);
             $dispatched[] = (int)$rule['id'];
             foreach ($this->config_service->getRuleTargetMemoryKeys($rule) as $target_memory_key) {
@@ -232,15 +208,124 @@ class LlmMemoryTriggerService extends BaseLlmService
     }
 
     /**
+     * Rules that match a payload by source type and criteria, without the
+     * ones whose trigger types exclude the payload's trigger.
+     *
+     * @param array $normalized_payload
+     * @return array[] rules
+     */
+    public function findRulesForPayload($normalized_payload)
+    {
+        $source_type = $normalized_payload['source_type'];
+        $match_criteria = $normalized_payload['match_criteria'] ?? [];
+        $rules = $this->config_service->findMatchingRules($source_type, $match_criteria);
+        $this->appendWorkerLog('dispatchMemoryUpdate rules resolved', array(
+            'source_type' => (string)$source_type,
+            'rule_ids' => array_values(array_map(function ($rule) {
+                return (int)($rule['id'] ?? 0);
+            }, (array)$rules)),
+        ));
+
+        if (empty($rules)) {
+            $this->appendWorkerLog('dispatchMemoryUpdate no matching rules', array(
+                'source_type' => (string)$source_type,
+                'match_criteria' => $match_criteria,
+            ));
+            return [];
+        }
+
+        $matched = [];
+        foreach ($rules as $rule) {
+            $trigger_type = $normalized_payload['trigger_type'] ?? '';
+            if (!empty($rule['trigger_types']) && !empty($trigger_type)) {
+                if (!in_array($trigger_type, $rule['trigger_types'])) {
+                    $this->appendWorkerLog('dispatchMemoryUpdate skipped by trigger type', array(
+                        'rule_id' => (int)($rule['id'] ?? 0),
+                        'trigger_type' => (string)$trigger_type,
+                        'allowed_trigger_types' => $rule['trigger_types'],
+                    ));
+                    continue;
+                }
+            }
+            $matched[] = $rule;
+        }
+        return $matched;
+    }
+
+    /**
+     * Run the given rules as a core scheduled job (job type
+     * llm_memory_update), so every run is listed under Scheduled Jobs with
+     * its status and result. The job is created right away and executed
+     * through JobScheduler::execute_job() once the submission committed:
+     * immediately outside a transaction, after the commit of an
+     * LlmTransaction (an interview approval; a rollback removes the job
+     * row as well). LlmHooks::execute_memory_task then dispatches the
+     * stored payload exactly like dispatchForRuleIds().
+     *
+     * Inside a transaction the plugin did not open the job is only
+     * created; the cron run of the job queue executes it.
+     *
+     * @param int[] $rule_ids
+     * @param array $normalized_payload
+     * @param bool $async
+     * @param string $description Name of the job in Scheduled Jobs
+     * @return int|false The scheduled job id
+     */
+    public function scheduleRuleJob($rule_ids, $normalized_payload, $async, $description)
+    {
+        $rule_ids = array_values(array_filter(array_map('intval', (array)$rule_ids)));
+        if (empty($rule_ids) || !$this->config_service->isMemoryEnabled()) {
+            return false;
+        }
+
+        $job_scheduler = $this->services->get_job_scheduler();
+        $job = array(
+            'id_jobTypes' => $this->db->get_lookup_id_by_value(jobTypes, jobTypes_task),
+            'id_jobStatus' => $this->db->get_lookup_id_by_value(scheduledJobsStatus, scheduledJobsStatus_queued),
+            'date_to_be_executed' => date('Y-m-d H:i:s'),
+            'id_users' => array((int)$normalized_payload['user_id']),
+            'description' => $description,
+            'config' => array(
+                'type' => ACTION_JOB_TYPE_LLM_MEMORY_UPDATE,
+                'description' => $description,
+                'memory_rule_id' => implode(',', $rule_ids),
+                'run_async' => !empty($async),
+                'trigger_type' => $normalized_payload['trigger_type'] ?? '',
+                'normalized_payload' => $normalized_payload,
+                // Task::execute_task_single() evaluates the whole task config
+                // as a jsonLogic condition when it has none of its own; the
+                // payload is no condition, so state an always-true one.
+                'condition' => array('==' => array(1, 1)),
+            ),
+        );
+        $job_id = $job_scheduler->schedule_job($job, transactionBy_by_system);
+        $this->appendWorkerLog('scheduleRuleJob ' . ($job_id ? 'scheduled' : 'failed'), array(
+            'job_id' => (int)$job_id,
+            'rule_ids' => $rule_ids,
+            'user_id' => (int)$normalized_payload['user_id'],
+        ));
+        if (!$job_id) {
+            return false;
+        }
+
+        $job['id'] = $job_id;
+        LlmTransaction::afterCommit($this->db, function () use ($job_scheduler, $job) {
+            $job_scheduler->execute_job($job, transactionBy_by_system);
+        });
+        return (int)$job_id;
+    }
+
+    /**
      * Dispatch memory updates for specific rule IDs.
      *
      * @param array $rule_ids
      * @param array $normalized_payload
      * @param bool $async
      * @param array $rule_overrides
+     * @param bool $data_committed the submission is already committed (see LlmTransaction::afterCommit)
      * @return array Rule IDs dispatched
      */
-    public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [])
+    public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [], $data_committed = false)
     {
         if (!$this->config_service->isMemoryEnabled()) {
             $this->appendWorkerLog('dispatchForRuleIds skipped: memory disabled', array(
@@ -284,7 +369,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                 foreach ($target_keys as $target_memory_key) {
                     $payload_for_key = $normalized_payload;
                     $payload_for_key['memory_key_override'] = $target_memory_key;
-                    $this->enqueueMemoryUpdate($rule, $payload_for_key, $async);
+                    $this->enqueueMemoryUpdate($rule, $payload_for_key, $async, $data_committed);
                 }
             } catch (\Throwable $e) {
                 // One rule must not block the others on the same submission.
@@ -310,12 +395,14 @@ class LlmMemoryTriggerService extends BaseLlmService
      * @param array $rule
      * @param array $normalized_payload
      * @param bool  $async
+     * @param bool  $data_committed
      */
-    private function enqueueMemoryUpdate($rule, $normalized_payload, $async)
+    private function enqueueMemoryUpdate($rule, $normalized_payload, $async, $data_committed = false)
     {
         $worker_args = [
             'rule_id'                => (int)$rule['id'],
             'user_id'                => $normalized_payload['user_id'],
+            'scheduled_job_id'       => (int)($normalized_payload['scheduled_job_id'] ?? 0),
             'source_type'            => $normalized_payload['source_type'],
             'source_ref'             => $normalized_payload['source_ref'] ?? '',
             'trigger_type'           => $normalized_payload['trigger_type'] ?? '',
@@ -342,7 +429,8 @@ class LlmMemoryTriggerService extends BaseLlmService
         // connection) must only run for a submission that was committed.
         // Inside a transaction opened with LlmTransaction::begin() it waits
         // for the commit and is dropped when the transaction fails; with no
-        // transaction open it runs right away.
+        // transaction open, or when the caller says the submission already
+        // committed, it runs right away.
         LlmTransaction::afterCommit($this->db, function () use ($rule, $normalized_payload, $async, $worker_args) {
             if (!$async) {
                 $this->appendWorkerLog('enqueueMemoryUpdate executing sync', array(
@@ -350,12 +438,19 @@ class LlmMemoryTriggerService extends BaseLlmService
                 ));
                 require_once __DIR__ . '/LlmMemoryUpdateService.php';
                 $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
-                $update_service->executeLlmSummarization($rule, $normalized_payload);
+                $job_id = (int)($normalized_payload['scheduled_job_id'] ?? 0);
+                try {
+                    $success = $update_service->executeLlmSummarization($rule, $normalized_payload);
+                } catch (\Throwable $t) {
+                    $update_service->recordJobResult($job_id, $rule, $normalized_payload, false, get_class($t));
+                    throw $t;
+                }
+                $update_service->recordJobResult($job_id, $rule, $normalized_payload, (bool)$success);
                 return;
             }
 
             $this->spawnAsyncWorker($worker_args);
-        });
+        }, $data_committed);
     }
 
     /**
@@ -474,7 +569,8 @@ class LlmMemoryTriggerService extends BaseLlmService
         $this->appendWorkerLog('executeFallbackSync running', array(
             'rule_id' => (int)($rule['id'] ?? 0),
         ));
-        $update_service->executeLlmSummarization($rule, $normalized);
+        $success = $update_service->executeLlmSummarization($rule, $normalized);
+        $update_service->recordJobResult((int)($worker_args['scheduled_job_id'] ?? 0), $rule, $normalized, (bool)$success);
     }
 
     /**

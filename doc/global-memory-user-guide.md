@@ -92,6 +92,7 @@ What happens:
 
 - The rules run only after a successful save of a **finished** submission. Validation errors, started or updated (unfinished) surveys, and failed saves do nothing.
 - The participant never waits. The request only starts one background worker per rule; the LLM call and the memory write happen there. A failure in the background does not affect the saved answers.
+- Each submission creates one scheduled job "LLM Memory Update (form: ...)" that is executed immediately, so it appears under **Scheduled Jobs** and in the calendar like a form action. The job is marked done when the background worker starts; open the job to see the worker's result ("LLM memory update finished" or "failed", with the rule and memory key). The same applies to the memory rules of an `llmChat` form submit.
 - A rule that was deleted or disabled after it was selected is skipped.
 - Global memory must be enabled (Step 1). Submissions of guests (not logged in) are ignored, because memory is stored per user.
 - Identical submissions are not applied twice (see Deduplication).
@@ -261,6 +262,7 @@ If a form or survey with selected rules does not update memory, also check:
 - the submission was finished and saved (started or updated surveys never trigger)
 - the participant is logged in (guests are skipped)
 - the rule exists, is enabled and has the source `form_action_submit`
+- the scheduled job of the submission under **Scheduled Jobs** and its log (it says whether the update finished or failed)
 - `llm_memory_worker.log` in the plugin folder and the PHP error log (`LLM Memory: form rule trigger failed` / `survey rule trigger failed`)
 
 If memory is not visible in prompts, check:

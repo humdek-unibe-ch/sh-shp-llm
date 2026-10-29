@@ -134,7 +134,14 @@ try {
         'user_id' => (int)($normalized_payload['user_id'] ?? 0),
     ));
 
-    $success = $update_service->executeLlmSummarization($rule, $normalized_payload);
+    $job_id = (int)($args['scheduled_job_id'] ?? 0);
+    try {
+        $success = $update_service->executeLlmSummarization($rule, $normalized_payload);
+    } catch (Exception $e) {
+        $update_service->recordJobResult($job_id, $rule, $normalized_payload, false, get_class($e));
+        throw $e;
+    }
+    $update_service->recordJobResult($job_id, $rule, $normalized_payload, (bool)$success);
 
     llm_memory_worker_log('executeLlmSummarization finished', array(
         'rule_id' => (int)($rule['id'] ?? 0),

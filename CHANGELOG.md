@@ -120,6 +120,15 @@ chat improvements and token reporting.
   scrollbar).
 - **`llmChat` `memory_rule_ids` is a multi-select** that lists only the
   "llmChat form submit" rules. Stored values are unchanged.
+- **Memory updates are listed under Scheduled Jobs.** The memory rules picked
+  on a form, survey or `llmFormLogList` section (`llm_memory_rule_ids`, also
+  after an interview approval) and the rules of an `llmChat` form submit
+  now run as a core `llm_memory_update` task job that is executed
+  immediately, like a form action set to "immediately". Each run therefore
+  shows up in Scheduled Jobs and the calendar. Core marks the job done when
+  the background worker starts; the worker adds the real result ("LLM
+  memory update finished / failed: rule #N, memory key ...") to the job's
+  log. Login and profile-name triggers still run directly.
 - **Context layers combine.** The form, floating and strict-conversation
   modes are applied together, with the strict guardrail first, instead of
   only the first one that is enabled.
@@ -135,6 +144,11 @@ chat improvements and token reporting.
 
 ### Fixed
 
+- Form actions with `llm_memory_update` on a plain form (run immediately or
+  later from the job queue) were dropped without running: core executes jobs
+  inside its own database transaction, which the new after-commit queue
+  treated as uncommitted. They run again; only updates queued inside an
+  interview approval still wait for its commit.
 - An `llmChat` section could delete the participant's other conversations by
   id, including a form interview transcript. Deleting is now limited to the
   conversations of that chat section.

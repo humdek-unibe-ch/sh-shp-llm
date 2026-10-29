@@ -409,26 +409,34 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Queue the selected rules for a finished submission. dispatchForRuleIds checks every
-     * rule (missing or disabled rules are skipped) and starts one detached background
+     * Queue the selected rules for a finished submission as one scheduled job
+     * (scheduleRuleJob), listed under Scheduled Jobs. Running it checks every rule
+     * (missing or disabled rules are skipped) and starts one detached background
      * worker per rule and memory key, so the participant never waits for the LLM.
      *
      * @param int[] $rule_ids
      * @param array $context Snapshot from LlmMemorySubmissionContextService
      * @param int|string $record_id The saved record id
+     * @param string $trigger_type finished, or deleted for an entry that was deleted
      */
-    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id)
+    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id, $trigger_type = actionTriggerTypes_finished)
     {
         $trigger_service = new LlmMemoryTriggerService($this->services);
         $normalized = $trigger_service->normalizeFormActionPayload(array(
             'form_fields'  => $context['fields'],
             'form_name'    => $context['form_name'],
             'table_name'   => $context['table_name'],
-            'trigger_type' => actionTriggerTypes_finished,
+            'trigger_type' => $trigger_type,
             'record_id'    => $record_id,
         ), (int)$_SESSION['id_user']);
         $normalized['readable_text'] = $context['readable_text'];
-        $trigger_service->dispatchForRuleIds($rule_ids, $normalized, true);
+        $trigger_service->scheduleRuleJob(
+            $rule_ids,
+            $normalized,
+            true,
+            'LLM Memory Update (form: ' . $context['form_name']
+                . ($trigger_type === actionTriggerTypes_deleted ? ', entry deleted' : '') . ')'
+        );
     }
 
     /**
@@ -1848,13 +1856,22 @@ class LlmHooks extends BaseHooks
         $run_async = !empty($config['run_async']);
 
         $trigger_service = new LlmMemoryTriggerService($this->services);
-        $normalized = $trigger_service->normalizeFormActionPayload([
-            'form_fields'  => $form_fields,
-            'form_name'    => $config['form_data']['form_name'] ?? $form_table,
-            'table_name'   => $form_table,
-            'trigger_type' => $config['trigger_type'] ?? 'finished',
-            'record_id'    => $record_id,
-        ], $user_id);
+        if (isset($config['normalized_payload']) && is_array($config['normalized_payload'])) {
+            // Scheduled by LlmMemoryTriggerService::scheduleRuleJob() with the
+            // payload its trigger already built (style rules, chat forms).
+            $normalized = $config['normalized_payload'];
+            $normalized['user_id'] = $user_id;
+        } else {
+            $normalized = $trigger_service->normalizeFormActionPayload([
+                'form_fields'  => $form_fields,
+                'form_name'    => $config['form_data']['form_name'] ?? $form_table,
+                'table_name'   => $form_table,
+                'trigger_type' => $config['trigger_type'] ?? 'finished',
+                'record_id'    => $record_id,
+            ], $user_id);
+        }
+        // The update reports its result on this job (Scheduled Jobs).
+        $normalized['scheduled_job_id'] = (int)($args['task_info']['id'] ?? 0);
 
         if (!empty($config['memory_key_override'])) {
             $normalized['memory_key_override'] = $config['memory_key_override'];
@@ -1864,7 +1881,12 @@ class LlmHooks extends BaseHooks
         }
 
         if (!empty($rule_ids)) {
-            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async);
+            // Core runs this task inside JobScheduler::execute_job()'s own
+            // transaction, but only after UserInput::save_data() committed
+            // the submission (or later, from the cron queue), so the update
+            // may run now. Inside an LlmTransaction (form interview
+            // approval) it still waits for that commit.
+            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, [], true);
         } else {
             $this->transaction->add_transaction(
                 transactionTypes_insert,

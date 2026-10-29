@@ -171,19 +171,24 @@ class LlmTransaction
      * - No transaction open: runs immediately (an exception propagates to
      *   the caller).
      * - Inside a transaction opened elsewhere: dropped and logged, see the
-     *   class comment.
+     *   class comment - unless $data_committed says the data the task
+     *   depends on was committed before that transaction began (a core
+     *   form-action job runs inside JobScheduler::execute_job()'s own
+     *   transaction, after UserInput::save_data() committed). Then it runs
+     *   immediately.
      *
      * @param object $db BaseDb / PageDb the work depends on
      * @param callable $task
+     * @param bool $data_committed the task's data is already committed
      * @return bool false when the task was dropped
      */
-    public static function afterCommit($db, $task)
+    public static function afterCommit($db, $task, $data_committed = false)
     {
         if (!empty(self::$frames)) {
             self::$frames[count(self::$frames) - 1]['tasks'][] = $task;
             return true;
         }
-        if (self::inTransaction($db)) {
+        if (!$data_committed && self::inTransaction($db)) {
             self::reportDropped(1,
                 'it was queued inside a transaction that was not opened with LlmTransaction::begin()');
             return false;

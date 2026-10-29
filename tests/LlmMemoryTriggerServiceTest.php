@@ -29,6 +29,12 @@
 foreach (array(
     'transactionTypes_insert' => 'insert',
     'TRANSACTION_BY_LLM_MEMORY' => 'by_llm_memory',
+    'jobTypes' => 'jobTypes',
+    'jobTypes_task' => 'task',
+    'scheduledJobsStatus' => 'scheduledJobsStatus',
+    'scheduledJobsStatus_queued' => 'queued',
+    'transactionBy_by_system' => 'by_system',
+    'ACTION_JOB_TYPE_LLM_MEMORY_UPDATE' => 'llm_memory_update',
 ) as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
@@ -148,6 +154,10 @@ class LlmMemoryUpdateService
         );
         return true;
     }
+    public function recordJobResult($job_id, $rule, $normalized, $success, $error = '')
+    {
+        $GLOBALS['job_results'][] = array('job' => (int)$job_id, 'rule' => (int)$rule['id'], 'success' => $success);
+    }
 }
 PHP
 );
@@ -186,6 +196,44 @@ class MtFakeDb
     public function begin_transaction() { $this->dbh->in_transaction = true; }
     public function commit() { $this->dbh->in_transaction = false; }
     public function rollback() { $this->wipes++; }
+    public function get_lookup_id_by_value($type, $value) { return $type . ':' . $value; }
+}
+
+/**
+ * Core JobScheduler stand-in: schedule_job/execute_job open and commit
+ * their own transactions like the real one; execute_job does what
+ * LlmHooks::execute_memory_task does with a job scheduleRuleJob() created.
+ */
+class MtFakeJobScheduler
+{
+    public $jobs = array();
+    public $executed = array();
+    public $fail_schedule = false;
+
+    public function schedule_job($data, $tran_by)
+    {
+        if ($this->fail_schedule) {
+            return false;
+        }
+        $GLOBALS['db']->begin_transaction();
+        $id = count($this->jobs) + 100;
+        $this->jobs[$id] = $data;
+        $GLOBALS['db']->commit();
+        return $id;
+    }
+
+    public function execute_job($data, $tran_by)
+    {
+        $this->executed[] = (int)$data['id'];
+        $GLOBALS['db']->begin_transaction();
+        $config = $data['config'];
+        $normalized = $config['normalized_payload'];
+        $normalized['scheduled_job_id'] = (int)$data['id'];
+        $svc = new LlmMemoryTriggerService(new MtFakeServices($GLOBALS['db']));
+        $svc->dispatchForRuleIds(explode(',', $config['memory_rule_id']), $normalized, $config['run_async'], array(), true);
+        $GLOBALS['db']->commit();
+        return true;
+    }
 }
 
 class MtFakeTransaction
@@ -201,6 +249,7 @@ class MtFakeServices
     public function __construct($db) { $this->db = $db; $this->transaction = new MtFakeTransaction(); }
     public function get_db() { return $this->db; }
     public function get_transaction() { return $this->transaction; }
+    public function get_job_scheduler() { return $GLOBALS['jobs']; }
 }
 
 require_once $service_dir . '/LlmMemoryTriggerService.php';
@@ -257,6 +306,8 @@ function fresh_world(array $rule_ids = array(1), array $keys = array('mem_key'))
         );
     }
     $GLOBALS['db'] = new MtFakeDb();
+    $GLOBALS['jobs'] = new MtFakeJobScheduler();
+    $GLOBALS['job_results'] = array();
     @unlink($GLOBALS['worker_log']);
     @file_put_contents($GLOBALS['error_log'], '');
     return new LlmMemoryTriggerService(new MtFakeServices($GLOBALS['db']));
@@ -414,6 +465,81 @@ foreach (array('sync' => false, 'async' => true) as $mode => $async) {
     $GLOBALS['db']->commit();
     check("foreign transaction, $mode: ...and committing it later does not resurrect it", $GLOBALS['updates'] === array());
 }
+
+/* =========================================================================
+ * 6. Core form-action job: a foreign transaction around committed data
+ * ========================================================================= */
+
+// LlmHooks::execute_memory_task runs inside JobScheduler::execute_job()'s
+// transaction, after UserInput::save_data() committed the submission.
+$svc = fresh_world();
+$GLOBALS['db']->begin_transaction(); // JobScheduler::execute_job()
+$out = $svc->dispatchForRuleIds(array(1), payload(), false, array(), true);
+check('form-action job: the update runs inside the job transaction', count($GLOBALS['updates']) === 1 && $out === array(1));
+check('form-action job: nothing is queued', queued_tasks() === 0);
+check('form-action job: no drop is reported', strpos(php_log(), 'after-commit task(s) dropped') === false);
+$GLOBALS['db']->commit();
+check('form-action job: it ran exactly once', count($GLOBALS['updates']) === 1);
+
+// ...but inside an interview approval (LlmTransaction) it still waits for that commit
+$svc = fresh_world();
+LlmTransaction::begin($GLOBALS['db']);
+$svc->dispatchForRuleIds(array(1), payload(), false, array(), true);
+check('form-action job in approval: deferred', $GLOBALS['updates'] === array() && queued_tasks() === 1);
+LlmTransaction::rollback($GLOBALS['db']);
+check('form-action job in approval: dropped by the rollback', $GLOBALS['updates'] === array());
+
+/* =========================================================================
+ * 7. Style rules and chat forms run as a scheduled job
+ * ========================================================================= */
+
+$svc = fresh_world(array(1, 2));
+$job_id = $svc->scheduleRuleJob(array(1, 2), payload(), false, 'LLM Memory Update (form: diary)');
+$job = $GLOBALS['jobs']->jobs[$job_id] ?? array();
+check('job: one llm_memory_update task job is created', count($GLOBALS['jobs']->jobs) === 1
+    && $job['config']['type'] === 'llm_memory_update' && $job['config']['memory_rule_id'] === '1,2');
+check('job: for the submitting user, due now, named for Scheduled Jobs',
+    $job['id_users'] === array(5) && $job['description'] === 'LLM Memory Update (form: diary)'
+    && strtotime($job['date_to_be_executed']) >= time() - 5);
+check('job: it carries the payload the trigger built', $job['config']['normalized_payload'] === payload());
+// without it core evaluates the whole config (payload included) as the condition and fails the job
+check('job: it states its own always-true condition', $job['config']['condition'] === array('==' => array(1, 1)));
+check('job: executed right away (no transaction open)', $GLOBALS['jobs']->executed === array($job_id));
+check('job: both rules ran', count($GLOBALS['updates']) === 2);
+check('job: each result is recorded on the job', $GLOBALS['job_results'] === array(
+    array('job' => $job_id, 'rule' => 1, 'success' => true),
+    array('job' => $job_id, 'rule' => 2, 'success' => true),
+));
+
+// interview approval: the job waits for the commit, a rollback drops the run
+$svc = fresh_world();
+LlmTransaction::begin($GLOBALS['db']);
+$job_id = $svc->scheduleRuleJob(array(1), payload(), false, 'x');
+check('job in approval: created inside the transaction, not run yet', $job_id > 0 && $GLOBALS['jobs']->executed === array());
+LlmTransaction::commit($GLOBALS['db']);
+check('job in approval: runs after the commit', $GLOBALS['jobs']->executed === array($job_id) && count($GLOBALS['updates']) === 1);
+
+$svc = fresh_world();
+LlmTransaction::begin($GLOBALS['db']);
+$svc->scheduleRuleJob(array(1), payload(), false, 'x');
+LlmTransaction::rollback($GLOBALS['db']);
+check('job in approval: a rollback never runs it', $GLOBALS['jobs']->executed === array() && $GLOBALS['updates'] === array());
+
+// nothing to run: no empty jobs
+$svc = fresh_world();
+check('job: no rules, no job', $svc->scheduleRuleJob(array(), payload(), false, 'x') === false && $GLOBALS['jobs']->jobs === array());
+$GLOBALS['mem']['enabled'] = false;
+check('job: memory switched off, no job', $svc->scheduleRuleJob(array(1), payload(), false, 'x') === false && $GLOBALS['jobs']->jobs === array());
+
+$svc = fresh_world();
+$GLOBALS['jobs']->fail_schedule = true;
+check('job: a failed schedule runs nothing', $svc->scheduleRuleJob(array(1), payload(), false, 'x') === false && $GLOBALS['updates'] === array());
+
+// the chat path asks for the matching rules first
+$svc = fresh_world(array(1, 2));
+$GLOBALS['mem']['rules'][2]['trigger_types'] = array('started');
+$ids = array_map(function ($r) { return (int)$r['id']; }, $svc->findRulesForPayload(payload()));
+check('chat: matching rules exclude a rule whose trigger types do not fit', $ids === array(1));
 
 /* =========================================================================
  * Summary

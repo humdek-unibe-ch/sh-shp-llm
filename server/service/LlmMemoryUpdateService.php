@@ -37,6 +37,27 @@ class LlmMemoryUpdateService extends BaseLlmService
         $this->rule_service = new LlmMemoryRuleService($services);
     }
 
+    public function recordJobResult($job_id, $rule, $normalized_payload, $success, $error = '')
+    {
+        if ((int)$job_id <= 0) {
+            return;
+        }
+        $transaction = $this->services->get_transaction();
+        $transaction->add_transaction(
+            $success ? transactionTypes_execute_task_ok : transactionTypes_execute_task_fail,
+            TRANSACTION_BY_LLM_MEMORY,
+            (int)($normalized_payload['user_id'] ?? 0) ?: null,
+            $transaction::TABLE_SCHEDULED_JOBS,
+            (int)$job_id,
+            false,
+            'LLM memory update ' . ($success ? 'finished' : 'failed')
+                . ': rule #' . (int)($rule['id'] ?? 0)
+                . ', memory key "' . $this->resolveEffectiveMemoryKey($rule, $normalized_payload) . '"'
+                . ($error !== '' ? ' (' . $error . ')' : '')
+        );
+    }
+
+
     /**
      * Execute an LLM memory update.
      *

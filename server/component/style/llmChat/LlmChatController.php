@@ -1486,12 +1486,20 @@ class LlmChatController extends BaseController
                 $form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id
             );
 
+            // Run as a scheduled job (listed under Scheduled Jobs): the
+            // section's own rules, otherwise the rules matching a chat form.
             $rule_ids = $this->model->getMemoryRuleIds();
-            if (!empty($rule_ids)) {
-                $trigger_service->dispatchForRuleIds($rule_ids, $normalized);
-            } else {
-                $trigger_service->dispatchMemoryUpdate($normalized);
+            if (empty($rule_ids)) {
+                $rule_ids = array_map(function ($rule) {
+                    return (int)$rule['id'];
+                }, $trigger_service->findRulesForPayload($normalized));
             }
+            $trigger_service->scheduleRuleJob(
+                $rule_ids,
+                $normalized,
+                true,
+                'LLM Memory Update (chat section ' . (int)$section_id . ')'
+            );
         } catch (Exception $e) {
             LlmErrorReporter::log('Memory dispatch for a chat form', $e);
         }
