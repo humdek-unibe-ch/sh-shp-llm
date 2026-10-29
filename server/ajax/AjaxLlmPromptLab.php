@@ -11,9 +11,14 @@ require_once __DIR__ . '/../service/LlmPromptRuntimeValueService.php';
 require_once __DIR__ . '/../service/LlmDatasetService.php';
 require_once __DIR__ . '/../service/LlmEvaluationService.php';
 require_once __DIR__ . '/../service/LlmCsrfService.php';
+require_once __DIR__ . '/../service/LlmErrorReporter.php';
+require_once __DIR__ . '/../service/LlmPromptLabAccessService.php';
 
 class AjaxLlmPromptLab extends BaseAjax
 {
+    /** @var LlmPromptLabAccessService Where sections, versions, datasets and runs really live */
+    private $access_service;
+
     /** @var LlmPromptRegistryService */
     private $registry_service;
 
@@ -38,6 +43,7 @@ class AjaxLlmPromptLab extends BaseAjax
     public function __construct($services)
     {
         parent::__construct($services);
+        $this->access_service = new LlmPromptLabAccessService($services);
         $this->registry_service = new LlmPromptRegistryService($services);
         $this->playground_service = new LlmPromptPlaygroundService($services);
         $this->builder_service = new LlmPromptBuilderService($services);
@@ -63,156 +69,160 @@ class AjaxLlmPromptLab extends BaseAjax
         try {
             switch ($action) {
                 case 'bootstrap_owner':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleBootstrap($post, $descriptor);
 
                 case 'get_version':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleGetVersion($post);
 
                 case 'list_versions':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListVersions($post, $descriptor);
 
                 case 'playground_run':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handlePlaygroundRun($post, $descriptor);
 
                 case 'builder_run':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleBuilderRun($post, $descriptor);
 
                 case 'list_datasets':
-                    $this->assertAccess($descriptor, 'select');
-                    return $this->handleListDatasets($post);
+                    $this->assertAccess($descriptor, 'select', $post);
+                    return $this->handleListDatasets($post, $descriptor);
 
                 case 'get_dataset':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleGetDataset($post);
 
                 case 'create_dataset':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleCreateDataset($post, $descriptor);
 
                 case 'update_dataset':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleUpdateDataset($post);
 
                 case 'delete_dataset':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleDeleteDataset($post);
 
                 case 'list_dataset_cases':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListDatasetCases($post);
 
                 case 'add_case_from_playground_run':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleAddCaseFromPlaygroundRun($post, $descriptor);
 
                 case 'get_import_candidates':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleGetImportCandidates($post);
 
                 case 'add_cases_from_source':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleAddCasesFromSource($post, $descriptor);
 
                 case 'parse_cases_from_text':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleParseCasesFromText($post, $descriptor);
 
                 case 'import_parsed_cases':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleImportParsedCases($post, $descriptor);
 
                 case 'move_dataset_cases':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleMoveDatasetCases($post, $descriptor);
 
                 case 'list_compatible_datasets':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListCompatibleDatasets($post, $descriptor);
 
                 case 'list_case_evaluation_history':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListCaseEvaluationHistory($post);
 
                 case 'list_evaluation_example_candidates':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListEvaluationExampleCandidates($post, $descriptor);
 
                 case 'delete_dataset_case':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleDeleteDatasetCase($post);
 
                 case 'update_dataset_case':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleUpdateDatasetCase($post);
 
                 case 'list_eval_definitions':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->evaluation_service->listDefinitions();
 
                 case 'run_dataset_eval':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleRunDatasetEval($post, $descriptor);
 
                 case 'get_eval_run':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleGetEvalRun($post);
 
                 case 'list_eval_run_cases':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListEvalRunCases($post);
 
                 case 'list_eval_runs':
-                    $this->assertAccess($descriptor, 'select');
+                    $this->assertAccess($descriptor, 'select', $post);
                     return $this->handleListEvalRuns($post);
 
                 case 'delete_eval_run':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleDeleteEvalRun($post);
 
                 case 'delete_eval_run_case':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleDeleteEvalRunCase($post);
 
                 case 'delete_eval_runs_bulk':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleDeleteEvalRunsBulk($post);
 
                 case 'link_eval_run_baseline':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleLinkEvalRunBaseline($post);
 
                 case 'save_human_score':
-                    $this->assertAccess($descriptor, 'update');
+                    $this->assertAccess($descriptor, 'update', $post);
                     $this->assertCsrf($post);
                     return $this->handleSaveHumanScore($post);
             }
 
             throw new Exception('Unknown prompt lab action: ' . $action);
-        } catch (Exception $e) {
-            error_log('AjaxLlmPromptLab error [' . $action . ']: ' . $e->getMessage());
-            return array('error' => $e->getMessage());
+        } catch (Throwable $e) {
+            LlmErrorReporter::log('Prompt Lab action ' . $action, $e);
+            // The messages this class and the Llm services throw on purpose are written for the
+            // user ("Access denied", "Dataset not found"). Database and runtime failures are not
+            // and can carry SQL, table names or paths, so the browser only learns that it failed.
+            $deliberate = $e instanceof Exception && !($e instanceof PDOException);
+            return array('error' => $deliberate ? $e->getMessage() : 'Request failed');
         }
     }
 
@@ -338,17 +348,26 @@ class AjaxLlmPromptLab extends BaseAjax
     }
 
     /**
-     * List datasets filtered by search, owner scope, and execution profile.
+     * List the datasets scoped to the authorized owner, filtered by search and execution profile.
      *
-     * @param array $post POST data with optional 'search', 'owner_type_scope', 'owner_id_scope', 'execution_profile'.
+     * The scope is the descriptor's, never the request's: a scope the browser chooses (or
+     * leaves out) would list the datasets of every other page, script and memory rule.
+     *
+     * @param array $post POST data with optional 'search' and 'execution_profile'.
+     * @param array $descriptor Authorized owner descriptor.
      * @return array List of dataset records.
      */
-    private function handleListDatasets($post)
+    private function handleListDatasets($post, $descriptor)
     {
+        $owner_id = (int)($descriptor['owner_id'] ?? 0);
+        if ($owner_id <= 0) {
+            // Nothing is saved for an owner that does not exist yet (e.g. a new script).
+            return array();
+        }
         $filters = array(
             'search' => $post['search'] ?? '',
-            'owner_type_scope' => $post['owner_type_scope'] ?? '',
-            'owner_id_scope' => $post['owner_id_scope'] ?? '',
+            'owner_type_scope' => $this->effectiveOwnerType($descriptor),
+            'owner_id_scope' => $owner_id,
             'execution_profile' => $post['execution_profile'] ?? ''
         );
         return $this->dataset_service->listDatasets($filters);
@@ -517,12 +536,19 @@ class AjaxLlmPromptLab extends BaseAjax
             $this->assertScriptSourceAccess('select');
         }
 
+        $descriptor = $this->readDescriptor($post);
+        if ((int)($descriptor['owner_id'] ?? 0) <= 0) {
+            // Candidates are the owner's own records; without an owner there are none.
+            return array();
+        }
+        // The owner type the access check went by (a legacy script descriptor sends none)
+        $descriptor['owner_type'] = $this->effectiveOwnerType($descriptor);
+
         return $this->dataset_service->getImportCandidates(
             $source_type,
             $limit,
             array(
-                'descriptor' => $this->readDescriptor($post),
-                'allowed_page_id' => $this->resolveDescriptorPageId($this->readDescriptor($post)),
+                'descriptor' => $descriptor,
                 'allow_script_source' => ($source_type === 'script_run')
             )
         );
@@ -547,11 +573,19 @@ class AjaxLlmPromptLab extends BaseAjax
         if ($source_type === '') {
             throw new Exception('Missing source_type');
         }
+        if ((int)($descriptor['owner_id'] ?? 0) <= 0) {
+            // Imports are limited to the owner's own records; without one there are none.
+            throw new Exception('Missing owner_id');
+        }
+        // The owner type the access check went by (a legacy script descriptor sends none)
+        $descriptor['owner_type'] = $this->effectiveOwnerType($descriptor);
 
         if ($source_type === 'script_run') {
             $this->assertScriptSourceAccess('update');
         }
 
+        // The ids sit inside a JSON list, out of reach of assertRequestScope: the service reads
+        // each one through the same scope that builds the candidate list.
         $source_ids = $this->decodeJson($post['source_ids_json'] ?? '[]');
         if (!is_array($source_ids)) {
             $source_ids = array();
@@ -561,7 +595,6 @@ class AjaxLlmPromptLab extends BaseAjax
             'descriptor' => $descriptor,
             'execution_profile' => (string)($post['execution_profile'] ?? 'text_only'),
             'runtime_overrides' => $this->decodeJson($post['runtime_overrides_json'] ?? '{}'),
-            'allowed_page_id' => $this->resolveDescriptorPageId($descriptor),
             'allow_script_source' => ($source_type === 'script_run')
         );
 
@@ -571,9 +604,9 @@ class AjaxLlmPromptLab extends BaseAjax
     /**
      * Delete a single test case from a dataset.
      *
-     * @param array $post POST data with 'dataset_case_id' and optional 'dataset_id'.
+     * @param array $post POST data with 'dataset_case_id' and 'dataset_id'.
      * @return array{deleted: bool}
-     * @throws Exception If dataset_case_id is missing.
+     * @throws Exception If dataset_case_id or dataset_id is missing.
      */
     private function handleDeleteDatasetCase($post)
     {
@@ -581,7 +614,12 @@ class AjaxLlmPromptLab extends BaseAjax
         if ($case_id <= 0) {
             throw new Exception('Missing dataset_case_id');
         }
+        // The dataset is what was authorized (assertRequestScope); without it the service
+        // would delete the case from every dataset it is linked to, other owners' included.
         $dataset_id = isset($post['dataset_id']) ? (int)$post['dataset_id'] : 0;
+        if ($dataset_id <= 0) {
+            throw new Exception('Missing dataset_id');
+        }
         return array('deleted' => $this->dataset_service->deleteDatasetCase($case_id, $dataset_id));
     }
 
@@ -915,22 +953,180 @@ class AjaxLlmPromptLab extends BaseAjax
      */
     private function assertDatasetDescriptorScope($dataset_id, $descriptor)
     {
-        $dataset = $this->dataset_service->getDataset((int)$dataset_id);
-        if (!$dataset) {
+        $scope = $this->access_service->datasetScope((int)$dataset_id);
+        if (!$scope) {
             throw new Exception('Dataset not found');
         }
 
-        $descriptor_owner_type = (string)($descriptor['owner_type'] ?? '');
-        $descriptor_owner_id = (int)($descriptor['owner_id'] ?? 0);
-        $dataset_owner_type = (string)($dataset['owner_type_scope'] ?? '');
-        $dataset_owner_id = (int)($dataset['owner_id_scope'] ?? 0);
+        // A dataset without a scope is shared by every owner; a scoped one belongs to exactly
+        // that owner, whatever owner id the request claims.
+        if ($scope['owner_type_scope'] !== '' && $scope['owner_type_scope'] !== $this->effectiveOwnerType($descriptor)) {
+            throw new Exception('Dataset is outside current descriptor scope');
+        }
+        if ($scope['owner_id_scope'] > 0 && $scope['owner_id_scope'] !== (int)($descriptor['owner_id'] ?? 0)) {
+            throw new Exception('Dataset is outside current descriptor scope');
+        }
+    }
 
-        if ($dataset_owner_type !== '' && $descriptor_owner_type !== '' && $dataset_owner_type !== $descriptor_owner_type) {
-            throw new Exception('Dataset is outside current descriptor scope');
+    /**
+     * Owner type of a descriptor; the legacy script descriptor sends no type, only the slot.
+     *
+     * @param array $descriptor Owner descriptor.
+     * @return string
+     */
+    private function effectiveOwnerType($descriptor)
+    {
+        $owner_type = (string)($descriptor['owner_type'] ?? '');
+        if ($owner_type === '' && (string)($descriptor['prompt_slot'] ?? '') === 'script') {
+            return LLM_PROMPT_OWNER_SCRIPT;
         }
-        if ($dataset_owner_id > 0 && $descriptor_owner_id > 0 && $dataset_owner_id !== $descriptor_owner_id) {
-            throw new Exception('Dataset is outside current descriptor scope');
+        return $owner_type;
+    }
+
+    /**
+     * Every id a request carries has to belong to the owner the request was authorized for.
+     *
+     * assertDescriptorAccess proves the user may work on the descriptor's owner. The ids in the
+     * same request (a stored prompt version, a dataset, an evaluation run or case) are chosen by
+     * the browser and say nothing about who owns them, so each is looked up and compared with the
+     * descriptor. Keys are checked wherever they appear, so a handler that reads one of them is
+     * covered without having to remember to.
+     *
+     * Datasets without a scope are shared by every owner; everything else must match.
+     *
+     * @param array $post The request.
+     * @param array $descriptor Authorized owner descriptor.
+     * @throws Exception If an id does not exist or belongs to another owner.
+     */
+    private function assertRequestScope($post, $descriptor)
+    {
+        foreach (array('version_id', 'target_version_id') as $key) {
+            $id = $this->readPositiveId($post, $key);
+            if ($id > 0) {
+                $this->assertVersionInDescriptorScope($id, $descriptor);
+            }
         }
+        foreach (array('dataset_id', 'source_dataset_id', 'target_dataset_id') as $key) {
+            $id = $this->readPositiveId($post, $key);
+            if ($id > 0) {
+                $this->assertDatasetDescriptorScope($id, $descriptor);
+            }
+        }
+        foreach (array('run_id', 'baseline_run_id') as $key) {
+            $id = $this->readPositiveId($post, $key);
+            if ($id > 0) {
+                $this->assertRunInDescriptorScope($id, $descriptor);
+            }
+        }
+        foreach (array('run_case_id', 'id_llm_eval_run_cases', 'promoted_by_run_case_id') as $key) {
+            $id = $this->readPositiveId($post, $key);
+            if ($id > 0) {
+                $this->assertRunCaseInDescriptorScope($id, $descriptor);
+            }
+        }
+        foreach (array('case_id', 'dataset_case_id') as $key) {
+            $id = $this->readPositiveId($post, $key);
+            if ($id > 0) {
+                $this->assertCaseInDescriptorScope($id, $descriptor);
+            }
+        }
+    }
+
+    /**
+     * Reads an id the way the handlers do, so what is checked is what is used.
+     *
+     * An array is refused rather than skipped: the handlers' (int) cast turns any non-empty
+     * array into 1, which would put id 1 in front of a check that had ignored the parameter.
+     *
+     * @param array $post The request.
+     * @param string $key Parameter name.
+     * @return int The id as a positive integer, 0 when absent or not positive.
+     * @throws Exception If the parameter is not a plain value.
+     */
+    private function readPositiveId($post, $key)
+    {
+        if (!isset($post[$key])) {
+            return 0;
+        }
+        if (!is_scalar($post[$key])) {
+            throw new Exception('Invalid ' . $key);
+        }
+        return max(0, (int)$post[$key]);
+    }
+
+    /**
+     * A stored prompt version must belong to the prompt the descriptor names.
+     *
+     * @param int $version_id llm_prompt_versions.id
+     * @param array $descriptor Authorized owner descriptor.
+     * @throws Exception If the version does not exist or belongs to another prompt owner.
+     */
+    private function assertVersionInDescriptorScope($version_id, $descriptor)
+    {
+        $owner = $this->access_service->versionOwner($version_id);
+        if (!$owner) {
+            throw new Exception('Prompt version not found');
+        }
+        if ($owner['owner_type'] !== $this->effectiveOwnerType($descriptor)
+            || $owner['owner_id'] !== (int)($descriptor['owner_id'] ?? 0)) {
+            throw new Exception('Prompt version is outside current descriptor scope');
+        }
+    }
+
+    /**
+     * An evaluation run belongs to its dataset, and so to that dataset's scope.
+     *
+     * @param int $run_id llm_eval_runs.id
+     * @param array $descriptor Authorized owner descriptor.
+     * @throws Exception If the run does not exist or its dataset is out of scope.
+     */
+    private function assertRunInDescriptorScope($run_id, $descriptor)
+    {
+        $dataset_id = $this->access_service->runDatasetId($run_id);
+        if ($dataset_id <= 0) {
+            throw new Exception('Evaluation run not found');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $descriptor);
+    }
+
+    /**
+     * An evaluation run case belongs to a run, and so to that run's dataset scope.
+     *
+     * @param int $run_case_id llm_eval_run_cases.id
+     * @param array $descriptor Authorized owner descriptor.
+     * @throws Exception If the run case does not exist or its dataset is out of scope.
+     */
+    private function assertRunCaseInDescriptorScope($run_case_id, $descriptor)
+    {
+        $dataset_id = $this->access_service->runCaseDatasetId($run_case_id);
+        if ($dataset_id <= 0) {
+            throw new Exception('Evaluation case not found');
+        }
+        $this->assertDatasetDescriptorScope($dataset_id, $descriptor);
+    }
+
+    /**
+     * A test case is reachable through the datasets it is linked to; one of them has to be in scope.
+     *
+     * @param int $case_id llm_eval_cases.id
+     * @param array $descriptor Authorized owner descriptor.
+     * @throws Exception If the case is unknown, unlinked, or only linked to datasets out of scope.
+     */
+    private function assertCaseInDescriptorScope($case_id, $descriptor)
+    {
+        $dataset_ids = $this->access_service->caseDatasetIds($case_id);
+        if (empty($dataset_ids)) {
+            throw new Exception('Dataset case not found');
+        }
+        foreach ($dataset_ids as $dataset_id) {
+            try {
+                $this->assertDatasetDescriptorScope($dataset_id, $descriptor);
+                return;
+            } catch (Exception $e) {
+                // try the next linked dataset
+            }
+        }
+        throw new Exception('Dataset case is outside current descriptor scope');
     }
 
     /**
@@ -1016,16 +1212,40 @@ class AjaxLlmPromptLab extends BaseAjax
     }
 
     /**
+     * Authorize a request: the descriptor's page access, then every id the request carries.
+     *
+     * The browser only names things, so nothing it says about where a prompt, dataset or
+     * run lives is trusted: the descriptor is checked against the pages that really show
+     * its section, and each version, dataset, run or case id has to belong to the same
+     * owner (see assertRequestScope).
+     *
+     * @param array $descriptor Owner descriptor.
+     * @param string $mode ACL mode ('select', 'update', 'insert', 'delete').
+     * @param array|null $post The request; when given, its ids are scope-checked too.
+     * @throws Exception If the user lacks the required permission or an id is out of scope.
+     */
+    private function assertAccess($descriptor, $mode, $post = null)
+    {
+        $this->assertDescriptorAccess($descriptor, $mode);
+        if (is_array($post)) {
+            $this->assertRequestScope($post, $descriptor);
+        }
+    }
+
+    /**
      * Assert that the current user has the requested ACL access mode for the descriptor's page context.
      *
-     * Resolves page ID from the descriptor's owner_type (script → LLM_SCRIPTS_PAGE_KEYWORD,
-     * memory_rule → LLM_MEMORY_PAGE_KEYWORD, or section → pages_sections lookup).
+     * Scripts and memory rules are governed by the ACL of their module page. A section
+     * (style field) is governed by the pages that really show it: they are resolved from
+     * the database, and a page_id sent by the browser only narrows the choice to one of
+     * them. A page that does not show the section never grants access to it, however
+     * much access the user has there.
      *
      * @param array $descriptor Owner descriptor.
      * @param string $mode ACL mode ('select', 'update', 'insert', 'delete').
      * @throws Exception If the user lacks the required permission.
      */
-    private function assertAccess($descriptor, $mode)
+    private function assertDescriptorAccess($descriptor, $mode)
     {
         $owner_type = (string)($descriptor['owner_type'] ?? '');
         $prompt_slot = (string)($descriptor['prompt_slot'] ?? '');
@@ -1047,56 +1267,33 @@ class AjaxLlmPromptLab extends BaseAjax
             return;
         }
 
-        $page_id = (int)($descriptor['page_id'] ?? 0);
-        if ($page_id <= 0 && (int)($descriptor['owner_id'] ?? 0) > 0) {
-            $resolved = $this->db->query_db_first(
-                "SELECT id_pages FROM pages_sections WHERE id_sections = :id LIMIT 1",
-                array(':id' => (int)$descriptor['owner_id'])
-            );
-            if (!empty($resolved['id_pages'])) {
-                $page_id = (int)$resolved['id_pages'];
-            }
+        // Anything else must be a CMS section field.
+        if ($owner_type !== LLM_PROMPT_OWNER_STYLE_FIELD) {
+            throw new Exception('Access denied');
         }
-        if ($page_id <= 0) {
+
+        $host_pages = $this->access_service->hostPagesForSection((int)($descriptor['owner_id'] ?? 0));
+        $claimed_page_id = (int)($descriptor['page_id'] ?? 0);
+        if ($claimed_page_id > 0) {
+            // The browser says where it is editing; that only counts when the page shows the section.
+            if (!in_array($claimed_page_id, $host_pages, true)) {
+                throw new Exception('Access denied');
+            }
+            $candidate_pages = array($claimed_page_id);
+        } else {
+            $candidate_pages = $host_pages;
+        }
+        if (empty($candidate_pages)) {
             throw new Exception('Missing page context');
         }
 
         $method = 'has_access_' . $mode;
-        if (!$this->acl->$method($_SESSION['id_user'], $page_id)) {
-            throw new Exception('Access denied');
+        foreach ($candidate_pages as $page_id) {
+            if ($this->acl->$method((int)($_SESSION['id_user'] ?? 0), $page_id)) {
+                return;
+            }
         }
-    }
-
-    /**
-     * Resolve the CMS page ID for a given descriptor.
-     *
-     * @param array $descriptor Owner descriptor.
-     * @return int Resolved page ID, or 0 if unresolvable.
-     */
-    private function resolveDescriptorPageId($descriptor)
-    {
-        $owner_type = (string)($descriptor['owner_type'] ?? '');
-        if ($owner_type === LLM_PROMPT_OWNER_MEMORY_RULE) {
-            $page_id = $this->db->fetch_page_id_by_keyword(LLM_MEMORY_PAGE_KEYWORD);
-            return $page_id ? (int)$page_id : 0;
-        }
-
-        $page_id = (int)($descriptor['page_id'] ?? 0);
-        if ($page_id > 0) {
-            return $page_id;
-        }
-
-        $owner_id = (int)($descriptor['owner_id'] ?? 0);
-        if ($owner_id <= 0) {
-            return 0;
-        }
-
-        $resolved = $this->db->query_db_first(
-            "SELECT id_pages FROM pages_sections WHERE id_sections = :id LIMIT 1",
-            array(':id' => $owner_id)
-        );
-
-        return !empty($resolved['id_pages']) ? (int)$resolved['id_pages'] : 0;
+        throw new Exception('Access denied');
     }
 
     /**
@@ -1139,16 +1336,12 @@ class AjaxLlmPromptLab extends BaseAjax
      * Strict: a session without a token is refused too. Every page that talks to this
      * endpoint gets its token from LlmCsrfService::getToken().
      *
-     * @param array $post POST data with 'csrf_token' or 'token'.
+     * @param array $post POST data with 'csrf_token' (else the X-CSRF-Token header is used).
      * @throws Exception If the token is missing or does not match.
      */
     private function assertCsrf($post)
     {
-        $token = $post['csrf_token']
-            ?? $post['token']
-            ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
-
-        if (!LlmCsrfService::isValid($token)) {
+        if (!LlmCsrfService::verifyRequest($post)) {
             throw new Exception('Invalid CSRF token');
         }
     }
