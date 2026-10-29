@@ -155,7 +155,7 @@ abstract class BaseLlmService
                         }
                     }
                 } catch (Exception $e) {
-                    $this->logError('LLM config retrieval failed', ['error' => $e->getMessage()]);
+                    $this->logError('LLM config retrieval failed', $e);
                 }
             }
 

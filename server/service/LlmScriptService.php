@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . "/base/BaseLlmService.php";
+require_once __DIR__ . "/LlmTransaction.php";
 require_once __DIR__ . "/LlmService.php";
 require_once __DIR__ . "/LlmPromptRegistryService.php";
 require_once __DIR__ . "/LlmScriptImageService.php";
@@ -100,7 +101,7 @@ class LlmScriptService extends BaseLlmService
     public function insert_new_script()
     {
         try {
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             $generated_id = "LLM_SCRIPT_" . substr(uniqid(), -9);
             $this->create_dataTables_entry($generated_id, $generated_id);
             $sid = $this->db->insert(LLM_TABLE_SCRIPTS, array(
@@ -114,10 +115,10 @@ class LlmScriptService extends BaseLlmService
                 LLM_TABLE_SCRIPTS,
                 $sid
             );
-            $this->db->commit();
+            LlmTransaction::commit($this->db);
             return $sid;
-        } catch (Exception $e) {
-            $this->db->rollback();
+        } catch (Throwable $e) {
+            LlmTransaction::rollback($this->db, array($this->db->get_cache()::CACHE_TYPE_SECTIONS));
             return false;
         }
     }
@@ -141,7 +142,7 @@ class LlmScriptService extends BaseLlmService
     public function update_script($sid, $name, $script, $test_variables, $async, $data_config, $model = null, $temperature = null, $max_tokens = null, $refresh_sections = null, $prompt_change_note = null, $prompt_meta_json = null, $combine_images = null)
     {
         try {
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
             $current = $this->fetch_script($sid);
             if ($current) {
                 $this->update_dataTables_displayName($current['generated_id'], $name);
@@ -174,10 +175,10 @@ class LlmScriptService extends BaseLlmService
                 LLM_TABLE_SCRIPTS,
                 $sid
             );
-            $this->db->commit();
+            LlmTransaction::commit($this->db);
             return $sid;
-        } catch (Exception $e) {
-            $this->db->rollback();
+        } catch (Throwable $e) {
+            LlmTransaction::rollback($this->db, array($this->db->get_cache()::CACHE_TYPE_SECTIONS));
             return false;
         }
     }
@@ -678,7 +679,7 @@ class LlmScriptService extends BaseLlmService
                 }
             }
         } catch (Exception $e) {
-            $this->logError('Failed to insert refresh event', ['error' => $e->getMessage()]);
+            $this->logError('Failed to insert refresh event', $e);
         }
     }
 

@@ -14,6 +14,7 @@
  */
 
 require_once __DIR__ . '/llm_worker_bootstrap.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 
 $args_file = isset($argv[1]) ? $argv[1] : '';
 $args = llm_worker_read_args($argv, 'llm_memory_worker.php', 'LLM Memory Worker');
@@ -154,7 +155,7 @@ try {
         'error' => $e->getMessage(),
         'trace' => $e->getTraceAsString(),
     ));
-    error_log("LLM Memory Worker: Fatal error: " . $e->getMessage());
+    LlmErrorReporter::log('Memory worker', $e);
     fwrite(STDERR, "LLM Memory Worker: " . $e->getMessage() . "\n");
     exit(1);
 }

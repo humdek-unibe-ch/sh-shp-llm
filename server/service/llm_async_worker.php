@@ -15,6 +15,7 @@
  */
 
 require_once __DIR__ . '/llm_worker_bootstrap.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 
 $args = llm_worker_read_args($argv, 'llm_async_worker.php', 'LLM Async Worker');
 
@@ -114,7 +115,7 @@ try {
     exit($save_success ? 0 : 1);
 
 } catch (Exception $e) {
-    error_log("LLM Async Worker: Fatal error: " . $e->getMessage());
+    LlmErrorReporter::log('Async worker', $e);
     fwrite(STDERR, "LLM Async Worker: " . $e->getMessage() . "\n");
     exit(1);
 }

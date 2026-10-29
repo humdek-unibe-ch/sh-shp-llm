@@ -372,7 +372,7 @@ class LlmMemoryStorageService extends BaseLlmService
                 'displayName' => $display_name,
             ]);
         } catch (Exception $e) {
-            $this->logError('Failed to create memory dataTable: ' . $table_name, ['error' => $e->getMessage()]);
+            $this->logError('Failed to create memory dataTable: ' . $table_name, $e);
             return null;
         }
     }
@@ -644,7 +644,7 @@ class LlmMemoryStorageService extends BaseLlmService
                 $fields
             ) !== false;
         } catch (Exception $e) {
-            $this->logError('Failed to upsert current memory', ['error' => $e->getMessage()]);
+            $this->logError('Failed to upsert current memory', $e);
             return false;
         }
     }
@@ -684,7 +684,7 @@ class LlmMemoryStorageService extends BaseLlmService
                 $fields
             ) !== false;
         } catch (Exception $e) {
-            $this->logError('Failed to append memory history row', ['error' => $e->getMessage()]);
+            $this->logError('Failed to append memory history row', $e);
             return false;
         }
     }

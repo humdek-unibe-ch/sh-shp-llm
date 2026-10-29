@@ -6,6 +6,7 @@
 require_once __DIR__ . '/globals.php';
 require_once __DIR__ . '/LlmFileNamingService.php';
 require_once __DIR__ . '/LlmFileUtility.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 
 /**
  * Materializes survey/form images for LLM script execution.
@@ -910,7 +911,7 @@ class LlmScriptImageService
         try {
             LlmFileNamingService::ensureScriptImageDirectoryExists($userId, $scriptId);
         } catch (Exception $e) {
-            error_log('LLM script image: ' . $e->getMessage());
+            LlmErrorReporter::log('Script image directory', $e);
             return null;
         }
 

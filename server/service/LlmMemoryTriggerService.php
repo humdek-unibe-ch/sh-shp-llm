@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmMemoryConfigService.php';
+require_once __DIR__ . '/LlmTransaction.php';
 
 /**
  * Normalizes payloads from different trigger sources into a standard
@@ -291,7 +292,7 @@ class LlmMemoryTriggerService extends BaseLlmService
                     'rule_id' => (int)$rule_id,
                     'error' => $e->getMessage(),
                 ));
-                error_log('LLM Memory: dispatchForRuleIds rule ' . (int)$rule_id . ' failed: ' . $e->getMessage());
+                LlmErrorReporter::log('Memory dispatch for rule ' . (int)$rule_id, $e);
             }
         }
 
@@ -337,17 +338,24 @@ class LlmMemoryTriggerService extends BaseLlmService
             'field_keys' => array_keys((array)($normalized_payload['fields'] ?? array())),
         ));
 
-        if (!$async) {
-            $this->appendWorkerLog('enqueueMemoryUpdate executing sync', array(
-                'rule_id' => (int)($rule['id'] ?? 0),
-            ));
-            require_once __DIR__ . '/LlmMemoryUpdateService.php';
-            $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
-            $update_service->executeLlmSummarization($rule, $normalized_payload);
-            return;
-        }
+        // A memory update (inline, or in a detached worker with its own DB
+        // connection) must only run for a submission that was committed.
+        // Inside a transaction opened with LlmTransaction::begin() it waits
+        // for the commit and is dropped when the transaction fails; with no
+        // transaction open it runs right away.
+        LlmTransaction::afterCommit($this->db, function () use ($rule, $normalized_payload, $async, $worker_args) {
+            if (!$async) {
+                $this->appendWorkerLog('enqueueMemoryUpdate executing sync', array(
+                    'rule_id' => (int)($rule['id'] ?? 0),
+                ));
+                require_once __DIR__ . '/LlmMemoryUpdateService.php';
+                $update_service = new LlmMemoryUpdateService($this->services, $this->config_service);
+                $update_service->executeLlmSummarization($rule, $normalized_payload);
+                return;
+            }
 
-        $this->spawnAsyncWorker($worker_args);
+            $this->spawnAsyncWorker($worker_args);
+        });
     }
 
     /**

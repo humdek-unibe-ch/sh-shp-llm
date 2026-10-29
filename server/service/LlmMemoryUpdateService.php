@@ -164,7 +164,8 @@ class LlmMemoryUpdateService extends BaseLlmService
             return $success;
 
         } catch (Exception $e) {
-            $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key, $e->getMessage());
+            LlmErrorReporter::log('Memory update for user ' . (int)$user_id . ', rule ' . (int)$rule_id, $e);
+            $this->recordFailure($user_id, $rule_id, LlmErrorReporter::describe($e));
             return false;
         }
     }
@@ -584,7 +585,7 @@ class LlmMemoryUpdateService extends BaseLlmService
                     return $active_version['template_raw'];
                 }
             } catch (Exception $e) {
-                error_log('LLM Memory: prompt-lab resolution failed: ' . $e->getMessage());
+                LlmErrorReporter::log('Memory prompt-lab prompt resolution', $e);
             }
         }
 
@@ -730,6 +731,18 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function logFailure($user_id, $rule_id, $dedupe_key, $error)
     {
         error_log("LLM Memory: update failed for user=$user_id, rule_id=$rule_id: $error");
+        $this->recordFailure($user_id, $rule_id, $error);
+    }
+
+    /**
+     * Write a memory update failure to the transaction audit trail.
+     *
+     * @param int    $user_id User ID.
+     * @param int    $rule_id Rule ID that failed.
+     * @param string $error   What may be written down (see LlmErrorReporter::describe()).
+     */
+    private function recordFailure($user_id, $rule_id, $error)
+    {
         $this->services->get_transaction()->add_transaction(
             transactionTypes_insert,
             TRANSACTION_BY_LLM_MEMORY,
