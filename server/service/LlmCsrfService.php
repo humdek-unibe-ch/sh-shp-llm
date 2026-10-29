@@ -61,12 +61,14 @@ class LlmCsrfService
     /**
      * Token the current request carries: the POST field, else the header.
      *
+     * @param array|null $post POST data to read the field from (default $_POST)
      * @return string Empty when the request carries none
      */
-    public static function fromRequest()
+    public static function fromRequest($post = null)
     {
-        if (isset($_POST[self::POST_PARAM]) && is_scalar($_POST[self::POST_PARAM])) {
-            return (string)$_POST[self::POST_PARAM];
+        $post = is_array($post) ? $post : $_POST;
+        if (isset($post[self::POST_PARAM]) && is_scalar($post[self::POST_PARAM])) {
+            return (string)$post[self::POST_PARAM];
         }
         if (isset($_SERVER['HTTP_X_CSRF_TOKEN']) && is_string($_SERVER['HTTP_X_CSRF_TOKEN'])) {
             return $_SERVER['HTTP_X_CSRF_TOKEN'];
@@ -77,10 +79,76 @@ class LlmCsrfService
     /**
      * Verify the token of the current request.
      *
+     * @param array|null $post POST data to read the field from (default $_POST)
      * @return bool
      */
-    public static function verifyRequest()
+    public static function verifyRequest($post = null)
     {
-        return self::isValid(self::fromRequest());
+        return self::isValid(self::fromRequest($post));
+    }
+
+    /**
+     * Gate for the chat and LLM form endpoints, which the native mobile app
+     * calls too and which has no token to send. The request passes when it
+     * carries the session token, or when it does not come from another
+     * website:
+     *
+     * - `Sec-Fetch-Site: same-origin` - a page of this site (also one whose
+     *   token went stale, e.g. after a re-login in another tab);
+     * - neither `Sec-Fetch-Site` nor `Origin` - not a browser (the native
+     *   app's HTTP client);
+     * - an `Origin` that is exactly one entry of the core list
+     *   `CORS_ALLOWED_ORIGINS` while core CORS is on (the mobile web
+     *   preview): the origins the installation itself allows to call it
+     *   with credentials.
+     *
+     * A browser attaches these headers itself and a page cannot forge or drop
+     * them, so a cross-site request reaches this gate labelled as such and
+     * needs the token it cannot read.
+     *
+     * The decision is made from the request and that list only. What core
+     * answers in `Access-Control-Allow-Origin` is not consulted: it is a
+     * response header, set by code this plugin does not own, and it echoes
+     * the origin it approved - a lookalike origin that an older, looser core
+     * check approved must not become a trusted client through it.
+     *
+     * @return bool
+     */
+    public static function verifyRequestOrTrustedClient()
+    {
+        if (self::verifyRequest()) {
+            return true;
+        }
+        $site = strtolower(self::serverValue('HTTP_SEC_FETCH_SITE'));
+        $origin = self::serverValue('HTTP_ORIGIN');
+        if ($site === 'same-origin' || ($site === '' && $origin === '')) {
+            return true;
+        }
+        return $origin !== '' && self::isAllowedOrigin($origin);
+    }
+
+    /**
+     * Is $origin one of the origins core lets call this installation across
+     * origins? Same list and same test as Selfhelp::cors(): the exact string
+     * (scheme, host, port) as the browser sends it, strict comparison, no
+     * prefix, substring or wildcard. Without core CORS, or with a core that
+     * has no such list, no cross-origin client is trusted.
+     *
+     * @param string $origin The request's Origin header
+     * @return bool
+     */
+    private static function isAllowedOrigin($origin)
+    {
+        if (!defined('CORS') || !CORS || !defined('CORS_ALLOWED_ORIGINS') || !is_array(CORS_ALLOWED_ORIGINS)) {
+            return false;
+        }
+        // "null" is what a sandboxed frame, a data: URL or a redirect chain sends; it names nobody.
+        return strtolower($origin) !== 'null' && in_array($origin, CORS_ALLOWED_ORIGINS, true);
+    }
+
+    /** A $_SERVER entry as a trimmed string ('' when missing or not a string). */
+    private static function serverValue($key)
+    {
+        return isset($_SERVER[$key]) && is_string($_SERVER[$key]) ? trim($_SERVER[$key]) : '';
     }
 }
