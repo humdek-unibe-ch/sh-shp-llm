@@ -769,7 +769,7 @@ class LlmChatController extends BaseController
         }
 
         try {
-            $this->llm_service->deleteConversation($conversation_id, $user_id);
+            $this->llm_service->deleteConversation($conversation_id, $user_id, $this->model->getSectionId());
             $this->sendJsonResponse(['success' => true]);
         } catch (Exception $e) {
             $this->sendExceptionResponse($e);

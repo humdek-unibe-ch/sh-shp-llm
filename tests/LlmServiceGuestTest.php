@@ -407,6 +407,9 @@ check('a new thread of guest A is registered for guest A only', $resolved['is_ne
 browser('B');
 check('...and stays invisible to guest B', !in_array($resolved['conversation_id'], ids($service->getUserConversations($GUEST)), true));
 
+check('a conversation of another section (e.g. a form interview) cannot be deleted from this one (404)', throwsLlm(function () use ($service, $b1, $GUEST) {
+    $service->deleteConversation($b1, $GUEST, (int)$GLOBALS['services']->db->rows[$b1]['id_sections'] + 1);
+}, 404) && $services->db->rows[$b1]['deleted'] === 0);
 check('guest B can delete its own conversation', $service->deleteConversation($b1, $GUEST) === true && $services->db->rows[$b1]['deleted'] === 1);
 check('...and then has an empty list again', $service->getUserConversations($GUEST) === array());
 check('guest lists never read or fill the per-user cache that all guests would share', $services->cache->gets === 0 && $services->cache->sets === 0);

@@ -228,7 +228,7 @@ class LlmService
         return array();
     }
 
-    public function deleteConversation($conversation_id, $user_id)
+    public function deleteConversation($conversation_id, $user_id, $section_id = null)
     {
         $GLOBALS['T']['events'][] = 'delete';
     }

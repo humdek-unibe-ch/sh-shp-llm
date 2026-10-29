@@ -731,13 +731,15 @@ class LlmService extends BaseLlmService
      * 
      * @param int $conversation_id Conversation ID
      * @param int $user_id User ID
+     * @param int|null $section_id Only a conversation of this section (a chat
+     *        section must not delete e.g. a form interview transcript)
      * @return bool Success
      * @throws LlmException If conversation not found
      */
-    public function deleteConversation($conversation_id, $user_id)
+    public function deleteConversation($conversation_id, $user_id, $section_id = null)
     {
         // Verify ownership
-        $conversation = $this->getConversation($conversation_id, $user_id);
+        $conversation = $this->getConversation($conversation_id, $user_id, $section_id);
         if (!$conversation) {
             throw new LlmException('Conversation not found or access denied', 404);
         }

@@ -135,6 +135,9 @@ chat improvements and token reporting.
 
 ### Fixed
 
+- An `llmChat` section could delete the participant's other conversations by
+  id, including a form interview transcript. Deleting is now limited to the
+  conversations of that chat section.
 - A memory update for a deleted form entry passed `trigger_type=deleted` into
   `UserInput::save_data()`, which marked the memory row itself deleted so it
   looked empty afterwards. Memory rows are always written as live.
