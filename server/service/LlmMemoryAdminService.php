@@ -203,6 +203,24 @@ class LlmMemoryAdminService extends BaseLlmService
         $write_sources = $this->getWriteSources();
         $latest_activity_at = $this->getLatestActivityAt();
 
+        // Where each rule is used (sections, form actions, llmChat, system
+        // hooks), so a user's Rules tab can show the rules of one memory key.
+        $used_in = [];
+        foreach ($write_sources as $source) {
+            foreach ((array)($source['rule_ids'] ?? []) as $rid) {
+                $used_in[(int)$rid][] = [
+                    'source_category' => $source['source_category'] ?? '',
+                    'target_label' => $source['target_label'] ?? '',
+                    'target_secondary' => $source['target_secondary'] ?? '',
+                    'target_url' => $source['target_url'] ?? null,
+                ];
+            }
+        }
+        foreach ($rules as &$rule) {
+            $rule['used_in'] = $used_in[(int)$rule['id']] ?? [];
+        }
+        unset($rule);
+
         return [
             'enabled'           => $this->config_service->isMemoryEnabled(),
             'storage_mode'      => $this->config_service->getStorageMode(),
