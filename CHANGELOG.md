@@ -236,6 +236,13 @@ cache.
     list is validated and merged with the stored one first, so saving the CMS
     page can never blank or leak keys. No new hook registration and no cache
     clearing are needed for this part.
+  - On the settings page and in the CMS editor, **Save** on a server card
+    (add, edit) and **Delete** store the server list right away through the
+    settings endpoint (`save_config`: `update` ACL, CSRF, the same
+    validation), so no second "Save Changes" / CMS page save is needed. The
+    other settings still use "Save Changes". Validation messages show in the
+    card (in the CMS editor they used to reach only the server log); the form
+    stays open with what was typed.
 - **Participant input could be read as a file path (critical).** The
   `attachments` column also carries the `form_submission` payload built from
   participant input, and the API formatter treated any `path` in it as a file
@@ -293,6 +300,214 @@ cache.
   core login/profile writes. Danger blocking and the alert email run after
   the lock and the transaction are released. A broken CMS field definition
   no longer leaks its field errors to participants.
+
+### Security (audit remediation)
+
+Fixes for the review of the changes above (three high findings: the admin API
+leaked interview state, the Prompt Lab trusted the page id of the browser,
+memory was updated before an approval committed). Verified against a real
+database (fresh install, upgrade and replay of `v1.6.0.sql`, interview
+approval with a forced failure) and over HTTP with real users and ACL groups.
+A database that already ran `server/db/v1.6.0.sql` during development runs it
+again (idempotent; step 11 adds the missing `interview_runtime` profile) and
+clears the SelfHelp cache. The bundles in `js/ext/` are rebuilt; after changing `react/` run
+`npm run build` in `gulp/`.
+
+- **`globals_untracked.php` is optional.** `globals.php` loads the file only
+  when it exists, so a fresh checkout, CI and the CLI workers start without it
+  (a missing file used to be a fatal error). `server/service/globals_untracked.default.php`
+  is the template (`LLM_SECRET_KEY`, `LLM_ALLOWED_API_HOSTS`): every option is
+  commented out, so copying it unchanged is harmless, and environment
+  variables of the same names work without any file. The real file stays out
+  of git (`.gitignore`).
+- **No unsafe HTML.** Markdown from model output, participant messages and
+  stored prompt context passes `rehype-sanitize` (GitHub allow-list, `<style>`
+  dropped) before it is highlighted: no `script`, `iframe`, `form`, `svg` or
+  media tags, no event-handler or `style` attributes, links and images only
+  `http(s)` / `mailto` / relative, `id` / `name` prefixed. Harmless inline
+  HTML (`<br>`, `<details>`, tables) still renders. The context popup, the
+  chat component and the form alert helper no longer put server or model text
+  into the page with `innerHTML` / `dangerouslySetInnerHTML`, and the PHP
+  `llmResponse` style runs Parsedown in safe mode, so HTML in a model answer
+  is escaped. Known limit: an image written in Markdown (`![](https://...)`)
+  is still fetched from its host by the participant's browser.
+- **The admin API no longer returns the interview `state`.** The draft
+  answers, approval receipt and tokens were part of every conversation row, so
+  a user with only `select` on the console received them. Conversations are
+  read with an explicit column list (`LlmAdminService::ADMIN_CONVERSATION_COLUMNS`);
+  a column added by a later migration stays hidden until someone decides it is
+  safe. The mobile conversation row drops `state` as well. Nothing needed it.
+  - The conversation state does not copy the participant's opened record
+    (`state.payload.opening_context` is only `{context_key, opened_at}`, the
+    changed-record fingerprint is enough to detect an edit).
+  - Draft revisions are no longer written to the core transaction log: core
+    `add_transaction()` stores the whole session with each row, and autosaves
+    and turns wrote one each. Creation, record binding, completion and
+    messages are still audited.
+- **Prompt Lab: page ownership is decided on the server.** Access used to
+  follow the `page_id` the browser sent, so an editor of page A could read and
+  change the prompts, datasets and runs of a section on page B by sending A's
+  id with B's section. `LlmPromptLabAccessService::hostPagesForSection()` now
+  resolves the pages that really show a section (section hierarchy and
+  navigation, like core); a `page_id` in the request can only pick one of
+  them, and the user needs the ACL on it. A section that no page shows is
+  refused (`Missing page context`). Version, dataset, case and run ids must
+  belong to the descriptor's scope, and the ids of a dataset import are tied
+  to the descriptor's owner (see the import entry below). Scripts and
+  memory rules keep following the ACL of their module pages.
+- **One way to run a transaction: no global cache wipe, memory updates only
+  after the commit.** Core `BaseDb::rollback()` ends with `apcu_clear_cache()`
+  (every page, style, lookup and ACL entry), so anyone who triggered an
+  expected failure - a stale interview request, a failed approval - could
+  cold-start the whole CMS. Every plugin transaction now goes through
+  `LlmTransaction` (`begin()` / `commit()` / `rollback()`);
+  `rollback()` rolls the handle back and clears only the cache types the
+  caller names (the user-input cache after a core write). Memory updates
+  started by an interview approval or a form action are handed to
+  `LlmTransaction::afterCommit($db, $task)`: they start at the outermost
+  `commit()`, a rollback drops them, and they start at once when no
+  transaction is open. Nothing has to be opted into: a transaction opened
+  through the class has its frame, and nested ones wait for the outermost
+  commit like core's savepoints. A transaction opened by other code (core,
+  another plugin) cannot be observed, so a task queued inside it is dropped
+  and logged instead of being started early, and a request that ends inside an
+  open transaction reports the tasks it never released. The detached memory
+  worker has its own database connection, so it can neither be rolled back
+  nor see uncommitted rows, which is why starting it earlier updated memory for
+  approvals that then failed. `tests/LlmConventionsTest.php` fails on a direct
+  `begin_transaction()`, `commit()` or `rollback()` call anywhere else in the
+  plugin. Core's own `UserInput::save_data()` still rolls back through
+  `BaseDb::rollback()` when it fails, cache wipe included: that is core
+  behavior this plugin does not change. A rollback only undoes anything on
+  InnoDB tables, see [README > Database engine](README.md#database-engine).
+- **CSRF.** The chat and the LLM form endpoints (`llmChat`, `llmFormRecord`,
+  `llmFormLog`), which the native app calls too, accept a request that carries
+  the session token (`csrf_token` field or `X-CSRF-Token` header - the React
+  chat sends the header), **or** that does not come from another website:
+  `Sec-Fetch-Site: same-origin` (also covers a token gone stale after a login
+  in another tab), neither `Sec-Fetch-Site` nor `Origin` (the native HTTP
+  client), or an `Origin` that is exactly one entry of core's
+  `CORS_ALLOWED_ORIGINS` while core `CORS` is on
+  (`LlmCsrfService::verifyRequestOrTrustedClient()`). A browser sets
+  those headers itself and a page cannot forge them, so a cross-site request
+  without the token gets a 403 and changes nothing. The admin console,
+  settings, Prompt Lab, scripts, memory and interview mutations keep the
+  strict check (token required). Scripts and memory refuse state-changing
+  actions over `GET` (405) and check the ACL before the token.
+  - **The origin rule compares exactly.** An earlier version trusted whatever
+    origin core's CORS code had reflected into `Access-Control-Allow-Origin`,
+    and that code approved any origin that merely *contained* a listed one
+    (`https://selfhelp.philhum.unibe.ch.evil.example`), so a hostile page
+    passed as a trusted client. The plugin now reads the list itself: the
+    whole `Origin` string (scheme, host, port) must equal an entry of
+    `CORS_ALLOWED_ORIGINS`; no prefix, substring, wildcard or case folding,
+    `Origin: null` never, and the response header is not consulted. A core
+    without that constant, or with `CORS` off, trusts no cross-origin client
+    (it has to send the token). `tests/LlmCsrfServiceTest.php` feeds
+    lookalike origins through a core that reflects them.
+  - **Core companion change (SelfHelp v7.12.0): `Selfhelp::cors()` matches
+    exactly too.** The list `CORS_ALLOWED_ORIGINS` is new in core
+    `globals.php` (override it in core's `globals_untracked.php`); its default
+    holds the origins core approved before, so nothing changes for them. An
+    origin that only matched by substring (another port on a listed host, a
+    subdomain) has to be listed now.
+  - **README: the session cookie advice is corrected.** Web sessions are
+    `SameSite=Lax`; core issues `SameSite=None; Secure` to the sessions of the
+    mobile web preview on purpose, and for those the exact origin list is what
+    keeps other websites out. See
+    [README > CSRF and cross-origin clients](README.md#csrf-and-cross-origin-clients).
+- **Rate limit and input checks.**
+  - Speech-to-text (chat and interview): 6 recordings per minute and user
+    (`LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE`, 60 s cooldown), answered
+    with 429. The audio type is decided from the file content, not from the
+    declared MIME type or extension, and only valid audio uses up the budget;
+    anything else is a 400.
+  - Interview: `message` at most 10 000 characters, `request_id` /
+    `request_token` / `open_token` at most 191 characters; form values at most
+    10 000 characters and 200 list items per field, numbers must be finite
+    (`1e999` is refused, not stored as `INF`).
+- **Error handling.** `LlmErrorReporter` logs an unexpected failure once
+  (context, exception class, location, conversation id; control characters
+  removed, message cut) and hands out one generic text. Messages of database
+  errors can quote row values, so outside debug mode only the SQLSTATE is
+  logged. The admin console answers 404 / 409 with its own text and every 5xx
+  with the generic one; the interview and chat map failures the same way.
+  Failed provider attempts are still stored for admins as unvalidated
+  `[API ERROR]` messages and never reach a participant's message list (the
+  participant gets the fixed notice described below). It is the only way the
+  plugin logs an exception: the places that wrote `$e->getMessage()` to
+  `error_log()` themselves (workers, hooks, memory, speech-to-text, controllers,
+  Prompt Lab) call `LlmErrorReporter::log()`, and a record that stores a failure
+  (the audit row of a failed memory update) uses `LlmErrorReporter::describe()`,
+  so the same redaction applies. `tests/LlmConventionsTest.php` fails when
+  plugin code hands an exception text to `error_log()` directly. The trait
+  method `logError($message, $exception)` takes the exception object; five
+  callers that passed an array (a `TypeError` on the failure path) are fixed.
+- **Prompt Lab: the ids of a dataset import are tied to the prompt's owner.**
+  The records to import (`source_ids_json`) come from the browser and the
+  request-level check cannot see them. The service tested them with a
+  lenient matcher: a record with no section, script or owner counted as a
+  match; a run matched on the owner id alone (a script run with the number of
+  a section was a section's run); the owner type, the prompt slot and the run
+  mode that the list applies were not checked on import; any
+  `__memory_update__` conversation
+  matched any memory rule; and a page-level fallback accepted every
+  conversation of the page the owner is shown on. Naming such an id imported
+  another owner's participant messages into a dataset. The list and the import
+  now share one rule, `LlmDatasetIngestionService::sourceScope()`: a record is
+  importable if and only if the candidate list shows it. A record belongs to
+  an owner by what it says about itself - the prompt entry of a playground run
+  (owner type, owner id, prompt slot, run mode playground or compare), the
+  section of a conversation (CMS style fields), the script of a conversation
+  (scripts), the `__memory_update__<key>` titles of the memory keys of a rule
+  (memory rules; without keys an exact prefix test, since `_` is a wildcard in
+  `LIKE`) - never by the page. It fails closed: no owner id, an unknown owner
+  type, a memory rule that does not exist or cannot be read, or a failing
+  query gives nothing. Ids that are not plain positive numbers are skipped.
+  Behavior changes: a message is imported as a form submission only when it
+  carries form data (as the list already required); script fixtures are
+  offered to script owners only (the *From scripts* tab of a CMS style field
+  is empty); the
+  `allowed_page_id` context entry is gone; the form-submission list stops at
+  its limit. `tests/LlmDatasetIngestionScopeTest.php` runs the real queries
+  against SQLite and checks "importable == listable" for every owner and
+  source over the id space, plus the cross-owner cases above.
+- **A response without a safety verdict is never "safe".** The tri-state
+  above (`assessed = false`, `is_safe = null`) now also covers a `safety`
+  value that says nothing: an empty or blank string, a bare `true` / `false` /
+  `0`, or a block without any flag, classifier or danger level. A danger level
+  without a flag counts as not safe. Only an explicit `false` is treated as
+  unsafe, and the missing assessment is logged.
+- **A participant sees a notice after a failed turn.** When the provider fails
+  or no reply passes the response schema, the chat answers (`send_message`,
+  `submit_form`, `continue_conversation`) carry a fixed `notice`
+  (`LlmResponseService::NO_ANSWER_NOTICE`, also the text of the stored error
+  fallback). The failed attempt is an unvalidated row that the participant's
+  message list hides, so the reload showed nothing and the turn seemed to
+  vanish; the React chat now shows the notice in its error banner (which clears
+  itself after a few seconds, like the other chat errors). The answer of a
+  failed turn holds nothing else of the reply: `message` is the notice too,
+  there is no `structured` block, and neither the model's raw text nor the
+  technical reason is returned; both stay in the log and the admin console. A
+  danger flag the model really produced is still reported in `safety`. A
+  healthy turn carries no `notice` and keeps its `message` and `structured`.
+- **Prompt Lab: a dataset for the interview prompt.** The
+  `llm_interview_context` prompt resolves to the `interview_runtime` execution
+  profile, but no migration installed that lookup, so "Create dataset" failed
+  with `Invalid execution profile`. `v1.6.0.sql` step 11 inserts it
+  (`INSERT IGNORE`). Lookup ids are cached, a miss included: clear the
+  SelfHelp cache after running the migration.
+  `tests/LlmExecutionProfileLookupsTest.php` fails when the code uses an
+  execution profile or dataset case type that no migration installs.
+- **No `node="[object Object]"` attribute in the chat markup.** react-markdown
+  hands its parsed `node` to every custom component, and the code block and the
+  task-list checkbox spread their props onto the DOM element. Both drop it now.
+- **Inline code renders inline.** react-markdown v9 no longer tells a custom
+  `code` component whether it is inline, so every inline code span was rendered
+  as a code block (a `div.code-block-wrapper` with a copy button, nested inside
+  the paragraph). Now only the `<pre>` of a fenced, indented or raw-HTML block
+  marks its code as a block; any other code is an inline
+  `<code class="inline-code">`.
 
 ### Changed (audit)
 
