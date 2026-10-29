@@ -418,8 +418,9 @@ class LlmHooks extends BaseHooks
      * @param array $context Snapshot from LlmMemorySubmissionContextService
      * @param int|string $record_id The saved record id
      * @param string $trigger_type finished, or deleted for an entry that was deleted
+     * @param int|null $user_id Whose memory is updated; null for the session user
      */
-    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id, $trigger_type = actionTriggerTypes_finished)
+    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id, $trigger_type = actionTriggerTypes_finished, $user_id = null)
     {
         $trigger_service = new LlmMemoryTriggerService($this->services);
         $normalized = $trigger_service->normalizeFormActionPayload(array(
@@ -428,7 +429,7 @@ class LlmHooks extends BaseHooks
             'table_name'   => $context['table_name'],
             'trigger_type' => $trigger_type,
             'record_id'    => $record_id,
-        ), (int)$_SESSION['id_user']);
+        ), $user_id !== null ? (int)$user_id : (int)$_SESSION['id_user']);
         $normalized['readable_text'] = $context['readable_text'];
         $trigger_service->scheduleRuleJob(
             $rule_ids,
@@ -1825,6 +1826,8 @@ class LlmHooks extends BaseHooks
         $form_table = (string)(
             $config['form_data']['table_name']
             ?? $config['form_data']['form_name']
+            // jobs from LlmMemoryTriggerService::scheduleRuleJob() carry no form_data
+            ?? $config['normalized_payload']['match_criteria']['table_name']
             ?? ''
         );
         $record_id = $config['form_data']['record_id']
@@ -2216,13 +2219,19 @@ class LlmHooks extends BaseHooks
         }
 
         try {
+            // The memory of the entry's owner learns about the delete, not the
+            // deleter's (with own_entries_only off they can differ).
+            $owner_id = (int)($snapshot['id_users'] ?? 0);
+            if ($owner_id <= 0 || $owner_id === GUEST_USER_ID) {
+                return $res;
+            }
             // the stored row carries bookkeeping columns next to the answers
             foreach (array(ENTRY_RECORD_ID, 'entry_date', 'id_users', 'user_name', 'user_code',
                 'id_actionTriggerTypes', 'triggerType', '_history_log') as $system_key) {
                 unset($snapshot[$system_key]);
             }
             $context = (new LlmMemorySubmissionContextService())->buildFormContext($model, $snapshot, $record_id);
-            $this->queueSubmissionMemoryRules($rule_ids, $context, $record_id, actionTriggerTypes_deleted);
+            $this->queueSubmissionMemoryRules($rule_ids, $context, $record_id, actionTriggerTypes_deleted, $owner_id);
         } catch (\Throwable $e) {
             LlmErrorReporter::log('Memory form delete trigger', $e);
         }

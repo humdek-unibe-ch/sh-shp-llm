@@ -137,7 +137,7 @@ try {
     $job_id = (int)($args['scheduled_job_id'] ?? 0);
     try {
         $success = $update_service->executeLlmSummarization($rule, $normalized_payload);
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
         $update_service->recordJobResult($job_id, $rule, $normalized_payload, false, get_class($e));
         throw $e;
     }
@@ -157,7 +157,7 @@ try {
 
     exit($success ? 0 : 1);
 
-} catch (Exception $e) {
+} catch (\Throwable $e) {
     llm_memory_worker_log('fatal exception', array(
         'error' => $e->getMessage(),
         'trace' => $e->getTraceAsString(),

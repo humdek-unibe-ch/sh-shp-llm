@@ -28,6 +28,9 @@ foreach (array(
     'ENTRY_RECORD_ID' => 'record_id',
     'actionTriggerTypes_finished' => 'finished',
     'actionTriggerTypes_deleted' => 'deleted',
+    'ACTION_JOB_TYPE_LLM_MEMORY_UPDATE' => 'llm_memory_update',
+    'TRANSACTION_BY_LLM_MEMORY' => 'by_llm_memory',
+    'transactionTypes_insert' => 'insert',
 ) as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
@@ -95,11 +98,13 @@ abstract class BaseModel
 {
     protected $services;
     protected $db;
+    protected $transaction;
 
     public function __construct($services)
     {
         $this->services = $services;
         $this->db = $services->get_db();
+        $this->transaction = $services->get_transaction();
     }
 }
 PHP
@@ -115,6 +120,8 @@ class LlmMemoryConfigService
 {
     public function __construct($services = null) {}
     public function isMemoryEnabled() { return true; }
+    public function getCurrentTableName() { return 'llmMemoryCurrent'; }
+    public function getHistoryTableName() { return 'llmMemoryHistory'; }
 }
 PHP
 );
@@ -181,9 +188,19 @@ require_once $plugin_server . '/component/LlmHooks.php';
  * Stand-ins
  * ========================================================================= */
 
+class DeleteFakeTransaction
+{
+    public function add_transaction(...$args)
+    {
+        $GLOBALS['transactions'][] = $args;
+        return true;
+    }
+}
+
 class DeleteFakeServices
 {
     public function get_db() { return null; }
+    public function get_transaction() { return new DeleteFakeTransaction(); }
 }
 
 /** The hooked form model: its stored entry and what the core delete answers. */
@@ -277,6 +294,21 @@ check('delete: the job says the entry was deleted', ($job['payload']['trigger_ty
 check('delete: it carries the last answers without the bookkeeping columns',
     ($job['payload']['fields'] ?? null) === array('wish' => 'listen more', 'plan' => 'breathe'));
 
+check('delete: the owner\'s memory is updated', ($job['payload']['user_id'] ?? 0) === 3);
+
+// someone else's entry (own_entries_only off): the owner's memory, not the deleter's
+reset_world(array(5 => array('deleted')));
+$model = new FakeFormModel();
+$model->entry['id_users'] = 7;
+$hooks->onFormDeletedMemoryRules(deleteArgs($model));
+check('other owner: the job updates the owner\'s memory', ($GLOBALS['jobs'][0]['payload']['user_id'] ?? 0) === 7);
+
+reset_world(array(5 => array('deleted')));
+$model = new FakeFormModel();
+$model->entry['id_users'] = GUEST_USER_ID;
+$res = $hooks->onFormDeletedMemoryRules(deleteArgs($model));
+check('guest owner: no job, the delete result is returned', $res === true && $GLOBALS['jobs'] === array());
+
 // only the rules that opted in run
 reset_world(array(5 => array('finished', 'deleted'), 6 => array('finished')));
 $model = new FakeFormModel();
@@ -317,6 +349,19 @@ check('read failure: the delete still runs and succeeds', $res === true && in_ar
 check('read failure: no job without the entry', $GLOBALS['jobs'] === array());
 clearstatcache();
 check('read failure: it is logged', strpos((string)@file_get_contents($log_file), 'Memory form delete trigger') !== false);
+
+// a scheduled style-rule job (no form_data) on a memory table is blocked too
+$GLOBALS['transactions'] = array();
+$res = $hooks->execute_memory_task(array(
+    'task_info' => array('id' => 9, 'config' => array(
+        'type' => 'llm_memory_update',
+        'memory_rule_id' => '5',
+        'normalized_payload' => array('match_criteria' => array('table_name' => 'llmMemoryCurrent')),
+    )),
+    'user' => array('id_users' => 3),
+));
+check('memory table guard: a scheduled job on a memory table does nothing',
+    $res === true && strpos((string)($GLOBALS['transactions'][0][6] ?? ''), 'BLOCKED') !== false);
 
 echo "\n$total checks, $failed failed\n";
 exit($failed === 0 ? 0 : 1);
