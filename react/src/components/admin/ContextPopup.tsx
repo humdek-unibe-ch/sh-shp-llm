@@ -155,10 +155,8 @@ export const ContextPopup: React.FC<ContextPopupProps> = ({ message, show, onHid
       return <JsonInspector value={content} />;
     }
 
-    const hasHtml = /<[^>]+>/.test(content);
-    if (hasHtml) {
-      return <div className="context-content-body" dangerouslySetInnerHTML={{ __html: content }} />;
-    }
+    // Context holds user messages and model output: never inject it as raw
+    // HTML. MarkdownRenderer renders harmless inline HTML and sanitizes the rest.
     return (
       <div className="context-content-body">
         <MarkdownRenderer content={content} />

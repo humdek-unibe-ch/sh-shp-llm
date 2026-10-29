@@ -10,7 +10,10 @@
     "build:interview": "vite build --config vite.interview.config.ts",
     "preview": "vite preview",
     "watch": "vite build --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:markdown": "node --test tests/markdownRenderer.test.mjs",
+    "test:utils": "node --test tests/llmResponseUtils.test.mjs",
+    "test:csrf": "node --test tests/csrfRequests.test.mjs"
   },
   "dependencies": {
     "@types/hast": "^3.0.4",
@@ -22,6 +25,7 @@
     "react-select": "^5.10.2",
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
