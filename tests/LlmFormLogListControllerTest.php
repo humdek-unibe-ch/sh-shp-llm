@@ -241,6 +241,137 @@ expect_core('foreign-section marker without a form post', array(
 ));
 
 /* =========================================================================
+ * transcribe: how the speech funnel's answer reaches the browser
+ * ========================================================================= */
+
+if (!function_exists('uopz_set_mock') || !function_exists('uopz_set_return')) {
+    echo "skip: transcribe mapping needs the uopz extension\n";
+} else {
+    ini_set('log_errors', '1');
+    ini_set('error_log', sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'llm_formloglist_test.log');
+
+    class SpeechFakeServices extends GuardFakeServices
+    {
+        public function get_acl() { return null; }
+    }
+
+    class SpeechFakeModel extends GuardFakeModel
+    {
+        public static $enabled = true;
+        public function get_services() { return new SpeechFakeServices(); }
+        public function get_id_page() { return 5; }
+        public function get_condition_result() { return array('result' => true); }
+        public function isInterviewSpeechEnabled() { return self::$enabled; }
+        public function getInterviewSpeechModel() { return 'whisper-1'; }
+    }
+
+    class StubInterviewService
+    {
+        public function setNativeRenderer($renderer) {}
+    }
+
+    /** The speech funnel with a canned answer; records how the controller called it. */
+    class FakeSpeechService extends LlmSpeechToTextService
+    {
+        public static $answer = array();
+        public static $throw = false;
+        public static $calls = array();
+
+        public function __construct() {}
+        public function getUserLanguage() { return 'en'; }
+
+        public function saveAndTranscribeAudio($audioFile, $userId, $sectionId, $conversationId = null, $model = null, $language = null, $keepFile = true)
+        {
+            self::$calls[] = func_get_args();
+            if (self::$throw) {
+                throw new RuntimeException('provider exploded: secret-host.internal');
+            }
+            return self::$answer;
+        }
+    }
+
+    // A test file is no upload, and the controller builds the funnel itself
+    uopz_set_return('is_uploaded_file', true);
+    uopz_set_mock('LlmSpeechToTextService', 'FakeSpeechService');
+
+    function run_transcribe(array $answer, $file = 'default', $token = 'tok')
+    {
+        FakeSpeechService::$answer = $answer;
+        FakeSpeechService::$calls = array();
+        $_POST = array('__llm_interview_action' => 'transcribe', 'section_id' => '42', 'csrf_token' => $token);
+        $_GET = array();
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SESSION = array('id_user' => 7, 'csrf_token' => 'tok');
+        $_FILES = $file === 'default'
+            ? array('audio' => array('name' => 'a.webm', 'type' => 'audio/webm', 'tmp_name' => __FILE__, 'error' => UPLOAD_ERR_OK, 'size' => 1234))
+            : $file;
+        try {
+            new GuardSpyController(new SpeechFakeModel(), new StubInterviewService());
+        } catch (GuardRejected $e) {
+            return array('status' => $e->status, 'data' => $e->data, 'calls' => FakeSpeechService::$calls);
+        }
+        return array('status' => null, 'data' => null, 'calls' => FakeSpeechService::$calls);
+    }
+
+    function audio_file(array $overrides)
+    {
+        return array('audio' => array_merge(
+            array('name' => 'a.webm', 'type' => 'audio/webm', 'tmp_name' => __FILE__, 'error' => UPLOAD_ERR_OK, 'size' => 1234),
+            $overrides
+        ));
+    }
+
+    $r = run_transcribe(array('success' => true, 'text' => '  hello there  '));
+    check('transcribe: a transcription is returned as trimmed text (200)', $r['status'] === 200
+        && $r['data'] === array('success' => true, 'text' => 'hello there'));
+    check('transcribe: the funnel is called for the actor, section and model, with no conversation and without keeping the audio',
+        count($r['calls']) === 1 && $r['calls'][0][1] === 7 && $r['calls'][0][2] === 42 && $r['calls'][0][3] === null
+        && $r['calls'][0][4] === 'whisper-1' && $r['calls'][0][5] === 'en' && $r['calls'][0][6] === false);
+
+    $r = run_transcribe(array(
+        'success' => false, 'error_type' => 'rate_limited', 'retry_after' => 60,
+        'error' => 'Too many voice recordings. Please wait a minute and try again.',
+    ));
+    check('transcribe: an exhausted speech budget is answered 429 rate_limited', $r['status'] === 429
+        && $r['data']['success'] === false && $r['data']['error']['type'] === 'rate_limited'
+        && $r['data']['error']['message'] === 'Too many voice recordings. Please wait a minute and try again.');
+
+    $r = run_transcribe(array('success' => false, 'error_type' => 'invalid_audio', 'error' => 'Invalid audio format. Supported: WebM/Opus, OGG/Opus, M4A/MP4, MP3, FLAC'));
+    check('transcribe: a file that is not audio is answered 400 bad_request', $r['status'] === 400
+        && $r['data']['error']['type'] === 'bad_request' && $r['data']['error']['message'] === 'Unsupported or oversized audio');
+
+    $r = run_transcribe(array('success' => false, 'error' => 'Speech recognition service error at secret-host.internal'));
+    check('transcribe: a provider failure is answered 502 without the provider\'s words', $r['status'] === 502
+        && $r['data']['error']['type'] === 'transcription' && $r['data']['error']['message'] === 'Speech transcription failed'
+        && strpos(json_encode($r['data']), 'secret-host') === false);
+
+    FakeSpeechService::$throw = true;
+    $r = run_transcribe(array());
+    check('transcribe: an exception in the funnel is answered 502 without its message', $r['status'] === 502
+        && $r['data']['error']['type'] === 'transcription' && strpos(json_encode($r['data']), 'secret-host') === false);
+    FakeSpeechService::$throw = false;
+
+    // Gates in front of the funnel: it is not even asked
+    $r = run_transcribe(array('success' => true, 'text' => 'x'), 'default', 'wrong');
+    check('transcribe: a wrong CSRF token is refused (403) before the funnel', $r['status'] === 403 && $r['data']['error']['type'] === 'csrf' && count($r['calls']) === 0);
+    $r = run_transcribe(array('success' => true, 'text' => 'x'), array());
+    check('transcribe: no upload is refused (400) before the funnel', $r['status'] === 400 && $r['data']['error']['message'] === 'No audio file provided' && count($r['calls']) === 0);
+    $r = run_transcribe(array('success' => true, 'text' => 'x'), audio_file(array('type' => 'text/html')));
+    check('transcribe: a declared non-audio type is refused (400) before the funnel', $r['status'] === 400 && count($r['calls']) === 0);
+    $r = run_transcribe(array('success' => true, 'text' => 'x'), audio_file(array('size' => 0)));
+    check('transcribe: an empty upload is refused (400) before the funnel', $r['status'] === 400 && count($r['calls']) === 0);
+    $r = run_transcribe(array('success' => true, 'text' => 'x'), audio_file(array('size' => LLM_MAX_AUDIO_SIZE + 1)));
+    check('transcribe: an oversized upload is refused (400) before the funnel', $r['status'] === 400 && count($r['calls']) === 0);
+    $r = run_transcribe(array('success' => true, 'text' => 'x'), audio_file(array('error' => UPLOAD_ERR_PARTIAL)));
+    check('transcribe: a failed upload is refused (400) before the funnel', $r['status'] === 400 && count($r['calls']) === 0);
+    SpeechFakeModel::$enabled = false;
+    $r = run_transcribe(array('success' => true, 'text' => 'x'));
+    check('transcribe: speech switched off in the CMS is refused (400) before the funnel', $r['status'] === 400
+        && $r['data']['error']['message'] === 'Speech-to-text is not enabled' && count($r['calls']) === 0);
+    SpeechFakeModel::$enabled = true;
+}
+
+/* =========================================================================
  * Summary
  * ========================================================================= */
 

@@ -7,6 +7,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { csrfHeaders } from '../utils/api';
 
 const MAX_RECORDING_DURATION_MS = 60_000;
 const SILENCE_THRESHOLD = 0.01;
@@ -214,6 +215,7 @@ export function useSpeechToText({
         const response = await fetch(endpoint ?? window.location.href, {
           method: 'POST',
           body: formData,
+          headers: csrfHeaders(),
           credentials: 'same-origin',
         });
 

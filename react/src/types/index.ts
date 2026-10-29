@@ -271,6 +271,8 @@ export interface LlmChatConfig {
   userId: number;
   /** Section ID (for multi-section support) */
   sectionId?: number;
+  /** Session CSRF token, sent as X-CSRF-Token with every request that changes data */
+  csrfToken?: string;
   /** Current conversation ID (if any) */
   currentConversationId?: string;
   /** Configured LLM model */
@@ -555,8 +557,8 @@ export interface GetConversationResponse {
  * Used for danger detection and intervention
  */
 export interface SafetyAssessment {
-  /** True if content is safe */
-  is_safe: boolean;
+  /** True if content is safe, false if not, null when the model gave no assessment */
+  is_safe: boolean | null;
   /** Danger level: null (safe), warning, critical, emergency */
   danger_level: null | 'warning' | 'critical' | 'emergency';
   /** Detected concern categories */
@@ -576,6 +578,8 @@ export interface SendMessageResponse {
   is_new_conversation?: boolean;
   progress?: ProgressData;
   error?: string;
+  /** Fixed text for the participant when the turn produced no usable reply (nothing new is stored for them) */
+  notice?: string;
   // Structured response data
   structured?: LlmStructuredResponse;
   // Safety assessment from LLM
@@ -897,6 +901,8 @@ export interface FormSubmissionResponse {
   user_message?: Message;
   /** Progress data (if progress tracking is enabled) */
   progress?: ProgressData;
+  /** Fixed text for the participant when the turn produced no usable reply */
+  notice?: string;
   /** Error message if failed */
   error?: string;
 }

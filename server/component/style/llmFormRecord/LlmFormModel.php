@@ -7,6 +7,7 @@
 require_once __DIR__ . "/../../../../../../component/style/formUserInput/FormUserInputModel.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 
 /**
  * Model for LLM form styles (llmFormRecord and llmFormLog).
@@ -476,6 +477,7 @@ class LlmFormModel extends FormUserInputModel
             'userLanguage' => $this->getUserLanguage(),
             'sectionId' => $this->section_id,
             'currentRecordId' => $this->getCurrentRecordId(),
+            'csrfToken' => LlmCsrfService::getToken(),
         ];
     }
 

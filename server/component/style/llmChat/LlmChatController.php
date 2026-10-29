@@ -7,6 +7,8 @@
 require_once __DIR__ . "/../../../../../../component/BaseController.php";
 require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
+require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../../../service/LlmFileUploadService.php";
 require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStrictConversationService.php";
@@ -224,12 +226,31 @@ class LlmChatController extends BaseController
     }
 
     /**
+     * Answer a request another website made on the participant's behalf with
+     * a 403 (see LlmCsrfService::verifyRequestOrTrustedClient for what passes).
+     *
+     * @return bool True when the request was refused
+     */
+    private function rejectCrossSiteRequest()
+    {
+        if (LlmCsrfService::verifyRequestOrTrustedClient()) {
+            return false;
+        }
+        $this->sendJsonResponse(['error' => 'Security check failed. Please reload the page and try again.'], 403);
+        return true;
+    }
+
+    /**
      * Handle POST requests
      * 
      * @param string $action The action to perform
      */
     private function handlePostRequest($action)
     {
+        if ($this->rejectCrossSiteRequest()) {
+            return;
+        }
+
         switch ($action) {
             case 'send_message':
                 $this->handleSendMessage();
@@ -282,7 +303,10 @@ class LlmChatController extends BaseController
                 $this->handleGetAutoStarted();
                 break;
             case 'start_auto_conversation':
-                $this->handleStartAutoConversation();
+                // The only GET that changes data (it creates a conversation)
+                if (!$this->rejectCrossSiteRequest()) {
+                    $this->handleStartAutoConversation();
+                }
                 break;
             case 'get_progress':
                 $this->handleGetProgress();
@@ -655,8 +679,20 @@ class LlmChatController extends BaseController
             'is_new_conversation' => $is_new_conversation
         ];
 
+        // Without a validated reply the message list shows nothing new, so the
+        // participant gets only a fixed notice: the answer carries neither the raw
+        // reply nor the technical reason (no `structured` block either). Both stay
+        // in the unvalidated log row (admin console only).
+        if (!$result['valid']) {
+            $response_data['message'] = LlmResponseService::NO_ANSWER_NOTICE;
+            $response_data['notice'] = LlmResponseService::NO_ANSWER_NOTICE;
+        }
+
         if ($parsed['valid'] && isset($parsed['data'])) {
-            $response_data['structured'] = $parsed['data'];
+            if ($result['valid']) {
+                $response_data['structured'] = $parsed['data'];
+            }
+            // A danger flag the model really produced is kept even on a failed turn
             $safety = $this->response_service->assessSafety($parsed['data']);
             if ($safety['is_safe'] === false || $safety['danger_level'] !== null) {
                 $response_data['safety'] = $safety;
@@ -1027,11 +1063,12 @@ class LlmChatController extends BaseController
                 true  // Keep the audio file after transcription
             );
 
-            // Return the result (includes audio_file info)
-            $this->sendJsonResponse($result);
+            // Return the result (includes audio_file info); a refusal carries its own status
+            $status = !empty($result['success']) ? null : LlmSpeechToTextService::failureStatus($result);
+            $this->sendJsonResponse($result, $status ?? 200);
 
         } catch (Exception $e) {
-            error_log("Speech transcription error: " . $e->getMessage());
+            LlmErrorReporter::log('Speech transcription', $e);
             $this->sendJsonResponse([
                 'success' => false,
                 'error' => 'Speech transcription failed. Please try again.'
@@ -1090,7 +1127,7 @@ class LlmChatController extends BaseController
 
             $this->sendJsonResponse(['conversations' => $conversations]);
         } catch (Exception $e) {
-            error_log('LLM getConversationsData error for user ' . $user_id . ': ' . $e->getMessage());
+            LlmErrorReporter::log('Loading conversations for user ' . $user_id, $e);
             $this->sendJsonResponse(['error' => 'Failed to load conversations'], 500);
         }
     }
@@ -1344,7 +1381,7 @@ class LlmChatController extends BaseController
             }
 
         } catch (Exception $e) {
-            error_log('LLM Form Mode Auto-start failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Form mode auto-start', $e);
             throw $e;
         }
     }
@@ -1359,7 +1396,20 @@ class LlmChatController extends BaseController
      */
     private function guardConversationBlocked($conversation_id)
     {
-        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
+        if (!$conversation_id) {
+            return false;
+        }
+        try {
+            $blocked = $this->danger_detection_service->isConversationBlocked(
+                $conversation_id,
+                $this->model->getUserId()
+            );
+        } catch (Exception $e) {
+            // "Could not check" is not "not blocked": stop before anything reaches the LLM
+            $this->sendExceptionResponse($e);
+            return true;
+        }
+        if ($blocked) {
             $this->sendJsonResponse([
                 'blocked' => true,
                 'type' => 'conversation_blocked',
@@ -1389,8 +1439,7 @@ class LlmChatController extends BaseController
         } elseif ($e instanceof LlmException && !($e instanceof LlmApiException) && $e->getCode() === 404) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 404);
         } else {
-            error_log('[LLM] ' . ($this->current_action ?? 'request') . ' failed: ' . $e->getMessage());
-            $this->sendJsonResponse(['error' => 'Something went wrong. Please try again.'], 500);
+            $this->sendJsonResponse(['error' => LlmErrorReporter::report('Chat ' . ($this->current_action ?? 'request'), $e)], 500);
         }
     }
 
@@ -1444,7 +1493,7 @@ class LlmChatController extends BaseController
                 $trigger_service->dispatchMemoryUpdate($normalized);
             }
         } catch (Exception $e) {
-            error_log('LLM memory dispatch error in chat form: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory dispatch for a chat form', $e);
         }
     }
 
@@ -1482,7 +1531,7 @@ class LlmChatController extends BaseController
                 }
             }
         } catch (Exception $e) {
-            error_log('LLM saveFormDataToUserInput error: ' . $e->getMessage());
+            LlmErrorReporter::log('Saving chat form data', $e);
         }
     }
 
@@ -1596,7 +1645,7 @@ class LlmChatController extends BaseController
                 "mobile" => 0
             ]);
         } catch (Exception $e) {
-            error_log('LLM API activity logging failed: ' . $e->getMessage());
+            LlmErrorReporter::log('API activity logging', $e);
         }
     }
 }

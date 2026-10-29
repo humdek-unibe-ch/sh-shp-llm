@@ -37,6 +37,34 @@ interface GetConfigResponse {
 }
 
 // ============================================================================
+// CSRF TOKEN
+// ============================================================================
+
+let sessionCsrfToken = '';
+
+/**
+ * Remember the session's CSRF token (the page hands it over with its configuration)
+ * so every request below carries it in the X-CSRF-Token header. A header, not a form
+ * field: the LLM form posts are saved as data by the core, and JSON bodies have no
+ * fields at all. Nothing is sent while the token is empty.
+ *
+ * @param token - Session CSRF token, or nothing to forget it
+ */
+export function setCsrfToken(token?: string | null): void {
+  sessionCsrfToken = typeof token === 'string' ? token : '';
+}
+
+/**
+ * Headers proving a request comes from one of this site's own pages.
+ * Spread them into the headers of any fetch to the plugin's controllers.
+ *
+ * @returns The token header, or no headers while there is no token
+ */
+export function csrfHeaders(): Record<string, string> {
+  return sessionCsrfToken ? { 'X-CSRF-Token': sessionCsrfToken } : {};
+}
+
+// ============================================================================
 // API REQUEST HELPERS
 // ============================================================================
 
@@ -73,7 +101,8 @@ async function apiGet<T>(action: string, params: Record<string, string> = {}): P
     method: 'GET',
     headers: {
       'Accept': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest'
+      'X-Requested-With': 'XMLHttpRequest',
+      ...csrfHeaders()
     },
     credentials: 'same-origin'
   });
@@ -114,7 +143,8 @@ async function apiPost<T>(formData: FormData): Promise<T> {
     body: formData,
     headers: {
       'Accept': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest'
+      'X-Requested-With': 'XMLHttpRequest',
+      ...csrfHeaders()
     },
     credentials: 'same-origin'
   });
@@ -168,6 +198,11 @@ export const configApi = {
 
     if (!response.config) {
       throw new Error('No configuration returned');
+    }
+
+    // The page's own data attribute carries it too; keep whichever arrives
+    if (response.config.csrfToken) {
+      setCsrfToken(response.config.csrfToken);
     }
 
     return response.config;
@@ -862,7 +897,8 @@ export const memoryApi = {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
+        'X-Requested-With': 'XMLHttpRequest',
+        ...csrfHeaders()
       },
       body: JSON.stringify({ fields }),
       credentials: 'same-origin'

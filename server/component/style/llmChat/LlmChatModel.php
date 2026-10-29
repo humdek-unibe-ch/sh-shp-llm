@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../../component/style/StyleModel.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
@@ -106,7 +107,12 @@ class LlmChatModel extends StyleModel
             return null;
         }
 
-        return $this->llm_service->getConversation($cid, $this->user_id);
+        $conversation = $this->llm_service->getConversation($cid, $this->user_id);
+        if (is_array($conversation)) {
+            // Internal interview draft; the mobile JSON built from this row never needs it
+            unset($conversation['state']);
+        }
+        return $conversation;
     }
 
     /**
@@ -621,6 +627,7 @@ class LlmChatModel extends StyleModel
         $f = function ($name, $default = '') { return $this->get_db_field($name, $default); };
         return [
             'userId' => $this->getUserId(),
+            'csrfToken' => LlmCsrfService::getToken(),
             'sectionId' => $this->getSectionId(),
             'currentConversationId' => $this->getConversationId(),
             'configuredModel' => $this->getConfiguredModel(),

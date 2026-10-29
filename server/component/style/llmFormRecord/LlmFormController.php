@@ -7,6 +7,8 @@
 require_once __DIR__ . "/../../../../../../component/style/formUserInput/FormUserInputController.php";
 require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
+require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
@@ -38,6 +40,7 @@ class LlmFormController extends FormUserInputController
             $this->model = $model;
             $this->success = false;
             $this->fail = false;
+            $this->rejectCrossSiteRequest();
             if ($_POST['__llm_action'] === 'generate_feedback') {
                 $this->handleGenerateFeedback($model);
             } else {
@@ -49,6 +52,10 @@ class LlmFormController extends FormUserInputController
         // Decided before parent::__construct(), which consumes `__form_name`
         $is_llm_submit = isset($_POST['__llm_form']) && $_POST['__llm_form'] === '1' && $model->isLlmEnabled()
             && isset($_POST['__form_name']) && $_POST['__form_name'] === $model->get_db_field('name');
+        if ($is_llm_submit) {
+            // Before parent::__construct(), which saves the record
+            $this->rejectCrossSiteRequest();
+        }
         if ($is_llm_submit && $this->isGuestSession()) {
             // Nothing is saved: guests share one account, so their records and LLM results
             // could not be kept apart.
@@ -83,6 +90,21 @@ class LlmFormController extends FormUserInputController
     }
 
     /* Private Methods *********************************************************/
+
+    /**
+     * End the request with a 403 when another website made it on the
+     * participant's behalf (see LlmCsrfService::verifyRequestOrTrustedClient
+     * for what passes; the native app sends no browser headers).
+     */
+    private function rejectCrossSiteRequest()
+    {
+        if (!LlmCsrfService::verifyRequestOrTrustedClient()) {
+            $this->sendJsonResponse([
+                'success' => false,
+                'error' => 'Security check failed. Please reload the page and try again.',
+            ], 403);
+        }
+    }
 
     /**
      * Anonymous visitors all share the guest account, so records and LLM results
@@ -527,7 +549,7 @@ class LlmFormController extends FormUserInputController
                 'error' => empty($content) ? 'LLM returned an empty response' : null,
             ];
         } catch (\Exception $e) {
-            error_log("LLM Form API error: " . $e->getMessage());
+            LlmErrorReporter::log('Form LLM call', $e);
             // The rate-limit text is meant for the participant; provider/DB/internal
             // messages stay in the server log.
             $participant_error = $e instanceof LlmRateLimitException
@@ -598,7 +620,7 @@ class LlmFormController extends FormUserInputController
             // when log options are provided by the caller.
 
         } catch (\Exception $e) {
-            error_log("LLM Form: Failed to log interaction: " . $e->getMessage());
+            LlmErrorReporter::log('Form interaction logging', $e);
         }
     }
 

@@ -38,6 +38,8 @@ export interface LlmFormConfig {
   previousMeta: LlmResultMeta | null;
   userLanguage: string;
   sectionId: number;
+  /** Session CSRF token, sent as X-CSRF-Token with every generation request */
+  csrfToken?: string;
   /** Current saved record id for the logged-in user, or null if the
    *  form has not been submitted yet. Used to seed regenerate / retry
    *  actions on first load. */

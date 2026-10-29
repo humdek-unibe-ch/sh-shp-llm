@@ -77,6 +77,18 @@ sandbox_write(
     file_get_contents(dirname(__DIR__) . '/server/component/style/llmFormRecord/LlmFormController.php')
 );
 
+// The real CSRF service the controller gates its LLM actions with
+sandbox_write(
+    $plugin_server . '/service/LlmCsrfService.php',
+    file_get_contents(dirname(__DIR__) . '/server/service/LlmCsrfService.php')
+);
+
+// The reporter the controller writes its failures through
+sandbox_write(
+    $plugin_server . '/service/LlmErrorReporter.php',
+    file_get_contents(dirname(__DIR__) . '/server/service/LlmErrorReporter.php')
+);
+
 // Core controller: the same early exits as FormUserInputController::execute()
 sandbox_write($root . '/server/component/style/formUserInput/FormUserInputController.php', <<<'PHP'
 <?php
@@ -289,7 +301,8 @@ function check($label, $cond)
  *
  * @param array $post
  * @param int|null $user_id Session user (null = no session user)
- * @param array $flags rate_limited, api_error, manual
+ * @param array $flags rate_limited, api_error, manual; site (Sec-Fetch-Site),
+ *  origin (Origin) and session_token (the session's CSRF token) describe a browser request
  * @return array {json, status, events, saved}; json is null when no response was sent
  */
 function run_controller($post, $user_id, $flags = array())
@@ -304,6 +317,16 @@ function run_controller($post, $user_id, $flags = array())
     );
     $_POST = $post;
     $_SESSION = $user_id === null ? array() : array('id_user' => $user_id);
+    if (isset($flags['session_token'])) {
+        $_SESSION['csrf_token'] = $flags['session_token'];
+    }
+    unset($_SERVER['HTTP_SEC_FETCH_SITE'], $_SERVER['HTTP_ORIGIN'], $_SERVER['HTTP_X_CSRF_TOKEN']);
+    if (isset($flags['site'])) {
+        $_SERVER['HTTP_SEC_FETCH_SITE'] = $flags['site'];
+    }
+    if (isset($flags['origin'])) {
+        $_SERVER['HTTP_ORIGIN'] = $flags['origin'];
+    }
 
     $json = null;
     $status = null;
@@ -442,6 +465,56 @@ check('generate_feedback while manual mode is off: 400', $r['status'] === 400 &&
 
 $r = run_controller(array('__llm_action' => 'generate_feedback', 'section_id' => '999', 'name' => 'Eve'), 42, array('manual' => true));
 check('generate_feedback for another section: not answered', $r['json'] === null && !had($r, 'llm_call'));
+
+/* =========================================================================
+ * CSRF: another website cannot trigger the LLM actions
+ * ========================================================================= */
+
+echo "\n== CSRF ==\n";
+
+$evil = array('site' => 'cross-site', 'origin' => 'https://evil.example', 'session_token' => 'tok');
+
+foreach (array('regenerate', 'retry') as $action) {
+    $r = run_controller(array('__llm_action' => $action, 'section_id' => '12', '__record_id' => '7'), 42, $evil);
+    check("$action from another site: 403", $r['status'] === 403 && $r['json']['success'] === false);
+    check("$action from another site: nothing loaded, rated, called or saved", count($r['events']) === 0 && count($r['saved']) === 0);
+}
+
+$r = run_controller(array('__llm_action' => 'generate_feedback', 'section_id' => '12', 'name' => 'Eve'), 42, $evil + array('manual' => true));
+check('generate_feedback from another site: 403, no LLM call', $r['status'] === 403 && !had($r, 'llm_call') && count($r['saved']) === 0);
+
+$r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve'), 42, $evil);
+check('LLM submit from another site: 403', $r['status'] === 403 && $r['json']['success'] === false);
+check('LLM submit from another site: refused before the core controller saved anything', !had($r, 'core_execute') && count($r['saved']) === 0);
+check('LLM submit from another site: no LLM call, no rate-limit use', !had($r, 'llm_call') && !had($r, 'rate_check'));
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'csrf_token' => 'wrong'), 42, $evil);
+check('a wrong token from another site is refused', $r['status'] === 403 && !had($r, 'llm_call'));
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'csrf_token' => 'tok'), 42, $evil);
+check('regenerate from another site with the session token: allowed', $r['status'] === 200 && $r['json']['success'] === true && had($r, 'llm_call'));
+
+$r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve', 'csrf_token' => 'tok'), 42, $evil);
+check('LLM submit with the session token: allowed', $r['status'] === 200 && $r['json']['success'] === true && had($r, 'core_execute'));
+
+$same = array('site' => 'same-origin', 'origin' => 'https://site.example', 'session_token' => 'tok');
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7'), 42, $same);
+check('regenerate from a page of this site without a token (stale page): allowed', $r['status'] === 200 && $r['json']['success'] === true);
+$r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve'), 42, $same);
+check('LLM submit from a page of this site without a token: allowed', $r['status'] === 200 && $r['json']['success'] === true);
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7'), 42, array('session_token' => 'tok'));
+check('regenerate from a client without browser headers (native app): allowed', $r['status'] === 200 && $r['json']['success'] === true);
+$r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve'), 42, array('session_token' => 'tok'));
+check('LLM submit from a client without browser headers (native app): allowed', $r['status'] === 200 && $r['json']['success'] === true);
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7'), GUEST_USER_ID, $evil);
+check('guest request from another site: refused as cross-site first', $r['status'] === 403);
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '999', '__record_id' => '7'), 42, $evil);
+check('action addressed to another section is not this controller\'s business (no 403 from it)', $r['json'] === null && !had($r, 'llm_call'));
+$r = run_controller(array('__llm_form' => '1', '__form_name' => 'some_other_form', 'name' => 'Eve'), 42, $evil);
+check('submit of another form is not this controller\'s business (no 403 from it)', $r['json'] === null && !had($r, 'llm_call'));
 
 echo "\n";
 $failed = count($GLOBALS['__fails']);

@@ -95,6 +95,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
   return {
     userId,
     sectionId: sectionId || jsonConfig.sectionId,
+    csrfToken: typeof jsonConfig.csrfToken === 'string' ? jsonConfig.csrfToken : undefined,
     fileConfig,
 
     // Core settings
