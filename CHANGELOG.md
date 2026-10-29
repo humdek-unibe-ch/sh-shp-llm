@@ -135,6 +135,9 @@ chat improvements and token reporting.
 
 ### Fixed
 
+- A memory update for a deleted form entry passed `trigger_type=deleted` into
+  `UserInput::save_data()`, which marked the memory row itself deleted so it
+  looked empty afterwards. Memory rows are always written as live.
 - `llmChat` crisis keyword detection now checks messages before they are
   stored or sent to the model, and blocks the conversation on a match.
 - Messages sent within the same second could appear out of order.

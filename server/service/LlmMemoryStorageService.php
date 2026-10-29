@@ -712,7 +712,10 @@ class LlmMemoryStorageService extends BaseLlmService
             'rule_id'        => (int)($metadata['rule_id'] ?? 0),
             'source_type'    => $metadata['source_type'] ?? '',
             'source_ref'     => $metadata['source_ref'] ?? '',
-            'trigger_type'   => $metadata['trigger_type'] ?? '',
+            // UserInput::save_data() reads `trigger_type` as the status of the
+            // memory row itself (no column stores it). A memory row is always
+            // live, whatever the event was: "deleted" here would hide it.
+            'trigger_type'   => actionTriggerTypes_finished,
             'payload_json'   => is_string($metadata['payload_json'] ?? null)
                 ? $metadata['payload_json']
                 : json_encode($metadata['payload_json'] ?? [], JSON_UNESCAPED_SLASHES),
@@ -746,7 +749,8 @@ class LlmMemoryStorageService extends BaseLlmService
             'rule_id'         => (int)($metadata['rule_id'] ?? 0),
             'source_type'     => $metadata['source_type'] ?? '',
             'source_ref'      => $metadata['source_ref'] ?? '',
-            'trigger_type'    => $metadata['trigger_type'] ?? '',
+            // the row's status for UserInput::save_data(), see buildCurrentMemoryFields()
+            'trigger_type'    => actionTriggerTypes_finished,
             'payload_json'    => is_string($metadata['payload_json'] ?? null)
                 ? $metadata['payload_json']
                 : json_encode($metadata['payload_json'] ?? [], JSON_UNESCAPED_SLASHES),
