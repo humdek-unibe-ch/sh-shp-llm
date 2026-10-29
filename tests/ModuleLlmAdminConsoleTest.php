@@ -78,7 +78,9 @@ foreach (array(
     'component/moduleLlmAdminConsole/ModuleLlmAdminConsoleController.php',
     'component/moduleLlmAdminConsole/ModuleLlmAdminConsoleModel.php',
     'service/LlmCsrfService.php',
+    'service/LlmErrorReporter.php',
     'service/LlmAdminService.php',
+    'service/exception/LlmException.php',
     'service/base/LlmLoggingTrait.php',
 ) as $file) {
     sandbox_write($plugin_server . '/' . $file, file_get_contents($real_server . '/' . $file));
@@ -201,10 +203,22 @@ class FakeDb
     public $queries = array();
     /** @var array[] [table, set, where] of every write */
     public $updates = array();
+    /** @var string|null Every read whose SQL contains this fails ... */
+    public $fail_on = null;
+    /** @var Throwable|null ... with this */
+    public $fail_with = null;
+
+    private function maybeFail($sql)
+    {
+        if ($this->fail_with !== null && $this->fail_on !== null && strpos($sql, $this->fail_on) !== false) {
+            throw $this->fail_with;
+        }
+    }
 
     public function query_db_first($sql, $params = array())
     {
         $this->queries[] = array($sql, $params);
+        $this->maybeFail($sql);
         if (strpos($sql, 'CALL get_page_fields') === 0) {
             return $this->page_fields;
         }
@@ -222,6 +236,7 @@ class FakeDb
     public function query_db($sql, $params = array())
     {
         $this->queries[] = array($sql, $params);
+        $this->maybeFail($sql);
         return array();
     }
 
@@ -577,6 +592,137 @@ list($status) = request($s, 'admin_conversations', 'GET', array('record_id' => '
 check('a malformed record_id filter: 400', $status === 400);
 list($status) = request($s, 'admin_conversations', 'GET', array('source_type' => 'llm_form', 'record_id' => 'draft'));
 check('valid source_type and record_id filters are accepted', $status === 200);
+
+/* =========================================================================
+ * The interview state never reaches the console
+ *
+ * llmConversations.state holds the participant's interview draft. A user with
+ * read-only access to the console must not receive it, so both reads select an
+ * explicit column list instead of lc.*.
+ * ========================================================================= */
+
+$console_columns = array(
+    'lc.id', 'lc.id_users', 'lc.id_sections', 'lc.id_llm_scripts', 'lc.title', 'lc.model',
+    'lc.temperature', 'lc.max_tokens', 'lc.deleted', 'lc.blocked', 'lc.blocked_reason',
+    'lc.blocked_at', 'lc.blocked_by', 'lc.id_dataRows', 'lc.completed_at',
+    'lc.created_at', 'lc.updated_at',
+);
+
+$s = newServices();
+request($s, 'admin_conversations', 'GET');
+$list_sql = (string)$s->db->lastSql('LIMIT ');
+check('the conversation list query is captured', $list_sql !== '');
+check('the conversation list never selects lc.*', strpos($list_sql, 'lc.*') === false);
+check('the conversation list does not select the interview state', preg_match('/\bstate\b/i', $list_sql) !== 1);
+$missing = array();
+foreach ($console_columns as $column) {
+    if (strpos($list_sql, $column . ',') === false && strpos($list_sql, $column . ' ') === false) {
+        $missing[] = $column;
+    }
+}
+check('the conversation list still selects every column the console shows', empty($missing));
+
+$s = newServices();
+$s->db->conversations[5] = array('id' => 5, 'id_users' => 3, 'title' => 'T', 'blocked' => 0);
+request($s, 'admin_messages', 'GET', array('conversation_id' => 5));
+$detail_sql = (string)$s->db->lastSql('WHERE lc.id = ?');
+check('the conversation detail query is captured', $detail_sql !== '');
+check('the conversation detail never selects lc.*', strpos($detail_sql, 'lc.*') === false);
+check('the conversation detail does not select the interview state', preg_match('/\bstate\b/i', $detail_sql) !== 1);
+$missing = array();
+foreach ($console_columns as $column) {
+    if (strpos($detail_sql, $column . ',') === false && strpos($detail_sql, $column . ' ') === false) {
+        $missing[] = $column;
+    }
+}
+check('the conversation detail still selects every column the console shows', empty($missing));
+
+check('the shared column list is the single source of both reads',
+    defined('LlmAdminService::ADMIN_CONVERSATION_COLUMNS')
+    && strpos($list_sql, LlmAdminService::ADMIN_CONVERSATION_COLUMNS) !== false
+    && strpos($detail_sql, LlmAdminService::ADMIN_CONVERSATION_COLUMNS) !== false);
+check('a read-only (select-only) user gets the same restricted columns', (function () use ($console_columns) {
+    $s = newServices();
+    $s->acl->deny = array('update', 'delete');
+    $s->db->conversations[5] = array('id' => 5, 'id_users' => 3);
+    list($status) = request($s, 'admin_messages', 'GET', array('conversation_id' => 5));
+    $sql = (string)$s->db->lastSql('WHERE lc.id = ?');
+    return $status === 200 && $sql !== '' && strpos($sql, 'lc.*') === false && preg_match('/\bstate\b/i', $sql) !== 1;
+})());
+
+/* =========================================================================
+ * Failures: deliberate messages pass, unexpected ones are logged and hidden
+ *
+ * A moderator is told "Conversation is already blocked". A database error
+ * (which can quote row values) or any other unexpected failure is answered
+ * with a generic message; the details go to the server log only.
+ * ========================================================================= */
+
+$log_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'llm_admin_console_test.log';
+
+$s = newServices();
+list($status, $data) = request($s, 'admin_block_conversation', 'POST', array('conversation_id' => 6));
+check('blocking a blocked conversation: 409 with its own message', $status === 409 && $data['error'] === 'Conversation is already blocked');
+list($status, $data) = request($s, 'admin_unblock_conversation', 'POST', array('conversation_id' => 5));
+check('unblocking an open conversation: 409 with its own message', $status === 409 && $data['error'] === 'Conversation is not blocked');
+foreach (array('admin_block_conversation', 'admin_unblock_conversation', 'admin_delete_conversation') as $action) {
+    list($status, $data) = request($s, $action, 'POST', array('conversation_id' => 999));
+    check("$action on an unknown conversation: 404 with its own message", $status === 404 && $data['error'] === 'Conversation not found');
+}
+list($status, $data) = request($s, 'admin_messages', 'GET', array('conversation_id' => 999));
+check('reading an unknown conversation: 404', $status === 404 && $data['error'] === 'Conversation not found');
+
+$secret = 'SECRET-ROW-VALUE-4711';
+$failing = array(
+    'admin_filters' => array('GET', array(), 'Admin console filters', null),
+    'admin_conversations' => array('GET', array(), 'Admin console conversations', null),
+    'admin_messages' => array('GET', array('conversation_id' => 5), 'Admin console messages', 5),
+    'admin_block_conversation' => array('POST', array('conversation_id' => 5), 'Admin console block', 5),
+    'admin_unblock_conversation' => array('POST', array('conversation_id' => 6), 'Admin console unblock', 6),
+    'admin_delete_conversation' => array('POST', array('conversation_id' => 5), 'Admin console delete', 5),
+);
+foreach ($failing as $action => $spec) {
+    list($method, $params, $context, $conversation) = $spec;
+    $failures = array(
+        'driver' => new PDOException("SQLSTATE[23000]: Duplicate entry '$secret' for key 'answers'"),
+        'plain' => new RuntimeException("cannot open D:\\secret\\config.php ($secret)"),
+        // An LlmException is only a message for the moderator while its code is 4xx; with a 5xx code it is a failure
+        'internal' => new LlmException("cannot reach D:\\secret\\config.php ($secret)", 500),
+        'provider' => new LlmException("upstream said $secret", 502),
+        'codeless' => new LlmException("no code at all ($secret)", 0),
+    );
+    foreach ($failures as $kind => $failure) {
+        $s = newServices();
+        $s->db->fail_on = 'llmConversations';
+        $s->db->fail_with = $failure;
+        file_put_contents($log_file, '');
+        list($status, $data) = request($s, $action, $method, $params);
+        $logged = (string)file_get_contents($log_file);
+        $json = json_encode($data);
+
+        check("$action, $kind failure: 500 with the generic message", $status === 500 && $data['error'] === LlmErrorReporter::GENERIC_MESSAGE);
+        check("$action, $kind failure: nothing of the exception reaches the client",
+            strpos($json, $secret) === false && stripos($json, 'config.php') === false && stripos($json, 'sqlstate') === false);
+        check("$action, $kind failure: logged with its context" . ($conversation === null ? '' : ' and conversation'),
+            strpos($logged, "$context failed") !== false && strpos($logged, get_class($failure)) !== false
+            && ($conversation === null || strpos($logged, "(conversation $conversation)") !== false));
+        check("$action, $kind failure: " . ($kind === 'driver' ? 'the driver message is not logged (it can quote row values)' : 'the message is logged'),
+            $kind === 'driver' ? strpos($logged, $secret) === false : strpos($logged, $secret) !== false);
+        check("$action, $kind failure: nothing was written", $s->db->updates === array() && $s->transaction->calls === array());
+    }
+}
+
+// The edges of "4xx": 400 and 499 are messages for the moderator, 399 and 500 are failures
+foreach (array(400 => true, 499 => true, 399 => false, 500 => false) as $code => $is_message) {
+    $s = newServices();
+    $s->db->fail_on = 'llmConversations';
+    $s->db->fail_with = new LlmException("message for code $code", $code);
+    list($status, $data) = request($s, 'admin_conversations', 'GET');
+    check("an LlmException with code $code is " . ($is_message ? 'passed on with its own status' : 'answered with the generic 500'),
+        $is_message
+            ? ($status === $code && $data['error'] === "message for code $code")
+            : ($status === 500 && $data['error'] === LlmErrorReporter::GENERIC_MESSAGE));
+}
 
 echo "\n$total checks, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

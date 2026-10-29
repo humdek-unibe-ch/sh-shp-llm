@@ -8,6 +8,7 @@
 
 // Ensure parent class is loaded
 require_once __DIR__ . "/LlmService.php";
+require_once __DIR__ . "/exception/LlmException.php";
 
 /**
  * Admin-specific LLM service extending the base LlmService
@@ -15,6 +16,20 @@ require_once __DIR__ . "/LlmService.php";
  */
 class LlmAdminService extends LlmService
 {
+    /**
+     * `llmConversations` columns the admin console may read.
+     *
+     * `state` (the interview draft: participant answers, revisions, opening
+     * context) is deliberately NOT listed. Read-only console users must not
+     * receive it, and the console never needs it. The list is explicit on
+     * purpose: a column added by a later migration stays hidden until someone
+     * decides it is safe to show.
+     */
+    const ADMIN_CONVERSATION_COLUMNS = 'lc.id, lc.id_users, lc.id_sections, lc.id_llm_scripts,
+                       lc.id_llm_conversation_sources, lc.title, lc.model, lc.temperature, lc.max_tokens,
+                       lc.deleted, lc.blocked, lc.blocked_reason, lc.blocked_at, lc.blocked_by,
+                       lc.id_dataRows, lc.completed_at, lc.context_key, lc.created_at, lc.updated_at';
+
     /* Private Methods *********************************************************/
 
     /**
@@ -166,7 +181,7 @@ class LlmAdminService extends LlmService
         $total = $total_result['total'] ?? 0;
 
         // Get conversations with user, section, and script details
-        $sql = "SELECT lc.*,
+        $sql = "SELECT " . self::ADMIN_CONVERSATION_COLUMNS . ",
                        u.name as user_name,
                        u.email as user_email,
                        s.name as section_name,
@@ -206,7 +221,7 @@ class LlmAdminService extends LlmService
     {
         // Get conversation details
         $conversation = $this->db->query_db_first(
-            "SELECT lc.*,
+            "SELECT " . self::ADMIN_CONVERSATION_COLUMNS . ",
                     u.name as user_name,
                     u.email as user_email,
                     s.name as section_name,
@@ -283,7 +298,7 @@ class LlmAdminService extends LlmService
         );
         
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
         
         // Soft delete conversation
@@ -325,11 +340,11 @@ class LlmAdminService extends LlmService
         );
         
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
         
         if ($conversation['blocked']) {
-            throw new Exception('Conversation is already blocked');
+            throw new LlmException('Conversation is already blocked', 409);
         }
         
         $block_reason = $reason ?: 'Manually blocked by administrator';
@@ -369,11 +384,11 @@ class LlmAdminService extends LlmService
         );
         
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
         
         if (!$conversation['blocked']) {
-            throw new Exception('Conversation is not blocked');
+            throw new LlmException('Conversation is not blocked', 409);
         }
         
         $result = $this->db->update_by_ids(

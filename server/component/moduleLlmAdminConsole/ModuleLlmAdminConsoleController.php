@@ -8,6 +8,8 @@ require_once __DIR__ . "/../../../../../component/BaseController.php";
 require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/ModuleLlmAdminConsoleModel.php";
 require_once __DIR__ . "/../../service/LlmCsrfService.php";
+require_once __DIR__ . "/../../service/LlmErrorReporter.php";
+require_once __DIR__ . "/../../service/exception/LlmException.php";
 
 /**
  * Controller for the LLM Admin Console module.
@@ -123,7 +125,7 @@ class ModuleLlmAdminConsoleController extends BaseController
             $filters = $this->model->getAdminFilters();
             $this->sendJsonResponse(['filters' => $filters]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendFailure('Admin console filters', $e);
         }
     }
 
@@ -188,7 +190,7 @@ class ModuleLlmAdminConsoleController extends BaseController
             $result = $this->model->getAdminConversations($filters, $page, $per_page);
             $this->sendJsonResponse($result);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendFailure('Admin console conversations', $e);
         }
     }
 
@@ -217,7 +219,7 @@ class ModuleLlmAdminConsoleController extends BaseController
             }
             $this->sendJsonResponse($result);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendFailure('Admin console messages', $e, $conversation_id);
         }
     }
 
@@ -244,7 +246,7 @@ class ModuleLlmAdminConsoleController extends BaseController
                 $this->sendJsonResponse(['error' => 'Failed to delete conversation'], 500);
             }
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendFailure('Admin console delete', $e, $conversation_id);
         }
     }
 
@@ -272,7 +274,7 @@ class ModuleLlmAdminConsoleController extends BaseController
                 $this->sendJsonResponse(['error' => 'Failed to block conversation'], 500);
             }
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendFailure('Admin console block', $e, $conversation_id);
         }
     }
 
@@ -299,8 +301,34 @@ class ModuleLlmAdminConsoleController extends BaseController
                 $this->sendJsonResponse(['error' => 'Failed to unblock conversation'], 500);
             }
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendFailure('Admin console unblock', $e, $conversation_id);
         }
+    }
+
+    /**
+     * Answer a failed action.
+     *
+     * An LlmException with a 4xx code carries a deliberate message meant for
+     * the moderator (not found, already blocked) and is passed on with that
+     * status. Anything else - including an LlmException with a 5xx code, which
+     * is a failure, not a message - is unexpected: it is logged and answered
+     * with a generic message, so SQL, paths and row values never reach the
+     * browser.
+     *
+     * @param string $context What was being done (for the log)
+     * @param Exception $e The failure
+     * @param int|string|null $conversation_id Conversation the action was about
+     */
+    private function sendFailure($context, $e, $conversation_id = null)
+    {
+        if ($e instanceof LlmException) {
+            $status = (int)$e->getCode();
+            if ($status >= 400 && $status < 500) {
+                $this->sendJsonResponse(['error' => $e->getMessage()], $status);
+                return;
+            }
+        }
+        $this->sendJsonResponse(['error' => LlmErrorReporter::report($context, $e, $conversation_id)], 500);
     }
 }
 ?>
