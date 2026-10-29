@@ -103,6 +103,11 @@ still iterate on a prompt template with synthetic variables.
 
 ### Scripts
 
+Offered for prompts that belong to an LLM script (the script itself is the
+fixture) and to users who may use the script module. A CMS style-field prompt
+or a memory rule has no script source: the list stays empty and nothing can be
+imported from it.
+
 - test/runtime variables
 - script owner descriptor
 - runtime overrides such as `data_config`
@@ -110,10 +115,35 @@ still iterate on a prompt template with synthetic variables.
 
 ## Access control
 
-Import is not a blind export tool. Candidate listing still respects owner scope:
+Import is not a blind export tool. Two things are decided, in this order:
 
-- style-field prompts use page/module access checks
-- scripts use the script module ACL
+1. **Who may import.** The request has to pass the access check of the
+   prompt's owner: a style-field prompt uses the ACL of a page that really
+   shows the section (the pages are read from the database, not taken from the
+   request); scripts and memory rules use the ACL of their module pages.
+2. **What can be imported.** Only records of the prompt's own owner. The ids of
+   the selected rows are sent by the browser, so the import does not trust
+   them: it applies the same rule as the candidate list, and a record that the
+   list would not show for this prompt is skipped. When none of the selected
+   records is in scope the import fails with an error and creates nothing.
+
+A record belongs to an owner by what it says about itself, never by the page
+the owner is shown on:
+
+| Source | CMS style field (section) | LLM script | Memory rule |
+|--------|---------------------------|------------|-------------|
+| Playground runs | Runs of a prompt entry with that owner type, owner id and (when the dialog sends one) prompt slot; run mode playground or compare | Same, for the script | Same, for the rule |
+| Form submissions | User messages that carry form data, in conversations of that section | None | None |
+| Conversations | User messages in conversations of that section | User messages in conversations of that script | Assistant messages of the `__memory_update__<key>` conversations of the rule's memory keys |
+| Scripts | None | The script itself | None |
+
+Not in scope, whatever id is sent: a conversation without a section or a
+script (older rows), the conversations of another section, script or memory
+rule, a run of another owner type that happens to share the owner's number, a
+run of another prompt slot, and prompt-improvement or evaluation runs. The
+import also fails closed: with no owner id, an unknown owner type, a memory
+rule that does not exist or cannot be read, or a database error, nothing is
+listed and nothing is imported.
 
 Only users with update-level access should run imports or evaluations because the feature can expose real data and spend tokens.
 
