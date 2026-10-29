@@ -2,560 +2,216 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.6.0] Work in progress
+## [1.6.0]
 
-Requires **SelfHelp core v7.12.0** (extension seams and the `extra_params`
-URL parameters of the core `formUserInputLogList`; apply the core migration
-`44_update_v7.11.0_v7.12.0.sql` first). Run `server/db/v1.6.0.sql` once, then
-clear the SelfHelp cache (**Admin > Cache > Clear all**).
+The main features of this release are **LLM form interviews**, where a coach
+fills in a form in a chat and the record is saved only after the participant
+approves it, and a **security overhaul** of the whole plugin. It also brings
+chat improvements and token reporting.
+
+### Upgrade notes
+
+- Requires **SelfHelp core v7.12.0**. Apply the core migration
+  `44_update_v7.11.0_v7.12.0.sql` first.
+- Run `server/db/v1.6.0.sql` once, then clear the SelfHelp cache
+  (**Admin > Cache > Clear all**). The migration can be run again safely.
+- **API key encryption (recommended):** set `LLM_SECRET_KEY` (at least 16
+  characters) as an environment variable or in `globals_untracked.php`. Then
+  click **Encrypt stored keys now** on the LLM settings page. Existing plain
+  text keys keep working until then. Changing the secret later makes the
+  encrypted keys unreadable. See
+  [README > API Key Protection](README.md#api-key-protection).
+- **Admin console permissions:** the migration grants `update` and `delete`
+  on `moduleLlmAdminConsole` to the admin group. Grant them to other
+  moderator groups in the CMS.
+- **Cross-origin clients:** the chat and form endpoints trust only the exact
+  origins listed in core's `CORS_ALLOWED_ORIGINS` (new in core v7.12.0). An
+  origin that used to match only partly, such as another port or a
+  subdomain, must now be added to the list. See
+  [README > CSRF and cross-origin clients](README.md#csrf-and-cross-origin-clients).
+- The `llm*` tables must use InnoDB so that a failed interview approval is
+  rolled back completely. See [README > Database engine](README.md#database-engine).
 
 ### Added
 
-- **LLM form interviews: the `llmFormLogList` style.** Extends the core
-  `formUserInputLogList` (same list, quick actions, history, ownership and
-  ACL) with a guided interview: a coach collects the answers in a chat and
-  the record is written through the inherited save/update path **only after
-  the participant approves**. Nothing reaches `dataRows` before that; drafts
-  live in the conversation state. CMS recipe, status/archive pattern and
-  configuration reference: [doc/llm-form-interview.md](doc/llm-form-interview.md).
-- **Interview workspace** (`llm-form-interview.umd.js`). A launcher card,
-  then answers and chat side by side (`llm_interview_chat_position`), in the
-  page or - with `show_form_in_modal` - in a real modal window. Addressed by
-  the URL (`?record=new|<id>&sid=<section>`) and keeps an unfinished draft
-  across reloads. Quick replies for closed questions, the question being
-  asked is marked, edited answers show their previous value.
-  - Answers render as `stepper`, `cards`, `list` or `none`
-    (`llm_interview_progress_layout`). Beside the answers the chat stays a
-    sidebar (`--llm-iv-chat-width`).
-  - **`cards` is a board**: eyebrow + title with a status chip, a numbered
-    step tracker and one card per question (`--llm-iv-cards-cols`, default
-    2 = a 2×2 board; one column on narrow panes). Answered questions keep
-    their card and answer in every state - create, edit and completed - and
-    cards never change size when an answer arrives. Unanswered cards show
-    the question's prompt (a textarea/input `placeholder`, or the `alt` of a
-    select). New theme variables `--llm-iv-ink`, `--llm-iv-muted`,
-    `--llm-iv-soft`, `--llm-iv-track`, `--llm-iv-edited`; new labels
-    `collectedEyebrow`, `statusDraft`, `statusReady`, `statusSaved` and the
-    optional `editTitle` (modal title while editing).
-  - Save dialog (`llm_interview_confirm`: `edit`, `always`, `never`) with a
-    before/after table for edits.
-  - `llm_interview_chat_retention` (`continue`, `new_on_open`,
-    `new_after_save`) decides between *Continue* and *Start over*.
-- **Server runtime.**
-  - `LlmFormInterviewService`: open, turn, update draft, reset and approve
-    (request-id idempotency; two-phase approval in one transaction).
-  - `LlmFormSchemaService`: what the interview may ask and write. Hidden,
-    scope-bound and unsupported fields stay native-only unless allowlisted
-    (`llm_interview_writable_hidden_fields`); manual edits need
+- **LLM form interviews (`llmFormLogList`).** A new style that extends the
+  core `formUserInputLogList`: it keeps the same list, quick actions, history,
+  ownership and permissions. A coach asks the form's questions in a chat. The
+  answers are kept as a draft and saved as a form record only after the
+  participant approves them. Guide:
+  [doc/llm-form-interview.md](doc/llm-form-interview.md).
+  - **Workspace:** the answers are shown next to the chat, either in the page
+    or in a modal window (`show_form_in_modal`). Four answer layouts are
+    available (`llm_interview_progress_layout`): `stepper`, `cards` (a
+    question board with a status chip and step tracker), `list` and `none`.
+    The chat position is set with `llm_interview_chat_position`. The look is
+    themed through `--llm-iv-*` CSS variables.
+  - **Conversation:** quick replies for closed questions, a marker on the
+    question being asked, and edited answers shown next to their previous
+    value. An unfinished draft survives a page reload. The workspace is
+    linked by URL (`?record=new|<id>&sid=<section>`). Speech-to-text is
+    optional; recordings are deleted right after transcription.
+  - **Saving:** the save dialog (`llm_interview_confirm`: `edit`, `always`,
+    `never`) shows a before/after comparison when a record is edited.
+    `llm_interview_chat_retention` controls whether a returning participant
+    continues the chat or starts over.
+  - **Control over what is written:** hidden, scope-bound and unsupported
+    fields can only be written when allowlisted
+    (`llm_interview_writable_hidden_fields`). Manual edits require
     `llm_interview_allow_manual_edit`.
-  - `LlmConversationStateService`: revision-based state per participant,
-    section and record on `llmConversations` (new columns `id_dataRows`,
-    `completed_at`, `context_key`, `state`).
-  - The structured LLM response gets an optional `interview` block
-    (`collected_fields`, `active_field`, `ready_for_approval`) that the
-    server validates.
-- **`form_interview` conversation source.** Interview threads stay out of
-  the chat sidebar. The admin console filters by source and by record
-  (`record_id` or `draft`) and shows a source badge.
-- **Chat look, labels and speech for the interview.** The same header,
-  bubbles, quick replies and composer as `llmChat`, `llm_chat_appearance`,
-  translatable `llm_interview_labels` (English, German and French built in)
-  and Whisper speech-to-text (`enable_speech_to_text`,
-  `speech_to_text_model`; the audio is deleted right after transcription).
-- **The list shows the core's default look.** The `table` and `cards`
-  layouts of `llmFormLogList` look exactly like the core
-  `formUserInputLogList` (SelfHelp 7.12.0 ships that look; the plugin has no
-  list styles of its own). A small bridge on the `.llmFormLogList` root class
-  lets `--llm-iv-accent`, `--llm-iv-border`, `--llm-iv-surface` and
-  `--llm-iv-radius` drive it; without them the core's `--ful-*` variables and
-  Bootstrap's `--primary` apply. Add `formUserInputLogList-bare` to the
-  section's CSS field to drop the look and style the list from scratch.
-- **Shared forms.** One interview form can be reused on many pages through a
-  reference section inside a `loop`; loop variables interpolate into the
-  context, titles, values, filter and `values_map`.
-- **URL parameters: `extra_params`.** The core `formUserInputLogList` (v7.12.0,
-  migration 44) accepts URL parameters declared as `name=default&name2=default2`
-  (route parameter, then `?name=`, then the default; strictly validated).
-  `llmFormLogList` inherits the field and uses the effective values: they are
-  `{{__name__}}` placeholders in every field of the section and its children
-  (`filter`, `data_config`, texts, button URLs), they partition the unsaved
-  drafts (`context_key`, hashed above 191 characters) and a name that is also
-  a form field **pins** it (hidden, read-only, seeded from the URL). Module or
-  status filtering is plain page composition - `button` sections whose `url`
-  carries the parameters, e.g. rendered by one `loop` over a list of codes
-  (the translated texts are Global Values keyed by the code, no data table) -
-  not style logic. See [doc/llm-form-interview.md](doc/llm-form-interview.md#url-parameters-extra_params).
-- **Prompt Lab `interview_runtime` profile.** Tests `llm_interview_context`
-  against a read-only preview with the production context assembly, schema
-  validation and draft merge - no participant state, approval or memory
-  writes.
-- **`llm_use_user_language`** checkbox on `llmChat`, `llmFormRecord`,
-  `llmFormLog` and `llmFormLogList` (see Changed). Default on so upgrades
-  keep the always-on participant-language behaviour from 1.5.0; uncheck to
-  let the author context alone decide.
-- **`floating_shortcuts_hide_delay`** on `llmChat` (default 2 seconds, 0-60):
-  how long the floating shortcut pills stay visible after the mouse leaves.
-- **`always_start_new_conversation`** on `llmChat`. When enabled, every page
-  load starts a fresh chat and previous sessions are hidden (no sidebar /
-  floating session switcher). When disabled, existing sessions stay available
-  if `enable_conversations_list` is on.
-- **Danger / crisis detection on form interviews** (`llmFormLogList`). Same
-  CMS fields as `llmChat`: `enable_danger_detection`, `danger_keywords`,
-  `danger_notification_emails`, `danger_blocked_message`. Participant turns
-  are keyword-scanned before the coach runs; critical LLM safety can block
-  the interview thread after a turn (same `danger_detected` + CMS markdown
-  message as a keyword hit; the validated coach reply stays in `state`);
-  safety instructions are added to the coach context; email and audit
-  logging match chat. The UI shows the blocked message and locks the
-  composer without treating the entry as a normal saved/`finished`
-  completion. `open` skips blocked threads, so a reload or `new_on_open`
-  may start a fresh interview for the same scope (blocked transcript kept
-  for audit).
-- **LLM script `sent_context` audit fields.** Each script run now also
-  stores `script_id`, `script_name` and `script_updated_at` next to the
-  full `script_template` snapshot so admin inspection can see which row
-  revision was used after edits (`llm_scripts` has no version column).
-- **`llm_memory_rule_ids` on core `formUserInputLogList`.** Same multi-select
-  as the other form styles (v1.5.0). The existing
-  `FormUserInputModel::save_user_input` / `update_user_input` hooks already
-  cover LogList because it calls `parent::`. `llmFormLogList` already had
-  the field; plain LogList sections can now pick rules without a form action.
-- **`llm_chat_form_submit` in the Memory Rules editor.** The Rules tab source
-  dropdown now offers “llmChat form submit” so chat-fallback rules can be
-  created in the UI (not only via SQL / import).
-- **Prompt / completion token split on new messages.** `llmMessages` gains
-  nullable `prompt_tokens` and `completion_tokens` (filled from the normalized
-  provider usage when an assistant reply is logged). `tokens_used` remains the
-  total. No backfill for older rows. The admin conversation monitor shows
-  `in · out · total` when the split is present; participant chat is unchanged.
-
-### Fixed
-
-- **Script / memory-rule Prompt Lab versions stuck on v1 Draft.** Saves
-  wrote versions under the CMS language while the Scripts/Memory UI
-  bootstrapped language `1`, so the toolbar never saw new versions and
-  stayed dirty. Both owners now always version under SelfHelp language
-  id `1` (the CMS default / neutral slot); a legacy NULL or other-language
-  stream is adopted into that slot so prior saves reappear.
-- **`llm_interview_context` CMS label showed a stray `'>`.** The field
-  Hint used `participant's`; core `descriptionItem` put help into a
-  single-quoted `data-content` without escaping, so the apostrophe broke
-  the attribute. Help wording no longer uses that apostrophe; core must
-  escape help for the popover attribute (see Core companion fixes).
-- **Interview answers board.** Answers stay visible on their card in every
-  state (new, edit, saved); an open question shows the author's prompt
-  (`placeholder`, or the select's `alt`) instead of an empty box, so it never
-  looks like an answer that was lost. On a phone the stacked board is no
-  longer scrolled when the coach moves on, which used to push the composer
-  out of view.
+  - **Crisis detection:** the same settings as `llmChat`
+    (`enable_danger_detection`, keywords, notification emails, blocked
+    message). A blocked interview shows the blocked message and locks the
+    composer. The transcript is kept for review.
+  - **Reuse and URL parameters:** one interview form can be reused on many
+    pages through a reference section in a `loop`. URL parameters declared in
+    `extra_params` (for example a module code) work as placeholders in every
+    field, keep separate drafts per value, and can pin a form field to the
+    URL value.
+  - The list keeps the core `formUserInputLogList` look and can be themed
+    with `--llm-iv-*` variables. Adding `formUserInputLogList-bare` to the
+    section's CSS removes the look.
+  - Labels in English, German and French (`llm_interview_labels`). The chat
+    uses the same appearance settings as `llmChat` (`llm_chat_appearance`).
+  - Interview conversations are kept out of the chat sidebar. The admin
+    console can filter them by source and record.
+- **Prompt Lab: interview profile.** `llm_interview_context` can be tested
+  against a read-only preview of the real interview. No participant data,
+  approval or memory is written.
+- **`llm_use_user_language`** on `llmChat`, `llmFormRecord`, `llmFormLog` and
+  `llmFormLogList`. On by default, which keeps the 1.5.0 behavior of
+  answering in the participant's language. Turn it off to let the author's
+  context decide the language.
+- **`llmChat`: `always_start_new_conversation`.** Every page load starts a
+  new chat and earlier sessions are hidden.
+- **`llmChat`: `floating_shortcuts_hide_delay`** (default 2 seconds, 0-60):
+  how long the floating shortcuts stay visible after the mouse leaves them.
+- **Memory rules on the core `formUserInputLogList`** (`llm_memory_rule_ids`),
+  as on the other form styles since 1.5.0.
+- **Memory rules editor:** the "llmChat form submit" source can now be
+  chosen, so chat fallback rules no longer have to be created in SQL.
+- **Token split:** new messages store prompt and completion tokens separately.
+  The admin conversation monitor shows `in · out · total`. Older messages keep
+  only the total.
+- **Script audit:** each script run records which script and revision it used
+  (`script_id`, `script_name`, `script_updated_at`).
 
 ### Changed
 
-- **`llmChat` `memory_rule_ids` is a multi-select.** The legacy free-text
-  field now uses `select-llm-memory-rules` and lists only
-  `llm_chat_form_submit` rules (stored values stay comma-separated ids).
-  Still a data-saving-off fallback; with data saving on, use a form action
-  `llm_memory_update` on the chat table.
-- **The language rule is configurable (default on).** In 1.5.0 every
-  conversation was told to answer in the participant's language. That
-  behaviour stays the default via `llm_use_user_language` (ticked). Untick
-  it when the author context alone should decide the language.
-- **Floating shortcuts prefill the composer** instead of auto-sending.
-  Clicking a shortcut opens the chat and inserts the configured message so
-  the participant can edit it before sending
+- **API keys are never sent to a browser.** The settings page and the CMS
+  editor show only whether a server has a key, its last four characters and
+  where it comes from. Leaving the key field empty keeps the stored key, but
+  only while the server's scheme, host and port stay the same, so a stored
+  key can never be sent to another host. Keys can be stored encrypted
+  (AES-256-GCM) or read from an environment variable (`env:LLM_NAME`).
+- **Saving a server takes one click.** **Save** and **Delete** on a server card
+  (settings page and CMS editor) store the change immediately, and errors
+  show inside the card. The other settings still use **Save Changes**.
+- **Settings are validated before they are saved.** One invalid value
+  rejects the whole save, with a message for each field. Base URLs must use
+  `https` (`http` only for localhost) and must not contain credentials, a
+  query or a fragment. An optional host allow-list can be set with
+  `LLM_ALLOWED_API_HOSTS`. Temperature, max tokens and timeout are checked
+  against their ranges.
+- **Floating shortcuts fill in the message** instead of sending it, so the
+  participant can edit it before sending
   ([doc/llm-chat-shortcuts.md](doc/llm-chat-shortcuts.md)).
-- **Inline `llmChat` looks like the floating chat.** Same panel header, one
-  shared slim scrollbar.
-- **The interview composer is one field.** The shared `MessageInput` got a
-  second look, `variant="field"` (used by the interview chat; `llmChat` keeps
-  the `bar` look): one rounded, bordered, auto-growing message field - it
-  grows with the text up to `--llm-iv-composer-max-height` (default
-  `min(12rem, 30vh)`) and then scrolls - with the microphone, clear and send
-  buttons on a quiet row inside it. No grey strip behind the buttons; the
-  footer now sits on the chat's own surface (`--llm-iv-chat-bg`), so header,
-  transcript and composer read as one panel. Theme the corner radius with
-  `--llm-iv-composer-radius` (default `1.25rem`); the shared
-  `--llm-composer-*` properties (`bg`, `border`, `accent`, `ring`, `ink`,
-  `muted`, `hover`, `radius`, `max-height`) are fed from the interview theme.
-- **The interview chat uses the free height.** Beside the answers the chat
-  panel is as tall as the screen allows below the workspace's top edge
-  (minimum 360px), instead of stopping at 680px and leaving empty space
-  under it; it stays pinned while the page scrolls.
-- **Cards board: the "current question" tag wraps.** In a narrow card the tag
-  moves below the title instead of squeezing the title letter by letter.
+- **The inline `llmChat` looks like the floating chat** (same header and
+  scrollbar).
+- **`llmChat` `memory_rule_ids` is a multi-select** that lists only the
+  "llmChat form submit" rules. Stored values are unchanged.
+- **Context layers combine.** The form, floating and strict-conversation
+  modes are applied together, with the strict guardrail first, instead of
+  only the first one that is enabled.
+- **Response retries are limited.** At most `LLM_RESPONSE_MAX_ATTEMPTS`
+  attempts (default 3). Failures that a retry cannot fix (rate limit, bad
+  request, rejected credentials) are not retried.
+- **Clear errors for participants.** Provider, database and runtime errors
+  are logged on the server, and participants see a generic notice. After a
+  failed turn the chat shows "no answer" in its error banner instead of the
+  turn silently disappearing.
+- `globals_untracked.php` is now optional. A fresh checkout, CI and the
+  workers start without it. `globals_untracked.default.php` is the template.
 
 ### Fixed
 
-- **`llmChat` keyword danger pre-scan.** With `enable_danger_detection`,
-  user messages (and form-mode readable text) are scanned before they are
-  stored or sent to the LLM. A match returns `danger_detected`, shows the
-  CMS blocked message, and blocks the conversation (the React chat UI
-  already expected this response).
-- Messages written within the same second could be listed out of order; chat
-  and admin reads now break `timestamp` ties by `id`.
-- `llmChat` answered POSTs that were not chat requests (a CMS save, another
-  form on the same page) as an empty message. Only requests with an `action`
-  (or the legacy bare `message`) are handled now.
+- `llmChat` crisis keyword detection now checks messages before they are
+  stored or sent to the model, and blocks the conversation on a match.
+- Messages sent within the same second could appear out of order.
+- `llmChat` treated other POST requests on the same page, such as a CMS save
+  or another form, as an empty chat message.
+- Stored messages were cut off at the first `{"id":` they contained, which
+  truncated pasted JSON and structured answers.
+- Prompt Lab versions of scripts and memory rules stayed on "v1 Draft" after
+  saving. Versions saved earlier reappear.
+- Inline code in chat answers was shown as a code block with a copy button.
+- The chat markup contained `node="[object Object]"` attributes.
 
 ### Security
 
-Result of the full plugin audit (API keys, guests, admin console, form
-endpoints, files, error messages). Run `server/db/v1.6.0.sql` (idempotent;
-environments that already ran an earlier draft of it run it again, it also
-adjusts the admin group ACL, see *Admin console*) and clear the SelfHelp
-cache.
+- **Admin console:** each action checks its own permission (`select` to
+  read, `update` to block or unblock and see sent context, `delete` to
+  delete). Changes require POST and a CSRF token, and the audit log names
+  the admin who made them. Interview draft data is no longer included in
+  conversation reads.
+- **CSRF protection everywhere.** Admin pages, settings, Prompt Lab,
+  scripts, memory and interview changes always require the session token.
+  The chat and form endpoints also accept requests from the same site and
+  from the native app, but reject cross-site requests (403).
+- **Guests are isolated.** Guests share one account, so a guest could see
+  and continue the previous guest's chats. Guest conversations now belong to
+  the visitor's browser session, with per-session and site-wide rate limits.
+  Guests cannot upload files, use speech input or save form records or
+  memories.
+- **No unsafe HTML.** Markdown from the model, participants and stored
+  context is sanitized before it is shown. Scripts, iframes, forms, event
+  handlers and unsafe links are removed. Images written in Markdown are
+  still loaded from their host.
+- **File access:** participant input can no longer be read as a file path.
+  Only real attachments inside the plugin's upload folder are sent to the
+  model.
+- **Safety assessment:** a response without a safety assessment from the
+  model is reported as "not assessed" instead of "safe". Blocked
+  conversations stay blocked for every chat action.
+- **Prompt Lab access** is decided by the pages that really show a section,
+  not by the page id the browser sends. Dataset imports accept only records
+  that belong to the prompt's owner.
+- **Form endpoints** (`llmFormRecord`, `llmFormLog`) answer only their own
+  section, are rate limited, and load exactly the requested record.
+- **Speech-to-text** is limited to 6 recordings per minute per user, and the
+  audio type is checked from the file content.
+- **Input limits** on interview messages and form values.
+- **Crisis alert emails** escape the user input they quote. Keyword matching
+  handles accents and tolerates typos in phrases ("kill myslef"), while
+  single words still match exactly ("skill" never matches "kill").
+- **Memory updates run only after the record is saved.** If an interview
+  approval or form save fails, no memory is updated, and a failure no longer
+  clears the whole SelfHelp cache.
+- **Interview locking** no longer blocks core login and profile updates.
 
-- **API keys are never returned to a browser and can be encrypted.** The
-  settings console (`get_config`) and the CMS field editor used to send every
-  key in plain text to anyone with read access. They now receive `has_key`,
-  the last four characters (keys of 12+ characters), the key source and an
-  entry `id` only. On save, an empty key field keeps the stored key (matched
-  by `id`, and only while scheme, host and port of the server are unchanged,
-  so a stored key cannot be redirected to another host), a typed key replaces
-  it, "Remove the stored key" clears it. Keys are stored AES-256-GCM
-  encrypted (`enc:v1:...`) when the environment variable / PHP constant
-  `LLM_SECRET_KEY` (16+ characters) is set, or not stored at all with an
-  `env:LLM_NAME` reference. Plain text keys keep working until **Encrypt
-  stored keys now** (settings page) converts them; changing the secret
-  makes encrypted keys unreadable. Details:
-  [README > API Key Protection](README.md#api-key-protection). New:
-  `LlmSecretService`, `LlmApiKeysConfigService`, `LlmSettingsValidator`;
-  `BaseLlmService` resolves keys in memory only.
-  - Every setting is validated on the server before anything is stored; one
-    invalid value rejects the whole request (HTTP 422, messages per field).
-    Base URLs: `https` (plain `http` only for localhost), no credentials,
-    query or fragment, optional host allow-list `LLM_ALLOWED_API_HOSTS`.
-    Temperature 0-2, max tokens 1-200000, timeout 1-600 s; server names are
-    unique and must not contain ` :: `; keys may not contain whitespace or
-    control characters (header injection).
-  - `save_config` and `protect_keys` are POST only, need the `update` ACL and
-    the session CSRF token (`X-CSRF-Token`, the settings page sends it), and
-    write an audit entry (names of the changed settings, never values).
-  - The CMS editor of `llm_api_keys` saves through the existing
-    `CmsModel::update_db` hook (`syncPromptVersionOnCmsSave`): the key-less
-    list is validated and merged with the stored one first, so saving the CMS
-    page can never blank or leak keys. No new hook registration and no cache
-    clearing are needed for this part.
-  - On the settings page and in the CMS editor, **Save** on a server card
-    (add, edit) and **Delete** store the server list right away through the
-    settings endpoint (`save_config`: `update` ACL, CSRF, the same
-    validation), so no second "Save Changes" / CMS page save is needed. The
-    other settings still use "Save Changes". Validation messages show in the
-    card (in the CMS editor they used to reach only the server log); the form
-    stays open with what was typed.
-- **Participant input could be read as a file path (critical).** The
-  `attachments` column also carries the `form_submission` payload built from
-  participant input, and the API formatter treated any `path` in it as a file
-  to send to the model. Only real attachment lists are read now, and only
-  files that resolve (realpath: `..`, absolute paths, symlinks) inside the
-  plugin upload folder.
-- **"Safe" is never invented.** A response without a model-produced safety
-  assessment, or one rebuilt after a failed validation, used to be reported
-  as `is_safe = true`. It now carries `safety.assessed = false` and
-  `is_safe = null` (tri-state), every consumer treats only `false` as unsafe,
-  and the gap is logged for admins. Keyword detection is unchanged.
-- **Blocked conversations stay blocked.** Every `llmChat` action that sends,
-  regenerates, auto-starts or continues a message goes through one blocked-
-  conversation guard, in front of the single place that calls the model.
-- **Guests start fresh and cannot see each other.** All anonymous visitors
-  share one account (`GUEST_USER_ID`), so a guest used to see, continue and
-  delete the previous guest's conversations. Guest conversations now belong
-  to the visitor's browser session (`llm_guest_conversations`): list, load,
-  delete and the concurrent-conversation limit only see the session's own
-  conversations; rate limits are per session plus a site-wide guest ceiling
-  (`LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE`). Guests get no file
-  upload, no speech input and no saved records/memories (all keyed by the
-  shared user id), and `llmFormRecord` / `llmFormLog` / the interview reject
-  them. Visitors without a session cookie (some mobile clients) start a new
-  conversation with each request.
-- **Admin console: per-action ACL, CSRF, audit actor.** `select` lists and
-  reads conversations; `update` blocks / unblocks them and shows the sent
-  context and request payload of each message; `delete` deletes. Changes are
-  POST only with the session CSRF token, and the audit entry names the acting
-  admin. The migration grants `update` and `delete` to the admin group on
-  `moduleLlmAdminConsole` when it only had `select`; grant them to other
-  moderator groups in the CMS.
-- **Danger alert emails.** The matched keywords and the message excerpt
-  (user input) are escaped before they reach the Markdown-to-HTML mailer;
-  the sender is the address configured in the core mail settings. Phrases
-  tolerate typos ("kill myslef") and matching is UTF-8 aware (`töten`
-  matches `TÖTEN`); single words stay exact so "skill" never matches "kill".
-- **No internals for participants.** Exceptions (provider errors, SQL,
-  runtime) are logged server side; participants get a generic notice. Only
-  messages written for them (rate limit, validation, conversation not found)
-  pass through. Applies to `llmChat`, the form endpoints, speech-to-text and
-  the response fallback.
-- **Form endpoints.** `llmFormRecord` / `llmFormLog` answer only requests
-  addressed to their own section (`section_id`), rate limit their LLM calls,
-  and load the requested `record_id` exactly or not at all (no silent
-  fallback to the latest record).
-- **CSRF in one place.** `LlmCsrfService` (`$_SESSION['csrf_token']`, POST
-  field `csrf_token` or header `X-CSRF-Token`) replaces the copies in the
-  Prompt Lab, the Scripts / Memory / Settings pages, the hooks and the form
-  log list. It is strict: a session without a token, or a request without
-  one, is refused - never skipped. The Prompt Lab now refuses sessions that
-  never received a token (reload the page once).
-- **Interview.** The participant lock is a MySQL advisory lock (`GET_LOCK`)
-  instead of `SELECT ... FOR UPDATE` on the core `users` row, which blocked
-  core login/profile writes. Danger blocking and the alert email run after
-  the lock and the transaction are released. A broken CMS field definition
-  no longer leaks its field errors to participants.
+### For developers
 
-### Security (audit remediation)
-
-Fixes for the review of the changes above (three high findings: the admin API
-leaked interview state, the Prompt Lab trusted the page id of the browser,
-memory was updated before an approval committed). Verified against a real
-database (fresh install, upgrade and replay of `v1.6.0.sql`, interview
-approval with a forced failure) and over HTTP with real users and ACL groups.
-A database that already ran `server/db/v1.6.0.sql` during development runs it
-again (idempotent; step 11 adds the missing `interview_runtime` profile) and
-clears the SelfHelp cache. The bundles in `js/ext/` are rebuilt; after changing `react/` run
-`npm run build` in `gulp/`.
-
-- **`globals_untracked.php` is optional.** `globals.php` loads the file only
-  when it exists, so a fresh checkout, CI and the CLI workers start without it
-  (a missing file used to be a fatal error). `server/service/globals_untracked.default.php`
-  is the template (`LLM_SECRET_KEY`, `LLM_ALLOWED_API_HOSTS`): every option is
-  commented out, so copying it unchanged is harmless, and environment
-  variables of the same names work without any file. The real file stays out
-  of git (`.gitignore`).
-- **No unsafe HTML.** Markdown from model output, participant messages and
-  stored prompt context passes `rehype-sanitize` (GitHub allow-list, `<style>`
-  dropped) before it is highlighted: no `script`, `iframe`, `form`, `svg` or
-  media tags, no event-handler or `style` attributes, links and images only
-  `http(s)` / `mailto` / relative, `id` / `name` prefixed. Harmless inline
-  HTML (`<br>`, `<details>`, tables) still renders. The context popup, the
-  chat component and the form alert helper no longer put server or model text
-  into the page with `innerHTML` / `dangerouslySetInnerHTML`, and the PHP
-  `llmResponse` style runs Parsedown in safe mode, so HTML in a model answer
-  is escaped. Known limit: an image written in Markdown (`![](https://...)`)
-  is still fetched from its host by the participant's browser.
-- **The admin API no longer returns the interview `state`.** The draft
-  answers, approval receipt and tokens were part of every conversation row, so
-  a user with only `select` on the console received them. Conversations are
-  read with an explicit column list (`LlmAdminService::ADMIN_CONVERSATION_COLUMNS`);
-  a column added by a later migration stays hidden until someone decides it is
-  safe. The mobile conversation row drops `state` as well. Nothing needed it.
-  - The conversation state does not copy the participant's opened record
-    (`state.payload.opening_context` is only `{context_key, opened_at}`, the
-    changed-record fingerprint is enough to detect an edit).
-  - Draft revisions are no longer written to the core transaction log: core
-    `add_transaction()` stores the whole session with each row, and autosaves
-    and turns wrote one each. Creation, record binding, completion and
-    messages are still audited.
-- **Prompt Lab: page ownership is decided on the server.** Access used to
-  follow the `page_id` the browser sent, so an editor of page A could read and
-  change the prompts, datasets and runs of a section on page B by sending A's
-  id with B's section. `LlmPromptLabAccessService::hostPagesForSection()` now
-  resolves the pages that really show a section (section hierarchy and
-  navigation, like core); a `page_id` in the request can only pick one of
-  them, and the user needs the ACL on it. A section that no page shows is
-  refused (`Missing page context`). Version, dataset, case and run ids must
-  belong to the descriptor's scope, and the ids of a dataset import are tied
-  to the descriptor's owner (see the import entry below). Scripts and
-  memory rules keep following the ACL of their module pages.
-- **One way to run a transaction: no global cache wipe, memory updates only
-  after the commit.** Core `BaseDb::rollback()` ends with `apcu_clear_cache()`
-  (every page, style, lookup and ACL entry), so anyone who triggered an
-  expected failure - a stale interview request, a failed approval - could
-  cold-start the whole CMS. Every plugin transaction now goes through
-  `LlmTransaction` (`begin()` / `commit()` / `rollback()`);
-  `rollback()` rolls the handle back and clears only the cache types the
-  caller names (the user-input cache after a core write). Memory updates
-  started by an interview approval or a form action are handed to
-  `LlmTransaction::afterCommit($db, $task)`: they start at the outermost
-  `commit()`, a rollback drops them, and they start at once when no
-  transaction is open. Nothing has to be opted into: a transaction opened
-  through the class has its frame, and nested ones wait for the outermost
-  commit like core's savepoints. A transaction opened by other code (core,
-  another plugin) cannot be observed, so a task queued inside it is dropped
-  and logged instead of being started early, and a request that ends inside an
-  open transaction reports the tasks it never released. The detached memory
-  worker has its own database connection, so it can neither be rolled back
-  nor see uncommitted rows, which is why starting it earlier updated memory for
-  approvals that then failed. `tests/LlmConventionsTest.php` fails on a direct
-  `begin_transaction()`, `commit()` or `rollback()` call anywhere else in the
-  plugin. Core's own `UserInput::save_data()` still rolls back through
-  `BaseDb::rollback()` when it fails, cache wipe included: that is core
-  behavior this plugin does not change. A rollback only undoes anything on
-  InnoDB tables, see [README > Database engine](README.md#database-engine).
-- **CSRF.** The chat and the LLM form endpoints (`llmChat`, `llmFormRecord`,
-  `llmFormLog`), which the native app calls too, accept a request that carries
-  the session token (`csrf_token` field or `X-CSRF-Token` header - the React
-  chat sends the header), **or** that does not come from another website:
-  `Sec-Fetch-Site: same-origin` (also covers a token gone stale after a login
-  in another tab), neither `Sec-Fetch-Site` nor `Origin` (the native HTTP
-  client), or an `Origin` that is exactly one entry of core's
-  `CORS_ALLOWED_ORIGINS` while core `CORS` is on
-  (`LlmCsrfService::verifyRequestOrTrustedClient()`). A browser sets
-  those headers itself and a page cannot forge them, so a cross-site request
-  without the token gets a 403 and changes nothing. The admin console,
-  settings, Prompt Lab, scripts, memory and interview mutations keep the
-  strict check (token required). Scripts and memory refuse state-changing
-  actions over `GET` (405) and check the ACL before the token.
-  - **The origin rule compares exactly.** An earlier version trusted whatever
-    origin core's CORS code had reflected into `Access-Control-Allow-Origin`,
-    and that code approved any origin that merely *contained* a listed one
-    (`https://selfhelp.philhum.unibe.ch.evil.example`), so a hostile page
-    passed as a trusted client. The plugin now reads the list itself: the
-    whole `Origin` string (scheme, host, port) must equal an entry of
-    `CORS_ALLOWED_ORIGINS`; no prefix, substring, wildcard or case folding,
-    `Origin: null` never, and the response header is not consulted. A core
-    without that constant, or with `CORS` off, trusts no cross-origin client
-    (it has to send the token). `tests/LlmCsrfServiceTest.php` feeds
-    lookalike origins through a core that reflects them.
-  - **Core companion change (SelfHelp v7.12.0): `Selfhelp::cors()` matches
-    exactly too.** The list `CORS_ALLOWED_ORIGINS` is new in core
-    `globals.php` (override it in core's `globals_untracked.php`); its default
-    holds the origins core approved before, so nothing changes for them. An
-    origin that only matched by substring (another port on a listed host, a
-    subdomain) has to be listed now.
-  - **README: the session cookie advice is corrected.** Web sessions are
-    `SameSite=Lax`; core issues `SameSite=None; Secure` to the sessions of the
-    mobile web preview on purpose, and for those the exact origin list is what
-    keeps other websites out. See
-    [README > CSRF and cross-origin clients](README.md#csrf-and-cross-origin-clients).
-- **Rate limit and input checks.**
-  - Speech-to-text (chat and interview): 6 recordings per minute and user
-    (`LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE`, 60 s cooldown), answered
-    with 429. The audio type is decided from the file content, not from the
-    declared MIME type or extension, and only valid audio uses up the budget;
-    anything else is a 400.
-  - Interview: `message` at most 10 000 characters, `request_id` /
-    `request_token` / `open_token` at most 191 characters; form values at most
-    10 000 characters and 200 list items per field, numbers must be finite
-    (`1e999` is refused, not stored as `INF`).
-- **Error handling.** `LlmErrorReporter` logs an unexpected failure once
-  (context, exception class, location, conversation id; control characters
-  removed, message cut) and hands out one generic text. Messages of database
-  errors can quote row values, so outside debug mode only the SQLSTATE is
-  logged. The admin console answers 404 / 409 with its own text and every 5xx
-  with the generic one; the interview and chat map failures the same way.
-  Failed provider attempts are still stored for admins as unvalidated
-  `[API ERROR]` messages and never reach a participant's message list (the
-  participant gets the fixed notice described below). It is the only way the
-  plugin logs an exception: the places that wrote `$e->getMessage()` to
-  `error_log()` themselves (workers, hooks, memory, speech-to-text, controllers,
-  Prompt Lab) call `LlmErrorReporter::log()`, and a record that stores a failure
-  (the audit row of a failed memory update) uses `LlmErrorReporter::describe()`,
-  so the same redaction applies. `tests/LlmConventionsTest.php` fails when
-  plugin code hands an exception text to `error_log()` directly. The trait
-  method `logError($message, $exception)` takes the exception object; five
-  callers that passed an array (a `TypeError` on the failure path) are fixed.
-- **Prompt Lab: the ids of a dataset import are tied to the prompt's owner.**
-  The records to import (`source_ids_json`) come from the browser and the
-  request-level check cannot see them. The service tested them with a
-  lenient matcher: a record with no section, script or owner counted as a
-  match; a run matched on the owner id alone (a script run with the number of
-  a section was a section's run); the owner type, the prompt slot and the run
-  mode that the list applies were not checked on import; any
-  `__memory_update__` conversation
-  matched any memory rule; and a page-level fallback accepted every
-  conversation of the page the owner is shown on. Naming such an id imported
-  another owner's participant messages into a dataset. The list and the import
-  now share one rule, `LlmDatasetIngestionService::sourceScope()`: a record is
-  importable if and only if the candidate list shows it. A record belongs to
-  an owner by what it says about itself - the prompt entry of a playground run
-  (owner type, owner id, prompt slot, run mode playground or compare), the
-  section of a conversation (CMS style fields), the script of a conversation
-  (scripts), the `__memory_update__<key>` titles of the memory keys of a rule
-  (memory rules; without keys an exact prefix test, since `_` is a wildcard in
-  `LIKE`) - never by the page. It fails closed: no owner id, an unknown owner
-  type, a memory rule that does not exist or cannot be read, or a failing
-  query gives nothing. Ids that are not plain positive numbers are skipped.
-  Behavior changes: a message is imported as a form submission only when it
-  carries form data (as the list already required); script fixtures are
-  offered to script owners only (the *From scripts* tab of a CMS style field
-  is empty); the
-  `allowed_page_id` context entry is gone; the form-submission list stops at
-  its limit. `tests/LlmDatasetIngestionScopeTest.php` runs the real queries
-  against SQLite and checks "importable == listable" for every owner and
-  source over the id space, plus the cross-owner cases above.
-- **A response without a safety verdict is never "safe".** The tri-state
-  above (`assessed = false`, `is_safe = null`) now also covers a `safety`
-  value that says nothing: an empty or blank string, a bare `true` / `false` /
-  `0`, or a block without any flag, classifier or danger level. A danger level
-  without a flag counts as not safe. Only an explicit `false` is treated as
-  unsafe, and the missing assessment is logged.
-- **A participant sees a notice after a failed turn.** When the provider fails
-  or no reply passes the response schema, the chat answers (`send_message`,
-  `submit_form`, `continue_conversation`) carry a fixed `notice`
-  (`LlmResponseService::NO_ANSWER_NOTICE`, also the text of the stored error
-  fallback). The failed attempt is an unvalidated row that the participant's
-  message list hides, so the reload showed nothing and the turn seemed to
-  vanish; the React chat now shows the notice in its error banner (which clears
-  itself after a few seconds, like the other chat errors). The answer of a
-  failed turn holds nothing else of the reply: `message` is the notice too,
-  there is no `structured` block, and neither the model's raw text nor the
-  technical reason is returned; both stay in the log and the admin console. A
-  danger flag the model really produced is still reported in `safety`. A
-  healthy turn carries no `notice` and keeps its `message` and `structured`.
-- **Prompt Lab: a dataset for the interview prompt.** The
-  `llm_interview_context` prompt resolves to the `interview_runtime` execution
-  profile, but no migration installed that lookup, so "Create dataset" failed
-  with `Invalid execution profile`. `v1.6.0.sql` step 11 inserts it
-  (`INSERT IGNORE`). Lookup ids are cached, a miss included: clear the
-  SelfHelp cache after running the migration.
-  `tests/LlmExecutionProfileLookupsTest.php` fails when the code uses an
-  execution profile or dataset case type that no migration installs.
-- **No `node="[object Object]"` attribute in the chat markup.** react-markdown
-  hands its parsed `node` to every custom component, and the code block and the
-  task-list checkbox spread their props onto the DOM element. Both drop it now.
-- **Inline code renders inline.** react-markdown v9 no longer tells a custom
-  `code` component whether it is inline, so every inline code span was rendered
-  as a code block (a `div.code-block-wrapper` with a copy button, nested inside
-  the paragraph). Now only the `<pre>` of a fenced, indented or raw-HTML block
-  marks its code as a block; any other code is an inline
-  `<code class="inline-code">`.
-
-### Changed (audit)
-
-- **Message handling.** `LlmService::addMessage` no longer cuts a stored
-  message at the first `{"id":` it contains (pasted JSON or structured
-  answers were truncated); only raw provider stream chunks are reported.
-- **Context layers.** The form, floating and strict-conversation modes are
-  applied together (form -> floating -> strict; the strict guardrail ends up
-  first, then floating, then form) instead of the first enabled one winning.
-  The docblock of `LlmContextService` describes the real order.
-- **Schema retries.** `LLM_RESPONSE_MAX_ATTEMPTS` (default 3) bounds the
-  attempts. A retry asks again with the rejected answer and the errors as
-  the latest user turn (the system prompt stays first, nothing stacks up),
-  and failures that asking again cannot fix (rate limit, bad request,
-  rejected credentials) are not retried.
-- **Workers.** `llm_async_worker.php` and `llm_memory_worker.php` share one
-  bootstrap (`llm_worker_bootstrap.php`) instead of two near-identical copies.
-- `LlmFormModel` / `LlmFormLogListModel` read the module defaults once per
-  model instead of building a service in every getter.
+- New services: `LlmSecretService`, `LlmApiKeysConfigService`,
+  `LlmSettingsValidator`, `LlmCsrfService`, `LlmErrorReporter`,
+  `LlmTransaction` (transactions and after-commit tasks),
+  `LlmFormInterviewService`, `LlmFormSchemaService`,
+  `LlmConversationStateService`.
+- `tests/LlmConventionsTest.php` fails on direct transaction calls and on
+  exception messages written to `error_log()` outside these services.
+- The async and memory workers share one bootstrap
+  (`llm_worker_bootstrap.php`).
+- The shared `MessageInput` has a new `variant="field"` composer.
 
 ### Removed
 
-- `LlmAutoStartService` and `LlmChatModel::generateContextAwareAutoStartMessage()`
-  (unused since 1.4.1; restore from git history to mix context topics into
-  the greeting again).
-- `CallbackLlm` (unused; compared the callback key without a constant-time
-  comparison).
+- `LlmAutoStartService` and
+  `LlmChatModel::generateContextAwareAutoStartMessage()` (unused since 1.4.1).
+- `CallbackLlm` (unused).
 - `LlmFileNamingService::buildFileUrl()` and the `url` entry of upload
-  payloads: it pointed to a `?file_path=` endpoint that does not exist.
-  Uploaded files are read server side from the stored `path`.
-- The deprecated `llm_is_vision_model()`, `llm_validate_mime_type()`,
-  `llm_get_file_type_category()` and `llm_is_non_chat_model()` wrappers in
-  `globals.php`: use `LlmModelCapabilities::isVisionModel()`,
-  `validateMimeType()`, `getFileTypeCategory()` and `isNonChatModel()`.
-- Stale `@version` docblock tags.
-
-### Core companion fixes
-
-Recommended with this release, not required:
-
-- `Router` / `Login`: background JSON calls (`?__llm_interview_action=...`,
-  any `__*` parameter) are no longer stored as the last visited page, so
-  logging in again never lands on a JSON response.
-- `CmsView`: `text` fields are no longer HTML-escaped a second time in the
-  CMS edit form.
-- `descriptionItem` help popover: `data-content` is HTML-attribute-escaped
-  so Hint text with apostrophes or Parsedown markup no longer breaks the
-  field label (stray `'>` after the name).
+  payloads (it pointed to an endpoint that does not exist).
+- Deprecated wrappers in `globals.php`: `llm_is_vision_model()`,
+  `llm_validate_mime_type()`, `llm_get_file_type_category()` and
+  `llm_is_non_chat_model()`. Use the `LlmModelCapabilities` methods instead.
 
 ## [1.5.0]
 
