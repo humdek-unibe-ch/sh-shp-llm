@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+require_once __DIR__ . '/../LlmErrorReporter.php';
+
 /**
  * LLM Logging Trait
  * 
@@ -59,7 +61,7 @@ trait LlmLoggingTrait
                 $details                       // verbal_log
             );
         } catch (Exception $e) {
-            error_log('[LLM] LlmLoggingTrait::logTransaction() failed - ' . $e->getMessage());
+            LlmErrorReporter::log('Transaction log entry', $e);
         }
     }
 
@@ -85,18 +87,22 @@ trait LlmLoggingTrait
      * 
      * Outputs to PHP error log with ERROR prefix.
      * Use for error conditions that need attention.
+     * A caught exception is written by LlmErrorReporter, the one convention
+     * for exceptions (a database error keeps only its SQLSTATE code, because
+     * its text can quote row values).
      * 
      * @param string $message The error message
-     * @param Exception|null $exception Optional exception for additional context
+     * @param Throwable|null $exception Optional caught exception
      * @return void
      */
-    protected function logError($message, ?Exception $exception = null)
+    protected function logError($message, $exception = null)
     {
         $class = static::class;
-        $exceptionStr = $exception 
-            ? ' | Exception: ' . $exception->getMessage() . ' in ' . $exception->getFile() . ':' . $exception->getLine()
-            : '';
-        error_log("[LLM:{$class}] ERROR: {$message}{$exceptionStr}");
+        if ($exception instanceof \Throwable) {
+            LlmErrorReporter::log($class . ': ' . $message, $exception);
+            return;
+        }
+        error_log("[LLM:{$class}] ERROR: {$message}");
     }
 
     /**
