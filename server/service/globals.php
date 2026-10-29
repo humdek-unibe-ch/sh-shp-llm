@@ -43,6 +43,11 @@ define('LLM_RATE_LIMIT_COOLDOWN_SECONDS', 60);
 // site-wide ceiling for all guest sessions together, per minute.
 define('LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE', 60);
 
+// Speech-to-text calls a paid model on up to 25 MB per upload. It has a
+// per-user budget of its own, so recordings cannot use up the chat budget
+// above (and the other way round).
+define('LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE', 6);
+
 /* =========================================================================
  * DEFAULT LLM PARAMETERS
  * Applied when CMS fields are empty or not configured.
@@ -350,5 +355,19 @@ define('LLM_MEMORY_STATUS_FAILED', 'failed');
 
 require_once __DIR__ . '/LlmModelCapabilities.php';
 
-require_once __DIR__ . '/globals_untracked.php';
+/* =========================================================================
+ * LOCAL CONFIGURATION (optional)
+ *
+ * globals_untracked.php holds per-installation values that must never be
+ * committed (LLM_SECRET_KEY, LLM_ALLOWED_API_HOSTS, ...). It is optional: a
+ * fresh install, CI and the CLI workers load without it, and the plugin then
+ * runs with its defaults (no master secret = API keys are stored as entered,
+ * no host allow-list). Copy globals_untracked.default.php to
+ * globals_untracked.php to configure it. Environment variables of the same
+ * name work as well and need no file at all.
+ * ========================================================================= */
+
+if (is_file(__DIR__ . '/globals_untracked.php')) {
+    require_once __DIR__ . '/globals_untracked.php';
+}
 ?>
