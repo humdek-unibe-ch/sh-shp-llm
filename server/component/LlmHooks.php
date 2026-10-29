@@ -15,6 +15,8 @@ require_once __DIR__ . "/../service/LlmMemoryTriggerService.php";
 require_once __DIR__ . "/../service/LlmMemoryRuleService.php";
 require_once __DIR__ . "/../service/LlmMemorySubmissionContextService.php";
 require_once __DIR__ . "/../service/LlmCsrfService.php";
+require_once __DIR__ . "/../service/LlmTransaction.php";
+require_once __DIR__ . "/../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../service/LlmApiKeysConfigService.php";
 
 /**
@@ -1615,6 +1617,10 @@ class LlmHooks extends BaseHooks
                 "inputName" => $inputName,
                 "jsonValue" => $json_value,
                 "disabled" => $disabled,
+                // Each server change is stored right away through the settings endpoint
+                // (same validation, ACL and CSRF as the settings page)
+                "saveUrl" => $disabled ? '' : (string)$this->get_link_url(PAGE_LLM_CONFIG),
+                "csrfToken" => $disabled ? '' : LlmCsrfService::getToken(),
                 "fieldId" => $field['id'] ?? '',
                 "fieldType" => $field['type'] ?? '',
                 "fieldRelation" => $field['relation'] ?? '',
@@ -2012,7 +2018,7 @@ class LlmHooks extends BaseHooks
             $normalized = $trigger_service->normalizeLoginPayload($user_id, $profile, $login_at);
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
-            error_log('LLM Memory: login trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory login trigger', $e);
         }
 
         return $res;
@@ -2065,7 +2071,7 @@ class LlmHooks extends BaseHooks
             unset($profile_snapshot['last_login']);
             $profile['profile_json'] = json_encode($profile_snapshot, JSON_UNESCAPED_SLASHES);
         } catch (Exception $e) {
-            error_log('LLM Memory: failed to build login profile: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory login profile', $e);
         }
 
         return $profile;
@@ -2108,7 +2114,7 @@ class LlmHooks extends BaseHooks
             $normalized = $trigger_service->normalizeProfileNamePayload($user_id, $old_name, $new_name);
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
-            error_log('LLM Memory: profile name change trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory profile name change trigger', $e);
         }
 
         return $res;
@@ -2142,7 +2148,7 @@ class LlmHooks extends BaseHooks
                 $this->queueSubmissionMemoryRules($rule_ids, $context, $res);
             }
         } catch (\Throwable $e) {
-            error_log('LLM Memory: form rule trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory form rule trigger', $e);
         }
 
         return $res;
@@ -2173,7 +2179,7 @@ class LlmHooks extends BaseHooks
                 }
             }
         } catch (\Throwable $e) {
-            error_log('LLM Memory: survey rule trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory survey rule trigger', $e);
         }
 
         return $res;
@@ -2196,23 +2202,23 @@ class LlmHooks extends BaseHooks
         }
 
         try {
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
 
             $cleanup_ok = true;
             $cleanup_ok &= $this->db->remove_by_fk('refresh_events', 'id_users', $uid);
             $cleanup_ok &= $this->db->remove_by_fk('llmConversations', 'id_users', $uid);
 
             if (!$cleanup_ok) {
-                $this->db->rollback();
+                LlmTransaction::rollback($this->db);
                 error_log('LLM cleanup after clean_user_data failed for user ' . $uid);
                 return false;
             }
 
-            $this->db->commit();
+            LlmTransaction::commit($this->db);
             return true;
-        } catch (Exception $e) {
-            $this->db->rollback();
-            error_log('LLM cleanup after clean_user_data exception for user ' . $uid . ': ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            LlmTransaction::rollback($this->db);
+            LlmErrorReporter::log('Cleanup after clean_user_data for user ' . $uid, $e);
             return false;
         }
     }

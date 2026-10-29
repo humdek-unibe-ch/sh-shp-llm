@@ -76,6 +76,7 @@ foreach (array(
     'component/sh_module_llm/Sh_module_llmController.php',
     'component/sh_module_llm/Sh_module_llmModel.php',
     'service/LlmCsrfService.php',
+    'service/LlmErrorReporter.php',
     'service/LlmSecretService.php',
     'service/LlmSettingsValidator.php',
     'service/LlmApiKeysConfigService.php',
@@ -163,6 +164,9 @@ class LlmService
 
     public function getAvailableModels()
     {
+        if (!empty($GLOBALS['T']['models_fail'])) {
+            throw $GLOBALS['T']['models_fail'];
+        }
         return array();
     }
 }
@@ -204,6 +208,17 @@ class FakeDb
     /** @var array page field name => content (what get_page_fields returns) */
     public $fields = array();
     public $writes = 0;
+    /** @var string|null Every read whose SQL contains this fails ... */
+    public $fail_on = null;
+    /** @var Throwable|null ... with this */
+    public $fail_with = null;
+
+    private function maybeFail($sql)
+    {
+        if ($this->fail_with !== null && $this->fail_on !== null && strpos($sql, $this->fail_on) !== false) {
+            throw $this->fail_with;
+        }
+    }
     private $ids = array(
         'llm_api_keys' => 101, 'llm_default_model' => 102, 'llm_temperature' => 103,
         'llm_max_tokens' => 104, 'llm_reasoning_effort' => 105, 'llm_timeout' => 106,
@@ -217,6 +232,7 @@ class FakeDb
 
     public function query_db_first($sql, $params = array())
     {
+        $this->maybeFail($sql);
         if (strpos($sql, 'CALL get_page_fields') === 0) {
             return $this->fields;
         }
@@ -510,6 +526,51 @@ check('protect_keys again converts nothing', $status === 200 && $data['converted
 $s->acl->deny = array('update');
 list($status) = request($s, 'protect_keys', 'POST', array());
 check('protect_keys needs the update ACL (403)', $status === 403);
+
+/* =========================================================================
+ * Failures: logged, never shown
+ *
+ * An unexpected failure (a database error can quote stored values, any other
+ * exception can name paths) is answered with a generic message; the details
+ * go to the server log only.
+ * ========================================================================= */
+
+$log_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'llm_settings_controller_test.log';
+$secret = 'SECRET-SETTING-9913';
+$scenarios = array(
+    'get_config' => array('GET', null, 'CALL get_page_fields', 'Settings load'),
+    'save_config' => array('POST', array('fields' => array('llm_temperature' => '0.5')), 'SELECT id FROM fields WHERE name', 'Settings save'),
+    'models' => array('GET', null, null, 'Settings model list'),
+);
+foreach ($scenarios as $action => $spec) {
+    list($method, $body, $needle, $context) = $spec;
+    $failures = array(
+        'driver' => new PDOException("SQLSTATE[HY000]: General error: 1366 Incorrect value '$secret'"),
+        'plain' => new RuntimeException("cannot read D:\\private\\keys.php ($secret)"),
+    );
+    foreach ($failures as $kind => $failure) {
+        $s = newServices($baseFields);
+        if ($needle !== null) {
+            $s->db->fail_on = $needle;
+            $s->db->fail_with = $failure;
+        } else {
+            $GLOBALS['T']['models_fail'] = $failure;
+        }
+        file_put_contents($log_file, '');
+        list($status, $data) = request($s, $action, $method, $body);
+        $logged = (string)file_get_contents($log_file);
+        $json = json_encode($data);
+
+        check("$action, $kind failure: 500 with the generic message", $status === 500 && $data['error'] === LlmErrorReporter::GENERIC_MESSAGE);
+        check("$action, $kind failure: nothing of the exception reaches the client",
+            strpos($json, $secret) === false && stripos($json, 'keys.php') === false && stripos($json, 'sqlstate') === false);
+        check("$action, $kind failure: logged with its context",
+            strpos($logged, "$context failed") !== false && strpos($logged, get_class($failure)) !== false);
+        check("$action, $kind failure: " . ($kind === 'driver' ? 'the driver message is not logged (it can quote stored values)' : 'the message is logged'),
+            $kind === 'driver' ? strpos($logged, $secret) === false : strpos($logged, $secret) !== false);
+    }
+}
+$GLOBALS['T']['models_fail'] = null;
 
 masterOff();
 echo "\n$total checks, $failed failed\n";

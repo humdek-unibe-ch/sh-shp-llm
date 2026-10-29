@@ -8,6 +8,10 @@
  * replaces it, and "Remove the stored key" clears it. The server matches the
  * saved list to the stored one by `id`.
  *
+ * Every add / edit / delete is stored right away through `onSave` (no
+ * "Save Changes" needed); a rejected save keeps the form open with the
+ * server's message.
+ *
  * @module components/settings/ApiKeysSection
  */
 import React, { useState, useMemo } from 'react';
@@ -44,7 +48,8 @@ interface FieldDef {
 interface Props {
   field?: FieldDef;
   value: string;
-  onChange: (value: string) => void;
+  /** Store the list (JSON); resolves with an error message, or null when stored. */
+  onSave: (value: string) => Promise<string | null>;
   disabled?: boolean;
   /** Encrypt the keys that are still stored as plain text. */
   onProtectKeys?: () => void;
@@ -53,8 +58,6 @@ interface Props {
 
 /** Text shown for the key of a server. */
 function describeKey(entry: ServerEntry): string {
-  if (entry.api_key) return 'New key (saved with the settings)';
-  if (entry.clear_key) return 'Key will be removed';
   if (!entry.has_key) return 'No key';
   const label = entry.key_source === 'env'
     ? `Environment variable ${entry.key_hint || ''}`
@@ -80,10 +83,12 @@ function baseUrlError(value: string): string | null {
 }
 
 /** ApiKeysSection component. */
-export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabled, onProtectKeys, protecting }) => {
+export const ApiKeysSection: React.FC<Props> = ({ field, value, onSave, disabled, onProtectKeys, protecting }) => {
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [formData, setFormData] = useState<Partial<ServerEntry>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const servers: ServerEntry[] = useMemo(() => {
     try {
@@ -96,13 +101,20 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
   const secrets = field?.meta;
   const hasStoredKey = editIndex !== null && editIndex >= 0 && !!servers[editIndex]?.has_key;
 
-  const updateServers = (newServers: ServerEntry[]) => {
-    onChange(JSON.stringify(newServers));
+  /** Store the list; resolves with an error message, or null when stored. */
+  const storeServers = async (newServers: ServerEntry[]): Promise<string | null> => {
+    setSaving(true);
+    try {
+      return await onSave(JSON.stringify(newServers));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const startAdd = () => {
     setFormData({ name: '', base_url: '', api_key: '' });
     setFormError(null);
+    setDeleteError(null);
     setEditIndex(-1);
   };
 
@@ -110,6 +122,7 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
     // The key field always starts empty: the stored key is not known here.
     setFormData({ ...servers[idx], api_key: '', clear_key: false });
     setFormError(null);
+    setDeleteError(null);
     setEditIndex(idx);
   };
 
@@ -119,7 +132,7 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
     setFormError(null);
   };
 
-  const saveEntry = () => {
+  const saveEntry = async () => {
     const name = formData.name?.trim() || '';
     const baseUrl = formData.base_url?.trim() || '';
     if (!name || !baseUrl) return;
@@ -132,7 +145,7 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
 
     const previous = editIndex !== null && editIndex >= 0 ? servers[editIndex] : undefined;
     const clear = !!formData.clear_key;
-    const typed = formData.api_key?.trim() || (clear ? '' : previous?.api_key || '');
+    const typed = formData.api_key?.trim() || '';
     const entry: ServerEntry = {
       id: previous?.id,
       name,
@@ -151,14 +164,20 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
     } else if (editIndex !== null) {
       updated[editIndex] = entry;
     }
-    updateServers(updated);
+    const error = await storeServers(updated);
+    if (error) {
+      // Keep the form (and what was typed) open so it can be corrected
+      setFormError(error);
+      return;
+    }
     cancelEdit();
   };
 
-  const deleteEntry = (idx: number) => {
+  const deleteEntry = async (idx: number) => {
     if (!window.confirm('Remove this server configuration?')) return;
-    const updated = servers.filter((_, i) => i !== idx);
-    updateServers(updated);
+    setDeleteError(null);
+    const error = await storeServers(servers.filter((_, i) => i !== idx));
+    if (error) setDeleteError(error);
   };
 
   return (
@@ -198,6 +217,8 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
           </div>
         )}
 
+        {deleteError && <div className="alert alert-danger small py-2" style={{ whiteSpace: 'pre-line' }}>{deleteError}</div>}
+
         {servers.length === 0 && editIndex === null && (
           <p className="text-muted small mb-0">
             No servers configured.{!disabled && ' Click "Add Server" to add your first LLM endpoint.'}
@@ -217,7 +238,7 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
                   <button className="btn btn-sm btn-outline-secondary" onClick={() => startEdit(idx)} title="Edit">
                     <i className="fa fa-edit"></i>
                   </button>
-                  <button className="btn btn-sm btn-outline-danger" onClick={() => deleteEntry(idx)} title="Delete">
+                  <button className="btn btn-sm btn-outline-danger" onClick={() => deleteEntry(idx)} title="Delete" disabled={saving}>
                     <i className="fa fa-trash"></i>
                   </button>
                 </div>
@@ -229,7 +250,7 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
         {editIndex !== null && (
           <div className="border rounded p-3 mt-2 bg-white">
             <h6 className="mb-3">{editIndex === -1 ? 'Add Server' : 'Edit Server'}</h6>
-            {formError && <div className="alert alert-danger small py-2">{formError}</div>}
+            {formError && <div className="alert alert-danger small py-2" style={{ whiteSpace: 'pre-line' }}>{formError}</div>}
             <div className="form-group">
               <label className="small font-weight-bold">Server Name</label>
               <input
@@ -284,9 +305,9 @@ export const ApiKeysSection: React.FC<Props> = ({ field, value, onChange, disabl
               <button
                 className="btn btn-sm btn-primary"
                 onClick={saveEntry}
-                disabled={!formData.name?.trim() || !formData.base_url?.trim()}
+                disabled={saving || !formData.name?.trim() || !formData.base_url?.trim()}
               >
-                Save
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

@@ -29,6 +29,7 @@ if (!is_file($core_hooks)) {
 foreach (array(
     'RELATION_PAGE_FIELD' => 'page_field',
     'RELATION_SECTION_FIELD' => 'section_field',
+    'PAGE_LLM_CONFIG' => 'sh_module_llm',
 ) as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
@@ -84,6 +85,8 @@ foreach (array(
     'component/LlmHooks.php',
     'component/tpl_api_keys_manager.php',
     'service/LlmCsrfService.php',
+    'service/LlmTransaction.php',
+    'service/LlmErrorReporter.php',
     'service/LlmSecretService.php',
     'service/LlmSettingsValidator.php',
     'service/LlmApiKeysConfigService.php',
@@ -104,6 +107,11 @@ abstract class BaseModel
     {
         $this->services = $services;
         $this->db = $services->get_db();
+    }
+
+    public function get_link_url($key, $params = array())
+    {
+        return '/' . $key;
     }
 }
 PHP
@@ -302,6 +310,14 @@ $html = ob_get_clean();
 check('the PHP template shows the hint, never the key', strpos($html, 'Key: ' . "\u{2026}cdef") !== false && strpos($html, 'No key') !== false
     && strpos($html, $KEY) === false && strpos($html, 'enc:v1:') === false);
 check('the template escapes the JSON and carries no api_key property', strpos($html, '&quot;base_url&quot;') !== false && strpos($html, '&quot;api_key&quot;') === false);
+check('the edit editor saves each change right away (settings endpoint + CSRF token)', $fields['saveUrl'] === '/' . PAGE_LLM_CONFIG
+    && $fields['csrfToken'] !== '' && strpos($html, 'data-save-url="/' . PAGE_LLM_CONFIG . '"') !== false
+    && strpos($html, 'data-csrf-token="' . $fields['csrfToken'] . '"') !== false);
+
+$hooks->outputFieldLlmApiKeysView(array('field' => $field, 'hookedClassInstance' => new FakeCmsView(), 'methodName' => 'create_field_form_item'));
+$viewTemplate = end(BaseStyleComponent::$created);
+check('the read-only editor gets no save URL and no CSRF token', $viewTemplate[1]['items']['saveUrl'] === ''
+    && $viewTemplate[1]['items']['csrfToken'] === '');
 
 /* =========================================================================
  * Saving the CMS page

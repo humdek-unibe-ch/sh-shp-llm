@@ -13,10 +13,15 @@ import './components/styles/apikeys/LlmApiKeys.css';
  * list with add / edit / delete capabilities.
  *
  * Stored keys never reach the browser: the server sends every server with
- * `has_key` / `key_hint` / `key_source` / `key_readable` only. A key exists
- * in the textarea JSON just from the moment the administrator types it until
- * the CMS form is saved. On save the server matches entries by `id`: an entry
- * without a typed `api_key` keeps its stored key, `clear_key` removes it.
+ * `has_key` / `key_hint` / `key_source` / `key_readable` only. On save the
+ * server matches entries by `id`: an entry without a typed `api_key` keeps its
+ * stored key, `clear_key` removes it.
+ *
+ * In edit mode the container carries `data-save-url` and `data-csrf-token`:
+ * every add / edit / delete is then stored right away through the settings
+ * endpoint (`save_config`), and the textarea is refreshed with the stored,
+ * key-less list - a later CMS page save keeps the keys. Without a save URL
+ * the change only lands in the textarea and is stored with the CMS form.
  */
 
 interface ServerEntry {
@@ -69,11 +74,47 @@ function initApiKeysManager(container: HTMLElement): void {
   if (!textarea || !listEl) return;
 
   const isDisabled = container.dataset.disabled === '1';
+  const saveUrl = container.dataset.saveUrl || '';
+  const csrfToken = container.dataset.csrfToken || '';
 
   /** Fetch or retrieve get data data. */
   function getData(): ServerEntry[] {
     try { return JSON.parse(textarea!.value) || []; }
     catch { return []; }
+  }
+
+  /**
+   * Store the list. With a save URL it is saved right away; resolves with an
+   * error message, or null on success.
+   */
+  async function persist(data: ServerEntry[]): Promise<string | null> {
+    if (!saveUrl) {
+      setData(data);
+      return null;
+    }
+    try {
+      const url = new URL(saveUrl, window.location.href);
+      url.searchParams.set('action', 'save_config');
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+        body: JSON.stringify({ fields: { llm_api_keys: JSON.stringify(data) } }),
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json && json.success && Array.isArray(json.api_keys)) {
+        // The stored state, without keys: nothing is left for the CMS form to save
+        textarea!.value = JSON.stringify(json.api_keys);
+        render();
+        return null;
+      }
+      const fieldErrors = json && json.errors && json.errors.llm_api_keys;
+      if (Array.isArray(fieldErrors) && fieldErrors.length > 0) return fieldErrors.join('\n');
+      if (json && typeof json.error === 'string') return json.error;
+      return 'The servers could not be saved (HTTP ' + res.status + ').';
+    } catch {
+      return 'The servers could not be saved. Check the connection and try again.';
+    }
   }
 
   /** setData function. */
@@ -157,7 +198,7 @@ function initApiKeysManager(container: HTMLElement): void {
   }
 
   /** showForm function. */
-  function showForm(entry: Partial<ServerEntry>, onSave: (e: ServerEntry) => void): void {
+  function showForm(entry: Partial<ServerEntry>, onSave: (e: ServerEntry) => Promise<string | null>): void {
     const overlay = document.createElement('div');
     overlay.className = 'llm-apk-card llm-apk-form';
 
@@ -216,6 +257,11 @@ function initApiKeysManager(container: HTMLElement): void {
       overlay.appendChild(clearGroup);
     }
 
+    const errorBox = document.createElement('div');
+    errorBox.className = 'alert alert-danger py-1 px-2 mb-2 d-none';
+    errorBox.style.whiteSpace = 'pre-line';
+    overlay.appendChild(errorBox);
+
     const btnRow = document.createElement('div');
     btnRow.className = 'd-flex justify-content-end mt-2';
 
@@ -223,7 +269,7 @@ function initApiKeysManager(container: HTMLElement): void {
     saveBtn.type = 'button';
     saveBtn.className = 'btn btn-sm btn-primary mr-2';
     saveBtn.textContent = 'Save';
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
       const n = (overlay.querySelector<HTMLInputElement>('.llm-f-name')!).value.trim();
       const u = (overlay.querySelector<HTMLInputElement>('.llm-f-url')!).value.trim();
       const k = (overlay.querySelector<HTMLInputElement>('.llm-f-key')!).value.trim();
@@ -234,7 +280,9 @@ function initApiKeysManager(container: HTMLElement): void {
       const clear = !!clearBox && clearBox.checked;
       // Keep a key typed earlier in this session when the field stays empty.
       const typed = k || (clear ? '' : entry.api_key || '');
-      onSave({
+      saveBtn.disabled = true;
+      errorBox.classList.add('d-none');
+      const error = await onSave({
         id: entry.id,
         name: n,
         base_url: u,
@@ -245,6 +293,13 @@ function initApiKeysManager(container: HTMLElement): void {
         api_key: typed || undefined,
         clear_key: clear && !typed ? true : undefined,
       });
+      saveBtn.disabled = false;
+      if (error) {
+        // Keep the form (and what was typed) open so it can be corrected
+        errorBox.textContent = error;
+        errorBox.classList.remove('d-none');
+        return;
+      }
       overlay.remove();
     });
     btnRow.appendChild(saveBtn);
@@ -267,16 +322,17 @@ function initApiKeysManager(container: HTMLElement): void {
     listEl!.querySelectorAll('.llm-apk-form').forEach(f => f.remove());
     showForm(data[idx], updated => {
       data[idx] = updated;
-      setData(data);
+      return persist(data);
     });
   }
 
   /** deleteEntry function. */
   function deleteEntry(idx: number): void {
-    const doDelete = () => {
+    const doDelete = async () => {
       const data = getData();
       data.splice(idx, 1);
-      setData(data);
+      const error = await persist(data);
+      if (error) alert(error);
     };
 
     if (typeof (window as any).$.confirm === 'function') {
@@ -303,7 +359,7 @@ function initApiKeysManager(container: HTMLElement): void {
       showForm({}, entry => {
         const data = getData();
         data.push(entry);
-        setData(data);
+        return persist(data);
       });
     });
   }

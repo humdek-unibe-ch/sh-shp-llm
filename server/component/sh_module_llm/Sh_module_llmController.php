@@ -9,6 +9,7 @@ require_once __DIR__ . "/../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../service/LlmService.php";
 require_once __DIR__ . "/../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../service/LlmSecretService.php";
+require_once __DIR__ . "/../../service/LlmErrorReporter.php";
 
 /**
  * Controller for the LLM Settings module.
@@ -119,7 +120,7 @@ class Sh_module_llmController extends BaseController
                 ],
             ]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendJsonResponse(['error' => LlmErrorReporter::report('Settings load', $e)], 500);
         }
     }
 
@@ -187,13 +188,19 @@ class Sh_module_llmController extends BaseController
                 $this->logSettingsChange('LLM settings updated: ' . implode(', ', $saved));
             }
 
-            $this->sendJsonResponse([
+            $response = [
                 'success' => empty($failed),
                 'saved' => $saved,
                 'failed' => $failed,
-            ]);
+            ];
+            // The stored server list as the browser may see it (ids, no keys), so an
+            // editor that saved it can continue from the stored state.
+            if (in_array('llm_api_keys', $saved, true)) {
+                $response['api_keys'] = LlmApiKeysConfigService::toClient($validation['values']['llm_api_keys']);
+            }
+            $this->sendJsonResponse($response);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendJsonResponse(['error' => LlmErrorReporter::report('Settings save', $e)], 500);
         }
     }
 
@@ -215,7 +222,7 @@ class Sh_module_llmController extends BaseController
             }
             $this->sendJsonResponse(['success' => true, 'converted' => $converted]);
         } catch (Exception $e) {
-            error_log('[LLM] Encrypting the stored API keys failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Encrypting the stored API keys', $e);
             $this->sendJsonResponse(['error' => 'The API keys could not be encrypted.'], 500);
         }
     }
@@ -238,7 +245,7 @@ class Sh_module_llmController extends BaseController
                 $details
             );
         } catch (Exception $e) {
-            error_log('[LLM] Settings audit log failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Settings audit log', $e);
         }
     }
 
@@ -250,7 +257,7 @@ class Sh_module_llmController extends BaseController
             $models = $llmService->getAvailableModels();
             $this->sendJsonResponse(['models' => $models]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendJsonResponse(['error' => LlmErrorReporter::report('Settings model list', $e)], 500);
         }
     }
 }

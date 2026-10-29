@@ -98,6 +98,45 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
     setSuccess(null);
   };
 
+  /**
+   * Store the API server list right away (no "Save Changes" needed).
+   * Resolves with an error message, or null once the list is stored.
+   */
+  const saveApiKeys = async (value: string): Promise<string | null> => {
+    // An earlier "saved" notice must not stand next to this save's error
+    setSuccess(null);
+    try {
+      const res = await fetch(window.location.pathname + '?action=save_config', {
+        method: 'POST',
+        headers: postHeaders(),
+        body: JSON.stringify({ fields: { llm_api_keys: value } }),
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.success && Array.isArray(json.api_keys)) {
+        // Show the stored state (ids, key hints, no keys)
+        const stored = JSON.stringify(json.api_keys);
+        setData(prev => prev && {
+          ...prev,
+          settings: Object.fromEntries(Object.entries(prev.settings).map(([key, group]) => [key, {
+            ...group,
+            fields: group.fields.map(f => f.name === 'llm_api_keys' ? { ...f, value: stored } : f),
+          }])),
+        });
+        setDirty(prev => {
+          const { llm_api_keys: _saved, ...rest } = prev;
+          return rest;
+        });
+        setSuccess('API servers saved.');
+        return null;
+      }
+      const fieldErrors = json?.errors?.llm_api_keys;
+      if (Array.isArray(fieldErrors) && fieldErrors.length > 0) return fieldErrors.join('\n');
+      return json?.error || `The API servers could not be saved (HTTP ${res.status}).`;
+    } catch {
+      return 'The API servers could not be saved. Check the connection and try again.';
+    }
+  };
+
   /** "Label: message" lines for the per-field messages of a rejected save. */
   const flattenErrors = (errors: Record<string, string[]>): string[] => {
     const labelOf = (name: string): string => {
@@ -212,7 +251,7 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
       <ApiKeysSection
         field={getField('api', 'llm_api_keys')}
         value={getVal('api', 'llm_api_keys')}
-        onChange={v => handleChange('llm_api_keys', v)}
+        onSave={saveApiKeys}
         disabled={!canUpdate}
         onProtectKeys={handleProtectKeys}
         protecting={protecting}

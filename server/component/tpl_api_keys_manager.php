@@ -8,6 +8,8 @@ $fieldNamePrefix = $fields['fieldNamePrefix'];
 $inputName = $fields['inputName'];
 $jsonValue = $fields['jsonValue'];
 $disabled = $fields['disabled'];
+$saveUrl = $fields['saveUrl'] ?? '';
+$csrfToken = $fields['csrfToken'] ?? '';
 $fieldId = $fields['fieldId'];
 $fieldType = $fields['fieldType'];
 $fieldRelation = $fields['fieldRelation'];
@@ -39,7 +41,9 @@ if (!function_exists('llm_api_key_label')) {
 ?>
 <div id="<?php echo $uid; ?>"
      class="llm-api-keys-manager mt-2"
-     data-disabled="<?php echo $disabled ? '1' : '0'; ?>">
+     data-disabled="<?php echo $disabled ? '1' : '0'; ?>"
+     data-save-url="<?php echo htmlspecialchars((string)$saveUrl, ENT_QUOTES, 'UTF-8'); ?>"
+     data-csrf-token="<?php echo htmlspecialchars((string)$csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
     <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[id]" value="<?php echo htmlspecialchars((string)$fieldId, ENT_QUOTES, 'UTF-8'); ?>">
     <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[type]" value="<?php echo htmlspecialchars((string)$fieldType, ENT_QUOTES, 'UTF-8'); ?>">
     <?php if ($fieldMeta !== null): ?>
