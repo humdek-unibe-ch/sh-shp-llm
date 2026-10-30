@@ -201,7 +201,6 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'progress_bar_label',
                 'progress_complete_message',
                 'progress_show_topics',
-                'enable_danger_detection',
                 'danger_keywords',
                 'danger_notification_emails',
                 'danger_blocked_message',
@@ -412,7 +411,6 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             $snapshot['strict_conversation_mode'] = $this->toBoolString($runtime_values['strict_conversation_mode'] ?? null);
             $snapshot['enable_form_mode'] = $this->toBoolString($runtime_values['enable_form_mode'] ?? null);
             $snapshot['enable_progress_tracking'] = $this->toBoolString($runtime_values['enable_progress_tracking'] ?? null);
-            $snapshot['enable_danger_detection'] = $this->toBoolString($runtime_values['enable_danger_detection'] ?? null);
             $snapshot['danger_keywords'] = $runtime_values['danger_keywords'] ?? '';
             $snapshot['enable_floating_button'] = $this->toBoolString($runtime_values['enable_floating_button'] ?? null);
             $snapshot['enable_media_rendering'] = $this->toBoolString($runtime_values['enable_media_rendering'] ?? null);

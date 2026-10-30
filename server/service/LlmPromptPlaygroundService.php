@@ -15,6 +15,7 @@ require_once __DIR__ . '/LlmPromptResponseRenderService.php';
 require_once __DIR__ . '/LlmPromptRegistryService.php';
 require_once __DIR__ . '/LlmScriptService.php';
 require_once __DIR__ . '/LlmFormInterviewService.php';
+require_once __DIR__ . '/LlmDangerDetectionService.php';
 require_once __DIR__ . '/../component/style/llmFormLogList/LlmFormInterviewPreviewModel.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
@@ -117,11 +118,45 @@ class LlmPromptPlaygroundService extends BaseLlmService
             );
         }
 
-        return array(
+        $result = array(
             'execution_profile' => $profile,
             'comparison_group_id' => $comparison_group_id,
             'runs' => $runs
         );
+        if (in_array($profile, array('chat_runtime', 'form_runtime', 'interview_runtime'), true)) {
+            $result['detected_keywords'] = $this->detectDangerKeywords($runtime_values, $variables, $message_history);
+        }
+        return $result;
+    }
+
+    /**
+     * Danger keywords a participant text in this run would trigger (section value,
+     * else the global LLM settings). Report only: a test run sends no email, writes
+     * no audit log and blocks nothing; the LLM still answers so its own safety
+     * assessment can be checked.
+     *
+     * @param array $runtime_values Runtime values (danger_keywords may override the global list)
+     * @param array $variables Template variables (form / interview test values)
+     * @param array $message_history Conversation history; the last user message is scanned
+     * @return string[] Detected keywords
+     */
+    public function detectDangerKeywords($runtime_values, $variables, $message_history)
+    {
+        $text = '';
+        foreach (array_reverse((array)$message_history) as $message) {
+            if (is_array($message) && ($message['role'] ?? '') === 'user') {
+                $text = (string)($message['content'] ?? '');
+                break;
+            }
+        }
+        foreach ((array)$variables as $value) {
+            $text .= "
+" . (is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : (string)$value);
+        }
+
+        $proxy = new LlmPromptChatRuntimeModel('', $runtime_values, null);
+        $danger = new LlmDangerDetectionService($this->services, $proxy);
+        return $danger->detectKeywords($text);
     }
 
     /**
