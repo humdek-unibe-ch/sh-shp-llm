@@ -9,6 +9,7 @@ require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
+require_once __DIR__ . "/../../../service/LlmDangerDetectionService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
@@ -464,6 +465,13 @@ class LlmFormController extends FormUserInputController
         }
 
         $llm_service = new LlmService($model->get_services());
+        $danger_service = new LlmDangerDetectionService($model->get_services(), $model);
+        $safety_context = $danger_service->getCriticalSafetyContext();
+        if ($safety_context) {
+            $system_prompt .= "
+
+" . $safety_context;
+        }
 
         $messages = [
             ['role' => 'system', 'content' => $system_prompt],
@@ -494,6 +502,31 @@ class LlmFormController extends FormUserInputController
             }
 
             $llm_service->updateRateLimit($user_id, $rate_data, $conversation_id);
+
+            // Every participant text that reaches the LLM is scanned: the user prompt and
+            // the values interpolated into the context (not the author's own context text).
+            $scan_text = $user_prompt;
+            foreach ($filtered_form_data as $value) {
+                $scan_text .= "
+" . (is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : (string)$value);
+            }
+            $detected = $danger_service->detectKeywords($scan_text);
+            if (!empty($detected)) {
+                // A form conversation is not blocked: every submission stands on its own
+                $check = $danger_service->handleDetection($detected, $scan_text, $user_id, null);
+                return [
+                    'success' => true,
+                    'llm_result' => $check['message'],
+                    'llm_meta' => [
+                        'model' => $llm_model,
+                        'timestamp' => date('Y-m-d H:i:s'),
+                        'status' => 'safety_blocked',
+                        'detected_keywords' => $detected,
+                        'language' => $user_language,
+                    ],
+                    'error' => null,
+                ];
+            }
 
             $sent_context = [
                 ['role' => 'system', 'content' => $system_prompt],

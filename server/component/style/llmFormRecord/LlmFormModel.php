@@ -178,6 +178,28 @@ class LlmFormModel extends FormUserInputModel
         return $this->llm_context;
     }
 
+    // ===== Danger Detection (always on; empty section values use the global LLM settings) =====
+
+    /** @return string Section danger keywords (comma-separated); empty uses the global LLM settings. */
+    public function getDangerKeywords()
+    {
+        return $this->get_db_field('danger_keywords', '');
+    }
+
+    /** @return string[] Section alert recipients; empty uses the global LLM settings. */
+    public function getDangerNotificationEmails()
+    {
+        $raw = (string)$this->get_db_field('danger_notification_emails', '');
+        return array_values(array_filter(array_map('trim', preg_split('/[
+;]+/', $raw))));
+    }
+
+    /** @return string Section markdown message shown when danger is detected; empty uses the global LLM settings. */
+    public function getDangerBlockedMessage()
+    {
+        return $this->get_db_field('danger_blocked_message', '');
+    }
+
     /** @return bool Whether the previous LLM result is shown before regeneration. */
     public function isShowPreviousResult()
     {
