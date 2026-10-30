@@ -391,7 +391,7 @@ class LlmChatController extends BaseController
                 $this->sendJsonResponse([
                     'blocked' => true,
                     'type' => 'danger_detected',
-                    'message' => $danger_check['message'] ?? $this->model->getDangerBlockedMessage(),
+                    'message' => $danger_check['message'] ?? $this->danger_detection_service->getBlockedMessage(),
                     'detected_keywords' => $danger_check['detected_keywords'] ?? [],
                     'conversation_id' => $conversation_id,
                 ]);
@@ -471,7 +471,7 @@ class LlmChatController extends BaseController
                 $this->sendJsonResponse([
                     'blocked' => true,
                     'type' => 'danger_detected',
-                    'message' => $danger_check['message'] ?? $this->model->getDangerBlockedMessage(),
+                    'message' => $danger_check['message'] ?? $this->danger_detection_service->getBlockedMessage(),
                     'detected_keywords' => $danger_check['detected_keywords'] ?? [],
                     'conversation_id' => $conversation_id,
                 ]);

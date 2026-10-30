@@ -529,8 +529,7 @@ class LlmFormInterviewService
                         // (SMTP) never runs inside the lock window.
                         LlmTransaction::commit($this->db);
                         $check = $danger->handleDetection($detected, $message, $actor, (int)$conversation['id']);
-                        $safety = isset($check['message']) ? (string)$check['message']
-                            : $model->getDangerBlockedMessage();
+                        $safety = (string)$check['message'];
                         return $this->err('danger_detected', $safety, array(
                             'blocked' => true,
                             'safety_message' => $safety,
@@ -784,7 +783,7 @@ class LlmFormInterviewService
             // message + locked composer. State still carries the validated
             // coach turn that triggered the block.
             if (!empty($state['blocked']) || $critical) {
-                $msg = $model->getDangerBlockedMessage();
+                $msg = (new LlmSafetyConfigService($this->services, $model))->getBlockedMessage();
                 $out = array(
                     'blocked' => true,
                     'safety_message' => $msg,
@@ -1454,10 +1453,9 @@ class LlmFormInterviewService
     private function assertConversationUsable(array $conversation, $model = null)
     {
         if (!empty($conversation['blocked'])) {
-            $msg = 'This conversation is blocked';
-            if ($model !== null && method_exists($model, 'getDangerBlockedMessage')) {
-                $msg = $model->getDangerBlockedMessage();
-            }
+            $msg = $model !== null
+                ? (new LlmSafetyConfigService($this->services, $model))->getBlockedMessage()
+                : 'This conversation is blocked';
             throw new LlmFormInterviewAbort('danger_detected', $msg, array(
                 'blocked' => true,
                 'safety_message' => $msg,

@@ -20,6 +20,8 @@
  * Run: php tests/LlmDangerDetectionServiceTest.php
  */
 
+require_once __DIR__ . '/../server/service/globals.php';
+
 foreach (array(
     'jobTypes' => 'jobTypes',
     'jobTypes_email' => 'email',
@@ -75,6 +77,7 @@ register_shutdown_function(function () use ($root) {
 });
 
 sandbox_write($service_dir . '/LlmDangerDetectionService.php', file_get_contents($real_server . '/service/LlmDangerDetectionService.php'));
+sandbox_write($service_dir . '/LlmSafetyConfigService.php', file_get_contents($real_server . '/service/LlmSafetyConfigService.php'));
 
 sandbox_write($service_dir . '/base/BaseLlmService.php', <<<'PHP'
 <?php
@@ -128,14 +131,8 @@ PHP
 
 class FakeModel
 {
-    public $enabled = true;
     public $keywords = '';
     public $emails = array();
-
-    public function isDangerDetectionEnabled()
-    {
-        return $this->enabled;
-    }
 
     public function getDangerKeywords()
     {
@@ -280,6 +277,34 @@ class FakeResponseService
 
 require_once $service_dir . '/LlmDangerDetectionService.php';
 
+/** The real settings resolver with an empty global settings page: the section values decide. */
+class SectionOnlySafetyConfig extends LlmSafetyConfigService
+{
+    protected function loadGlobalFields()
+    {
+        return array();
+    }
+}
+
+/** No keywords anywhere (not even the built-in defaults). */
+class NoKeywordsSafetyConfig
+{
+    public function getKeywords()
+    {
+        return array();
+    }
+
+    public function getNotificationEmails()
+    {
+        return array('safety@example.org');
+    }
+
+    public function getBlockedMessage()
+    {
+        return 'Please contact a professional.';
+    }
+}
+
 /* =========================================================================
  * Helpers
  * ========================================================================= */
@@ -307,7 +332,7 @@ function make($keywords, $emails = array())
     $model = new FakeModel();
     $model->keywords = $keywords;
     $model->emails = $emails;
-    return array(new LlmDangerDetectionService($services, $model), $services, $model);
+    return array(new LlmDangerDetectionService($services, $model, new SectionOnlySafetyConfig($services, $model)), $services, $model);
 }
 
 function detect($keywords, $message)
@@ -328,8 +353,12 @@ function hits($keywords, $message, $keyword)
 list($service) = make(" TÖTEN, KILL , kill,, Suicide ,kill myself");
 check('keywords are trimmed, lowercased (UTF-8), de-duplicated and re-indexed',
     $service->getKeywords() === array('töten', 'kill', 'suicide', 'kill myself'));
+$services = new FakeServices();
+$service = new LlmDangerDetectionService($services, new FakeModel(), new NoKeywordsSafetyConfig());
+check('no_keywords_anywhere_is_noop', $service->getKeywords() === array() && $service->detectKeywords('kill') === array()
+    && $service->checkMessage('kill', 7, 55)['safe'] === true && $services->scheduler->jobs === array());
 list($service) = make('');
-check('no keywords configured: empty list, nothing detected', $service->getKeywords() === array() && $service->detectKeywords('kill') === array());
+check('an empty section keyword list uses the built-in defaults', in_array('kill myself', $service->getKeywords(), true));
 
 /* =========================================================================
  * Single words: exact, bounded, UTF-8
@@ -387,9 +416,8 @@ check('detectKeywords finds the keyword', $found === array('kill'));
 check('detectKeywords blocks, logs and mails nothing', $services->db->updates === array() && $services->transaction->calls === array()
     && $services->scheduler->jobs === array());
 
-$model->enabled = false;
-check('a disabled section detects nothing', $service->detectKeywords('I will kill it') === array());
-$model->enabled = true;
+list($service) = make('kill myself');
+check('detects_without_enable_flag', $service->detectKeywords('I want to kill myself') === array('kill myself'));
 
 list($service, $services, $model) = make('kill', array('safety@example.org', 'not-an-email', 'second@example.org'));
 $result = $service->checkMessage('I will kill it', 7, 55);
@@ -473,10 +501,7 @@ check('an unassessed turn leaves a trace for admins', count($services->transacti
     && count($GLOBALS['T']['warnings']) === 1);
 check('an unassessed turn neither blocks nor mails', $services->db->updates === array() && $services->scheduler->jobs === array());
 
-list($service, $services, $model) = make('kill', array('safety@example.org'));
-$model->enabled = false;
-$service->processSafetyDetection($response, array(), 55, 7, 31);
-check('with danger detection off an unassessed turn is not logged', $services->transaction->calls === array());
+check('safety_unavailable_logged_always (no switch exists anymore)', !method_exists($service, 'isEnabled'));
 
 $safe = array('assessed' => true, 'is_safe' => true, 'danger_level' => null, 'detected_concerns' => array(),
     'requires_intervention' => false, 'safety_message' => null);
@@ -493,7 +518,7 @@ $response->safety = $critical;
 $service->processSafetyDetection($response, array(), 55, 7, 31);
 check('a critical assessment blocks the conversation', count($services->db->updates) === 1
     && strpos($services->db->updates[0][1]['blocked_reason'], 'CRITICAL') !== false);
-check('a critical assessment is logged and mailed', count($services->transaction->forTable('llm_safety_detection')) === 1
+check('critical_llm_safety_notifies_without_flag: a critical assessment is logged and mailed', count($services->transaction->forTable('llm_safety_detection')) === 1
     && count($services->scheduler->jobs) === 1);
 
 $intervention = array('assessed' => true, 'is_safe' => false, 'danger_level' => 'moderate', 'detected_concerns' => array('distress'),

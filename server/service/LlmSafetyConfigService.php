@@ -99,7 +99,7 @@ class LlmSafetyConfigService extends BaseLlmService
                 [$page['id'], $_SESSION['user_language'] ?? $default_language, $default_language, '', '']
             );
             return is_array($fields) ? $fields : array();
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $this->logError('Failed to read the global danger detection settings', $e);
             return array();
         }

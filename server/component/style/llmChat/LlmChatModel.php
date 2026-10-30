@@ -8,6 +8,7 @@ require_once __DIR__ . "/../../../../../../component/style/StyleModel.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
+require_once __DIR__ . "/../../../service/LlmSafetyConfigService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
@@ -576,14 +577,12 @@ class LlmChatModel extends StyleModel
         ];
     }
 
-    // ===== Danger Detection =====
+    // ===== Danger Detection (always on; empty section values use the global LLM settings) =====
 
-    /** @return bool Whether keyword-based danger/crisis detection is active. */
-    public function isDangerDetectionEnabled() { return $this->get_db_field('enable_danger_detection', '0') === '1'; }
     /** @return string Newline-separated list of danger keywords/phrases. */
     public function getDangerKeywords() { return $this->get_db_field('danger_keywords', ''); }
-    /** @return string Markdown message shown to the user when danger keywords are detected. */
-    public function getDangerBlockedMessage() { return $this->get_db_field('danger_blocked_message', "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you're in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*"); }
+    /** @return string Section markdown message shown when danger is detected; empty uses the global LLM settings. */
+    public function getDangerBlockedMessage() { return $this->get_db_field('danger_blocked_message', ''); }
 
     /**
      * Parse the semicolon/newline-separated list of notification email addresses.
@@ -695,7 +694,7 @@ class LlmChatModel extends StyleModel
             'noVisionSupportText' => $f('no_vision_support_text', 'No vision'),
             'sendMessageTitle' => $f('send_message_title', 'Send message'),
             'removeFileTitle' => $f('remove_file_title', 'Remove file'),
-            'conversationBlockedMessage' => $this->getDangerBlockedMessage(),
+            'conversationBlockedMessage' => (new LlmSafetyConfigService($this->services, $this))->getBlockedMessage(),
             'fileConfig' => [
                 'maxFileSize' => LLM_MAX_FILE_SIZE,
                 'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,

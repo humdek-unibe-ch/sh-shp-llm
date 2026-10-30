@@ -5,12 +5,15 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmSafetyConfigService.php';
 
 /**
  * LLM Danger Detection Service
  *
  * Provides danger word detection functionality for the LLM Chat plugin.
- * This is a critical safety feature that:
+ * This is a critical safety feature that is always on. Keywords, notification
+ * emails and the blocked message come from LlmSafetyConfigService (section value,
+ * else the global LLM settings, else the built-in defaults). It:
  *
  * 1. Scans user messages for dangerous keywords before AI processing
  * 2. Blocks messages containing dangerous content
@@ -34,6 +37,11 @@ class LlmDangerDetectionService extends BaseLlmService
     private $model;
 
     /**
+     * @var LlmSafetyConfigService Resolves keywords, emails and the blocked message
+     */
+    private $safety_config;
+
+    /**
      * @var array Cached parsed keywords
      */
     private $keywords_cache = null;
@@ -43,26 +51,18 @@ class LlmDangerDetectionService extends BaseLlmService
      * Constructor
      *
      * @param object $services SelfHelp services container
-     * @param object $model LlmchatModel instance for configuration access
+     * @param object $model Style model (section id and raw danger fields)
+     * @param object|null $safety_config Settings resolver; defaults to LlmSafetyConfigService for $model
      */
-    public function __construct($services, $model)
+    public function __construct($services, $model, $safety_config = null)
     {
         parent::__construct($services);
         $this->model = $model;
+        $this->safety_config = $safety_config ?: new LlmSafetyConfigService($services, $model);
         $this->prompt_assets = new LlmPromptAssetLoader();
     }
 
     /* Public Methods *********************************************************/
-
-    /**
-     * Check if danger detection is enabled for this section
-     * 
-     * @return bool True if danger detection is enabled
-     */
-    public function isEnabled()
-    {
-        return $this->model->isDangerDetectionEnabled();
-    }
 
     /**
      * Check a message for danger keywords
@@ -101,14 +101,10 @@ class LlmDangerDetectionService extends BaseLlmService
      * decide first and run handleDetection() after releasing it.
      *
      * @param string $message The user message to scan
-     * @return array Detected keywords (empty when safe or when detection is disabled)
+     * @return array Detected keywords (empty when safe or when no keywords exist)
      */
     public function detectKeywords($message)
     {
-        if (!$this->isEnabled()) {
-            return [];
-        }
-
         $keywords = $this->getKeywords();
         if (empty($keywords)) {
             return [];
@@ -145,11 +141,22 @@ class LlmDangerDetectionService extends BaseLlmService
         // Return blocked result
         return [
             'safe' => false,
-            'message' => $this->model->getDangerBlockedMessage(),
+            'message' => $this->safety_config->getBlockedMessage(),
             'detected_keywords' => $detected,
             'notification_sent' => $notification_sent,
             'conversation_blocked' => ($conversation_id !== null)
         ];
+    }
+
+    /**
+     * Markdown message shown to the participant when danger is detected
+     * (section value, else the global LLM settings, else the built-in default).
+     *
+     * @return string Never empty
+     */
+    public function getBlockedMessage()
+    {
+        return $this->safety_config->getBlockedMessage();
     }
 
     /**
@@ -159,14 +166,10 @@ class LlmDangerDetectionService extends BaseLlmService
      * into the LLM's system context. Even if the controller-level check
      * fails, this ensures the LLM will refuse to engage with dangerous content.
      * 
-     * @return string|null The safety instruction, or null if not enabled
+     * @return string|null The safety instruction, or null when no keywords exist
      */
     public function getCriticalSafetyContext()
     {
-        if (!$this->isEnabled()) {
-            return null;
-        }
-
         $keywords = $this->getKeywords();
         if (empty($keywords)) {
             return null;
@@ -189,23 +192,8 @@ class LlmDangerDetectionService extends BaseLlmService
             return $this->keywords_cache;
         }
 
-        $keywords_str = $this->model->getDangerKeywords();
-        if (empty($keywords_str)) {
-            $this->keywords_cache = [];
-            return $this->keywords_cache;
-        }
-
-        // Parse comma-separated keywords, trim whitespace, lowercase (UTF-8 aware, so
-        // non-English keywords such as "töten" match "TÖTEN"), deduplicate
-        $keywords = array_map('trim', explode(',', $keywords_str));
-        $keywords = array_map(function ($keyword) {
-            return mb_strtolower($keyword, 'UTF-8');
-        }, $keywords);
-        $keywords = array_filter($keywords); // Remove empty strings
-        $keywords = array_unique($keywords);
-        $keywords = array_values($keywords); // Re-index
-
-        $this->keywords_cache = $keywords;
+        // Lowercased (UTF-8 aware, so "töten" matches "TÖTEN"), trimmed and deduplicated
+        $this->keywords_cache = $this->safety_config->getKeywords();
         return $this->keywords_cache;
     }
 
@@ -297,9 +285,7 @@ class LlmDangerDetectionService extends BaseLlmService
         if (!$safety['assessed']) {
             // No model-produced assessment for this turn: "unknown", not "safe".
             // Keyword detection (checkMessage) is the only check that ran, so leave a trace.
-            if ($this->isEnabled()) {
-                $this->logSafetyUnavailable($user_id, $conversation_id, $section_id);
-            }
+            $this->logSafetyUnavailable($user_id, $conversation_id, $section_id);
             return;
         }
 
@@ -319,7 +305,7 @@ class LlmDangerDetectionService extends BaseLlmService
             $this->blockConversation($conversation_id, $detected_concerns, $reason);
         }
 
-        $should_notify = ($is_critical || $safety['requires_intervention']) && $this->isEnabled();
+        $should_notify = $is_critical || $safety['requires_intervention'];
         if ($should_notify) {
             $this->sendNotifications(
                 $detected_concerns,
@@ -624,7 +610,7 @@ class LlmDangerDetectionService extends BaseLlmService
      */
     public function sendNotifications($detected_keywords, $message, $user_id, $conversation_id, $section_id)
     {
-        $emails = $this->model->getDangerNotificationEmails();
+        $emails = $this->safety_config->getNotificationEmails();
 
         if (empty($emails)) {
             return false;

@@ -839,13 +839,7 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         return (int)$this->get_section_id();
     }
 
-    // ===== Danger Detection (parity with llmChat) =====
-
-    /** @return bool Whether keyword-based danger/crisis detection is active. */
-    public function isDangerDetectionEnabled()
-    {
-        return $this->get_db_field('enable_danger_detection', '0') === '1';
-    }
+    // ===== Danger Detection (always on; empty section values use the global LLM settings) =====
 
     /** @return string Comma-separated danger keywords/phrases. */
     public function getDangerKeywords()
@@ -854,20 +848,11 @@ class LlmFormLogListModel extends FormUserInputLogListModel
     }
 
     /**
-     * @return string Markdown message shown when danger keywords are detected.
+     * @return string Section markdown message shown when danger is detected; empty uses the global LLM settings.
      */
     public function getDangerBlockedMessage()
     {
-        return $this->get_db_field(
-            'danger_blocked_message',
-            "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n"
-            . "**Please consider reaching out to:**\n"
-            . "- A trusted friend or family member\n"
-            . "- A mental health professional\n"
-            . "- Crisis hotlines in your area\n\n"
-            . "If you're in immediate danger, please contact emergency services.\n\n"
-            . "*Your well-being is important. Take care of yourself.*"
-        );
+        return $this->get_db_field('danger_blocked_message', '');
     }
 
     /**

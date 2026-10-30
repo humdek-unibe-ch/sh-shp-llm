@@ -1171,12 +1171,6 @@ class LlmPromptChatRuntimeModel
         return ($this->runtime_values['enable_form_mode'] ?? '0') === '1';
     }
 
-    /** @return bool Whether danger keyword detection is enabled. */
-    public function isDangerDetectionEnabled()
-    {
-        return ($this->runtime_values['enable_danger_detection'] ?? '0') === '1';
-    }
-
     /** @return string Comma-separated danger keywords, or empty string. */
     public function getDangerKeywords()
     {

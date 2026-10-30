@@ -40,6 +40,10 @@ if (!defined('PF_EMAIL_ACTIVATE_EMAIL_ADDRESS')) define('PF_EMAIL_ACTIVATE_EMAIL
 if (!defined('SELECTED_RECORD_ID')) define('SELECTED_RECORD_ID', 'selected_record_id');
 if (!defined('USER_INPUT_HISTORY_LOG_COL')) define('USER_INPUT_HISTORY_LOG_COL', '_history_log');
 if (!defined('PLUGIN_PATH')) define('PLUGIN_PATH', '/server/plugins');
+// Danger detection built-in defaults (globals.php), used when no section or global value is set
+if (!defined('LLM_DEFAULT_DANGER_KEYWORDS')) define('LLM_DEFAULT_DANGER_KEYWORDS', 'suicide,kill myself');
+if (!defined('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE')) define('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE', 'Please reach out for help.');
+if (!defined('PAGE_LLM_CONFIG')) define('PAGE_LLM_CONFIG', 'sh_module_llm');
 if (!defined('PLUGIN_SERVER_PATH')) define('PLUGIN_SERVER_PATH', dirname(dirname(LLM_PATH)));
 
 require_once LLM_PATH . '/service/LlmFormInterviewService.php';
@@ -1495,11 +1499,16 @@ check('nothing to save: approval passes once something is answered', !empty($pre
 
 class InterviewDangerModel extends InterviewFormModel
 {
-    public function isDangerDetectionEnabled() { return true; }
     public function getDangerKeywords() { return 'harm myself, suicide'; }
     public function getDangerBlockedMessage() { return 'blocked-danger'; }
     public function getDangerNotificationEmails() { return array('admin@example.org'); }
     public function getSectionId() { return $this->get_section_id(); }
+}
+
+/** A section that leaves the blocked message empty: the global / built-in message applies. */
+class InterviewDangerNoMessageModel extends InterviewDangerModel
+{
+    public function getDangerBlockedMessage() { return ''; }
 }
 
 $_SESSION = array('id_user' => 5);
@@ -1531,6 +1540,20 @@ $out_d = $svc_d->turn($model_d, null, $conv_d, $res_d['state']['revision'],
 check('danger pre-scan: a typo of a keyword phrase is caught',
     empty($out_d['ok']) && $out_d['error']['type'] === 'danger_detected');
 check('danger pre-scan: no LLM call was made', $llm_d->api_calls === 0);
+
+list(, , , , , , $svc_m) = env();
+$model_m = new InterviewDangerNoMessageModel();
+$res_m = $svc_m->open($model_m, null, 'tok-m');
+$out_m = $svc_m->turn($model_m, null, $res_m['state']['conversation_id'], $res_m['state']['revision'],
+    'I want to harm myself', array(), 'req-m');
+check('danger pre-scan: an empty section message shows the global / built-in message',
+    empty($out_m['ok']) && $out_m['error']['type'] === 'danger_detected'
+    && ($out_m['safety_message'] ?? $out_m['error']['safety_message'] ?? null) === LLM_DEFAULT_DANGER_BLOCKED_MESSAGE);
+$again_m = $svc_m->turn($model_m, null, $res_m['state']['conversation_id'], $res_m['state']['revision'],
+    'hello again', array(), 'req-m2');
+check('blocked conversation: an empty section message shows the global / built-in message',
+    empty($again_m['ok']) && $again_m['error']['type'] === 'danger_detected'
+    && $again_m['error']['message'] === LLM_DEFAULT_DANGER_BLOCKED_MESSAGE);
 check('danger pre-scan: conversation blocked after the transaction ended',
     count($db_d->updates) === 1 && $db_d->updates[0][0] === 'llmConversations'
     && (int)$db_d->updates[0][1]['blocked'] === 1 && $db_d->updates[0][3] === 0);
