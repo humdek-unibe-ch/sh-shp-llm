@@ -133,7 +133,7 @@ class ModuleLlmAdminConsoleController extends BaseController
      * Return a paginated, filterable list of conversations for admin review.
      *
      * Accepts optional GET parameters: user_id, section_id, script_id, q (search),
-     * date_from, date_to, page, per_page (max 100).
+     * date_from, date_to, blocked (1 = blocked only, 0 = not blocked), page, per_page (max 100).
      */
     private function handleAdminConversations()
     {
@@ -159,6 +159,13 @@ class ModuleLlmAdminConsoleController extends BaseController
         }
         if (!empty($_GET['date_to'])) {
             $filters['date_to'] = $_GET['date_to'];
+        }
+        if (isset($_GET['blocked']) && $_GET['blocked'] !== '') {
+            if ($_GET['blocked'] !== '1' && $_GET['blocked'] !== '0') {
+                $this->sendJsonResponse(['error' => 'Invalid blocked filter'], 400);
+                return;
+            }
+            $filters['blocked'] = $_GET['blocked'] === '1';
         }
         if (!empty($_GET['source_type'])) {
             if (!is_scalar($_GET['source_type'])) {

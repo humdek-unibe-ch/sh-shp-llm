@@ -152,6 +152,11 @@ class LlmAdminService extends LlmService
             $params[] = $filters['date_to'];
         }
 
+        if (isset($filters['blocked'])) {
+            $where[] = "lc.blocked = ?";
+            $params[] = $filters['blocked'] ? 1 : 0;
+        }
+
         if (!empty($filters['source_type']) && is_string($filters['source_type'])) {
             $where[] = "cs.lookup_value = ?";
             $params[] = $filters['source_type'];

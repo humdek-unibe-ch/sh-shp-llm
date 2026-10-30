@@ -811,6 +811,7 @@ export const adminApi = {
     script_id?: string;
     source_type?: string;
     record_id?: string;
+    blocked?: string;
     q?: string;
     date_from?: string;
     date_to?: string;
@@ -823,6 +824,7 @@ export const adminApi = {
     if (params.script_id) cleanParams.script_id = params.script_id;
     if (params.source_type) cleanParams.source_type = params.source_type;
     if (params.record_id) cleanParams.record_id = params.record_id;
+    if (params.blocked) cleanParams.blocked = params.blocked;
     if (params.q) cleanParams.q = params.q;
     if (params.date_from) cleanParams.date_from = params.date_from;
     if (params.date_to) cleanParams.date_to = params.date_to;

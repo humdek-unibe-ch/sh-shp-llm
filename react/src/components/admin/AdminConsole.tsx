@@ -41,6 +41,8 @@ interface AdminFilters {
   scriptId: string;
   sourceType: string;
   recordId: string;
+  /** '' = all, '1' = blocked only, '0' = not blocked */
+  blocked: string;
   query: string;
   dateFrom: string;
   dateTo: string;
@@ -77,6 +79,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     scriptId: '',
     sourceType: '',
     recordId: '',
+    blocked: '',
     query: '',
     dateFrom: getTodayDate(),
     dateTo: getTodayDate()
@@ -250,6 +253,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         script_id: filters.scriptId || undefined,
         source_type: filters.sourceType || undefined,
         record_id: filters.recordId || undefined,
+        blocked: filters.blocked || undefined,
         q: filters.query || undefined,
         date_from: filters.dateFrom || undefined,
         date_to: filters.dateTo || undefined
@@ -316,6 +320,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
       scriptId: '',
       sourceType: '',
       recordId: '',
+      blocked: '',
       query: '',
       dateFrom: getTodayDate(),
       dateTo: getTodayDate()
@@ -480,7 +485,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     return nameParts.length > 0 ? nameParts.join(' ') : `User ${user.id}`;
   };
 
-  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.sourceType || filters.recordId || filters.query;
+  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.sourceType || filters.recordId || filters.blocked || filters.query;
 
   // Prepare options for react-select
   const userOptions = [
@@ -709,6 +714,33 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       onChange={(e) => handleFilterChange('recordId', e.target.value)}
                       className="filter-input"
                     />
+                  </div>
+
+                  {/* Blocked Filter */}
+                  <div className="filter-col filter-col-half">
+                    <Form.Label className="small text-muted mb-1">
+                      <i className="fas fa-ban mr-1"></i>
+                      Blocked
+                    </Form.Label>
+                    <Form.Control
+                      as="select"
+                      value={filters.blocked}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // A user stays locked however old the block is: show blocks from any date
+                        setFilters(prev => value === '1'
+                          ? { ...prev, blocked: value, dateFrom: '', dateTo: '' }
+                          : { ...prev, blocked: value });
+                        setSelectedConversation(null);
+                        setMessages([]);
+                        setCurrentPage(1);
+                      }}
+                      className="filter-input"
+                    >
+                      <option value="">All conversations</option>
+                      <option value="1">Blocked only</option>
+                      <option value="0">Not blocked</option>
+                    </Form.Control>
                   </div>
 
                   {/* Search Filter */}
