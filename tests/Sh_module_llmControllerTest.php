@@ -223,7 +223,18 @@ class FakeDb
         'llm_api_keys' => 101, 'llm_default_model' => 102, 'llm_temperature' => 103,
         'llm_max_tokens' => 104, 'llm_reasoning_effort' => 105, 'llm_timeout' => 106,
         'llm_memory_enabled' => 107, 'llm_memory_storage_mode' => 108,
+        'danger_keywords' => 109, 'danger_notification_emails' => 110, 'danger_blocked_message' => 111,
     );
+    /** @var array field name => [id_languages => content] for translated (per-language) rows */
+    public $translations = array();
+
+    public function fetch_languages()
+    {
+        return array(
+            array('id' => 2, 'locale' => 'de-CH', 'language' => 'Deutsch', 'csv_separator' => ','),
+            array('id' => 3, 'locale' => 'en-GB', 'language' => 'English', 'csv_separator' => ','),
+        );
+    }
 
     public function fetch_page_id_by_keyword($keyword)
     {
@@ -241,6 +252,9 @@ class FakeDb
         }
         if (strpos($sql, 'SELECT id_pages FROM pages_fields_translation') === 0) {
             $name = array_search($params[1], $this->ids);
+            if ((int)$params[2] !== 1) {
+                return isset($this->translations[$name][(int)$params[2]]) ? array('id_pages' => 55) : false;
+            }
             return array_key_exists($name, $this->fields) ? array('id_pages' => 55) : false;
         }
         if (strpos($sql, 'SELECT id_pages FROM pages_fields ') === 0) {
@@ -251,19 +265,35 @@ class FakeDb
 
     public function query_db($sql, $params = array())
     {
+        if (strpos($sql, 'SELECT id_languages, content FROM pages_fields_translation') === 0) {
+            $name = array_search($params[1], $this->ids);
+            $rows = array();
+            foreach ($this->translations[$name] ?? array() as $language => $content) {
+                $rows[] = array('id_languages' => $language, 'content' => $content);
+            }
+            return $rows;
+        }
         return array();
     }
 
     public function execute_update_db($sql, $params = array())
     {
         if (strpos($sql, 'UPDATE pages_fields_translation SET content') === 0) {
-            $this->fields[array_search($params[2], $this->ids)] = $params[0];
-            $this->writes++;
+            $this->store(array_search($params[2], $this->ids), (int)$params[3], $params[0]);
         } elseif (strpos($sql, 'INSERT INTO pages_fields_translation') === 0) {
-            $this->fields[array_search($params[1], $this->ids)] = $params[3];
-            $this->writes++;
+            $this->store(array_search($params[1], $this->ids), (int)$params[2], $params[3]);
         }
         return true;
+    }
+
+    private function store($name, $language, $content)
+    {
+        if ($language === 1) {
+            $this->fields[$name] = $content;
+        } else {
+            $this->translations[$name][$language] = $content;
+        }
+        $this->writes++;
     }
 }
 
@@ -571,6 +601,50 @@ foreach ($scenarios as $action => $spec) {
     }
 }
 $GLOBALS['T']['models_fail'] = null;
+
+// --- Safety (global danger detection) ------------------------------------------
+$s = newServices($baseFields);
+$s->db->translations['danger_blocked_message'] = array(2 => 'Bitte hol dir Hilfe.');
+list($status, $data) = request($s, 'get_config', 'GET');
+$safety = $data['settings']['safety'] ?? null;
+$names = $safety ? array_column($safety['fields'], 'name') : array();
+check('structured_settings_has_safety_group', $status === 200
+    && $names === array('danger_keywords', 'danger_notification_emails', 'danger_blocked_message'));
+$message_field = $safety ? $safety['fields'][2] : array();
+check('structured_settings_has_safety_group: the blocked message lists the system languages and its texts',
+    !empty($message_field['translatable'])
+    && array_column($message_field['languages'] ?? array(), 'id') === array(2, 3)
+    && ($message_field['value'] ?? null) == array(2 => 'Bitte hol dir Hilfe.'));
+
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'save_config', 'POST', array('fields' => array(
+    'danger_keywords' => ' suicide, kill myself ',
+    'danger_notification_emails' => "a@x.ch;b@y.ch",
+)));
+check('saves_safety_fields', $status === 200 && $s->db->fields['danger_keywords'] === 'suicide, kill myself'
+    && $s->db->fields['danger_notification_emails'] === "a@x.ch\nb@y.ch");
+
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'save_config', 'POST', array('fields' => array(
+    'danger_notification_emails' => 'a@x.ch;nope',
+    'llm_timeout' => '40',
+)));
+check('invalid_email_rejects_whole_save', $status === 422 && isset($data['errors']['danger_notification_emails'])
+    && strpos(implode(' ', $data['errors']['danger_notification_emails']), 'nope') !== false && $s->db->writes === 0);
+
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'save_config', 'POST', array('fields' => array(
+    'danger_blocked_message' => array('2' => 'de text', '3' => 'en text'),
+)));
+check('blocked_message_saved_per_language', $status === 200
+    && $s->db->translations['danger_blocked_message'] === array(2 => 'de text', 3 => 'en text')
+    && !array_key_exists('danger_blocked_message', $s->db->fields));
+
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'save_config', 'POST', array('fields' => array(
+    'danger_blocked_message' => array('99' => 'x'),
+)));
+check('unknown_language_rejected', $status === 422 && isset($data['errors']['danger_blocked_message']) && $s->db->writes === 0);
 
 masterOff();
 echo "\n$total checks, $failed failed\n";

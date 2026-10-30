@@ -137,6 +137,10 @@ check('negative temperature is refused', val('llm_temperature', '-0.1', $ctx)['e
 check('text temperature is refused', val('llm_temperature', 'hot', $ctx)['error'] !== null);
 check('exponent temperature is refused', val('llm_temperature', '1e3', $ctx)['error'] !== null);
 check('array temperature is refused', val('llm_temperature', array('1'), $ctx)['error'] !== null);
+check('danger keywords are stored trimmed', val('danger_keywords', ' suicide, kill myself ', $ctx) === array('value' => 'suicide, kill myself', 'error' => null));
+check('notification emails are normalised to one per line', val('danger_notification_emails', " a@x.ch; b@y.ch\n", $ctx) === array('value' => "a@x.ch\nb@y.ch", 'error' => null));
+check('an empty notification list is accepted', val('danger_notification_emails', '', $ctx) === array('value' => '', 'error' => null));
+check('an invalid notification email is refused with its text', strpos((string)val('danger_notification_emails', 'a@x.ch;nope', $ctx)['error'], 'nope') !== false);
 check('max tokens 2048 is accepted', val('llm_max_tokens', '2048', $ctx)['value'] === '2048');
 check('max tokens 0 is refused', val('llm_max_tokens', '0', $ctx)['error'] !== null);
 check('max tokens above the limit is refused', val('llm_max_tokens', '200001', $ctx)['error'] !== null);

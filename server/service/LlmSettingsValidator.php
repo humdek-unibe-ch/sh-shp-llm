@@ -87,6 +87,18 @@ class LlmSettingsValidator
                 return in_array($value, $allowed, true)
                     ? self::ok($value)
                     : self::fail('Unknown storage mode.');
+
+            case 'danger_keywords':
+                return self::ok($value);
+
+            case 'danger_notification_emails':
+                $emails = array_values(array_filter(array_map('trim', preg_split('/[\n;]+/', $value)), 'strlen'));
+                foreach ($emails as $email) {
+                    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                        return self::fail('Not a valid email address: ' . $email);
+                    }
+                }
+                return self::ok(implode("\n", $emails));
         }
 
         return self::fail('Unknown setting.');

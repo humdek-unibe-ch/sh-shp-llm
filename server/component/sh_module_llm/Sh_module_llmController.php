@@ -144,6 +144,7 @@ class Sh_module_llmController extends BaseController
                 'llm_max_tokens', 'llm_reasoning_effort', 'llm_timeout',
                 'llm_memory_enabled',
                 'llm_memory_storage_mode',
+                'danger_keywords', 'danger_notification_emails', 'danger_blocked_message',
             ];
 
             $posted = [];
@@ -169,7 +170,15 @@ class Sh_module_llmController extends BaseController
             $shouldSyncStyleDefaults = false;
 
             foreach ($validation['values'] as $name => $value) {
-                $ok = $this->model->saveSetting($name, $value);
+                if (is_array($value)) {
+                    // Per-language field: one row per language id
+                    $ok = true;
+                    foreach ($value as $languageId => $text) {
+                        $ok = $this->model->saveSetting($name, $text, $languageId) && $ok;
+                    }
+                } else {
+                    $ok = $this->model->saveSetting($name, $value);
+                }
                 if ($ok) {
                     $saved[] = $name;
                     if (in_array($name, $styleDefaultFields, true)) {
