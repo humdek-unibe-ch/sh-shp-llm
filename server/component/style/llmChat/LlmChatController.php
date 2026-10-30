@@ -1202,6 +1202,10 @@ class LlmChatController extends BaseController
                     }
                 }
 
+                if ($this->guardConversationBlocked(null)) {
+                    return;
+                }
+
                 $this->performAutoStartConversation();
             }
 
@@ -1397,17 +1401,24 @@ class LlmChatController extends BaseController
      */
     private function guardConversationBlocked($conversation_id)
     {
-        if (!$conversation_id) {
-            return false;
-        }
+        $user_id = $this->model->getUserId();
         try {
-            $blocked = $this->danger_detection_service->isConversationBlocked(
-                $conversation_id,
-                $this->model->getUserId()
-            );
+            // A detection anywhere locks the user out of every LLM, new conversations included
+            $user_blocked = $this->danger_detection_service->isUserBlocked($user_id);
+            $blocked = !$user_blocked && $conversation_id
+                && $this->danger_detection_service->isConversationBlocked($conversation_id, $user_id);
         } catch (Exception $e) {
             // "Could not check" is not "not blocked": stop before anything reaches the LLM
             $this->sendExceptionResponse($e);
+            return true;
+        }
+        if ($user_blocked) {
+            $this->sendJsonResponse([
+                'blocked' => true,
+                'type' => 'danger_detected',
+                'message' => $this->danger_detection_service->getBlockedMessage(),
+                'error' => 'User blocked'
+            ]);
             return true;
         }
         if ($blocked) {

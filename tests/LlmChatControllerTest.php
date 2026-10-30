@@ -303,6 +303,18 @@ class LlmDangerDetectionService
     {
     }
 
+    /** $GLOBALS['T']['user_blocked']: false | true */
+    public function isUserBlocked($user_id)
+    {
+        $GLOBALS['T']['user_block_checks'][] = $user_id;
+        return $GLOBALS['T']['user_blocked'];
+    }
+
+    public function getBlockedMessage()
+    {
+        return 'Please talk to someone you trust.';
+    }
+
     /** $GLOBALS['T']['blocked']: false | true | 'throw' */
     public function isConversationBlocked($conversation_id, $user_id)
     {
@@ -462,6 +474,8 @@ function run_chat($method, array $fields, array $opts = array())
         'rate_throw' => isset($opts['rate_throw']) ? $opts['rate_throw'] : null,
         'blocked' => isset($opts['blocked']) ? $opts['blocked'] : false,
         'blocked_args' => array(),
+        'user_blocked' => !empty($opts['user_blocked']),
+        'user_block_checks' => array(),
         'updates' => array(),
         'speech_calls' => array(),
         'speech_answer' => isset($opts['speech_answer']) ? $opts['speech_answer'] : array('success' => true, 'text' => 'hi'),
@@ -643,6 +657,19 @@ check('seeding a blocked conversation is answered as blocked', $r['data']['type'
     && $r['events'] === array('get_conversation', 'blocked_check'));
 $r = run_chat('GET', array('action' => 'start_auto_conversation', 'conversation_id' => '5'), array('blocked' => 'throw', 'auto_start' => true));
 check('...and "could not check" stops it too', $r['status'] === 500 && $r['events'] === array('get_conversation', 'blocked_check'));
+
+// User-wide lock: a detection anywhere stops every chat request, new conversations included
+$locked = array('blocked' => false, 'user_blocked' => true);
+$r = run_chat('POST', $msg, $locked);
+check('a locked user is answered with the safety message', $r['status'] === 200 && $r['data']['blocked'] === true
+    && $r['data']['type'] === 'danger_detected' && $r['data']['message'] === 'Please talk to someone you trust.');
+check('...before the rate limit or the model are reached', $r['events'] === array());
+check('...and the lock is looked up for the signed-in participant', $GLOBALS['T']['user_block_checks'] === array(7));
+$r = run_chat('POST', array('action' => 'send_message', 'message' => 'hello'), $locked);
+check('a locked user cannot start a new conversation either', $r['data']['type'] === 'danger_detected' && $r['events'] === array());
+$r = run_chat('GET', array('action' => 'start_auto_conversation'), $locked + array('auto_start' => true));
+check('a locked user gets no auto-started conversation', $r['data']['type'] === 'danger_detected'
+    && !in_array('rate_check', $r['events'], true));
 
 // The single choke point in front of the model checks on its own. The actions above check first, so
 // this only matters when a future caller forgets - the guard must not rest on its callers
