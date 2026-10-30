@@ -32,6 +32,7 @@ foreach (array(
     'TRANSACTION_BY_LLM_PLUGIN' => 'by_llm_plugin',
     'SH_EMAIL' => 'email',
     'PF_EMAIL_ACTIVATE_EMAIL_ADDRESS' => 'email_activate_address',
+    'GUEST_USER_ID' => 1,
 ) as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
@@ -183,6 +184,15 @@ class FakeDb
             throw $this->fail;
         }
         $scoped = strpos($sql, 'id_users = :id_users') !== false;
+        if (!isset($params['id'])) {
+            // User-wide lookup: any blocked conversation of the user
+            foreach ($this->conversations as $row) {
+                if ((int)$row['id_users'] === (int)$params['id_users'] && (int)$row['blocked'] === 1) {
+                    return array('id' => $row['id']);
+                }
+            }
+            return false;
+        }
         foreach ($this->conversations as $row) {
             if ((int)$row['id'] !== (int)$params['id']) {
                 continue;
@@ -589,6 +599,32 @@ check('a database error is not turned into "not blocked"', $result === null && $
 check('a database error is logged', in_array('Failed to check if conversation is blocked', $GLOBALS['T']['errors'], true));
 $services->db->fail = null;
 check('the service works again once the database does', $service->isConversationBlocked(55, 7) === true);
+
+/* =========================================================================
+ * User-wide lock: one blocked conversation locks every LLM for that user
+ * ========================================================================= */
+
+check('a user with a blocked conversation is blocked', $service->isUserBlocked(7) === true);
+check('a user whose conversations are all open is not blocked', $service->isUserBlocked(9) === false);
+$services->db->queries = array();
+check('no acting user: false without a query', $service->isUserBlocked(0) === false && $service->isUserBlocked(null) === false
+    && $services->db->queries === array());
+$services->db->conversations[] = array('id' => 58, 'id_users' => GUEST_USER_ID, 'blocked' => 1);
+check('guests share one account: never locked as a whole, without a query',
+    $service->isUserBlocked(GUEST_USER_ID) === false && $services->db->queries === array());
+$service->isUserBlocked(7);
+check('the user lookup is parameterized', strpos($services->db->queries[0][0], 'id_users = :id_users') !== false
+    && $services->db->queries[0][1] === array('id_users' => 7));
+$services->db->fail = new PDOException('server has gone away');
+$thrown = null;
+try {
+    $service->isUserBlocked(7);
+} catch (Throwable $t) {
+    $thrown = $t;
+}
+check('user lookup: a database error is not turned into "not blocked"', $thrown instanceof PDOException
+    && in_array('Failed to check if user is blocked', $GLOBALS['T']['errors'], true));
+$services->db->fail = null;
 
 echo "\n$total checks, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

@@ -268,6 +268,38 @@ class LlmDangerDetectionService extends BaseLlmService
     }
 
     /**
+     * Check if the user is locked out of every participant-facing LLM.
+     *
+     * A detection blocks the conversation it happened in; any blocked conversation
+     * of the user (chat, interview or form, in any section) locks the user as a
+     * whole until an admin unblocks it. Guests share one account, so for them the
+     * lock stays on the conversation (see isConversationBlocked()). A database
+     * error is logged and thrown, never turned into "not blocked".
+     *
+     * @param int $user_id Acting user
+     * @return bool True if the user has a blocked conversation
+     * @throws Exception When the lookup fails
+     */
+    public function isUserBlocked($user_id)
+    {
+        if (!$user_id || (defined('GUEST_USER_ID') && (int)$user_id === (int)GUEST_USER_ID)) {
+            return false;
+        }
+
+        try {
+            $row = $this->db->query_db_first(
+                'SELECT id FROM llmConversations WHERE id_users = :id_users AND blocked = 1 LIMIT 1',
+                ['id_users' => $user_id]
+            );
+
+            return !empty($row);
+        } catch (Exception $e) {
+            $this->logError('Failed to check if user is blocked', $e);
+            throw $e;
+        }
+    }
+
+    /**
      * Process safety detection from a parsed LLM response.
      *
      * Assesses safety, logs critical detections to the transaction table,
