@@ -10,6 +10,7 @@ require_once __DIR__ . "/../../../service/LlmService.php";
 require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../../../service/LlmDangerDetectionService.php";
+require_once __DIR__ . "/../../../service/LlmResponseService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
@@ -473,10 +474,19 @@ class LlmFormController extends FormUserInputController
 " . $safety_context;
         }
 
-        $messages = [
-            ['role' => 'system', 'content' => $system_prompt],
-            ['role' => 'user', 'content' => $user_prompt],
-        ];
+        // Same structured reply as chat and interview, so the model's own safety
+        // assessment can block, alert and lock like everywhere else.
+        // No model: the form model has no getConfiguredModel() for the metadata fallback.
+        $response_service = new LlmResponseService(null, $model->get_services());
+        $messages = $response_service->buildResponseContext(
+            [
+                ['role' => 'system', 'content' => $system_prompt],
+                ['role' => 'user', 'content' => $user_prompt],
+            ],
+            false,
+            [],
+            ['enabled' => true, 'keywords' => $danger_service->getKeywords()]
+        );
 
         $llm_model = $model->getLlmModel();
         $temperature = $model->getLlmTemperature();
@@ -484,8 +494,27 @@ class LlmFormController extends FormUserInputController
         $reasoning_effort = $model->getLlmReasoningEffort();
         $user_id = $_SESSION['id_user'] ?? null;
         $section_id = $model->get_section_id();
+        $blocked_result = function ($message, $detected = []) use ($llm_model, $user_language) {
+            return [
+                'success' => true,
+                'llm_result' => $message,
+                'llm_meta' => [
+                    'model' => $llm_model,
+                    'timestamp' => date('Y-m-d H:i:s'),
+                    'status' => 'safety_blocked',
+                    'detected_keywords' => $detected,
+                    'language' => $user_language,
+                ],
+                'error' => null,
+            ];
+        };
 
         try {
+            // A detection anywhere (chat, interview, form) locks the user out of every LLM
+            if ($danger_service->isUserBlocked($user_id)) {
+                return $blocked_result($danger_service->getBlockedMessage());
+            }
+
             // Same per-user throttle as the chat endpoints; every LLM call here costs money
             $rate_data = $llm_service->checkRateLimit($user_id);
 
@@ -512,20 +541,9 @@ class LlmFormController extends FormUserInputController
             }
             $detected = $danger_service->detectKeywords($scan_text);
             if (!empty($detected)) {
-                // A form conversation is not blocked: every submission stands on its own
-                $check = $danger_service->handleDetection($detected, $scan_text, $user_id, null);
-                return [
-                    'success' => true,
-                    'llm_result' => $check['message'],
-                    'llm_meta' => [
-                        'model' => $llm_model,
-                        'timestamp' => date('Y-m-d H:i:s'),
-                        'status' => 'safety_blocked',
-                        'detected_keywords' => $detected,
-                        'language' => $user_language,
-                    ],
-                    'error' => null,
-                ];
+                // Blocking the form conversation locks the user like a chat detection does
+                $check = $danger_service->handleDetection($detected, $scan_text, $user_id, $conversation_id);
+                return $blocked_result($check['message'], $detected);
             }
 
             $sent_context = [
@@ -547,22 +565,42 @@ class LlmFormController extends FormUserInputController
                 $conversation_id
             );
 
-            $api_response = $llm_service->callLlmApi(
-                $messages,
-                $llm_model,
-                $temperature,
-                $max_tokens,
-                [
-                    'conversation_id' => $conversation_id,
-                    'sent_context' => $sent_context,
-                    'is_validated' => true,
-                    'reasoning_effort' => $reasoning_effort,
-                ]
-            );
+            $llm_callable = function ($api_messages) use ($llm_service, $llm_model, $temperature, $max_tokens, $conversation_id, $sent_context, $reasoning_effort) {
+                return $llm_service->callLlmApi(
+                    $api_messages,
+                    $llm_model,
+                    $temperature,
+                    $max_tokens,
+                    [
+                        'conversation_id' => $conversation_id,
+                        'sent_context' => $sent_context,
+                        // mark false initially; the final attempt is updated below
+                        'is_validated' => false,
+                        'reasoning_effort' => $reasoning_effort,
+                    ]
+                );
+            };
+            $result = $response_service->callLlmWithSchemaValidation($llm_callable, $messages);
+            $api_response = $result['raw_response'];
+            if (!$api_response) {
+                // Every attempt failed; the technical reason stays in the server log
+                throw new Exception($result['error'] ?? 'LLM API request failed');
+            }
+            if (!empty($api_response['logged_message_id'])) {
+                $llm_service->updateMessage($api_response['logged_message_id'], ['is_validated' => $result['valid'] ? 1 : 0]);
+            }
 
-            // callLlmApi returns a normalized response from the provider:
-            //   'content' => string, 'usage' => [...], 'raw_response' => [...], 'request_payload' => [...]
-            $content = $api_response['content'] ?? '';
+            $parsed = $result['response'];
+            if ($parsed['valid'] && isset($parsed['data'])) {
+                $danger_service->processSafetyDetection($response_service, $parsed['data'], $conversation_id, $user_id, $section_id);
+                $safety = $response_service->assessSafety($parsed['data']);
+                if (in_array($safety['danger_level'], ['critical', 'emergency'], true)) {
+                    return $blocked_result($danger_service->getBlockedMessage(), $safety['detected_concerns']);
+                }
+            }
+
+            // The participant sees the reply's text blocks (or the fallback built from an invalid reply)
+            $content = isset($parsed['data']) ? $response_service->toMarkdown($parsed['data']) : '';
             $tokens_used = $api_response['usage']['total_tokens'] ?? 0;
 
             $meta = [

@@ -202,7 +202,57 @@ class LlmService
         if (!empty($GLOBALS['T']['api_error'])) {
             throw new RuntimeException($GLOBALS['T']['api_error']);
         }
-        return array('content' => 'Great answer', 'usage' => array('total_tokens' => 5));
+        $safety = isset($GLOBALS['T']['llm_safety']) ? $GLOBALS['T']['llm_safety']
+            : array('is_safe' => true, 'danger_level' => null, 'detected_concerns' => array());
+        $reply = array('safety' => $safety, 'content' => array('text_blocks' => array(array('type' => 'text', 'content' => 'Great answer'))));
+        return array('content' => json_encode($reply), 'usage' => array('total_tokens' => 5), 'logged_message_id' => 501);
+    }
+
+    public function updateMessage($message_id, $data)
+    {
+        $GLOBALS['T']['events'][] = 'message_validated:' . $message_id . '=' . $data['is_validated'];
+    }
+}
+PHP
+);
+
+// Structured reply: the real service is tested on its own; this one keeps its contract
+sandbox_write($plugin_server . '/service/LlmResponseService.php', <<<'PHP'
+<?php
+class LlmResponseService
+{
+    public function __construct($model, $services = null)
+    {
+    }
+
+    public function buildResponseContext($existing_context = array(), $include_progress = false, $progress_data = array(), $danger_config = array())
+    {
+        $GLOBALS['T']['danger_config'] = $danger_config;
+        return array_merge(array(array('role' => 'system', 'content' => '[SCHEMA]')), $existing_context);
+    }
+
+    public function callLlmWithSchemaValidation($callable, $api_messages)
+    {
+        try {
+            $response = $callable($api_messages);
+        } catch (Exception $e) {
+            return array('response' => array('valid' => true, 'data' => array()), 'valid' => false,
+                'raw_response' => null, 'error' => $e->getMessage());
+        }
+        $data = json_decode($response['content'], true);
+        return array('response' => array('valid' => true, 'data' => $data), 'valid' => true, 'raw_response' => $response);
+    }
+
+    public function assessSafety($data)
+    {
+        $safety = $data['safety'];
+        return array('assessed' => true, 'is_safe' => $safety['is_safe'], 'danger_level' => $safety['danger_level'],
+            'detected_concerns' => $safety['detected_concerns'], 'requires_intervention' => false, 'safety_message' => null);
+    }
+
+    public function toMarkdown($data)
+    {
+        return isset($data['content']['text_blocks'][0]['content']) ? $data['content']['text_blocks'][0]['content'] : '';
     }
 }
 PHP
@@ -240,6 +290,28 @@ class LlmDangerDetectionService
     public function getCriticalSafetyContext()
     {
         return '[CRITICAL SAFETY INSTRUCTION] kill myself';
+    }
+
+    public function getKeywords()
+    {
+        return array('kill myself', 'töten');
+    }
+
+    public function getBlockedMessage()
+    {
+        return 'Please talk to someone you trust.';
+    }
+
+    public function isUserBlocked($user_id)
+    {
+        $GLOBALS['T']['events'][] = 'user_block_check';
+        return !empty($GLOBALS['T']['user_blocked']);
+    }
+
+    public function processSafetyDetection($response_service, $parsed, $conversation_id, $user_id, $section_id)
+    {
+        $GLOBALS['T']['events'][] = 'llm_safety_processed';
+        $GLOBALS['T']['llm_safety_call'] = array('conversation_id' => $conversation_id, 'user_id' => $user_id, 'section_id' => $section_id);
     }
 }
 PHP
@@ -355,6 +427,10 @@ function run_controller($post, $user_id, $flags = array())
         'scanned' => array(),
         'messages' => array(),
         'danger' => null,
+        'user_blocked' => !empty($flags['user_blocked']),
+        'llm_safety' => isset($flags['llm_safety']) ? $flags['llm_safety'] : null,
+        'llm_safety_call' => null,
+        'danger_config' => null,
     );
     $_POST = $post;
     $_SESSION = $user_id === null ? array() : array('id_user' => $user_id);
@@ -384,6 +460,8 @@ function run_controller($post, $user_id, $flags = array())
         'saved' => $GLOBALS['T']['saved'],
         'messages' => $GLOBALS['T']['messages'],
         'danger' => $GLOBALS['T']['danger'],
+        'llm_safety_call' => $GLOBALS['T']['llm_safety_call'],
+        'danger_config' => $GLOBALS['T']['danger_config'],
     );
 }
 
@@ -485,8 +563,8 @@ check('danger_word_in_user_prompt_skips_llm: meta status safety_blocked with the
     $r['json']['llm_meta']['status'] === 'safety_blocked' && $r['json']['llm_meta']['detected_keywords'] === array('kill myself'));
 check('danger_word_in_user_prompt_skips_llm: detection handled (audit + email) for the acting user',
     had($r, 'danger_handled') && $r['danger']['user_id'] === 42);
-check('danger_word_in_user_prompt_skips_llm: the form conversation is not blocked (no conversation id passed)',
-    $r['danger']['conversation_id'] === null);
+check('danger_word_in_user_prompt_skips_llm: the form conversation is blocked (locks the user everywhere)',
+    $r['danger']['conversation_id'] === 77);
 
 $r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => array('Ich will TÖTEN')), 42);
 check('danger_word_in_interpolated_context_detected: an array value (only in the context) is scanned unescaped',
@@ -495,9 +573,38 @@ check('danger_word_in_interpolated_context_detected: an array value (only in the
 $r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'name' => 'Eve'), 42);
 check('safe_submission_has_safety_block: the LLM is called', had($r, 'llm_call') && !had($r, 'danger_handled'));
 check('safe_submission_has_safety_block: the system prompt carries the critical safety instruction',
-    isset($r['messages'][0]) && $r['messages'][0]['role'] === 'system'
-    && strpos($r['messages'][0]['content'], 'CRITICAL SAFETY INSTRUCTION') !== false
-    && strpos($r['messages'][0]['content'], 'Context for Eve') === 0);
+    isset($r['messages'][1]) && $r['messages'][1]['role'] === 'system'
+    && strpos($r['messages'][1]['content'], 'CRITICAL SAFETY INSTRUCTION') !== false
+    && strpos($r['messages'][1]['content'], 'Context for Eve') === 0);
+check('safe_submission_asks_for_structured_safety: the response schema with the safety keywords comes first',
+    $r['messages'][0]['content'] === '[SCHEMA]' && $r['danger_config']['enabled'] === true
+    && $r['danger_config']['keywords'] === array('kill myself', 'töten'));
+check('safe_submission: the model safety assessment is processed on the form conversation',
+    had($r, 'llm_safety_processed') && $r['llm_safety_call'] === array('conversation_id' => 77, 'user_id' => 42, 'section_id' => 12));
+check('safe_submission: the participant gets the reply text, not the JSON',
+    $r['saved'][0]['data']['llm_result'] === 'Great answer' && $r['json']['llm_meta']['status'] === 'success');
+check('safe_submission: the logged reply is marked validated', had($r, 'message_validated:501=1'));
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'name' => 'Eve'), 42,
+    array('user_blocked' => true));
+check('blocked_user_gets_no_llm: no LLM call and no rate-limit use', !had($r, 'llm_call') && !had($r, 'rate_check'));
+check('blocked_user_gets_no_llm: the blocked message is the feedback',
+    $r['json']['success'] === true && $r['json']['llm_result'] === 'Please talk to someone you trust.'
+    && $r['json']['llm_meta']['status'] === 'safety_blocked');
+
+foreach (array('critical', 'emergency') as $level) {
+    $r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'name' => 'Eve'), 42,
+        array('llm_safety' => array('is_safe' => false, 'danger_level' => $level, 'detected_concerns' => array('self_harm'))));
+    check("llm_$level: the assessment is processed (block, audit, email)", had($r, 'llm_safety_processed'));
+    check("llm_$level: the blocked message replaces the reply",
+        $r['json']['llm_result'] === 'Please talk to someone you trust.' && $r['json']['llm_meta']['status'] === 'safety_blocked'
+        && $r['json']['llm_meta']['detected_keywords'] === array('self_harm'));
+}
+
+$r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'name' => 'Eve'), 42,
+    array('llm_safety' => array('is_safe' => false, 'danger_level' => 'warning', 'detected_concerns' => array('distress'))));
+check('llm_warning: processed, the reply is still shown',
+    had($r, 'llm_safety_processed') && $r['json']['llm_result'] === 'Great answer');
 
 /* =========================================================================
  * Rate limit and error text
