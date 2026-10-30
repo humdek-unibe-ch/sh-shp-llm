@@ -677,8 +677,7 @@ class InterviewFormModel
     public function getUserLanguage() { return $this->language; }
     public function useUserLanguage() { return $this->use_user_language; }
     public function getInterviewApproveLabel() { return 'Save it now'; }
-    // Danger detection (keyword pre-scan) is off for this stub.
-    public function isDangerDetectionEnabled() { return false; }
+    // No section keywords: the keyword pre-scan uses the global / built-in list.
     public function getDangerKeywords() { return ''; }
     public function getDangerBlockedMessage() { return 'blocked'; }
 
