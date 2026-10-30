@@ -419,6 +419,28 @@ check('detectKeywords blocks, logs and mails nothing', $services->db->updates ==
 list($service) = make('kill myself');
 check('detects_without_enable_flag', $service->detectKeywords('I want to kill myself') === array('kill myself'));
 
+/** Form styles (LlmFormModel) only know the core get_section_id(). */
+class FormShapedModel
+{
+    public function get_section_id() { return 44; }
+    public function getDangerKeywords() { return 'kill'; }
+    public function getDangerNotificationEmails() { return array('safety@example.org'); }
+    public function getDangerBlockedMessage() { return 'Form blocked.'; }
+}
+$form_services = new FakeServices();
+$form_model = new FormShapedModel();
+$form_service = new LlmDangerDetectionService($form_services, $form_model, new SectionOnlySafetyConfig($form_services, $form_model));
+$form_result = null;
+try {
+    $form_result = $form_service->handleDetection(array('kill'), 'I will kill it', 7, null);
+} catch (Throwable $t) {
+}
+check('a form model with only get_section_id(): detection is handled (message, audit with its section, email)',
+    is_array($form_result) && $form_result['message'] === 'Form blocked.'
+    && count($form_services->transaction->forTable('llm_danger_detection')) === 1
+    && $form_services->transaction->forTable('llm_danger_detection')[0][4] === 44
+    && count($form_services->scheduler->jobs) === 1);
+
 list($service, $services, $model) = make('kill', array('safety@example.org', 'not-an-email', 'second@example.org'));
 $result = $service->checkMessage('I will kill it', 7, 55);
 check('checkMessage reports the message as unsafe with the blocked text', $result['safe'] === false

@@ -125,7 +125,9 @@ class LlmDangerDetectionService extends BaseLlmService
      */
     public function handleDetection($detected, $message, $user_id, $conversation_id = null)
     {
-        $section_id = $this->model->getSectionId();
+        // Chat and interview models expose getSectionId(), the form styles only the core get_section_id()
+        $section_id = method_exists($this->model, 'getSectionId')
+            ? $this->model->getSectionId() : (int)$this->model->get_section_id();
 
         // Block the conversation if it exists
         if ($conversation_id) {
