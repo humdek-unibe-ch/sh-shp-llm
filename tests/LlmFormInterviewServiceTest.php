@@ -814,6 +814,10 @@ check('updateDraft: non-allowlisted hidden rejected', !$res['ok'] && $res['error
 $llm->scripted[] = valid_interview_response(array('title' => 'From LLM'), 'show_extra');
 $res = $svc->turn($model, null, $st['conversation_id'], 1, 'hi', array(), 'req-1');
 check('turn: ok', !empty($res['ok']));
+$system_text = implode("
+", array_map(function ($m) { return $m['role'] === 'system' ? (string)$m['content'] : ''; }, (array)$llm->last_messages));
+check('interview_context_contains_safety_block_without_flag (built-in keywords, no section value)',
+    strpos($system_text, 'CRITICAL SAFETY DETECTION') !== false && strpos($system_text, 'kill myself') !== false);
 check('turn: llm patch merged', $res['state']['draft']['title'] === 'From LLM');
 check('turn: revision bumped twice (pre-merge + merge)', $res['state']['revision'] === 3);
 check('turn: active field applied', $res['state']['progress']['active'] !== null);

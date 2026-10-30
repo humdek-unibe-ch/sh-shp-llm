@@ -183,7 +183,8 @@ class LlmChatController extends BaseController
             $floating_mode_service,
             $strict_conversation_service,
             $api_formatter_service,
-            $this->progress_tracking_service  // Pass progress tracking service for context building
+            $this->progress_tracking_service,  // Pass progress tracking service for context building
+            $services
         );
 
         // Speech-to-text service (standalone, separate from LLM chat)

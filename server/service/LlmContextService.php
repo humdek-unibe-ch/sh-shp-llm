@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/LlmResponseService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmSafetyConfigService.php';
 
 /**
  * LLM Context Service
@@ -28,6 +29,7 @@ class LlmContextService
     private $strict_conversation_service;
     private $api_formatter_service;
     private $response_service;
+    private $services;
     private $progress_tracking_service;
 
     /**
@@ -39,6 +41,7 @@ class LlmContextService
      * @param LlmStrictConversationService $strict_conversation_service Strict mode service
      * @param LlmApiFormatterService $api_formatter_service API formatter service
      * @param LlmProgressTrackingService $progress_tracking_service Progress tracking service (optional)
+     * @param object|null $services SelfHelp services container (reads the global danger detection settings)
      */
     public function __construct(
         $model,
@@ -46,8 +49,10 @@ class LlmContextService
         $floating_mode_service,
         $strict_conversation_service,
         $api_formatter_service,
-        $progress_tracking_service = null
+        $progress_tracking_service = null,
+        $services = null
     ) {
+        $this->services = $services;
         $this->model = $model;
         $this->form_mode_service = $form_mode_service;
         $this->floating_mode_service = $floating_mode_service;
@@ -138,37 +143,15 @@ class LlmContextService
     /**
      * Build danger detection configuration
      *
-     * Returns the danger detection settings from the model configuration
-     * to be passed to the response service for LLM-based safety detection.
+     * Danger detection is always on: the keywords come from the section, else the
+     * global LLM settings, else the built-in defaults (LlmSafetyConfigService).
      *
      * @return array Danger config with 'enabled' and 'keywords' keys
      */
     private function buildDangerConfig()
     {
-        // Check if model has danger detection methods
-        if (!method_exists($this->model, 'isDangerDetectionEnabled')) {
-            return ['enabled' => false, 'keywords' => []];
-        }
-
-        $enabled = $this->model->isDangerDetectionEnabled();
-        if (!$enabled) {
-            return ['enabled' => false, 'keywords' => []];
-        }
-
-        $keywords_str = $this->model->getDangerKeywords();
-        if (empty($keywords_str)) {
-            return ['enabled' => true, 'keywords' => []];
-        }
-
-        // Parse comma-separated keywords
-        $keywords = array_map('trim', explode(',', $keywords_str));
-        $keywords = array_filter($keywords);
-        $keywords = array_unique($keywords);
-
-        return [
-            'enabled' => true,
-            'keywords' => array_values($keywords)
-        ];
+        $safety_config = new LlmSafetyConfigService($this->services, $this->model);
+        return ['enabled' => true, 'keywords' => $safety_config->getKeywords()];
     }
 
     /**

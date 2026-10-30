@@ -428,7 +428,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
             $floating_mode_service,
             $strict_conversation_service,
             $form_mode_service,
-            null
+            null,
+            $this->services
         );
 
         $history = $this->normalizeMessageHistory($message_history);

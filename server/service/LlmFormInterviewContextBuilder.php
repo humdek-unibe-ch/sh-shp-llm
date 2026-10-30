@@ -8,6 +8,7 @@ require_once __DIR__ . '/LlmFormInterviewProjector.php';
 require_once __DIR__ . '/LlmResponseService.php';
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmSafetyConfigService.php';
 
 /**
  * Builds the LLM context of one interview turn (v1.6.0): the frozen
@@ -179,26 +180,16 @@ class LlmFormInterviewContextBuilder
     }
 
     /**
-     * Danger config for schema/safety instructions (mirrors LlmContextService).
+     * Danger config for schema/safety instructions (mirrors LlmContextService):
+     * always enabled, keywords from the section, else the global LLM settings.
      *
      * @param object $model Interview model
      * @return array{enabled:bool,keywords:string[]}
      */
     private function buildDangerConfig($model)
     {
-        if (!method_exists($model, 'isDangerDetectionEnabled')
-            || !$model->isDangerDetectionEnabled()
-        ) {
-            return array('enabled' => false, 'keywords' => array());
-        }
-        $keywords_str = method_exists($model, 'getDangerKeywords')
-            ? $model->getDangerKeywords() : '';
-        if ($keywords_str === '' || $keywords_str === null) {
-            return array('enabled' => true, 'keywords' => array());
-        }
-        $keywords = array_map('trim', explode(',', (string)$keywords_str));
-        $keywords = array_values(array_unique(array_filter($keywords)));
-        return array('enabled' => true, 'keywords' => $keywords);
+        $safety_config = new LlmSafetyConfigService($this->services, $model);
+        return array('enabled' => true, 'keywords' => $safety_config->getKeywords());
     }
 
     /**
