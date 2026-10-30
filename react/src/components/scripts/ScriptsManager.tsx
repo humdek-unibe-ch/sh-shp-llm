@@ -135,7 +135,7 @@ function getEmptyForm(): ScriptFormState {
 
 /** ScriptsManager component. */
 export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) => {
-  const api = useRef(createScriptsApi());
+  const api = useRef(createScriptsApi(config.csrfToken));
   const promptApi = useMemo(
     () => createPromptLabApi(config.promptLabEndpoint || window.location.pathname, config.csrfToken),
     [config.csrfToken, config.promptLabEndpoint],
@@ -214,6 +214,9 @@ export const ScriptsManager: React.FC<{ config: ScriptsConfig }> = ({ config }) 
     loadScripts();
   }, [loadScripts]);
 
+  // Scripts are language-agnostic: always language 1 (SelfHelp default /
+  // neutral slot), matching PHP syncScriptSave. Never use the CMS UI
+  // language here - that stranded versions when save and bootstrap disagreed.
   const promptDescriptor = useMemo<PromptDescriptor>(() => ({
     ownerType: 'llm_script',
     ownerId: selectedScript?.id || 0,

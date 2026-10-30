@@ -2,10 +2,316 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.6.0]
+
+The main features of this release are **LLM form interviews**, where a coach
+fills in a form in a chat and the record is saved only after the participant
+approves it, and a **security overhaul** of the whole plugin. It also brings
+chat improvements and token reporting.
+
+### Upgrade notes
+
+- Requires **SelfHelp core v7.12.0**. Apply the core migration
+  `44_update_v7.11.0_v7.12.0.sql` first.
+- Run `server/db/v1.6.0.sql` once, then clear the SelfHelp cache
+  (**Admin > Cache > Clear all**). The migration can be run again safely.
+- **API key encryption (recommended):** set `LLM_SECRET_KEY` (at least 16
+  characters) as an environment variable or in `globals_untracked.php`. Then
+  click **Encrypt stored keys now** on the LLM settings page. Existing plain
+  text keys keep working until then. Changing the secret later makes the
+  encrypted keys unreadable. See
+  [README > API Key Protection](README.md#api-key-protection).
+- **Admin console permissions:** the migration grants `update` and `delete`
+  on `moduleLlmAdminConsole` to the admin group. Grant them to other
+  moderator groups in the CMS.
+- **Cross-origin clients:** the chat and form endpoints trust only the exact
+  origins listed in core's `CORS_ALLOWED_ORIGINS` (new in core v7.12.0). An
+  origin that used to match only partly, such as another port or a
+  subdomain, must now be added to the list. See
+  [README > CSRF and cross-origin clients](README.md#csrf-and-cross-origin-clients).
+- The `llm*` tables must use InnoDB so that a failed interview approval is
+  rolled back completely. See [README > Database engine](README.md#database-engine).
+- **Danger detection:** enter the alert recipients in **LLM Settings →
+  Safety → Notification Emails**. The migration fills in the global keywords
+  and blocked message, but no email address.
+
+### Added
+
+- **LLM form interviews (`llmFormLogList`).** A new style that extends the
+  core `formUserInputLogList`: it keeps the same list, quick actions, history,
+  ownership and permissions. A coach asks the form's questions in a chat. The
+  answers are kept as a draft and saved as a form record only after the
+  participant approves them. Guide:
+  [doc/llm-form-interview.md](doc/llm-form-interview.md).
+  - **Workspace:** the answers are shown next to the chat, either in the page
+    or in a modal window (`show_form_in_modal`). Four answer layouts are
+    available (`llm_interview_progress_layout`): `stepper`, `cards` (a
+    question board with a status chip and step tracker), `list` and `none`.
+    The chat position is set with `llm_interview_chat_position`. The look is
+    themed through `--llm-iv-*` CSS variables.
+  - **Conversation:** quick replies for closed questions, a marker on the
+    question being asked, and edited answers shown next to their previous
+    value. An unfinished draft survives a page reload. The workspace is
+    linked by URL (`?record=new|<id>&sid=<section>`). Speech-to-text is
+    optional; recordings are deleted right after transcription.
+  - **Saving:** the save dialog (`llm_interview_confirm`: `edit`, `always`,
+    `never`) shows a before/after comparison when a record is edited.
+    `llm_interview_chat_retention` controls whether a returning participant
+    continues the chat or starts over.
+  - **Control over what is written:** hidden, scope-bound and unsupported
+    fields can only be written when allowlisted
+    (`llm_interview_writable_hidden_fields`). Manual edits require
+    `llm_interview_allow_manual_edit`.
+  - **Crisis detection:** always on, with the same keywords, notification
+    emails and blocked message as every LLM section (global in LLM Settings →
+    Safety, a section value replaces it). A blocked interview shows the blocked message and locks the
+    composer. The transcript is kept for review.
+  - **Reuse and URL parameters:** one interview form can be reused on many
+    pages through a reference section in a `loop`. URL parameters declared in
+    `extra_params` (for example a module code) work as placeholders in every
+    field, keep separate drafts per value, and can pin a form field to the
+    URL value.
+  - The list keeps the core `formUserInputLogList` look and can be themed
+    with `--llm-iv-*` variables. Adding `formUserInputLogList-bare` to the
+    section's CSS removes the look.
+  - Labels in English, German and French (`llm_interview_labels`). The chat
+    uses the same appearance settings as `llmChat` (`llm_chat_appearance`).
+  - Interview conversations are kept out of the chat sidebar. The admin
+    console can filter them by source and record.
+- **Prompt Lab: interview profile.** `llm_interview_context` can be tested
+  against a read-only preview of the real interview. No participant data,
+  approval or memory is written.
+- **`llm_use_user_language`** on `llmChat`, `llmFormRecord`, `llmFormLog` and
+  `llmFormLogList`. On by default, which keeps the 1.5.0 behavior of
+  answering in the participant's language. Turn it off to let the author's
+  context decide the language.
+- **`llmChat`: `always_start_new_conversation`.** Every page load starts a
+  new chat and earlier sessions are hidden.
+- **`llmChat`: `floating_shortcuts_hide_delay`** (default 2 seconds, 0-60):
+  how long the floating shortcuts stay visible after the mouse leaves them.
+- **Memory rules on the core `formUserInputLogList`** (`llm_memory_rule_ids`),
+  as on the other form styles since 1.5.0.
+- **Memory rules editor:** the "llmChat form submit" source can now be
+  chosen, so chat fallback rules no longer have to be created in SQL.
+- **Token split:** new messages store prompt and completion tokens separately.
+  The admin conversation monitor shows `in · out · total`. Older messages keep
+  only the total.
+- **Script audit:** each script run records which script and revision it used
+  (`script_id`, `script_name`, `script_updated_at`).
+
+### Changed
+
+- **Danger detection is always on and configured globally.** The
+  `enable_danger_detection` checkbox is gone. Keywords, alert emails and the
+  blocked message (per language) are set in **LLM Settings → Safety**. A
+  section value replaces the global value; an empty section value uses it.
+  Detection now also covers form feedback (`llmFormRecord`, `llmFormLog`): a
+  hit skips the LLM, shows the blocked message as the feedback and sends the
+  alert. Prompt Lab runs report keyword hits without email, log or block.
+  See [danger word detection](doc/danger-word-detection.md).
+- **Danger detection locks the whole user.** A keyword hit or a
+  critical/emergency LLM safety assessment in any chat, interview or form
+  blocks that conversation, and a participant with a blocked conversation gets
+  no LLM answer anywhere (no new chat, no interview, no form feedback) until an
+  admin unblocks it. Form feedback now asks the model for the structured reply
+  with a safety assessment, like chat and interviews; the participant sees its
+  text. Guests share one account, so for them the lock stays per conversation.
+- **API keys are never sent to a browser.** The settings page and the CMS
+  editor show only whether a server has a key, its last four characters and
+  where it comes from. Leaving the key field empty keeps the stored key, but
+  only while the server's scheme, host and port stay the same, so a stored
+  key can never be sent to another host. Keys can be stored encrypted
+  (AES-256-GCM) or read from an environment variable (`env:LLM_NAME`).
+- **Saving a server takes one click.** **Save** and **Delete** on a server card
+  (settings page and CMS editor) store the change immediately, and errors
+  show inside the card. The other settings still use **Save Changes**.
+- **Settings are validated before they are saved.** One invalid value
+  rejects the whole save, with a message for each field. Base URLs must use
+  `https` (`http` only for localhost) and must not contain credentials, a
+  query or a fragment. An optional host allow-list can be set with
+  `LLM_ALLOWED_API_HOSTS`. Temperature, max tokens and timeout are checked
+  against their ranges.
+- **Floating shortcuts fill in the message** instead of sending it, so the
+  participant can edit it before sending
+  ([doc/llm-chat-shortcuts.md](doc/llm-chat-shortcuts.md)).
+- **The inline `llmChat` looks like the floating chat** (same header and
+  scrollbar).
+- **`llmChat` `memory_rule_ids` is a multi-select** that lists only the
+  "llmChat form submit" rules. Stored values are unchanged.
+- **Memory updates are listed under Scheduled Jobs.** The memory rules picked
+  on a form, survey or `llmFormLogList` section (`llm_memory_rule_ids`, also
+  after an interview approval) and the rules of an `llmChat` form submit
+  now run as a core `llm_memory_update` task job that is executed
+  immediately, like a form action set to "immediately". Each run therefore
+  shows up in Scheduled Jobs and the calendar. Core marks the job done when
+  the background worker starts; the worker adds the real result ("LLM
+  memory update finished / failed: rule #N, memory key ...") to the job's
+  log. Login and profile-name triggers still run directly.
+- **Memory rules can also run when an entry is deleted.** New checkbox
+  "Also run when an entry is deleted" in the memory rule editor (adds
+  `deleted` to the rule's trigger types; off for existing rules). When a
+  participant deletes an entry of a form that selects such a rule, the rule
+  runs as a scheduled job with the entry's last values, and the memory
+  prompt says the entry was deleted. The rule's instructions decide whether
+  the memory forgets the entry or keeps it as history; the plugin removes
+  nothing on its own. Hook `LlmHooks::onFormDeletedMemoryRules` on
+  `FormUserInputModel::delete_user_input` (clear the SelfHelp cache after the
+  migration).
+- **Context layers combine.** The form, floating and strict-conversation
+  modes are applied together, with the strict guardrail first, instead of
+  only the first one that is enabled.
+- **Response retries are limited.** At most `LLM_RESPONSE_MAX_ATTEMPTS`
+  attempts (default 3). Failures that a retry cannot fix (rate limit, bad
+  request, rejected credentials) are not retried.
+- **Clear errors for participants.** Provider, database and runtime errors
+  are logged on the server, and participants see a generic notice. After a
+  failed turn the chat shows "no answer" in its error banner instead of the
+  turn silently disappearing.
+- `globals_untracked.php` is now optional. A fresh checkout, CI and the
+  workers start without it. `globals_untracked.default.php` is the template.
+
+### Fixed
+
+- Form actions with `llm_memory_update` on a plain form (run immediately or
+  later from the job queue) were dropped without running: core executes jobs
+  inside its own database transaction, which the new after-commit queue
+  treated as uncommitted. They run again; only updates queued inside an
+  interview approval still wait for its commit.
+- An `llmChat` section could delete the participant's other conversations by
+  id, including a form interview transcript. Deleting is now limited to the
+  conversations of that chat section.
+- A memory update for a deleted form entry passed `trigger_type=deleted` into
+  `UserInput::save_data()`, which marked the memory row itself deleted so it
+  looked empty afterwards. Memory rows are always written as live.
+- `llmChat` crisis keyword detection now checks messages before they are
+  stored or sent to the model, and blocks the conversation on a match.
+- Messages sent within the same second could appear out of order.
+- `llmChat` treated other POST requests on the same page, such as a CMS save
+  or another form, as an empty chat message.
+- Stored messages were cut off at the first `{"id":` they contained, which
+  truncated pasted JSON and structured answers.
+- Prompt Lab versions of scripts and memory rules stayed on "v1 Draft" after
+  saving. Versions saved earlier reappear.
+- Inline code in chat answers was shown as a code block with a copy button.
+- The chat markup contained `node="[object Object]"` attributes.
+
+### Security
+
+- **Admin console:** each action checks its own permission (`select` to
+  read, `update` to block or unblock and see sent context, `delete` to
+  delete). Changes require POST and a CSRF token, and the audit log names
+  the admin who made them. Interview draft data is no longer included in
+  conversation reads.
+- **CSRF protection everywhere.** Admin pages, settings, Prompt Lab,
+  scripts, memory and interview changes always require the session token.
+  The chat and form endpoints also accept requests from the same site and
+  from the native app, but reject cross-site requests (403).
+- **Guests are isolated.** Guests share one account, so a guest could see
+  and continue the previous guest's chats. Guest conversations now belong to
+  the visitor's browser session, with per-session and site-wide rate limits.
+  Guests cannot upload files, use speech input or save form records or
+  memories.
+- **No unsafe HTML.** Markdown from the model, participants and stored
+  context is sanitized before it is shown. Scripts, iframes, forms, event
+  handlers and unsafe links are removed. Images written in Markdown are
+  still loaded from their host.
+- **File access:** participant input can no longer be read as a file path.
+  Only real attachments inside the plugin's upload folder are sent to the
+  model.
+- **Safety assessment:** a response without a safety assessment from the
+  model is reported as "not assessed" instead of "safe". Blocked
+  conversations stay blocked for every chat action.
+- **Prompt Lab access** is decided by the pages that really show a section,
+  not by the page id the browser sends. Dataset imports accept only records
+  that belong to the prompt's owner.
+- **Form endpoints** (`llmFormRecord`, `llmFormLog`) answer only their own
+  section, are rate limited, and load exactly the requested record.
+- **Speech-to-text** is limited to 6 recordings per minute per user, and the
+  audio type is checked from the file content.
+- **Input limits** on interview messages and form values.
+- **Crisis alert emails** escape the user input they quote. Keyword matching
+  handles accents and tolerates typos in phrases ("kill myslef"), while
+  single words still match exactly ("skill" never matches "kill").
+- **Memory updates run only after the record is saved.** If an interview
+  approval or form save fails, no memory is updated, and a failure no longer
+  clears the whole SelfHelp cache.
+- **Interview locking** no longer blocks core login and profile updates.
+
+### For developers
+
+- New services: `LlmSecretService`, `LlmApiKeysConfigService`,
+  `LlmSettingsValidator`, `LlmCsrfService`, `LlmErrorReporter`,
+  `LlmTransaction` (transactions and after-commit tasks),
+  `LlmFormInterviewService`, `LlmFormSchemaService`,
+  `LlmConversationStateService`.
+- `tests/LlmConventionsTest.php` fails on direct transaction calls and on
+  exception messages written to `error_log()` outside these services.
+- The async and memory workers share one bootstrap
+  (`llm_worker_bootstrap.php`).
+- The shared `MessageInput` has a new `variant="field"` composer.
+
+### Removed
+
+- `LlmAutoStartService` and
+  `LlmChatModel::generateContextAwareAutoStartMessage()` (unused since 1.4.1).
+- `CallbackLlm` (unused).
+- `LlmFileNamingService::buildFileUrl()` and the `url` entry of upload
+  payloads (it pointed to an endpoint that does not exist).
+- Deprecated wrappers in `globals.php`: `llm_is_vision_model()`,
+  `llm_validate_mime_type()`, `llm_get_file_type_category()` and
+  `llm_is_non_chat_model()`. Use the `LlmModelCapabilities` methods instead.
+
 ## [1.5.0]
 
 ### Added
 
+- **Anthropic provider.** Native Messages API support for
+  `https://api.anthropic.com/v1` (`AnthropicProvider`): Anthropic auth headers,
+  OpenAI-style payload conversion (including images), normalized responses
+  (text + thinking), and model listing. Model fetches now use each provider’s
+  auth helpers (fixes Anthropic 401 when only Bearer was sent).
+- **OpenAI Chat Completions adapter.** `OpenAIProvider` (OpenAI / Azure hosts)
+  remaps `max_tokens` → `max_completion_tokens` and applies OpenAI
+  `reasoning_effort`. GPUStack and other OpenAI-compatible hosts keep
+  `max_tokens`.
+- **Reasoning effort.** New CMS / module field `llm_reasoning_effort`
+  (`default`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) on
+  `llmChat`, `llmFormRecord`, `llmFormLog`, and module defaults. Mapped per
+  provider (OpenAI Chat Completions, Anthropic `output_config.effort`; stripped
+  for GPUStack).
+- **Memory rules directly on forms and surveys.** New optional multi-select CMS
+  field `llm_memory_rule_ids` on `formUserInput`, `formUserInputRecord`,
+  `formUserInputLog`, `llmFormRecord`, `llmFormLog` and `surveyJS`: pick the
+  memory rules that run when the form / survey is finished, without a form
+  action. Hooks on `FormUserInputModel::save_user_input` / `update_user_input`
+  and `SurveyJSModel::save_survey` (`LlmHooks::onFormSavedMemoryRules` /
+  `onSurveySavedMemoryRules`) queue the rules in the existing async memory
+  worker after a successful `finished` save of a logged-in user; missing or
+  disabled rules are skipped, an empty selection changes nothing, and form
+  actions with `llm_memory_update` keep running in addition.
+- **Labeled submission context for memory.** New
+  `LlmMemorySubmissionContextService` snapshots the submission when it is saved
+  (form field labels and readable choice texts; SurveyJS question titles,
+  choices, matrices, dynamic panels, comments) and `LlmMemoryUpdateService` adds
+  it to the memory prompt as `## Submission Context` (only for
+  `form_action_submit` payloads that carry it, so form actions are unchanged).
+- **SurveyJS installed later.** The migration wires SurveyJS only when its style
+  exists. `server/db/optional/enable_surveyjs_llm_memory_rules.sql` is the
+  separate, idempotent snippet to run once when SurveyJS is installed after this
+  plugin (clear the SelfHelp cache afterwards, as for the rest of `v1.5.0.sql`).
+- **Memory activity feed.** The Memory → Activity tab is now a paginated,
+  filterable event log (`memory_activity` action → `LlmMemoryAdminService::
+  getActivity`, `LlmMemoryStorageService::getHistoryActivity`). Each event shows
+  the participant (name, email, code, id), the rule label and memory key, what
+  triggered it (form / survey submit with form name and record, llmChat form
+  submit, login, profile name change, or an admin action with the acting
+  admin) and the result. Filters: participant (name, email, code or id), rule
+  (including manual admin actions without a rule), memory key, trigger, status
+  and event date range.
+- **Form / survey sections as memory sources.** The Memory → Sources tab and the
+  per-rule source counts now include sections that select rules through
+  `llm_memory_rule_ids` (page, style and an "Open section" CMS link), not only
+  form actions and llmChat fallbacks. Source cards are labelled by category.
 - **Vision image support in LLM scripts.** Scripts can now send uploaded form and SurveyJS images (including base64 data URLs and file paths) to vision-capable models, automatically extracting EXIF metadata (capture time, camera, GPS) into the prompt context.
 - **Labeled image collage mode for scripts (`combine_images`).** Optional setting in Scripts Manager to stitch multiple images (up to 12) into a single high-resolution, labeled `Image N` grid with a matching prompt and EXIF legend.
 - **Anthropic & OpenAI provider support.** Added native Anthropic Messages API support (`api.anthropic.com`) alongside OpenAI Chat Completions compatibility (`max_completion_tokens` and reasoning effort mapping).

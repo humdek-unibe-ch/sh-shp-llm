@@ -39,6 +39,10 @@ interface AdminFilters {
   userId: string;
   sectionId: string;
   scriptId: string;
+  sourceType: string;
+  recordId: string;
+  /** '' = all, '1' = blocked only, '0' = not blocked */
+  blocked: string;
   query: string;
   dateFrom: string;
   dateTo: string;
@@ -73,6 +77,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     userId: '', 
     sectionId: '', 
     scriptId: '',
+    sourceType: '',
+    recordId: '',
+    blocked: '',
     query: '',
     dateFrom: getTodayDate(),
     dateTo: getTodayDate()
@@ -81,7 +88,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     users: FilterOption[];
     sections: { id: number; name: string }[];
     scripts: { id: number; name: string }[];
-  }>({ users: [], sections: [], scripts: [] });
+    sources: { id: number; code: string; label?: string | null }[];
+  }>({ users: [], sections: [], scripts: [], sources: [] });
   const [conversations, setConversations] = useState<AdminConversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<AdminConversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -243,6 +251,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         user_id: filters.userId || undefined,
         section_id: filters.sectionId || undefined,
         script_id: filters.scriptId || undefined,
+        source_type: filters.sourceType || undefined,
+        record_id: filters.recordId || undefined,
+        blocked: filters.blocked || undefined,
         q: filters.query || undefined,
         date_from: filters.dateFrom || undefined,
         date_to: filters.dateTo || undefined
@@ -307,6 +318,9 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
       userId: '', 
       sectionId: '', 
       scriptId: '',
+      sourceType: '',
+      recordId: '',
+      blocked: '',
       query: '',
       dateFrom: getTodayDate(),
       dateTo: getTodayDate()
@@ -370,7 +384,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         hideConfirmation();
         setLoading(true);
         try {
-          const response = await adminApi.deleteConversation(conversationId);
+          const response = await adminApi.deleteConversation(conversationId, config.csrfToken);
           if (response.error) {
             throw new Error(response.error);
           }
@@ -400,7 +414,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         hideConfirmation();
         setLoading(true);
         try {
-          const response = await adminApi.blockConversation(conversationId, blockReason || undefined);
+          const response = await adminApi.blockConversation(conversationId, blockReason || undefined, config.csrfToken);
           if (response.error) {
             throw new Error(response.error);
           }
@@ -435,7 +449,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
         hideConfirmation();
         setLoading(true);
         try {
-          const response = await adminApi.unblockConversation(conversationId);
+          const response = await adminApi.unblockConversation(conversationId, config.csrfToken);
           if (response.error) {
             throw new Error(response.error);
           }
@@ -471,7 +485,7 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     return nameParts.length > 0 ? nameParts.join(' ') : `User ${user.id}`;
   };
 
-  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.query;
+  const hasActiveFilters = filters.dateFrom || filters.dateTo || filters.userId || filters.sectionId || filters.scriptId || filters.sourceType || filters.recordId || filters.blocked || filters.query;
 
   // Prepare options for react-select
   const userOptions = [
@@ -495,6 +509,14 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
     ...(filterOptions.scripts || []).map(script => ({
       value: script.id.toString(),
       label: script.name
+    }))
+  ];
+
+  const sourceOptions = [
+    { value: '', label: 'All sources' },
+    ...(filterOptions.sources || []).map(source => ({
+      value: source.code,
+      label: source.label || source.code
     }))
   ];
 
@@ -657,6 +679,70 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                     </div>
                   )}
 
+                  {/* Source Filter */}
+                  {sourceOptions.length > 1 && (
+                    <div className="filter-col filter-col-half">
+                      <Form.Label className="small text-muted mb-1">
+                        <i className="fas fa-stream mr-1"></i>
+                        Source
+                      </Form.Label>
+                      <Select
+                        value={sourceOptions.find(option => option.value === filters.sourceType)}
+                        onChange={(selectedOption) => handleFilterChange('sourceType', selectedOption?.value || '')}
+                        options={sourceOptions}
+                        isSearchable={true}
+                        isClearable={false}
+                        placeholder="All sources..."
+                        className="react-select-container filter-select"
+                        classNamePrefix="react-select"
+                        menuPortalTarget={document.body}
+                        styles={compactSelectStyles}
+                      />
+                    </div>
+                  )}
+
+                  {/* Record Filter */}
+                  <div className="filter-col filter-col-half">
+                    <Form.Label className="small text-muted mb-1">
+                      <i className="fas fa-database mr-1"></i>
+                      Record
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      placeholder="Record ID or 'draft'"
+                      value={filters.recordId}
+                      onChange={(e) => handleFilterChange('recordId', e.target.value)}
+                      className="filter-input"
+                    />
+                  </div>
+
+                  {/* Blocked Filter */}
+                  <div className="filter-col filter-col-half">
+                    <Form.Label className="small text-muted mb-1">
+                      <i className="fas fa-ban mr-1"></i>
+                      Blocked
+                    </Form.Label>
+                    <Form.Control
+                      as="select"
+                      value={filters.blocked}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // A user stays locked however old the block is: show blocks from any date
+                        setFilters(prev => value === '1'
+                          ? { ...prev, blocked: value, dateFrom: '', dateTo: '' }
+                          : { ...prev, blocked: value });
+                        setSelectedConversation(null);
+                        setMessages([]);
+                        setCurrentPage(1);
+                      }}
+                      className="filter-input"
+                    >
+                      <option value="">All conversations</option>
+                      <option value="1">Blocked only</option>
+                      <option value="0">Not blocked</option>
+                    </Form.Control>
+                  </div>
+
                   {/* Search Filter */}
                   <div className="filter-col filter-col-half">
                     <Form.Label className="small text-muted mb-1">
@@ -726,6 +812,8 @@ export const AdminConsole: React.FC<{ config: AdminConfig }> = ({ config }) => {
                       onBlockConversation={handleBlockConversation}
                       onUnblockConversation={handleUnblockConversation}
                       onDeleteConversation={handleDeleteConversation}
+                      canModerate={config.permissions?.canModerate !== false}
+                      canDelete={config.permissions?.canDelete !== false}
                     />
                   )}
                 </Card.Header>

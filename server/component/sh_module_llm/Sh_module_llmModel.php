@@ -7,6 +7,8 @@
 require_once __DIR__ . "/../../../../../component/BaseModel.php";
 require_once __DIR__ . "/../../service/LlmService.php";
 require_once __DIR__ . "/../../service/LlmModelCapabilities.php";
+require_once __DIR__ . "/../../service/LlmApiKeysConfigService.php";
+require_once __DIR__ . "/../../service/LlmSettingsValidator.php";
 
 /**
  * Model for the LLM Settings module.
@@ -69,12 +71,18 @@ class Sh_module_llmModel extends BaseModel
     {
         $fields = $this->getPageFields();
 
+        // The browser never receives a stored key: only has_key / last four
+        // characters / source per server (see LlmApiKeysConfigService).
+        $apiKeysField = $this->buildField('llm_api_keys', $fields, 'json', 'API Keys',
+            'Configure one or more LLM API servers. Each server needs a name, an https base URL and an API key. Stored keys are never shown again: leave the key empty to keep the current one.');
+        $apiKeysField['value'] = LlmApiKeysConfigService::toClientJson($fields['llm_api_keys'] ?? '');
+        $apiKeysField['meta'] = $this->getSecretsStatus();
+
         return [
             'api' => [
                 'label' => 'API Configuration',
                 'fields' => [
-                    $this->buildField('llm_api_keys', $fields, 'json', 'API Keys',
-                        'Configure one or more LLM API servers. Each server needs a name, base URL, and API key.'),
+                    $apiKeysField,
                 ],
             ],
             'model_defaults' => [
@@ -93,6 +101,17 @@ class Sh_module_llmModel extends BaseModel
                         'Request timeout in seconds for LLM API calls.'),
                 ],
             ],
+            'safety' => [
+                'label' => 'Safety',
+                'fields' => [
+                    $this->buildField('danger_keywords', $fields, 'textarea', 'Danger Keywords',
+                        'Comma-separated keywords and phrases. Danger detection is always on for every LLM section: participant messages are scanned before the LLM is called, and the keywords are added to the LLM safety instructions. A section can replace this list in its own field.'),
+                    $this->buildField('danger_notification_emails', $fields, 'textarea', 'Notification Emails',
+                        'One address per line or separated by semicolons. They receive an alert email (sent through the job scheduler) when danger is detected. A section can replace this list in its own field.'),
+                    $this->buildTranslatedField('danger_blocked_message', 'markdown', 'Blocked Message',
+                        'Markdown message shown to the participant when danger is detected, per language. A section can replace it in its own field.'),
+                ],
+            ],
             'memory' => [
                 'label' => 'Memory Configuration',
                 'fields' => [
@@ -104,6 +123,98 @@ class Sh_module_llmModel extends BaseModel
                 ],
             ],
         ];
+    }
+
+    /**
+     * Encryption status of the stored API keys for the settings UI (no keys).
+     *
+     * @return array{encryption_available:bool,plain_keys:int,master_key_name:string}
+     */
+    public function getSecretsStatus()
+    {
+        $fields = $this->getPageFields();
+        return [
+            'encryption_available' => LlmSecretService::isEncryptionAvailable(),
+            'plain_keys' => LlmApiKeysConfigService::countPlainKeys($fields['llm_api_keys'] ?? ''),
+            'master_key_name' => LlmSecretService::MASTER_KEY_NAME,
+        ];
+    }
+
+    /**
+     * Validate posted settings. Nothing is stored here: the caller stores
+     * `values` only when `errors` is empty.
+     *
+     * @param array $posted setting name => raw value (names already whitelisted)
+     * @return array{values:array<string,string>,errors:array<string,string[]>}
+     */
+    public function validateSettings(array $posted)
+    {
+        $context = [
+            'reasoning_codes' => LlmModelCapabilities::getReasoningEffortCodes($this->db),
+            'storage_modes' => array_column($this->getStorageModeOptions(), 'value'),
+        ];
+
+        $values = [];
+        $errors = [];
+        foreach ($posted as $name => $raw) {
+            if ($name === 'llm_api_keys') {
+                $messages = [];
+                $json = LlmApiKeysConfigService::prepareForSave(
+                    is_string($raw) ? $raw : '',
+                    $this->getPageFields()['llm_api_keys'] ?? '',
+                    $messages
+                );
+                if ($json === null) {
+                    $errors[$name] = $messages;
+                } else {
+                    $values[$name] = $json;
+                }
+                continue;
+            }
+
+            if ($name === 'danger_blocked_message') {
+                $known = array_column($this->getLanguages(), 'id');
+                if (!is_array($raw)) {
+                    $errors[$name] = ['Send one text per language.'];
+                    continue;
+                }
+                $texts = [];
+                foreach ($raw as $languageId => $text) {
+                    if (!in_array((int)$languageId, $known, true) || ($text !== null && !is_scalar($text))) {
+                        $errors[$name] = ['Unknown language or invalid text.'];
+                        continue 2;
+                    }
+                    $texts[(int)$languageId] = trim((string)$text);
+                }
+                $values[$name] = $texts;
+                continue;
+            }
+
+            $result = LlmSettingsValidator::validate($name, $raw, $context);
+            if ($result['error'] !== null) {
+                $errors[$name] = [$result['error']];
+            } else {
+                $values[$name] = $result['value'];
+            }
+        }
+
+        return ['values' => $values, 'errors' => $errors];
+    }
+
+    /**
+     * Encrypt the API keys that are still stored as plain text.
+     * The caller checks LlmSecretService::isEncryptionAvailable() first.
+     *
+     * @return int Number of keys that were encrypted
+     */
+    public function protectStoredApiKeys()
+    {
+        $converted = 0;
+        $json = LlmApiKeysConfigService::protectStoredKeys($this->getPageFields()['llm_api_keys'] ?? '', $converted);
+        if ($converted > 0) {
+            $this->saveSetting('llm_api_keys', $json);
+        }
+        return $converted;
     }
 
     /**
@@ -130,6 +241,55 @@ class Sh_module_llmModel extends BaseModel
             $field['options'] = $options;
         }
         return $field;
+    }
+
+    /**
+     * Build a per-language field for the React settings form: `value` maps
+     * id_languages => content, `languages` lists the system languages.
+     *
+     * @return array Structured field array for the React settings form.
+     */
+    private function buildTranslatedField($name, $type, $label, $help)
+    {
+        $field = $this->buildField($name, [], $type, $label, $help);
+        $field['translatable'] = true;
+        $field['value'] = $this->getTranslations($name);
+        $field['languages'] = $this->getLanguages();
+        return $field;
+    }
+
+    /** @return array<int,string> id_languages => content of a per-language config field */
+    private function getTranslations($fieldName)
+    {
+        $fid = $this->resolveFieldId($fieldName);
+        if (!$fid) {
+            return [];
+        }
+        $rows = $this->db->query_db(
+            "SELECT id_languages, content FROM pages_fields_translation WHERE id_pages = ? AND id_fields = ?",
+            [$this->configPageId, $fid]
+        );
+        $values = [];
+        foreach ($rows ?: [] as $row) {
+            if ((int)$row['id_languages'] !== self::CONFIG_LANGUAGE_ID) {
+                $values[(int)$row['id_languages']] = (string)$row['content'];
+            }
+        }
+        return $values;
+    }
+
+    /** @return array<int,array{id:int,locale:string,language:string}> The system languages */
+    private function getLanguages()
+    {
+        $languages = [];
+        foreach ($this->db->fetch_languages() ?: [] as $language) {
+            $languages[] = [
+                'id' => (int)$language['id'],
+                'locale' => (string)$language['locale'],
+                'language' => (string)$language['language'],
+            ];
+        }
+        return $languages;
     }
 
     /** @return array Select options for the memory storage mode dropdown, loaded from lookups. */
@@ -162,9 +322,10 @@ class Sh_module_llmModel extends BaseModel
      *
      * @param string $fieldName
      * @param string $value
+     * @param int $languageId Language row (1 = language independent; per-language fields use the system languages)
      * @return bool
      */
-    public function saveSetting($fieldName, $value)
+    public function saveSetting($fieldName, $value, $languageId = self::CONFIG_LANGUAGE_ID)
     {
         $fid = $this->resolveFieldId($fieldName);
         if (!$fid) {
@@ -176,18 +337,18 @@ class Sh_module_llmModel extends BaseModel
 
         $existing = $this->db->query_db_first(
             "SELECT id_pages FROM pages_fields_translation WHERE id_pages = ? AND id_fields = ? AND id_languages = ?",
-            [$this->configPageId, $fid, self::CONFIG_LANGUAGE_ID]
+            [$this->configPageId, $fid, $languageId]
         );
 
         if ($existing) {
             $this->db->execute_update_db(
                 "UPDATE pages_fields_translation SET content = ? WHERE id_pages = ? AND id_fields = ? AND id_languages = ?",
-                [$value, $this->configPageId, $fid, self::CONFIG_LANGUAGE_ID]
+                [$value, $this->configPageId, $fid, $languageId]
             );
         } else {
             $this->db->execute_update_db(
                 "INSERT INTO pages_fields_translation (id_pages, id_fields, id_languages, content) VALUES (?, ?, ?, ?)",
-                [$this->configPageId, $fid, self::CONFIG_LANGUAGE_ID, $value]
+                [$this->configPageId, $fid, $languageId, $value]
             );
         }
 

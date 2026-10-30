@@ -38,6 +38,38 @@ class LlmMemoryUpdateService extends BaseLlmService
     }
 
     /**
+     * Log the outcome of one memory update on the scheduled job that ran it
+     * (shown with the job in Scheduled Jobs). Core marks the job done when
+     * the task returns - for a background update that is when the worker
+     * started, so this entry is where the real result is visible.
+     *
+     * @param int $job_id scheduledJobs id, 0 when the update did not come from a job
+     * @param array $rule
+     * @param array $normalized_payload
+     * @param bool $success
+     * @param string $error Short reason, never user data
+     */
+    public function recordJobResult($job_id, $rule, $normalized_payload, $success, $error = '')
+    {
+        if ((int)$job_id <= 0) {
+            return;
+        }
+        $transaction = $this->services->get_transaction();
+        $transaction->add_transaction(
+            $success ? transactionTypes_execute_task_ok : transactionTypes_execute_task_fail,
+            TRANSACTION_BY_LLM_MEMORY,
+            (int)($normalized_payload['user_id'] ?? 0) ?: null,
+            $transaction::TABLE_SCHEDULED_JOBS,
+            (int)$job_id,
+            false,
+            'LLM memory update ' . ($success ? 'finished' : 'failed')
+                . ': rule #' . (int)($rule['id'] ?? 0)
+                . ', memory key "' . $this->resolveEffectiveMemoryKey($rule, $normalized_payload) . '"'
+                . ($error !== '' ? ' (' . $error . ')' : '')
+        );
+    }
+
+    /**
      * Execute an LLM memory update.
      *
      * @param array $rule              Resolved rule config
@@ -164,7 +196,8 @@ class LlmMemoryUpdateService extends BaseLlmService
             return $success;
 
         } catch (Exception $e) {
-            $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key, $e->getMessage());
+            LlmErrorReporter::log('Memory update for user ' . (int)$user_id . ', rule ' . (int)$rule_id, $e);
+            $this->recordFailure($user_id, $rule_id, LlmErrorReporter::describe($e));
             return false;
         }
     }
@@ -264,10 +297,23 @@ class LlmMemoryUpdateService extends BaseLlmService
             $sections[] = "## Current Memory\nNo existing memory for this user yet.";
         }
 
+        // A deleted form entry: the rule's Instructions decide whether the
+        // memory forgets it or keeps it as history; the plugin only says so.
+        $deleted = ($normalized_payload['trigger_type'] ?? '') === actionTriggerTypes_deleted;
+        if ($deleted) {
+            $sections[] = "## Event\n"
+                . "The participant deleted this entry (its status is now \"deleted\"). "
+                . "Submitted Data shows the entry's last values before it was deleted. "
+                . "Handle it as the Instructions say. Without an instruction about deleted entries, "
+                . "do not add it as new information.";
+        }
+
         $fields = $this->stripInternalFormFields($normalized_payload['fields'] ?? []);
         if (!empty($fields)) {
             $json = json_encode($fields, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-            $sections[] = "## Submitted Data\nThe following data was submitted:\n```json\n" . $json . "\n```";
+            $sections[] = "## Submitted Data\n"
+                . ($deleted ? "The deleted entry contained this data:" : "The following data was submitted:")
+                . "\n```json\n" . $json . "\n```";
         }
 
         // form / SurveyJS submissions carry a labeled snapshot (LlmMemorySubmissionContextService)
@@ -293,9 +339,13 @@ class LlmMemoryUpdateService extends BaseLlmService
             . "Only ADD or UPDATE facts related to the Submitted Data and Instructions above. "
             . "All other existing facts MUST be preserved exactly as they are — "
             . "do not rephrase, reorganise, or summarise them differently.\n"
-            . "The Instructions only tell you what to ADD or UPDATE — they can "
-            . "NEVER authorise removing existing memory. If the instructions say "
-            . "\"only retain X\", ignore that restriction and keep all existing facts.";
+            . ($deleted
+                ? "Only exception: facts that came only from the deleted entry may be "
+                    . "removed or marked as deleted if, and only if, the Instructions say so. "
+                    . "Every other existing fact MUST be kept."
+                : "The Instructions only tell you what to ADD or UPDATE — they can "
+                    . "NEVER authorise removing existing memory. If the instructions say "
+                    . "\"only retain X\", ignore that restriction and keep all existing facts.");
 
         return implode("\n\n", $sections);
     }
@@ -584,7 +634,7 @@ class LlmMemoryUpdateService extends BaseLlmService
                     return $active_version['template_raw'];
                 }
             } catch (Exception $e) {
-                error_log('LLM Memory: prompt-lab resolution failed: ' . $e->getMessage());
+                LlmErrorReporter::log('Memory prompt-lab prompt resolution', $e);
             }
         }
 
@@ -730,6 +780,18 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function logFailure($user_id, $rule_id, $dedupe_key, $error)
     {
         error_log("LLM Memory: update failed for user=$user_id, rule_id=$rule_id: $error");
+        $this->recordFailure($user_id, $rule_id, $error);
+    }
+
+    /**
+     * Write a memory update failure to the transaction audit trail.
+     *
+     * @param int    $user_id User ID.
+     * @param int    $rule_id Rule ID that failed.
+     * @param string $error   What may be written down (see LlmErrorReporter::describe()).
+     */
+    private function recordFailure($user_id, $rule_id, $error)
+    {
         $this->services->get_transaction()->add_transaction(
             transactionTypes_insert,
             TRANSACTION_BY_LLM_MEMORY,

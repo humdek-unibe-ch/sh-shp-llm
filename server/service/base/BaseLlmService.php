@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/LlmLoggingTrait.php';
 require_once __DIR__ . '/../cache/LlmCacheManager.php';
+require_once __DIR__ . '/../LlmSecretService.php';
 
 /**
  * Base Service Class for LLM Plugin
@@ -31,7 +32,6 @@ require_once __DIR__ . '/../cache/LlmCacheManager.php';
  * 
  * @abstract
  * @package LLM Plugin
- * @version 1.1.0
  */
 abstract class BaseLlmService
 {
@@ -155,7 +155,7 @@ abstract class BaseLlmService
                         }
                     }
                 } catch (Exception $e) {
-                    $this->logError('LLM config retrieval failed', ['error' => $e->getMessage()]);
+                    $this->logError('LLM config retrieval failed', $e);
                 }
             }
 
@@ -205,6 +205,9 @@ abstract class BaseLlmService
      * Parse the llm_api_keys JSON field into an array of server configs.
      *
      * Each entry: {name: string, base_url: string, api_key: string}
+     * where `api_key` is the usable key: the stored value is decrypted / read
+     * from its environment variable here (LlmSecretService) and the result is
+     * only kept in memory - it is never written back or sent to a browser.
      *
      * Falls back to legacy llm_base_url / llm_api_key when no entries exist.
      *
@@ -223,7 +226,7 @@ abstract class BaseLlmService
                         $servers[] = [
                             'name' => $entry['name'] ?? 'Default',
                             'base_url' => rtrim($entry['base_url'], '/'),
-                            'api_key' => $entry['api_key'] ?? ''
+                            'api_key' => LlmSecretService::resolve($entry['api_key'] ?? '')
                         ];
                     }
                 }
@@ -235,7 +238,7 @@ abstract class BaseLlmService
             $servers[] = [
                 'name' => 'Default',
                 'base_url' => rtrim($config['llm_base_url'], '/'),
-                'api_key' => $config['llm_api_key'] ?? ''
+                'api_key' => LlmSecretService::resolve($config['llm_api_key'] ?? '')
             ];
         }
 

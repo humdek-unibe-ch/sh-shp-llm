@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/LlmResponseService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmSafetyConfigService.php';
 
 /**
  * LLM Context Service
@@ -28,6 +29,7 @@ class LlmContextService
     private $strict_conversation_service;
     private $api_formatter_service;
     private $response_service;
+    private $services;
     private $progress_tracking_service;
 
     /**
@@ -39,6 +41,7 @@ class LlmContextService
      * @param LlmStrictConversationService $strict_conversation_service Strict mode service
      * @param LlmApiFormatterService $api_formatter_service API formatter service
      * @param LlmProgressTrackingService $progress_tracking_service Progress tracking service (optional)
+     * @param object|null $services SelfHelp services container (reads the global danger detection settings)
      */
     public function __construct(
         $model,
@@ -46,8 +49,10 @@ class LlmContextService
         $floating_mode_service,
         $strict_conversation_service,
         $api_formatter_service,
-        $progress_tracking_service = null
+        $progress_tracking_service = null,
+        $services = null
     ) {
+        $this->services = $services;
         $this->model = $model;
         $this->form_mode_service = $form_mode_service;
         $this->floating_mode_service = $floating_mode_service;
@@ -62,13 +67,15 @@ class LlmContextService
     /**
      * Build the complete context messages based on configuration
      *
-     * Priority order:
-     * 1. Unified response schema with safety detection (ALWAYS applied)
-     * 2. Language-specific context adaptation
-     * 3. Floating mode - if floating button is enabled
-     * 4. Strict conversation mode - if enabled and has context
-     * 5. Form mode context - if enabled
-     * 6. Basic context - the parsed conversation context
+     * Layers, in the order they are applied:
+     * 1. Basic context - the parsed conversation context
+     * 2. Language rule (only when `llm_use_user_language` is enabled)
+     * 3. Unified response schema with safety detection (ALWAYS applied)
+     * 4. "No suggestions" instruction (only when hint suggestions are disabled)
+     * 5. Form mode, floating mode and strict conversation mode (the latter only when
+     *    enabled and the chat has context). They are independent: every enabled mode
+     *    applies. Each prepends its system message and they run form -> floating ->
+     *    strict, so the strict guardrail ends up first, then floating, then form.
      *
      * @param int|null $conversation_id Optional conversation ID for progress tracking
      * @param int|null $section_id Optional section ID for progress tracking
@@ -79,8 +86,11 @@ class LlmContextService
         // Get base context from model configuration
         $context_messages = $this->model->getParsedConversationContext();
 
-        // Apply language-specific context adaptation
-        $context_messages = $this->applyLanguageContext($context_messages);
+        // Language rule: opt-in per chat (`llm_use_user_language`). Without
+        // it the author context alone decides the answer language.
+        if (method_exists($this->model, 'useUserLanguage') && $this->model->useUserLanguage()) {
+            $context_messages = $this->applyLanguageContext($context_messages);
+        }
 
         // Build progress data if progress tracking is enabled
         $include_progress = $this->model->isProgressTrackingEnabled();
@@ -109,20 +119,22 @@ class LlmContextService
         // never reach the user.
         $context_messages = $this->applySuppressSuggestionsContext($context_messages);
 
-        // Apply additional modes on top of structured response
+        // Mode instructions stack: each builder prepends its own system message, so
+        // every enabled mode takes effect. Applied form -> floating -> strict, which
+        // leaves the strict guardrail first, then floating, then form, then the rest.
+        if ($this->model->isFormModeEnabled()) {
+            $context_messages = $this->form_mode_service->buildFormModeContext($context_messages);
+        }
+
         if ($this->model->isFloatingButtonEnabled()) {
-            return $this->floating_mode_service->buildFloatingModeContext($context_messages);
+            $context_messages = $this->floating_mode_service->buildFloatingModeContext($context_messages);
         }
 
         if ($this->model->shouldApplyStrictMode()) {
-            return $this->strict_conversation_service->buildStrictModeContext(
+            $context_messages = $this->strict_conversation_service->buildStrictModeContext(
                 $context_messages,
                 $this->model->getConversationContext()
             );
-        }
-
-        if ($this->model->isFormModeEnabled()) {
-            return $this->form_mode_service->buildFormModeContext($context_messages);
         }
 
         return $context_messages;
@@ -131,37 +143,15 @@ class LlmContextService
     /**
      * Build danger detection configuration
      *
-     * Returns the danger detection settings from the model configuration
-     * to be passed to the response service for LLM-based safety detection.
+     * Danger detection is always on: the keywords come from the section, else the
+     * global LLM settings, else the built-in defaults (LlmSafetyConfigService).
      *
      * @return array Danger config with 'enabled' and 'keywords' keys
      */
     private function buildDangerConfig()
     {
-        // Check if model has danger detection methods
-        if (!method_exists($this->model, 'isDangerDetectionEnabled')) {
-            return ['enabled' => false, 'keywords' => []];
-        }
-
-        $enabled = $this->model->isDangerDetectionEnabled();
-        if (!$enabled) {
-            return ['enabled' => false, 'keywords' => []];
-        }
-
-        $keywords_str = $this->model->getDangerKeywords();
-        if (empty($keywords_str)) {
-            return ['enabled' => true, 'keywords' => []];
-        }
-
-        // Parse comma-separated keywords
-        $keywords = array_map('trim', explode(',', $keywords_str));
-        $keywords = array_filter($keywords);
-        $keywords = array_unique($keywords);
-
-        return [
-            'enabled' => true,
-            'keywords' => array_values($keywords)
-        ];
+        $safety_config = new LlmSafetyConfigService($this->services, $this->model);
+        return ['enabled' => true, 'keywords' => $safety_config->getKeywords()];
     }
 
     /**

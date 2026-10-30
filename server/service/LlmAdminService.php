@@ -8,6 +8,7 @@
 
 // Ensure parent class is loaded
 require_once __DIR__ . "/LlmService.php";
+require_once __DIR__ . "/exception/LlmException.php";
 
 /**
  * Admin-specific LLM service extending the base LlmService
@@ -15,7 +16,43 @@ require_once __DIR__ . "/LlmService.php";
  */
 class LlmAdminService extends LlmService
 {
+    /**
+     * `llmConversations` columns the admin console may read.
+     *
+     * `state` (the interview draft: participant answers, revisions, opening
+     * context) is deliberately NOT listed. Read-only console users must not
+     * receive it, and the console never needs it. The list is explicit on
+     * purpose: a column added by a later migration stays hidden until someone
+     * decides it is safe to show.
+     */
+    const ADMIN_CONVERSATION_COLUMNS = 'lc.id, lc.id_users, lc.id_sections, lc.id_llm_scripts,
+                       lc.id_llm_conversation_sources, lc.title, lc.model, lc.temperature, lc.max_tokens,
+                       lc.deleted, lc.blocked, lc.blocked_reason, lc.blocked_at, lc.blocked_by,
+                       lc.id_dataRows, lc.completed_at, lc.context_key, lc.created_at, lc.updated_at';
+
     /* Private Methods *********************************************************/
+
+    /**
+     * Audit entry for a moderation action. The transaction's user is the actor,
+     * so it is the admin who acted - not the participant who owns the conversation
+     * (the owner is named in the text instead).
+     *
+     * @param string $operation Transaction type constant
+     * @param array $conversation Row with at least id and id_users
+     * @param int|null $admin_user_id The acting admin (session user when empty)
+     * @param string $details What happened
+     */
+    private function logAdminAction($operation, $conversation, $admin_user_id, $details)
+    {
+        $actor = $admin_user_id ?: ($_SESSION['id_user'] ?? null);
+        $this->logTransaction(
+            $operation,
+            'llmConversations',
+            $conversation['id'],
+            $actor ?: $conversation['id_users'],
+            $details . " (owner user ID: {$conversation['id_users']})"
+        );
+    }
 
     /* Public Methods *********************************************************/
 
@@ -52,10 +89,20 @@ class LlmAdminService extends LlmService
              ORDER BY ls.name ASC"
         );
 
+        $sources = $this->db->query_db(
+            "SELECT l.id, l.lookup_value AS code, l.lookup_description AS label
+             FROM lookups l
+             INNER JOIN llmConversations lc ON lc.id_llm_conversation_sources = l.id
+             WHERE l.type_code = 'llmConversationSourceType'
+             GROUP BY l.id, l.lookup_value, l.lookup_description
+             ORDER BY l.lookup_value ASC"
+        );
+
         return [
             'users' => $users ?: [],
             'sections' => $sections ?: [],
-            'scripts' => $scripts ?: []
+            'scripts' => $scripts ?: [],
+            'sources' => $sources ?: []
         ];
     }
 
@@ -65,6 +112,10 @@ class LlmAdminService extends LlmService
      */
     public function getAdminConversations($filters = [], $page = 1, $per_page = 50)
     {
+        // Both end up in LIMIT/OFFSET: keep them positive and bounded
+        $page = max(1, min((int)$page, 100000));
+        $per_page = max(1, min((int)$per_page, 100));
+
         $where = [];
         $params = [];
 
@@ -101,6 +152,25 @@ class LlmAdminService extends LlmService
             $params[] = $filters['date_to'];
         }
 
+        if (isset($filters['blocked'])) {
+            $where[] = "lc.blocked = ?";
+            $params[] = $filters['blocked'] ? 1 : 0;
+        }
+
+        if (!empty($filters['source_type']) && is_string($filters['source_type'])) {
+            $where[] = "cs.lookup_value = ?";
+            $params[] = $filters['source_type'];
+        }
+
+        if (isset($filters['record_id']) && $filters['record_id'] !== '' && $filters['record_id'] !== null) {
+            if ($filters['record_id'] === 'draft') {
+                $where[] = "lc.id_dataRows IS NULL";
+            } else {
+                $where[] = "lc.id_dataRows = ?";
+                $params[] = (int)$filters['record_id'];
+            }
+        }
+
         $where_clause = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
         $offset = ($page - 1) * $per_page;
 
@@ -110,21 +180,25 @@ class LlmAdminService extends LlmService
                       LEFT JOIN users u ON lc.id_users = u.id
                       LEFT JOIN sections s ON lc.id_sections = s.id
                       LEFT JOIN llm_scripts ls ON lc.id_llm_scripts = ls.id
+                      LEFT JOIN lookups cs ON cs.id = lc.id_llm_conversation_sources
                       {$where_clause}";
         $total_result = $this->db->query_db_first($count_sql, $params);
         $total = $total_result['total'] ?? 0;
 
         // Get conversations with user, section, and script details
-        $sql = "SELECT lc.*,
+        $sql = "SELECT " . self::ADMIN_CONVERSATION_COLUMNS . ",
                        u.name as user_name,
                        u.email as user_email,
                        s.name as section_name,
                        ls.name as script_name,
+                       cs.lookup_value as source_type,
+                       cs.lookup_description as source_label,
                        (SELECT COUNT(*) FROM llmMessages lm WHERE lm.id_llmConversations = lc.id) as message_count
                 FROM llmConversations lc
                 LEFT JOIN users u ON lc.id_users = u.id
                 LEFT JOIN sections s ON lc.id_sections = s.id
                 LEFT JOIN llm_scripts ls ON lc.id_llm_scripts = ls.id
+                LEFT JOIN lookups cs ON cs.id = lc.id_llm_conversation_sources
                 {$where_clause}
                 ORDER BY lc.updated_at DESC
                 LIMIT {$per_page} OFFSET {$offset}";
@@ -142,18 +216,26 @@ class LlmAdminService extends LlmService
     /**
      * Get messages for a specific conversation (admin view)
      * Enhanced with validation code information
+     *
+     * @param int $conversation_id
+     * @param bool $include_debug Include the sent context and request payload of each
+     *  message (the prompts and settings behind the answers); only for users who may
+     *  change the console's data.
      */
-    public function getAdminConversationMessages($conversation_id)
+    public function getAdminConversationMessages($conversation_id, $include_debug = false)
     {
         // Get conversation details
         $conversation = $this->db->query_db_first(
-            "SELECT lc.*,
+            "SELECT " . self::ADMIN_CONVERSATION_COLUMNS . ",
                     u.name as user_name,
                     u.email as user_email,
-                    s.name as section_name
+                    s.name as section_name,
+                    cs.lookup_value as source_type,
+                    cs.lookup_description as source_label
              FROM llmConversations lc
              LEFT JOIN users u ON lc.id_users = u.id
              LEFT JOIN sections s ON lc.id_sections = s.id
+             LEFT JOIN lookups cs ON cs.id = lc.id_llm_conversation_sources
              WHERE lc.id = ?",
             [$conversation_id]
         );
@@ -164,7 +246,7 @@ class LlmAdminService extends LlmService
 
         // Get ALL messages including unvalidated ones (admin view)
         // Use getAdminMessages instead of getConversationMessages to include failed attempts
-        $messages = $this->getAdminMessages($conversation_id);
+        $messages = $this->getAdminMessages($conversation_id, LLM_DEFAULT_MESSAGE_LIMIT, $include_debug);
 
         return [
             'conversation' => $conversation,
@@ -177,9 +259,12 @@ class LlmAdminService extends LlmService
      * 
      * Returns ALL messages including unvalidated ones (failed schema validation attempts).
      * This is for debugging purposes - users only see validated messages.
+     *
+     * @param bool $include_debug Add sent_context and request_payload to every row
      */
-    public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT)
+    public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT, $include_debug = false)
     {
+        $debug_columns = $include_debug ? ", m.sent_context, m.request_payload" : "";
         return $this->db->query_db(
             "SELECT
                 m.id,
@@ -188,13 +273,14 @@ class LlmAdminService extends LlmService
                 m.attachments,
                 m.model,
                 m.tokens_used,
+                m.prompt_tokens,
+                m.completion_tokens,
                 m.timestamp,
-                m.sent_context,
-                m.is_validated,
-                m.request_payload
+                m.is_validated
+                {$debug_columns}
              FROM llmMessages m
              WHERE m.id_llmConversations = :conversation_id
-             ORDER BY m.timestamp ASC
+             ORDER BY m.timestamp ASC, m.id ASC
              LIMIT " . (int)$limit,
             [':conversation_id' => $conversation_id]
         ) ?: [];
@@ -217,7 +303,7 @@ class LlmAdminService extends LlmService
         );
         
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
         
         // Soft delete conversation
@@ -235,14 +321,7 @@ class LlmAdminService extends LlmService
                 ['id_llmConversations' => $conversation_id]
             );
             
-            // Log the action
-            $this->logTransaction(
-                transactionTypes_delete,
-                'llmConversations',
-                $conversation_id,
-                $conversation['id_users'],
-                'Admin deleted conversation' . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
-            );
+            $this->logAdminAction(transactionTypes_delete, $conversation, $admin_user_id, 'Admin deleted conversation');
         }
         
         return $result;
@@ -266,11 +345,11 @@ class LlmAdminService extends LlmService
         );
         
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
         
         if ($conversation['blocked']) {
-            throw new Exception('Conversation is already blocked');
+            throw new LlmException('Conversation is already blocked', 409);
         }
         
         $block_reason = $reason ?: 'Manually blocked by administrator';
@@ -287,14 +366,7 @@ class LlmAdminService extends LlmService
         );
         
         if ($result) {
-            // Log the action
-            $this->logTransaction(
-                transactionTypes_update,
-                'llmConversations',
-                $conversation_id,
-                $conversation['id_users'],
-                "Admin blocked conversation. Reason: {$block_reason}" . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
-            );
+            $this->logAdminAction(transactionTypes_update, $conversation, $admin_user_id, "Admin blocked conversation. Reason: {$block_reason}");
         }
         
         return $result;
@@ -317,11 +389,11 @@ class LlmAdminService extends LlmService
         );
         
         if (!$conversation) {
-            throw new Exception('Conversation not found');
+            throw new LlmException('Conversation not found', 404);
         }
         
         if (!$conversation['blocked']) {
-            throw new Exception('Conversation is not blocked');
+            throw new LlmException('Conversation is not blocked', 409);
         }
         
         $result = $this->db->update_by_ids(
@@ -336,14 +408,7 @@ class LlmAdminService extends LlmService
         );
         
         if ($result) {
-            // Log the action
-            $this->logTransaction(
-                transactionTypes_update,
-                'llmConversations',
-                $conversation_id,
-                $conversation['id_users'],
-                'Admin unblocked conversation' . ($admin_user_id ? " (by admin user ID: {$admin_user_id})" : '')
-            );
+            $this->logAdminAction(transactionTypes_update, $conversation, $admin_user_id, 'Admin unblocked conversation');
         }
         
         return $result;

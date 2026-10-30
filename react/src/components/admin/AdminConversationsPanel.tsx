@@ -93,18 +93,28 @@ export const AdminConversationsPanel: React.FC<AdminConversationsPanelProps> = (
         ) : (
           conversations.map((conversation) => {
             const conversationMeta = getConversationTypeMeta(conversation);
+            // The API returns the flag as "1"/"0"
+            const isBlocked = Number(conversation.blocked) === 1;
             return (
               <div
                 key={conversation.id}
                 className={`conversation-item conversation-item--${conversationMeta.key} p-3 border-bottom ${
                   selectedConversation?.id === conversation.id ? 'active' : ''
-                }`}
+                } ${isBlocked ? 'conversation-item--blocked' : ''}`}
                 onClick={() => onSelectConversation(conversation)}
               >
                 <div className="d-flex justify-content-between align-items-start mb-2">
-                  <span className={conversationMeta.badgeClass}>
-                    <i className={`fas ${conversationMeta.icon} mr-1`}></i>
-                    {conversationMeta.label}
+                  <span className="d-flex flex-wrap align-items-center">
+                    <span className={conversationMeta.badgeClass}>
+                      <i className={`fas ${conversationMeta.icon} mr-1`}></i>
+                      {conversationMeta.label}
+                    </span>
+                    {isBlocked && (
+                      <span className="conversation-blocked-badge ml-1">
+                        <i className="fas fa-ban mr-1"></i>
+                        Blocked
+                      </span>
+                    )}
                   </span>
                   <Badge variant="light" className="conversation-date-badge ml-2 flex-shrink-0">
                     {formatConversationDateBadge(conversation.updated_at)}
@@ -120,6 +130,13 @@ export const AdminConversationsPanel: React.FC<AdminConversationsPanelProps> = (
                   {conversation.user_name || 'Unknown user'}
                 </div>
 
+                {isBlocked && conversation.blocked_reason && (
+                  <div className="small conversation-blocked-reason mb-2">
+                    <i className="fas fa-exclamation-triangle mr-1"></i>
+                    {conversation.blocked_reason}
+                  </div>
+                )}
+
                 <div className="conversation-chip-row">
                   {conversation.section_name && (
                     <span className="conversation-chip">
@@ -131,6 +148,14 @@ export const AdminConversationsPanel: React.FC<AdminConversationsPanelProps> = (
                     <span className="conversation-chip">
                       <i className="fas fa-code mr-1"></i>
                       {conversation.script_name}
+                    </span>
+                  )}
+                  {conversation.source_type === 'form_interview' && (
+                    <span className="conversation-chip">
+                      <i className="fas fa-database mr-1"></i>
+                      {conversation.id_dataRows
+                        ? `Record #${conversation.id_dataRows}`
+                        : 'Unbound draft'}
                     </span>
                   )}
                   {conversation.model && (

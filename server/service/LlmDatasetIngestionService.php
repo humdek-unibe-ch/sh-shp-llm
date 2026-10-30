@@ -96,7 +96,7 @@ class LlmDatasetIngestionService extends BaseLlmService
      *
      * @param string $source_type One of: 'playground_run', 'form_submission', 'conversation_message', 'script_run'.
      * @param int    $limit       Max candidates (clamped to 1–100).
-     * @param array  $context     Filter context with 'descriptor', 'allowed_page_id', 'allow_script_source'.
+     * @param array  $context     Filter context with 'descriptor' and 'allow_script_source'.
      * @return array List of candidate rows with preview_text and assistant_preview fields.
      * @throws Exception If source_type is unsupported.
      */
@@ -104,19 +104,16 @@ class LlmDatasetIngestionService extends BaseLlmService
     {
         $limit = max(1, min((int)$limit, 100));
         $descriptor = is_array($context['descriptor'] ?? null) ? $context['descriptor'] : array();
-        $allowed_page_id = isset($context['allowed_page_id']) ? (int)$context['allowed_page_id'] : 0;
         $allow_script_source = !empty($context['allow_script_source']);
 
         if ($source_type === 'playground_run') {
-            return $this->decorateImportCandidates('playground_run', $this->listPlaygroundRunCandidates($limit, $descriptor, $allowed_page_id));
+            return $this->decorateImportCandidates('playground_run', $this->listPlaygroundRunCandidates($limit, $descriptor));
         }
         if ($source_type === 'form_submission') {
-            return $this->isStyleOwner($descriptor) ? $this->decorateImportCandidates('form_submission', $this->listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id)) : array();
+            return $this->decorateImportCandidates('form_submission', $this->listFormSubmissionCandidates($limit, $descriptor));
         }
         if ($source_type === 'conversation_message') {
-            return ($this->isStyleOwner($descriptor) || $this->isScriptOwner($descriptor) || $this->isMemoryOwner($descriptor))
-                ? $this->decorateImportCandidates('conversation_message', $this->listConversationCandidates($limit, $descriptor, $allowed_page_id))
-                : array();
+            return $this->decorateImportCandidates('conversation_message', $this->listConversationCandidates($limit, $descriptor));
         }
         if ($source_type === 'script_run') {
             return $allow_script_source ? $this->decorateImportCandidates('script_run', $this->listScriptCandidates($limit, $descriptor)) : array();
@@ -128,10 +125,13 @@ class LlmDatasetIngestionService extends BaseLlmService
     /**
      * Bulk-import cases from a specific source type by their IDs.
      *
+     * The ids come from the browser, so each is read through sourceScope(): a record the
+     * candidate list would not show for the descriptor's owner is skipped, not imported.
+     *
      * @param int    $dataset_id  Target dataset ID.
      * @param string $source_type One of: 'playground_run', 'form_submission', 'conversation_message', 'script_run'.
      * @param array  $source_ids  Source record IDs to import.
-     * @param array  $context     Filter context with 'descriptor', 'execution_profile', 'runtime_overrides', etc.
+     * @param array  $context     Filter context with 'descriptor', 'execution_profile', 'runtime_overrides', 'allow_script_source'.
      * @return array List of created case rows.
      * @throws Exception If no cases could be imported or source_type is unsupported.
      */
@@ -142,22 +142,22 @@ class LlmDatasetIngestionService extends BaseLlmService
         $descriptor = is_array($context['descriptor'] ?? null) ? $context['descriptor'] : array();
         $execution_profile = (string)($context['execution_profile'] ?? 'text_only');
         $runtime_overrides = is_array($context['runtime_overrides'] ?? null) ? $context['runtime_overrides'] : array();
-        $allowed_page_id = isset($context['allowed_page_id']) ? (int)$context['allowed_page_id'] : 0;
         $allow_script_source = !empty($context['allow_script_source']);
 
         foreach ((array)$source_ids as $source_id) {
-            $source_id = (int)$source_id;
+            // (int) of an array is 1; a list of ids holds plain numbers only
+            $source_id = is_scalar($source_id) ? (int)$source_id : 0;
             if ($source_id <= 0) {
                 continue;
             }
             $attempted++;
 
             if ($source_type === 'playground_run') {
-                $case = $this->importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id);
+                $case = $this->importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides);
             } elseif ($source_type === 'form_submission') {
-                $case = $this->importFormSubmissionCase($dataset_id, $source_id, $descriptor, $runtime_overrides, $allowed_page_id);
+                $case = $this->importFormSubmissionCase($dataset_id, $source_id, $descriptor, $runtime_overrides);
             } elseif ($source_type === 'conversation_message') {
-                $case = $this->importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id);
+                $case = $this->importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides);
             } elseif ($source_type === 'script_run') {
                 $case = $allow_script_source ? $this->importScriptFixtureCase($dataset_id, $source_id, $descriptor, $runtime_overrides) : null;
             } else {
@@ -180,57 +180,144 @@ class LlmDatasetIngestionService extends BaseLlmService
     }
 
     /**
-     * Query playground run candidates scoped by descriptor or page access.
+     * The records the descriptor's owner may use as import sources, as SQL conditions.
      *
-     * @param int   $limit           Max rows.
-     * @param array $descriptor      Owner descriptor for scope filtering.
-     * @param int   $allowed_page_id Fallback page scope from ACL.
-     * @return array Raw DB rows with request/response content.
+     * The single definition for listing and importing: a record can be imported only if the
+     * candidate list would show it, so an id taken from source_ids_json never reaches past the
+     * owner the request was authorized for. It fails closed: an owner id of 0, an owner type
+     * the source does not belong to, or an owner that does not exist gives no scope, and
+     * nothing matches. Records are tied to the owner by what they say about themselves (the
+     * prompt entry of a run, the section / script / title of a conversation), never by the page
+     * the owner happens to sit on.
+     *
+     * The conditions use the aliases the callers query with:
+     *   playground_run:                     pr (llm_prompt_playground_runs), pe (llm_prompt_entries)
+     *   form_submission, conversation_message: m (llmMessages), lc (llmConversations)
+     *   script_run:                         s (llm_scripts)
+     *
+     * @param string $source_type 'playground_run', 'form_submission', 'conversation_message' or 'script_run'.
+     * @param array  $descriptor  Owner descriptor.
+     * @return array|null array(string[] conditions, array named parameters); null when nothing is in scope.
      */
-    private function listPlaygroundRunCandidates($limit, $descriptor, $allowed_page_id)
+    private function sourceScope($source_type, $descriptor)
     {
-        $params = array();
-        $where = array('1=1');
-        $owner_type_id = $this->resolveOwnerTypeLookupId($descriptor);
         $owner_id = (int)($descriptor['owner_id'] ?? 0);
+        if ($owner_id <= 0) {
+            return null;
+        }
 
-        if ($owner_type_id > 0 && $owner_id > 0) {
-            $where[] = 'pe.id_llm_prompt_owner_types = :owner_type_id';
-            $where[] = 'pe.owner_id = :owner_id';
-            $params[':owner_type_id'] = $owner_type_id;
-            $params[':owner_id'] = $owner_id;
+        if ($source_type === 'playground_run') {
+            $owner_type_id = $this->resolveOwnerTypeLookupId($descriptor);
+            if ($owner_type_id <= 0) {
+                return null;
+            }
+            $where = array('pe.id_llm_prompt_owner_types = :owner_type_id', 'pe.owner_id = :owner_id');
+            $params = array(':owner_type_id' => $owner_type_id, ':owner_id' => $owner_id);
             if (!empty($descriptor['prompt_slot'])) {
                 $where[] = 'pe.prompt_slot = :prompt_slot';
                 $params[':prompt_slot'] = (string)$descriptor['prompt_slot'];
             }
-        } elseif ($allowed_page_id > 0) {
-            $where[] = 'ps.id_pages = :allowed_page_id';
-            $params[':allowed_page_id'] = $allowed_page_id;
+            // Only genuine playground tests (and compare runs): not builder runs (prompt
+            // improvement with AI) nor dataset-evaluation runs, so dataset import reflects
+            // what the user actually tested in the playground UI.
+            $allowed_mode_ids = $this->resolvePlaygroundImportRunModeIds();
+            if (!empty($allowed_mode_ids)) {
+                $where[] = 'pr.id_lookups_run_mode IN (' . implode(',', array_map('intval', $allowed_mode_ids)) . ')';
+            }
+            return array($where, $params);
         }
 
-        // Only include genuine playground tests (and compare runs). Exclude
-        // builder runs (prompt improvement with AI) and dataset-evaluation runs
-        // so dataset import reflects what the user actually tested in the
-        // playground UI.
-        $allowed_mode_ids = $this->resolvePlaygroundImportRunModeIds();
-        if (!empty($allowed_mode_ids)) {
-            $where[] = 'pr.id_lookups_run_mode IN (' . implode(',', array_map('intval', $allowed_mode_ids)) . ')';
+        if ($source_type === 'form_submission') {
+            return $this->isStyleOwner($descriptor)
+                ? array(array("m.role = 'user'", 'lc.id_sections = :section_id'), array(':section_id' => $owner_id))
+                : null;
         }
 
-        return $this->db->query_db(
+        if ($source_type === 'conversation_message') {
+            if ($this->isStyleOwner($descriptor)) {
+                return array(array("m.role = 'user'", 'lc.id_sections = :section_id'), array(':section_id' => $owner_id));
+            }
+            if ($this->isScriptOwner($descriptor)) {
+                return array(array("m.role = 'user'", 'lc.id_llm_scripts = :script_id'), array(':script_id' => $owner_id));
+            }
+            if ($this->isMemoryOwner($descriptor)) {
+                return $this->memoryConversationScope($owner_id);
+            }
+            return null;
+        }
+
+        if ($source_type === 'script_run') {
+            return $this->isScriptOwner($descriptor)
+                ? array(array('s.id = :script_id'), array(':script_id' => $owner_id))
+                : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Conversations of a memory rule. Memory-update conversations only contain assistant
+     * messages: the memory worker calls LlmService::callLlmApi(), which auto-logs only the
+     * assistant response (the full prompt is kept in `sent_context`). They have no id_sections /
+     * id_llm_scripts link and are identified solely by the `__memory_update__<key>` title
+     * written by LlmMemoryUpdateService, so a rule owns the titles of its memory keys.
+     *
+     * @param int $rule_id Memory rule ID.
+     * @return array|null Scope as returned by sourceScope(); null when the rule does not exist.
+     */
+    private function memoryConversationScope($rule_id)
+    {
+        $titles = $this->resolveMemoryConversationTitlePatterns($rule_id);
+        if ($titles === null) {
+            return null;
+        }
+
+        $where = array("m.role = 'assistant'");
+        $params = array();
+        if (empty($titles)) {
+            // The rule's memory keys are unknown: every memory-update conversation. A real
+            // prefix test: in LIKE the "_" of the prefix would match any character.
+            $prefix = '__memory_update__';
+            $where[] = 'SUBSTR(lc.title, 1, ' . strlen($prefix) . ') = :memory_title_prefix';
+            $params[':memory_title_prefix'] = $prefix;
+        } else {
+            $title_clauses = array();
+            foreach ($titles as $i => $title) {
+                $title_clauses[] = 'lc.title = :memory_title_' . $i;
+                $params[':memory_title_' . $i] = $title;
+            }
+            $where[] = '(' . implode(' OR ', $title_clauses) . ')';
+        }
+        return array($where, $params);
+    }
+
+    /**
+     * Query playground run candidates of the descriptor's owner.
+     *
+     * @param int   $limit      Max rows.
+     * @param array $descriptor Owner descriptor.
+     * @return array Raw DB rows with request/response content.
+     */
+    private function listPlaygroundRunCandidates($limit, $descriptor)
+    {
+        $scope = $this->sourceScope('playground_run', $descriptor);
+        if ($scope === null) {
+            return array();
+        }
+        list($where, $params) = $scope;
+
+        $rows = $this->db->query_db(
             "SELECT pr.id, pr.created_at, pr.id_llmConversations, pr.id_llmMessages_request, pr.id_llmMessages_response,
                     req.content AS request_content, res.content AS response_content
              FROM llm_prompt_playground_runs pr
-             LEFT JOIN llm_prompt_entries pe ON pe.id = pr.id_llm_prompt_entries
+             INNER JOIN llm_prompt_entries pe ON pe.id = pr.id_llm_prompt_entries
              LEFT JOIN llmMessages req ON req.id = pr.id_llmMessages_request
              LEFT JOIN llmMessages res ON res.id = pr.id_llmMessages_response
-             LEFT JOIN llmConversations lc ON lc.id = pr.id_llmConversations
-             LEFT JOIN sections sec ON sec.id = lc.id_sections
-             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
              WHERE " . implode(' AND ', $where) . "
              ORDER BY pr.created_at DESC LIMIT {$limit}",
             $params
         );
+        return is_array($rows) ? $rows : array();
     }
 
     /**
@@ -253,44 +340,33 @@ class LlmDatasetIngestionService extends BaseLlmService
     }
 
     /**
-     * Query form-submission (user message) candidates, filtering to messages that have dataRow links or parseable field lines.
+     * Query form-submission (user message) candidates of the descriptor's section, keeping
+     * the messages that have dataRow links or parseable field lines.
      *
-     * @param int   $limit           Max results.
-     * @param array $descriptor      Owner descriptor for section scope.
-     * @param int   $allowed_page_id Fallback page scope.
+     * @param int   $limit      Max results.
+     * @param array $descriptor Owner descriptor.
      * @return array Filtered rows with parseable form data.
      */
-    private function listFormSubmissionCandidates($limit, $descriptor, $allowed_page_id)
+    private function listFormSubmissionCandidates($limit, $descriptor)
     {
-        $params = array();
-        $where = array("m.role = 'user'");
-        if (!empty($descriptor['owner_id'])) {
-            $where[] = 'lc.id_sections = :section_id';
-            $params[':section_id'] = (int)$descriptor['owner_id'];
-        } elseif ($allowed_page_id > 0) {
-            $where[] = 'ps.id_pages = :allowed_page_id';
-            $params[':allowed_page_id'] = $allowed_page_id;
+        $scope = $this->sourceScope('form_submission', $descriptor);
+        if ($scope === null) {
+            return array();
         }
+        list($where, $params) = $scope;
 
         $rows = $this->db->query_db(
             "SELECT m.id, m.id_llmConversations, m.id_dataRows, m.timestamp AS created_at, m.content
              FROM llmMessages m
-             LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
-             LEFT JOIN sections sec ON sec.id = lc.id_sections
-             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
+             INNER JOIN llmConversations lc ON lc.id = m.id_llmConversations
              WHERE " . implode(' AND ', $where) . "
              ORDER BY m.timestamp DESC LIMIT " . (int)($limit * 4),
             $params
         );
 
         $filtered = array();
-        foreach ($rows as $row) {
-            if (!empty($row['id_dataRows'])) {
-                $filtered[] = $row;
-                continue;
-            }
-            $parsed = $this->dataset_service->parseFieldLines((string)($row['content'] ?? ''));
-            if (!empty($parsed)) {
+        foreach (is_array($rows) ? $rows : array() as $row) {
+            if ($this->isFormSubmissionMessage($row)) {
                 $filtered[] = $row;
             }
             if (count($filtered) >= $limit) {
@@ -302,84 +378,63 @@ class LlmDatasetIngestionService extends BaseLlmService
     }
 
     /**
-     * Query conversation user-message candidates scoped by section, script, or page.
+     * A user message that carries form data: linked to a dataRow, or made of field lines.
      *
-     * @param int   $limit           Max results.
-     * @param array $descriptor      Owner descriptor.
-     * @param int   $allowed_page_id Fallback page scope.
+     * @param array $message Row with id_dataRows and content.
+     * @return bool
+     */
+    private function isFormSubmissionMessage($message)
+    {
+        if (!empty($message['id_dataRows'])) {
+            return true;
+        }
+        $parsed = $this->dataset_service->parseFieldLines((string)($message['content'] ?? ''));
+        return !empty($parsed);
+    }
+
+    /**
+     * Query conversation message candidates of the descriptor's section, script or memory
+     * rule (user messages; assistant messages for memory rules, see memoryConversationScope()).
+     *
+     * @param int   $limit      Max results.
+     * @param array $descriptor Owner descriptor.
      * @return array Raw message rows.
      */
-    private function listConversationCandidates($limit, $descriptor, $allowed_page_id)
+    private function listConversationCandidates($limit, $descriptor)
     {
-        $params = array();
-        // Memory-update conversations only contain assistant messages — the
-        // memory worker calls LlmService::callLlmApi() which auto-logs only the
-        // assistant response (with the full prompt kept in `sent_context`).
-        // For memory owners we therefore look for assistant rows; every other
-        // owner keeps the original "user message" semantics.
-        $is_memory_owner = $this->isMemoryOwner($descriptor);
-        $where = array($is_memory_owner ? "m.role = 'assistant'" : "m.role = 'user'");
-        if (!empty($descriptor['owner_id']) && $this->isStyleOwner($descriptor)) {
-            $where[] = 'lc.id_sections = :section_id';
-            $params[':section_id'] = (int)$descriptor['owner_id'];
-        } elseif (!empty($descriptor['owner_id']) && $this->isScriptOwner($descriptor)) {
-            $where[] = 'lc.id_llm_scripts = :script_id';
-            $params[':script_id'] = (int)$descriptor['owner_id'];
-        } elseif ($is_memory_owner) {
-            // Memory-update conversations have no id_sections / id_llm_scripts
-            // link. They are identified solely by the `__memory_update__<key>`
-            // title pattern written by LlmMemoryUpdateService.
-            $title_patterns = $this->resolveMemoryConversationTitlePatterns($descriptor);
-            if (empty($title_patterns)) {
-                $where[] = "lc.title LIKE :memory_title_prefix";
-                $params[':memory_title_prefix'] = '__memory_update__%';
-            } else {
-                $title_clauses = array();
-                foreach ($title_patterns as $i => $pattern) {
-                    $key = ':memory_title_' . $i;
-                    $title_clauses[] = 'lc.title = ' . $key;
-                    $params[$key] = $pattern;
-                }
-                $where[] = '(' . implode(' OR ', $title_clauses) . ')';
-            }
-        } elseif ($allowed_page_id > 0) {
-            $where[] = 'ps.id_pages = :allowed_page_id';
-            $params[':allowed_page_id'] = $allowed_page_id;
+        $scope = $this->sourceScope('conversation_message', $descriptor);
+        if ($scope === null) {
+            return array();
         }
+        list($where, $params) = $scope;
 
-        return $this->db->query_db(
+        $rows = $this->db->query_db(
             "SELECT m.id, m.id_llmConversations, m.timestamp AS created_at, m.role, m.content,
                     lc.id_llm_scripts, lc.id_sections, lc.title AS conversation_title
              FROM llmMessages m
-             LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
-             LEFT JOIN sections sec ON sec.id = lc.id_sections
-             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
+             INNER JOIN llmConversations lc ON lc.id = m.id_llmConversations
              WHERE " . implode(' AND ', $where) . "
              ORDER BY m.timestamp DESC LIMIT {$limit}",
             $params
         );
+        return is_array($rows) ? $rows : array();
     }
 
     /**
-     * Resolve the specific `__memory_update__<key>` titles that belong to a
-     * memory-rule descriptor. Falls back to empty array so the caller can use
-     * the generic prefix filter when the rule's keys cannot be determined.
+     * Resolve the specific `__memory_update__<key>` titles that belong to a memory rule.
      *
-     * @param array $descriptor Owner descriptor for a memory rule.
-     * @return array<string> List of fully-qualified conversation titles.
+     * @param int $rule_id Memory rule ID.
+     * @return array<string>|null Fully-qualified conversation titles (empty when the rule's
+     *                            memory keys are unknown); null when the rule cannot be loaded.
      */
-    private function resolveMemoryConversationTitlePatterns($descriptor)
+    private function resolveMemoryConversationTitlePatterns($rule_id)
     {
-        $rule_id = (int)($descriptor['owner_id'] ?? 0);
-        if ($rule_id <= 0) {
-            return array();
-        }
         try {
             require_once __DIR__ . '/LlmMemoryRuleService.php';
             $rule_service = new LlmMemoryRuleService($this->services);
-            $rule = $rule_service->getRuleById($rule_id);
+            $rule = $rule_service->getRuleById((int)$rule_id);
             if (!$rule) {
-                return array();
+                return null;
             }
             $keys = isset($rule['memory_keys']) && is_array($rule['memory_keys'])
                 ? $rule['memory_keys']
@@ -394,12 +449,13 @@ class LlmDatasetIngestionService extends BaseLlmService
             }
             return $patterns;
         } catch (Exception $e) {
-            return array();
+            LlmErrorReporter::log('Memory rule lookup for dataset import', $e);
+            return null;
         }
     }
 
     /**
-     * Query script fixture candidates (llm_scripts table), optionally scoped to a specific script ID.
+     * Query the descriptor's own script as a fixture candidate (llm_scripts table).
      *
      * @param int   $limit      Max results.
      * @param array $descriptor Owner descriptor.
@@ -407,20 +463,20 @@ class LlmDatasetIngestionService extends BaseLlmService
      */
     private function listScriptCandidates($limit, $descriptor)
     {
-        $params = array();
-        $where = array('1=1');
-        if (!empty($descriptor['owner_id'])) {
-            $where[] = 's.id = :script_id';
-            $params[':script_id'] = (int)$descriptor['owner_id'];
+        $scope = $this->sourceScope('script_run', $descriptor);
+        if ($scope === null) {
+            return array();
         }
+        list($where, $params) = $scope;
 
-        return $this->db->query_db(
+        $rows = $this->db->query_db(
             "SELECT s.id, s.name, s.model, s.updated_at
              FROM llm_scripts s
              WHERE " . implode(' AND ', $where) . "
              ORDER BY s.updated_at DESC LIMIT {$limit}",
             $params
         );
+        return is_array($rows) ? $rows : array();
     }
 
     /** @return int Numeric lookup ID for the descriptor's owner_type, or 0 if unresolved. */
@@ -456,22 +512,25 @@ class LlmDatasetIngestionService extends BaseLlmService
      *
      * @return array|null Created case row, or null if out of scope.
      */
-    private function importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
+    private function importPlaygroundRunCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides)
     {
+        $scope = $this->sourceScope('playground_run', $descriptor);
+        if ($scope === null) {
+            return null;
+        }
+        list($where, $params) = $scope;
+        $params[':id'] = $source_id;
+
         $row = $this->db->query_db_first(
-            "SELECT pr.*, pe.owner_id AS prompt_owner_id, pe.id_llm_prompt_owner_types AS prompt_owner_type_id, lc.id_sections,
-                    ps.id_pages AS source_page_id, req.content AS request_content, res.content AS response_content
+            "SELECT pr.*, req.content AS request_content, res.content AS response_content
              FROM llm_prompt_playground_runs pr
-             LEFT JOIN llm_prompt_entries pe ON pe.id = pr.id_llm_prompt_entries
-             LEFT JOIN llmConversations lc ON lc.id = pr.id_llmConversations
-             LEFT JOIN sections sec ON sec.id = lc.id_sections
-             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
+             INNER JOIN llm_prompt_entries pe ON pe.id = pr.id_llm_prompt_entries
              LEFT JOIN llmMessages req ON req.id = pr.id_llmMessages_request
              LEFT JOIN llmMessages res ON res.id = pr.id_llmMessages_response
-             WHERE pr.id = :id LIMIT 1",
-            array(':id' => $source_id)
+             WHERE pr.id = :id AND " . implode(' AND ', $where) . " LIMIT 1",
+            $params
         );
-        if (!$row || !$this->matchesDescriptorScope($row, $descriptor, $allowed_page_id)) {
+        if (!$row) {
             return null;
         }
 
@@ -520,18 +579,24 @@ class LlmDatasetIngestionService extends BaseLlmService
      *
      * @return array|null Created case row, or null if out of scope.
      */
-    private function importFormSubmissionCase($dataset_id, $source_id, $descriptor, $runtime_overrides, $allowed_page_id)
+    private function importFormSubmissionCase($dataset_id, $source_id, $descriptor, $runtime_overrides)
     {
+        $scope = $this->sourceScope('form_submission', $descriptor);
+        if ($scope === null) {
+            return null;
+        }
+        list($where, $params) = $scope;
+        $params[':id'] = $source_id;
+
         $message = $this->db->query_db_first(
-            "SELECT m.id, m.id_llmConversations, m.id_dataRows, m.content, lc.id_sections, ps.id_pages AS source_page_id
+            "SELECT m.id, m.id_llmConversations, m.id_dataRows, m.content
              FROM llmMessages m
-             LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
-             LEFT JOIN sections sec ON sec.id = lc.id_sections
-             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
-             WHERE m.id = :id LIMIT 1",
-            array(':id' => $source_id)
+             INNER JOIN llmConversations lc ON lc.id = m.id_llmConversations
+             WHERE m.id = :id AND " . implode(' AND ', $where) . " LIMIT 1",
+            $params
         );
-        if (!$message || !$this->matchesDescriptorScope($message, $descriptor, $allowed_page_id)) {
+        // Only what the candidate list shows: a message that carries form data
+        if (!$message || !$this->isFormSubmissionMessage($message)) {
             return null;
         }
 
@@ -574,20 +639,25 @@ class LlmDatasetIngestionService extends BaseLlmService
      *
      * @return array|null Created case row, or null if out of scope.
      */
-    private function importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides, $allowed_page_id)
+    private function importConversationCase($dataset_id, $source_id, $descriptor, $execution_profile, $runtime_overrides)
     {
+        $scope = $this->sourceScope('conversation_message', $descriptor);
+        if ($scope === null) {
+            return null;
+        }
+        list($where, $params) = $scope;
+        $params[':id'] = $source_id;
+
         $message = $this->db->query_db_first(
             "SELECT m.id, m.id_llmConversations, m.role, m.content, m.sent_context,
                     lc.id_sections, lc.id_llm_scripts AS source_script_id,
-                    lc.title AS conversation_title, ps.id_pages AS source_page_id
+                    lc.title AS conversation_title
              FROM llmMessages m
-             LEFT JOIN llmConversations lc ON lc.id = m.id_llmConversations
-             LEFT JOIN sections sec ON sec.id = lc.id_sections
-             LEFT JOIN pages_sections ps ON ps.id_sections = sec.id
-             WHERE m.id = :id LIMIT 1",
-            array(':id' => $source_id)
+             INNER JOIN llmConversations lc ON lc.id = m.id_llmConversations
+             WHERE m.id = :id AND " . implode(' AND ', $where) . " LIMIT 1",
+            $params
         );
-        if (!$message || !$this->matchesDescriptorScope($message, $descriptor, $allowed_page_id)) {
+        if (!$message) {
             return null;
         }
 
@@ -948,14 +1018,22 @@ class LlmDatasetIngestionService extends BaseLlmService
     /**
      * Import an LLM script's test fixture as a dataset case.
      *
-     * @return array|null Created case row, or null if script not found.
+     * @return array|null Created case row, or null if the script is not the descriptor's own.
      */
     private function importScriptFixtureCase($dataset_id, $source_id, $descriptor, $runtime_overrides)
     {
+        $scope = $this->sourceScope('script_run', $descriptor);
+        if ($scope === null) {
+            return null;
+        }
+        list($where, $params) = $scope;
+        $params[':id'] = $source_id;
+
         $script = $this->db->query_db_first(
-            "SELECT id, name, data_config, test_variables, model, temperature, max_tokens
-             FROM llm_scripts WHERE id = :id LIMIT 1",
-            array(':id' => $source_id)
+            "SELECT s.id, s.name, s.data_config, s.test_variables, s.model, s.temperature, s.max_tokens
+             FROM llm_scripts s
+             WHERE s.id = :id AND " . implode(' AND ', $where) . " LIMIT 1",
+            $params
         );
         if (!$script) {
             return null;
@@ -1120,78 +1198,6 @@ class LlmDatasetIngestionService extends BaseLlmService
     }
 
     /**
-     * Check whether a source row falls within the descriptor's ownership scope or page scope.
-     * Handles style-field owners, script owners, and page-level fallback matching.
-     *
-     * @param array $row             Source record with id_sections, prompt_owner_id, source_page_id, source_script_id.
-     * @param array $descriptor      Owner descriptor.
-     * @param int   $allowed_page_id ACL-validated page ID fallback.
-     * @return bool True if the row is in scope for import.
-     */
-    private function matchesDescriptorScope($row, $descriptor, $allowed_page_id)
-    {
-        $owner_id = (int)($descriptor['owner_id'] ?? 0);
-        if ($owner_id > 0 && $this->isStyleOwner($descriptor)) {
-            $source_section_id = (int)($row['id_sections'] ?? 0);
-            $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
-            $source_page_id = (int)($row['source_page_id'] ?? 0);
-
-            // Prefer strict owner matching whenever source metadata is available.
-            if ($source_section_id === $owner_id || $prompt_owner_id === $owner_id) {
-                return true;
-            }
-
-            // Allow page-level replay imports when ACL already validated page access.
-            if ($allowed_page_id > 0 && $source_page_id > 0 && $source_page_id === $allowed_page_id) {
-                return true;
-            }
-
-            // Fallback: allow page-scoped match when owner-id metadata is missing.
-            if ($source_section_id === 0 && $prompt_owner_id === 0 && $allowed_page_id > 0 && $source_page_id > 0) {
-                return $source_page_id === $allowed_page_id;
-            }
-
-            // Some legacy rows do not carry section/owner references. Do not hard-fail
-            // the import in that case; ACL was already enforced at request level.
-            if ($source_section_id === 0 && $prompt_owner_id === 0 && $source_page_id === 0) {
-                return true;
-            }
-
-            return false;
-        }
-        if ($owner_id > 0 && ($descriptor['owner_type'] ?? '') === LLM_PROMPT_OWNER_SCRIPT) {
-            $source_script_id = (int)($row['source_script_id'] ?? 0);
-            if ($source_script_id > 0) {
-                return $source_script_id === $owner_id;
-            }
-            $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
-            if ($prompt_owner_id > 0) {
-                return $prompt_owner_id === $owner_id;
-            }
-
-            // Legacy script-linked rows can miss prompt owner linkage.
-            return true;
-        }
-        if ($this->isMemoryOwner($descriptor)) {
-            // Memory-rule scopes rely on conversation title (__memory_update__<key>).
-            // Any row already filtered through listConversationCandidates is in scope.
-            $title = (string)($row['conversation_title'] ?? '');
-            if ($title !== '' && strpos($title, '__memory_update__') === 0) {
-                return true;
-            }
-            $prompt_owner_id = (int)($row['prompt_owner_id'] ?? 0);
-            if ($prompt_owner_id > 0 && $owner_id > 0) {
-                return $prompt_owner_id === $owner_id;
-            }
-            return true;
-        }
-        if ($allowed_page_id > 0) {
-            return (int)($row['source_page_id'] ?? 0) === $allowed_page_id;
-        }
-        return true;
-    }
-
-    /**
      * Merge override values into a base config, with overrides taking precedence.
      *
      * @param array $base     Base config array.
@@ -1222,7 +1228,15 @@ class LlmDatasetIngestionService extends BaseLlmService
             return trim($extended);
         }
 
-        return $execution_profile === 'chat_runtime' ? 'chat_runtime' : 'chat_runtime';
+        // Dataset profile wins for conversation-backed runtimes. The previous
+        // branch always returned chat_runtime, so imports into an
+        // interview_runtime dataset failed with "Case execution profile must
+        // match dataset profile".
+        if ($execution_profile === 'interview_runtime') {
+            return 'interview_runtime';
+        }
+
+        return 'chat_runtime';
     }
 
     /**

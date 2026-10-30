@@ -18,6 +18,7 @@ export const datasetTypeOptions = [
 export const executionProfileOptions = [
   { value: 'chat_runtime', label: 'chat_runtime' },
   { value: 'form_runtime', label: 'form_runtime' },
+  { value: 'interview_runtime', label: 'interview_runtime' },
   { value: 'script_runtime', label: 'script_runtime' },
   { value: 'text_only', label: 'text_only' },
 ];
@@ -29,6 +30,8 @@ export function describeExecutionProfile(profile?: string | null): string {
       return 'Replay/evaluate chat-style prompts with message history.';
     case 'form_runtime':
       return 'Replay/evaluate structured form submissions.';
+    case 'interview_runtime':
+      return 'Replay/evaluate llmFormLogList interview turns against a test draft.';
     case 'script_runtime':
       return 'Replay/evaluate script prompts and fixtures.';
     case 'text_only':

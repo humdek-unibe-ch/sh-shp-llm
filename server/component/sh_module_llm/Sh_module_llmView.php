@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
 require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 
 /**
  * View for the LLM Settings module.
@@ -70,19 +71,11 @@ class Sh_module_llmView extends BaseView
     public function getReactConfig()
     {
         return json_encode([
-            'csrfToken' => $this->resolveCsrfToken(),
+            'csrfToken' => LlmCsrfService::getToken(),
             'memoryPageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
         ]);
     }
 
-    /** @return string CSRF token from session. */
-    private function resolveCsrfToken()
-    {
-        return $_SESSION['csrf_token']
-            ?? $_SESSION['token']
-            ?? $_SESSION['security_token']
-            ?? '';
-    }
 
     /** @return string Git tag version string for cache busting, or 'dev'. */
     private function getVersion()

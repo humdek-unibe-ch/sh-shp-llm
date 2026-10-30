@@ -11,11 +11,10 @@
  * covering page routing, rate limiting, API configuration, file handling,
  * model capabilities, memory subsystem, and evaluation types.
  *
- * Backward-compatible wrapper functions for LlmModelCapabilities are
- * defined at the bottom; new code should call the static class directly.
+ * The static class LlmModelCapabilities (model and file-type helpers) is
+ * loaded at the bottom of this file.
  *
  * @package LLM Plugin
- * @version 1.1.0
  * @see LlmModelCapabilities For model-related utility methods
  */
 
@@ -40,6 +39,15 @@ define('LLM_RATE_LIMIT_REQUESTS_PER_MINUTE', 10);
 define('LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS', 3);
 define('LLM_RATE_LIMIT_COOLDOWN_SECONDS', 60);
 
+// Guests (GUEST_USER_ID) are throttled per browser session; this is the
+// site-wide ceiling for all guest sessions together, per minute.
+define('LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE', 60);
+
+// Speech-to-text calls a paid model on up to 25 MB per upload. It has a
+// per-user budget of its own, so recordings cannot use up the chat budget
+// above (and the other way round).
+define('LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE', 6);
+
 /* =========================================================================
  * DEFAULT LLM PARAMETERS
  * Applied when CMS fields are empty or not configured.
@@ -49,9 +57,23 @@ define('LLM_DEFAULT_MODEL', 'gpt-oss-120b');
 define('LLM_DEFAULT_TEMPERATURE', 1);
 define('LLM_DEFAULT_MAX_TOKENS', 2048);
 define('LLM_DEFAULT_TIMEOUT', 30);
+// Attempts per LLM request when the reply fails schema validation or the
+// provider hits a transient error (1 = never retry).
+define('LLM_RESPONSE_MAX_ATTEMPTS', 3);
 define('LLM_MODELS_FETCH_TIMEOUT', 5);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
+
+// Danger detection fallbacks, used only when neither the section nor the global
+// LLM settings (Safety) provide a value. The migration seeds the same values.
+define('LLM_DEFAULT_DANGER_KEYWORDS', 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis,kill someone,jemanden töten,harm others,anderen schaden');
+define('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE', "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n"
+    . "**Please consider reaching out to:**\n"
+    . "- A trusted friend or family member\n"
+    . "- A mental health professional\n"
+    . "- Crisis hotlines in your area\n\n"
+    . "If you're in immediate danger, please contact emergency services.\n\n"
+    . "*Your well-being is important. Take care of yourself.*");
 
 /**
  * Reasoning / thinking effort (OpenAI, Anthropic, future GPUStack).
@@ -124,6 +146,20 @@ define('LLM_CONV_SOURCE_DATASET_EVAL',   'dataset_eval');
 define('LLM_CONV_SOURCE_FORM',           'form');
 define('LLM_CONV_SOURCE_SCRIPT',         'script');
 define('LLM_CONV_SOURCE_DATASET_IMPORT', 'dataset_import');
+define('LLM_CONV_SOURCE_FORM_INTERVIEW', 'form_interview');
+
+/* =========================================================================
+ * INTERVIEW OPTION LOOKUP TYPES (v1.6.0+)
+ *
+ * Lookup `type_code`s backing the CMS selects of the `llm_interview_*`
+ * option fields on the `llmFormLogList` style. The stored field value is
+ * the lookup_code; the rows are registered in `db/v1.6.0.sql`.
+ * ========================================================================= */
+
+define('LLM_LOOKUP_INTERVIEW_PROGRESS_LAYOUT', 'llmInterviewProgressLayouts');
+define('LLM_LOOKUP_INTERVIEW_RETENTION',       'llmInterviewRetentionPolicies');
+define('LLM_LOOKUP_INTERVIEW_CHAT_POSITION',   'llmInterviewChatPositions');
+define('LLM_LOOKUP_INTERVIEW_CONFIRM',          'llmInterviewConfirmModes');
 
 /* =========================================================================
  * EVALUATION TYPES
@@ -311,61 +347,38 @@ define('LLM_MEMORY_SOURCE_FORM_ACTION', 'form_action_submit');
 define('LLM_MEMORY_SOURCE_LLM_CHAT_FORM', 'llm_chat_form_submit');
 define('LLM_MEMORY_SOURCE_LOGIN', 'login');
 define('LLM_MEMORY_SOURCE_PROFILE_NAME', 'profile_name_change');
-// CMS field on form / SurveyJS styles: comma-separated memory rule ids that run after a finished submission
+// CMS field on form / SurveyJS / LogList styles: comma-separated memory rule ids that run after a finished submission
 define('LLM_MEMORY_FIELD_RULE_IDS', 'llm_memory_rule_ids');
+// CMS field on llmChat: same multi-select widget, but lists llm_chat_form_submit rules (data-saving-off fallback)
+define('LLM_MEMORY_FIELD_CHAT_RULE_IDS', 'memory_rule_ids');
 define('LLM_MEMORY_STATUS_APPLIED', 'applied');
 define('LLM_MEMORY_STATUS_DUPLICATE', 'ignored_duplicate');
 define('LLM_MEMORY_STATUS_STALE', 'ignored_stale');
 define('LLM_MEMORY_STATUS_FAILED', 'failed');
 
 /* =========================================================================
- * BACKWARD-COMPATIBLE WRAPPERS
+ * MODEL CAPABILITIES
  *
- * Real logic lives in LlmModelCapabilities (static utility class).
- * These thin global functions exist only for backward compatibility;
- * new code should call LlmModelCapabilities::method() directly.
+ * Model and file-type helpers live in the static class LlmModelCapabilities;
+ * call LlmModelCapabilities::method() directly. It is loaded here so every
+ * caller can rely on it.
  * ========================================================================= */
 
 require_once __DIR__ . '/LlmModelCapabilities.php';
 
-/** @deprecated Use LlmModelCapabilities::getFileTypeCategory() */
-function llm_get_file_type_category($extension) {
-    return LlmModelCapabilities::getFileTypeCategory($extension);
-}
+/* =========================================================================
+ * LOCAL CONFIGURATION (optional)
+ *
+ * globals_untracked.php holds per-installation values that must never be
+ * committed (LLM_SECRET_KEY, LLM_ALLOWED_API_HOSTS, ...). It is optional: a
+ * fresh install, CI and the CLI workers load without it, and the plugin then
+ * runs with its defaults (no master secret = API keys are stored as entered,
+ * no host allow-list). Copy globals_untracked.default.php to
+ * globals_untracked.php to configure it. Environment variables of the same
+ * name work as well and need no file at all.
+ * ========================================================================= */
 
-/** @deprecated Use LlmModelCapabilities::isVisionModel() */
-function llm_is_vision_model($model) {
-    return LlmModelCapabilities::isVisionModel($model);
+if (is_file(__DIR__ . '/globals_untracked.php')) {
+    require_once __DIR__ . '/globals_untracked.php';
 }
-
-/** @deprecated Use LlmModelCapabilities::isEmbeddingModel() */
-function llm_is_embedding_model($model) {
-    return LlmModelCapabilities::isEmbeddingModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::isRerankerModel() */
-function llm_is_reranker_model($model) {
-    return LlmModelCapabilities::isRerankerModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::isNonChatModel() */
-function llm_is_non_chat_model($model) {
-    return LlmModelCapabilities::isNonChatModel($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::getModelCapabilities() */
-function llm_get_model_capabilities($model) {
-    return LlmModelCapabilities::getModelCapabilities($model);
-}
-
-/** @deprecated Use LlmModelCapabilities::modelHasCapability() */
-function llm_model_has_capability($model, $capability) {
-    return LlmModelCapabilities::modelHasCapability($model, $capability);
-}
-
-/** @deprecated Use LlmModelCapabilities::validateMimeType() */
-function llm_validate_mime_type($extension, $mimeType) {
-    return LlmModelCapabilities::validateMimeType($extension, $mimeType);
-}
-
 ?>

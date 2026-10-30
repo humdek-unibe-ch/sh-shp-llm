@@ -64,6 +64,33 @@ function isValidated(message: Message): boolean {
   return true;
 }
 
+/**
+ * Admin-only token label. New rows show prompt / completion / total;
+ * older rows (no split columns) keep the plain total.
+ */
+function formatTokenUsage(message: Message): string | null {
+  const toNum = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const prompt = toNum(message.prompt_tokens);
+  const completion = toNum(message.completion_tokens);
+  const total = toNum(message.tokens_used);
+
+  if (prompt !== null || completion !== null) {
+    const resolvedTotal = total ?? ((prompt ?? 0) + (completion ?? 0));
+    return `${(prompt ?? 0).toLocaleString()} in · ${(completion ?? 0).toLocaleString()} out · ${resolvedTotal.toLocaleString()} total`;
+  }
+
+  if (total !== null && total > 0) {
+    return `${total.toLocaleString()} tokens`;
+  }
+
+  return null;
+}
+
 /** AdminMessageList component. */
 export const AdminMessageList: React.FC<AdminMessageListProps> = ({
   messages,
@@ -104,6 +131,7 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
         const previousAssistantFormDef = isUser
           ? findPreviousAssistantFormDefinition(messages, index, formDefinitionsMap)
           : undefined;
+        const tokenLabel = formatTokenUsage(message);
 
         return (
           <div
@@ -202,12 +230,12 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
                   <i className="fas fa-clock mr-1"></i>
                   {formatDate(message.timestamp)}
                 </span>
-                {message.tokens_used && (
-                  <span className="tokens">
+                {tokenLabel ? (
+                  <span className="tokens" title="Token usage (prompt / completion / total)">
                     <i className="fas fa-microchip"></i>
-                    {message.tokens_used.toLocaleString()} tokens
+                    {tokenLabel}
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

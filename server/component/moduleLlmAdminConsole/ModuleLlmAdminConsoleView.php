@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseView.php";
 require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 
 /**
  * The view class for the LLM admin console component.
@@ -87,7 +88,12 @@ class ModuleLlmAdminConsoleView extends BaseView
             'defaultView' => $this->model->getDefaultView(),
             'showFilters' => $this->model->getShowFilters(),
             'labels' => $this->model->getLabels(),
-            'csrfToken' => $_SESSION['csrf_token'] ?? '',
+            'csrfToken' => LlmCsrfService::getToken(),
+            // The controller enforces the same modes; the UI only hides what would be refused
+            'permissions' => [
+                'canModerate' => $this->model->hasPageAccess('update'),
+                'canDelete' => $this->model->hasPageAccess('delete'),
+            ],
         ]);
     }
 }

@@ -72,12 +72,20 @@ function showFormAlert(container: HTMLElement, type: string, message: string): v
   const alert = document.createElement('div');
   alert.className = `alert alert-${type} alert-dismissible fade show llm-form-alert`;
   alert.role = 'alert';
-  alert.innerHTML = `
-    ${message}
-    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-      <span aria-hidden="true">&times;</span>
-    </button>
-  `;
+  // Text node, not innerHTML: the message must never be parsed as markup.
+  alert.appendChild(document.createTextNode(message));
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'close';
+  closeButton.setAttribute('data-dismiss', 'alert');
+  closeButton.setAttribute('aria-label', 'Close');
+  const closeIcon = document.createElement('span');
+  closeIcon.setAttribute('aria-hidden', 'true');
+  closeIcon.textContent = '\u00d7';
+  closeButton.appendChild(closeIcon);
+  alert.appendChild(closeButton);
+
   container.insertBefore(alert, container.firstChild);
 
   setTimeout(() => {
@@ -149,13 +157,15 @@ export const LlmFormPanel: React.FC<LlmFormPanelProps> = ({ config, formContaine
   }, [setSubmissionLock]);
 
   const postForm = useCallback(async (url: string, data: FormData): Promise<LlmFormResult> => {
-    const response = await fetch(url, { method: 'POST', body: data });
+    // A header, not a form field: the core saves every posted field as form data
+    const headers: Record<string, string> = config.csrfToken ? { 'X-CSRF-Token': config.csrfToken } : {};
+    const response = await fetch(url, { method: 'POST', body: data, headers });
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       return { success: false, error: 'Server returned an unexpected response', llm_result: '', llm_meta: {} as LlmResultMeta };
     }
     return response.json();
-  }, []);
+  }, [config.csrfToken]);
 
   const updateResultFromResponse = useCallback((data: LlmFormResult, fallbackError: string) => {
     if (data?.llm_meta?.record_id !== undefined && data.llm_meta.record_id !== null) {

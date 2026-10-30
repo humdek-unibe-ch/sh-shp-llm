@@ -7,6 +7,8 @@ require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/LlmFileNamingService.php';
 require_once __DIR__ . '/LlmService.php';
+require_once __DIR__ . '/exception/LlmRateLimitException.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 
 /**
  * LLM Speech-to-Text Service
@@ -29,7 +31,6 @@ require_once __DIR__ . '/LlmService.php';
  * @see LlmFileNamingService for full naming documentation
  * 
  * @package LLM Plugin
- * @version 1.0.0
  */
 class LlmSpeechToTextService extends BaseLlmService
 {
@@ -62,6 +63,32 @@ class LlmSpeechToTextService extends BaseLlmService
         'audio/mp4',
         'audio/m4a',
         'audio/flac'
+    ];
+    
+    /**
+     * Types libmagic reports for the recordings browsers make, judged by
+     * the file content. Some audio-only containers are reported as video/*
+     * or application/ogg.
+     */
+    const DETECTED_AUDIO_TYPES = [
+        'audio/webm',
+        'video/webm',
+        'audio/ogg',
+        'application/ogg',
+        'video/ogg',
+        'audio/mpeg',
+        'audio/mp3',
+        'audio/mp4',
+        'audio/x-m4a',
+        'audio/m4a',
+        'video/mp4',
+        'audio/aac',
+        'audio/x-aac',
+        'audio/x-hx-aac-adts',
+        'audio/aac-adts',
+        'audio/adts',
+        'audio/flac',
+        'audio/x-flac'
     ];
     
     /**
@@ -102,6 +129,7 @@ class LlmSpeechToTextService extends BaseLlmService
      * @param string|null $language Language code for transcription (null = auto-detect)
      * @param bool $keepFile Whether to keep the audio file after transcription (default: true)
      * @return array Result with 'success', 'text', 'audio_file' info, and optionally 'error'
+     *  (a refusal also carries 'error_type' = 'invalid_audio' | 'rate_limited', see failureStatus())
      */
     public function saveAndTranscribeAudio($audioFile, $userId, $sectionId, $conversationId = null, $model = null, $language = null, $keepFile = true)
     {
@@ -109,6 +137,7 @@ class LlmSpeechToTextService extends BaseLlmService
         if (!isset($audioFile['tmp_name']) || !file_exists($audioFile['tmp_name'])) {
             return [
                 'success' => false,
+                'error_type' => 'invalid_audio',
                 'error' => 'Audio file not found'
             ];
         }
@@ -119,6 +148,7 @@ class LlmSpeechToTextService extends BaseLlmService
         if ($fileSize > self::MAX_AUDIO_SIZE) {
             return [
                 'success' => false,
+                'error_type' => 'invalid_audio',
                 'error' => 'Audio file too large. Maximum size is 25MB.'
             ];
         }
@@ -126,13 +156,33 @@ class LlmSpeechToTextService extends BaseLlmService
         if ($fileSize === 0) {
             return [
                 'success' => false,
+                'error_type' => 'invalid_audio',
                 'error' => 'Audio file is empty'
             ];
         }
         
-        // Determine file extension from MIME type
-        $mimeType = $audioFile['type'] ?? mime_content_type($audioFile['tmp_name']) ?? 'audio/webm';
-        $extension = LlmFileNamingService::getExtensionFromMimeType($mimeType) ?? 'webm';
+        // The content decides what the file is, not the type the client declared
+        $mimeType = $this->detectAudioType($audioFile['tmp_name'], $audioFile['type'] ?? '');
+        if ($mimeType === null) {
+            return [
+                'success' => false,
+                'error_type' => 'invalid_audio',
+                'error' => 'Invalid audio format. Supported: WebM/Opus, OGG/Opus, M4A/MP4, MP3, FLAC'
+            ];
+        }
+        $extension = $this->mimeToExtension($mimeType);
+        
+        // Transcription calls a paid model: only the requests within the budget get that far
+        try {
+            (new LlmService($this->services))->consumeSpeechRateLimit($userId);
+        } catch (LlmRateLimitException $e) {
+            return [
+                'success' => false,
+                'error_type' => 'rate_limited',
+                'error' => $e->getMessage(),
+                'retry_after' => $e->getRetryAfter()
+            ];
+        }
         
         // Generate filename using naming service
         $filename = LlmFileNamingService::generateAudioFilename(
@@ -150,9 +200,10 @@ class LlmSpeechToTextService extends BaseLlmService
         try {
             LlmFileNamingService::ensureUserDirectoryExists($userId);
         } catch (Exception $e) {
+            LlmErrorReporter::log('Speech-to-text upload directory', $e);
             return [
                 'success' => false,
-                'error' => 'Failed to create upload directory: ' . $e->getMessage()
+                'error' => 'Failed to save audio file'
             ];
         }
         
@@ -182,7 +233,6 @@ class LlmSpeechToTextService extends BaseLlmService
         $result['audio_file'] = [
             'filename' => $filename,
             'path' => $relativePath,
-            'url' => LlmFileNamingService::buildFileUrl($relativePath),
             'size' => $fileSize,
             'type' => $mimeType,
             'extension' => $extension,
@@ -360,7 +410,7 @@ class LlmSpeechToTextService extends BaseLlmService
                 
                 return [
                     'success' => false,
-                    'error' => 'Speech recognition service error: ' . $errorMsg
+                    'error' => 'Speech recognition service error'
                 ];
             }
             
@@ -394,10 +444,10 @@ class LlmSpeechToTextService extends BaseLlmService
             ];
 
         } catch (Exception $e) {
-            error_log("Speech-to-text exception: " . $e->getMessage());
+            LlmErrorReporter::log('Speech-to-text transcription', $e);
             return [
                 'success' => false,
-                'error' => 'Speech recognition failed: ' . $e->getMessage()
+                'error' => 'Speech recognition failed. Please try again.'
             ];
         }
     }
@@ -498,7 +548,7 @@ class LlmSpeechToTextService extends BaseLlmService
             return $response;
             
         } catch (Exception $e) {
-            error_log("Speech-to-text cURL exception: " . $e->getMessage());
+            LlmErrorReporter::log('Speech-to-text cURL request', $e);
             return false;
         }
     }
@@ -523,7 +573,7 @@ class LlmSpeechToTextService extends BaseLlmService
             }
             return $models;
         } catch (Exception $e) {
-            error_log("Error fetching audio models: " . $e->getMessage());
+            LlmErrorReporter::log('Fetching the audio model list', $e);
             return $this->getDefaultAudioModelList();
         }
     }
@@ -545,6 +595,51 @@ class LlmSpeechToTextService extends BaseLlmService
         ];
     }
     
+    /**
+     * The audio type of an uploaded file, judged by its content.
+     *
+     * The type a client declares is only a claim. A file whose content is
+     * recognisably something else (HTML, a script, an image, an archive, ...)
+     * is refused whatever it was declared as. Content libmagic cannot name
+     * at all (application/octet-stream, e.g. a very short recording) is
+     * accepted when the client declared a supported audio type.
+     *
+     * @param string $path Path of the uploaded file
+     * @param string $declaredType Type the client declared for it
+     * @return string|null Lower-case type without parameters, null when the file is not audio
+     */
+    public function detectAudioType($path, $declaredType = '')
+    {
+        $detected = @mime_content_type($path);
+        if (!is_string($detected)) {
+            return null;
+        }
+        $detected = strtolower(trim(explode(';', $detected)[0]));
+        if (in_array($detected, self::DETECTED_AUDIO_TYPES, true)) {
+            return $detected;
+        }
+        if ($detected === 'application/octet-stream' && $this->isValidAudioType((string)$declaredType)) {
+            return strtolower(trim(explode(';', (string)$declaredType)[0]));
+        }
+        return null;
+    }
+
+    /**
+     * HTTP status a refused request should be answered with.
+     *
+     * @param array $result Result of saveAndTranscribeAudio()
+     * @return int|null 429 / 400 for a rate limit / unusable audio, null for
+     *  anything else (the caller's own default applies)
+     */
+    public static function failureStatus(array $result)
+    {
+        $type = isset($result['error_type']) ? $result['error_type'] : '';
+        if ($type === 'rate_limited') {
+            return 429;
+        }
+        return $type === 'invalid_audio' ? 400 : null;
+    }
+
     /**
      * Validate audio file type
      * 
@@ -585,7 +680,12 @@ class LlmSpeechToTextService extends BaseLlmService
             'audio/adts' => 'm4a',
             'audio/ogg' => 'ogg',
             'audio/ogg;codecs=opus' => 'ogg',
+            'application/ogg' => 'ogg',
+            'video/ogg' => 'ogg',
+            'video/webm' => 'webm',
+            'video/mp4' => 'm4a',
             'audio/flac' => 'flac',
+            'audio/x-flac' => 'flac',
             'audio/3gpp' => 'm4a',
             'audio/amr' => 'amr',
         ];

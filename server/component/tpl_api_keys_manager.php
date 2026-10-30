@@ -8,6 +8,8 @@ $fieldNamePrefix = $fields['fieldNamePrefix'];
 $inputName = $fields['inputName'];
 $jsonValue = $fields['jsonValue'];
 $disabled = $fields['disabled'];
+$saveUrl = $fields['saveUrl'] ?? '';
+$csrfToken = $fields['csrfToken'] ?? '';
 $fieldId = $fields['fieldId'];
 $fieldType = $fields['fieldType'];
 $fieldRelation = $fields['fieldRelation'];
@@ -19,19 +21,29 @@ if (!is_array($decoded)) {
     $decoded = array();
 }
 
-if (!function_exists('llm_mask_api_key')) {
-    function llm_mask_api_key($key)
+// $decoded is the list the browser may see (LlmApiKeysConfigService::toClient):
+// it never contains a key, only has_key / key_hint / key_source / key_readable.
+if (!function_exists('llm_api_key_label')) {
+    function llm_api_key_label($entry)
     {
-        if (!is_string($key) || strlen($key) < 8) {
-            return '********';
+        if (empty($entry['has_key'])) {
+            return 'No key';
         }
-        return substr($key, 0, 4) . '****' . substr($key, -4);
+        $hint = isset($entry['key_hint']) ? (string) $entry['key_hint'] : '';
+        if (($entry['key_source'] ?? '') === 'env') {
+            $label = 'Environment variable ' . $hint;
+        } else {
+            $label = 'Key: ' . ($hint !== '' ? $hint : '********');
+        }
+        return empty($entry['key_readable']) ? $label . ' (cannot be read - enter the key again)' : $label;
     }
 }
 ?>
 <div id="<?php echo $uid; ?>"
      class="llm-api-keys-manager mt-2"
-     data-disabled="<?php echo $disabled ? '1' : '0'; ?>">
+     data-disabled="<?php echo $disabled ? '1' : '0'; ?>"
+     data-save-url="<?php echo htmlspecialchars((string)$saveUrl, ENT_QUOTES, 'UTF-8'); ?>"
+     data-csrf-token="<?php echo htmlspecialchars((string)$csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
     <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[id]" value="<?php echo htmlspecialchars((string)$fieldId, ENT_QUOTES, 'UTF-8'); ?>">
     <input type="hidden" name="<?php echo $fieldNamePrefix; ?>[type]" value="<?php echo htmlspecialchars((string)$fieldType, ENT_QUOTES, 'UTF-8'); ?>">
     <?php if ($fieldMeta !== null): ?>
@@ -57,14 +69,13 @@ if (!function_exists('llm_mask_api_key')) {
                 <?php
                 $entryName = isset($entry['name']) ? (string) $entry['name'] : '';
                 $entryBaseUrl = isset($entry['base_url']) ? (string) $entry['base_url'] : '';
-                $entryApiKey = isset($entry['api_key']) ? (string) $entry['api_key'] : '';
                 ?>
                 <div class="llm-apk-card">
                     <div class="llm-apk-header">
                         <span class="llm-apk-name"><?php echo htmlspecialchars($entryName !== '' ? $entryName : 'Unnamed', ENT_QUOTES, 'UTF-8'); ?></span>
                     </div>
                     <div class="llm-apk-url"><?php echo htmlspecialchars($entryBaseUrl, ENT_QUOTES, 'UTF-8'); ?></div>
-                    <div class="llm-apk-key">Key: <?php echo htmlspecialchars(llm_mask_api_key($entryApiKey), ENT_QUOTES, 'UTF-8'); ?></div>
+                    <div class="llm-apk-key"><?php echo htmlspecialchars(llm_api_key_label($entry), ENT_QUOTES, 'UTF-8'); ?></div>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>

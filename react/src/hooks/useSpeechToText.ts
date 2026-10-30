@@ -7,6 +7,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { csrfHeaders } from '../utils/api';
 
 const MAX_RECORDING_DURATION_MS = 60_000;
 const SILENCE_THRESHOLD = 0.01;
@@ -47,6 +48,14 @@ interface UseSpeechToTextOptions {
   sectionId?: number;
   /** Callback invoked with the transcribed text once processing completes. */
   onTranscription: (text: string) => void;
+  /** Upload URL; defaults to the current page URL (llmChat contract). */
+  endpoint?: string;
+  /**
+   * Replaces the default `action=speech_transcribe` + `section_id`
+   * form fields (other plugin surfaces expose their own contract, e.g.
+   * the form interview's `__llm_interview_action=transcribe`).
+   */
+  requestFields?: Record<string, string>;
 }
 
 /** Return value of the useSpeechToText hook. */
@@ -119,6 +128,8 @@ export function useSpeechToText({
   model,
   sectionId,
   onTranscription,
+  endpoint,
+  requestFields,
 }: UseSpeechToTextOptions): UseSpeechToTextReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -194,12 +205,18 @@ export function useSpeechToText({
         const extension = mimeToExtension(mimeType);
         const formData = new FormData();
         formData.append('audio', audioBlob, `recording.${extension}`);
-        formData.append('action', 'speech_transcribe');
-        formData.append('section_id', (sectionId ?? 0).toString());
+        if (requestFields) {
+          Object.entries(requestFields).forEach(([key, value]) => formData.append(key, value));
+        } else {
+          formData.append('action', 'speech_transcribe');
+          formData.append('section_id', (sectionId ?? 0).toString());
+        }
 
-        const response = await fetch(window.location.href, {
+        const response = await fetch(endpoint ?? window.location.href, {
           method: 'POST',
           body: formData,
+          headers: csrfHeaders(),
+          credentials: 'same-origin',
         });
 
         const result = await response.json();
@@ -212,7 +229,13 @@ export function useSpeechToText({
         } else if (result.success && !result.text) {
           setError('No speech detected. Please try again.');
         } else {
-          setError(result.error || 'Speech transcription failed');
+          const detail =
+            typeof result.error === 'string'
+              ? result.error
+              : result.error && typeof result.error.message === 'string'
+                ? result.error.message
+                : '';
+          setError(detail || 'Speech transcription failed');
         }
       } catch (err: unknown) {
         console.error('Speech processing error:', err);
@@ -222,7 +245,7 @@ export function useSpeechToText({
         setIsProcessing(false);
       }
     },
-    [sectionId],
+    [sectionId, endpoint, requestFields],
   );
 
   const stopRecording = useCallback(() => {

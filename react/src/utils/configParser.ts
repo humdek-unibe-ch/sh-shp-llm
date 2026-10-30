@@ -95,6 +95,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
   return {
     userId,
     sectionId: sectionId || jsonConfig.sectionId,
+    csrfToken: typeof jsonConfig.csrfToken === 'string' ? jsonConfig.csrfToken : undefined,
     fileConfig,
 
     // Core settings
@@ -104,6 +105,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
 
     // Boolean flags
     enableConversationsList: bool(ds, 'enableConversationsList', jsonConfig, 'enableConversationsList', true),
+    alwaysStartNewConversation: bool(ds, 'alwaysStartNewConversation', jsonConfig, 'alwaysStartNewConversation', false),
     enableFileUploads: bool(ds, 'enableFileUploads', jsonConfig, 'enableFileUploads', true),
     enableFullPageReload: bool(ds, 'enableFullPageReload', jsonConfig, 'enableFullPageReload'),
     isVisionModel: bool(ds, 'isVisionModel', jsonConfig, 'isVisionModel'),
@@ -183,5 +185,18 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     floatingShortcuts: (jsonConfig.floatingShortcuts && Array.isArray(jsonConfig.floatingShortcuts)
       ? jsonConfig.floatingShortcuts
       : []),
+
+    // Floating shortcut tray hide delay in seconds (v1.5.0+, default 2)
+    floatingShortcutsHideDelay: (() => {
+      const fromData = ds.floatingShortcutsHideDelay;
+      const raw = fromData !== undefined
+        ? fromData
+        : jsonConfig.floatingShortcutsHideDelay;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        return D.floatingShortcutsHideDelay ?? 2;
+      }
+      return Math.min(n, 60);
+    })(),
   } as LlmChatConfig;
 }

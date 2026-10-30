@@ -25,7 +25,6 @@ require_once __DIR__ . '/exception/LlmApiException.php';
  * Extends BaseLlmService for common functionality.
  * 
  * @package LLM Plugin
- * @version 1.1.0
  */
 class LlmService extends BaseLlmService
 {
@@ -91,6 +90,87 @@ class LlmService extends BaseLlmService
 
 
     /* =========================================================================
+     * GUEST ISOLATION
+     *
+     * Every anonymous visitor shares one account (GUEST_USER_ID). Rows owned
+     * by that id are therefore scoped to the visitor's own browser session so
+     * a guest never sees, continues or deletes another guest's conversation
+     * and every new guest starts with an empty chat.
+     * ========================================================================= */
+
+    /** Session key listing the conversation ids this guest session started */
+    const GUEST_SESSION_KEY = 'llm_guest_conversations';
+
+    /** Most conversation ids remembered per guest session */
+    const GUEST_SESSION_MAX_CONVERSATIONS = 50;
+
+    /** Rate-limit bucket shared by all guest sessions (site-wide ceiling) */
+    const GUEST_GLOBAL_RATE_BUCKET = 'guest_global';
+
+    /**
+     * Whether the user is the shared guest account.
+     *
+     * @param int|string|null $user_id User ID
+     * @return bool
+     */
+    public function isGuestUser($user_id)
+    {
+        return (int)$user_id === (int)GUEST_USER_ID;
+    }
+
+    /**
+     * Conversation ids the current guest session started.
+     *
+     * @return int[]
+     */
+    private function getGuestConversationIds()
+    {
+        $ids = $_SESSION[self::GUEST_SESSION_KEY] ?? [];
+        return is_array($ids) ? array_values(array_map('intval', $ids)) : [];
+    }
+
+    /**
+     * Remember a conversation as belonging to the current guest session.
+     *
+     * @param int $conversation_id Conversation ID
+     */
+    private function registerGuestConversation($conversation_id)
+    {
+        $ids = $this->getGuestConversationIds();
+        $ids[] = (int)$conversation_id;
+        $_SESSION[self::GUEST_SESSION_KEY] = array_slice(array_values(array_unique($ids)), -self::GUEST_SESSION_MAX_CONVERSATIONS);
+    }
+
+    /**
+     * Rate-limit bucket id for a user. Guests get one bucket per browser
+     * session so one visitor cannot use up the limit of all the others.
+     *
+     * @param int|string $user_id User ID
+     * @return int|string
+     */
+    private function getRateLimitBucket($user_id)
+    {
+        if (!$this->isGuestUser($user_id)) {
+            return $user_id;
+        }
+        return 'guest_' . substr(hash('sha256', (string)session_id()), 0, 16);
+    }
+
+    /**
+     * Current-minute usage of the site-wide guest bucket.
+     *
+     * @return array Rate limit data
+     */
+    private function getGuestGlobalRateData()
+    {
+        $data = $this->cacheManager->getRateLimitData(self::GUEST_GLOBAL_RATE_BUCKET);
+        if (!$data || $this->cacheManager->shouldResetRateLimit($data)) {
+            $data = $this->cacheManager->initRateLimitData();
+        }
+        return $data;
+    }
+
+    /* =========================================================================
      * RATE LIMITING
      * ========================================================================= */
 
@@ -103,7 +183,8 @@ class LlmService extends BaseLlmService
      */
     public function checkRateLimit($user_id)
     {
-        $rate_data = $this->cacheManager->getRateLimitData($user_id);
+        $bucket = $this->getRateLimitBucket($user_id);
+        $rate_data = $this->cacheManager->getRateLimitData($bucket);
         
         if (!$rate_data || $this->cacheManager->shouldResetRateLimit($rate_data)) {
             $rate_data = $this->cacheManager->initRateLimitData();
@@ -119,6 +200,16 @@ class LlmService extends BaseLlmService
             throw LlmRateLimitException::concurrentConversations(LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS);
         }
 
+        // All guest sessions together draw from one site-wide budget
+        if ($this->isGuestUser($user_id)
+            && $this->getGuestGlobalRateData()['requests'] >= LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE) {
+            throw new LlmRateLimitException(
+                'The assistant is busy right now. Please try again in a minute.',
+                LLM_RATE_LIMIT_COOLDOWN_SECONDS,
+                ['limit_type' => 'guest_global', 'limit' => LLM_RATE_LIMIT_GUEST_GLOBAL_REQUESTS_PER_MINUTE]
+            );
+        }
+
         return $rate_data;
     }
 
@@ -132,9 +223,11 @@ class LlmService extends BaseLlmService
      */
     public function updateRateLimit($user_id, $rate_data = null, $conversation_id = null)
     {
+        $bucket = $this->getRateLimitBucket($user_id);
+
         // If rate_data is not provided, get it from cache
         if ($rate_data === null) {
-            $rate_data = $this->cacheManager->getRateLimitData($user_id);
+            $rate_data = $this->cacheManager->getRateLimitData($bucket);
 
             // If no cached data exists, initialize it
             if (!$rate_data || $this->cacheManager->shouldResetRateLimit($rate_data)) {
@@ -158,7 +251,43 @@ class LlmService extends BaseLlmService
             $rate_data['conversations'][] = $conversation_id;
         }
 
-        $this->cacheManager->setRateLimitData($user_id, $rate_data);
+        $this->cacheManager->setRateLimitData($bucket, $rate_data);
+
+        if ($this->isGuestUser($user_id)) {
+            $global_data = $this->getGuestGlobalRateData();
+            $global_data['requests']++;
+            $this->cacheManager->setRateLimitData(self::GUEST_GLOBAL_RATE_BUCKET, $global_data);
+        }
+    }
+
+    /**
+     * Count one speech-to-text request against the user's own per-minute
+     * budget (a bucket separate from the chat one, see
+     * LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE). Check and count are one
+     * step: the request is counted the moment it is allowed.
+     *
+     * @param int $user_id User ID
+     * @return void
+     * @throws LlmRateLimitException If the budget for this minute is used up
+     */
+    public function consumeSpeechRateLimit($user_id)
+    {
+        $bucket = 'speech_' . $this->getRateLimitBucket($user_id);
+        $rate_data = $this->cacheManager->getRateLimitData($bucket);
+
+        if (!$rate_data || $this->cacheManager->shouldResetRateLimit($rate_data)) {
+            $rate_data = $this->cacheManager->initRateLimitData();
+        }
+        if ($rate_data['requests'] >= LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE) {
+            throw new LlmRateLimitException(
+                'Too many voice recordings. Please wait a minute and try again.',
+                LLM_RATE_LIMIT_COOLDOWN_SECONDS,
+                ['limit_type' => 'speech_requests_per_minute', 'limit' => LLM_RATE_LIMIT_SPEECH_REQUESTS_PER_MINUTE]
+            );
+        }
+
+        $rate_data['requests']++;
+        $this->cacheManager->setRateLimitData($bucket, $rate_data);
     }
 
     /* =========================================================================
@@ -211,6 +340,11 @@ class LlmService extends BaseLlmService
         }
 
         $conversation_id = $this->db->insert('llmConversations', $data);
+
+        // A guest only ever sees the conversations its own session created
+        if ($this->isGuestUser($user_id)) {
+            $this->registerGuestConversation($conversation_id);
+        }
 
         // Clear user cache using cache manager
         $this->cacheManager->clearUserCache($user_id);
@@ -267,7 +401,7 @@ class LlmService extends BaseLlmService
         } else {
             $existing = $this->getConversation($conversation_id, $user_id, $section_id);
             if (!$existing) {
-                throw new Exception('Conversation not found');
+                throw new LlmException('Conversation not found', 404);
             }
 
             $existingModel = $existing['model'];
@@ -307,10 +441,7 @@ class LlmService extends BaseLlmService
     {
         $conversations = $rate_data['conversations'] ?? [];
         if (count($conversations) >= LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS) {
-            throw new Exception(
-                'Concurrent conversation limit exceeded: ' .
-                LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS . ' conversations'
-            );
+            throw LlmRateLimitException::concurrentConversations(LLM_RATE_LIMIT_CONCURRENT_CONVERSATIONS);
         }
     }
 
@@ -410,6 +541,14 @@ class LlmService extends BaseLlmService
             $model = $this->normalizeModelIdentifierForStorage($model);
         }
 
+        // Guests only see conversations started by their own session; the
+        // per-user cache is shared by every guest, so it is bypassed for them.
+        $is_guest = $this->isGuestUser($user_id);
+        $guest_ids = $is_guest ? $this->getGuestConversationIds() : [];
+        if ($is_guest && empty($guest_ids)) {
+            return [];
+        }
+
         $cache_params = ['limit' => $limit];
         if ($model) {
             $cache_params['model'] = $model;
@@ -425,7 +564,7 @@ class LlmService extends BaseLlmService
             $cache_params['chat_only'] = (int)$chat_source_id;
         }
 
-        $cached = $this->cacheManager->get(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
+        $cached = $is_guest ? false : $this->cacheManager->get(LLM_CACHE_USER_CONVERSATIONS, $user_id, $cache_params);
 
         if ($cached !== false) {
             return $cached;
@@ -435,6 +574,15 @@ class LlmService extends BaseLlmService
                 FROM llmConversations
                 WHERE id_users = :id_user AND deleted = 0";
         $params = [':id_user' => $user_id];
+
+        if ($is_guest) {
+            $placeholders = [];
+            foreach ($guest_ids as $i => $guest_conversation_id) {
+                $placeholders[] = ':guest_id_' . $i;
+                $params[':guest_id_' . $i] = $guest_conversation_id;
+            }
+            $sql .= " AND id IN (" . implode(', ', $placeholders) . ")";
+        }
 
         // Hide back-end-only producers (playground, builder, memory, ...)
         // from the user-facing chat sidebar. Rows tagged 'chat' OR with a
@@ -467,7 +615,9 @@ class LlmService extends BaseLlmService
 
         $conversations = $this->db->query_db($sql, $params);
 
-        $this->cacheManager->set(LLM_CACHE_USER_CONVERSATIONS, $user_id, $conversations, $cache_params);
+        if (!$is_guest) {
+            $this->cacheManager->set(LLM_CACHE_USER_CONVERSATIONS, $user_id, $conversations, $cache_params);
+        }
         return $conversations;
     }
 
@@ -512,6 +662,11 @@ class LlmService extends BaseLlmService
      */
     public function getConversation($conversation_id, $user_id, $section_id = null)
     {
+        // A guest owns only the conversations its own session started
+        if ($this->isGuestUser($user_id) && !in_array((int)$conversation_id, $this->getGuestConversationIds(), true)) {
+            return null;
+        }
+
         $sql = "SELECT * FROM llmConversations WHERE id = ? AND id_users = ? AND deleted = 0";
         $params = [$conversation_id, $user_id];
 
@@ -576,13 +731,15 @@ class LlmService extends BaseLlmService
      * 
      * @param int $conversation_id Conversation ID
      * @param int $user_id User ID
+     * @param int|null $section_id Only a conversation of this section (a chat
+     *        section must not delete e.g. a form interview transcript)
      * @return bool Success
      * @throws LlmException If conversation not found
      */
-    public function deleteConversation($conversation_id, $user_id)
+    public function deleteConversation($conversation_id, $user_id, $section_id = null)
     {
         // Verify ownership
-        $conversation = $this->getConversation($conversation_id, $user_id);
+        $conversation = $this->getConversation($conversation_id, $user_id, $section_id);
         if (!$conversation) {
             throw new LlmException('Conversation not found or access denied', 404);
         }
@@ -614,17 +771,19 @@ class LlmService extends BaseLlmService
      * @param string $content Message content (must be clean text only)
      * @param array|string|null $attachments File attachments metadata
      * @param string|null $model AI model used
-     * @param int|null $tokens_used Token count
+     * @param int|null $tokens_used Token count (total)
      * @param array|null $raw_response Raw API response data
      * @param array|null $sent_context Context messages sent with this message
      * @param string|null $reasoning Optional reasoning from LLM
      * @param bool $is_validated Whether the message passed schema validation (default: true)
      * @param array|null $request_payload The request payload sent to LLM API (for debugging)
+     * @param int|null $prompt_tokens Prompt / input tokens (nullable; new writes only)
+     * @param int|null $completion_tokens Completion / output tokens (nullable; new writes only)
      * @return int Message ID
      * @throws LlmValidationException If content is invalid
      * @throws LlmException If conversation not found
      */
-    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null, $is_validated = true, $request_payload = null)
+    public function addMessage($conversation_id, $role, $content, $attachments = null, $model = null, $tokens_used = null, $raw_response = null, $sent_context = null, $reasoning = null, $is_validated = true, $request_payload = null, $prompt_tokens = null, $completion_tokens = null)
     {
         // Validate content
         $content = LlmValidator::messageContent($content);
@@ -661,6 +820,8 @@ class LlmService extends BaseLlmService
             'attachments' => $attachmentsData,
             'model' => $model,
             'tokens_used' => $tokens_used,
+            'prompt_tokens' => $prompt_tokens,
+            'completion_tokens' => $completion_tokens,
             'raw_response' => $rawResponseData,
             'sent_context' => $sentContextData,
             'reasoning' => $reasoning,
@@ -668,10 +829,11 @@ class LlmService extends BaseLlmService
             'request_payload' => $requestPayloadData
         ];
 
-        // Final validation to prevent JSON in content field
-        if (strpos($data['content'], '{"id":') !== false) {
-            $this->logError('Content field contains JSON data - preventing corruption');
-            $data['content'] = substr($data['content'], 0, strpos($data['content'], '{"id":'));
+        // Raw provider stream chunks in the content point to a streaming bug upstream.
+        // Report it but keep the stored text intact: legitimate content (pasted JSON,
+        // structured responses with `{"id":` form fields) must never be cut off.
+        if (strpos($data['content'], '"chat.completion.chunk"') !== false) {
+            $this->logError('Content field contains raw provider stream chunks');
         }
 
         $message_id = $this->db->insert('llmMessages', $data);
@@ -699,7 +861,7 @@ class LlmService extends BaseLlmService
      * - request_payload
      * - raw_response
      * - reasoning
-     * - token usage
+     * - token usage (total + prompt/completion split when the provider reports it)
      *
      * @param int $conversation_id
      * @param string $content Assistant message content
@@ -712,12 +874,27 @@ class LlmService extends BaseLlmService
     public function addAssistantMessageFromApiResponse($conversation_id, $content, $model, $sent_context = null, $api_response = null, $is_validated = true)
     {
         $tokens_used = null;
+        $prompt_tokens = null;
+        $completion_tokens = null;
         $raw_response = null;
         $reasoning = null;
         $request_payload = null;
 
         if (is_array($api_response)) {
-            $tokens_used = $api_response['usage']['total_tokens'] ?? null;
+            $usage = (isset($api_response['usage']) && is_array($api_response['usage']))
+                ? $api_response['usage']
+                : array();
+            if (array_key_exists('prompt_tokens', $usage)) {
+                $prompt_tokens = (int)$usage['prompt_tokens'];
+            }
+            if (array_key_exists('completion_tokens', $usage)) {
+                $completion_tokens = (int)$usage['completion_tokens'];
+            }
+            if (array_key_exists('total_tokens', $usage)) {
+                $tokens_used = (int)$usage['total_tokens'];
+            } elseif ($prompt_tokens !== null || $completion_tokens !== null) {
+                $tokens_used = (int)$prompt_tokens + (int)$completion_tokens;
+            }
             $raw_response = $api_response['raw_response'] ?? $api_response;
             $reasoning = $api_response['reasoning'] ?? null;
             $request_payload = $api_response['request_payload'] ?? null;
@@ -734,7 +911,9 @@ class LlmService extends BaseLlmService
             $sent_context,
             $reasoning,
             $is_validated,
-            $request_payload
+            $request_payload,
+            $prompt_tokens,
+            $completion_tokens
         );
     }
 
@@ -805,10 +984,10 @@ class LlmService extends BaseLlmService
              INNER JOIN (
                  SELECT id FROM llmMessages
                  WHERE id_llmConversations = :conversation_id AND deleted = 0 AND is_validated = 1
-                 ORDER BY timestamp DESC
+                 ORDER BY timestamp DESC, id DESC
                  LIMIT " . (int)$limit . "
              ) recent ON m.id = recent.id
-             ORDER BY m.timestamp ASC;",
+             ORDER BY m.timestamp ASC, m.id ASC;",
             [':conversation_id' => $conversation_id]
         );
 
@@ -1152,7 +1331,7 @@ class LlmService extends BaseLlmService
         // For 'llm' type: exclude non-chat models (audio, embedding, reranker)
         return array_values(array_filter($models, function ($model) {
             $id = $model['id'] ?? '';
-            return !llm_is_non_chat_model($id) && !$this->isAudioModelId(strtolower($id));
+            return !LlmModelCapabilities::isNonChatModel($id) && !$this->isAudioModelId(strtolower($id));
         }));
     }
 
@@ -1488,7 +1667,7 @@ class LlmService extends BaseLlmService
                     $payload
                 );
             } catch (Exception $logException) {
-                $this->logWarning('LLM API error auto-log failed', ['error' => $logException->getMessage()]);
+                LlmErrorReporter::log('LLM API error auto-log', $logException);
             }
             
             if ($http_code >= 400) {
@@ -1537,10 +1716,7 @@ class LlmService extends BaseLlmService
                 );
                 $normalized['logged_message_id'] = $logged_message_id;
             } catch (Exception $logException) {
-                $this->logWarning('LLM API auto-log failed', [
-                    'error' => $logException->getMessage(),
-                    'conversation_id' => $log_options['conversation_id']
-                ]);
+                LlmErrorReporter::log('LLM API auto-log', $logException, $log_options['conversation_id']);
             }
 
             return $normalized;
@@ -1560,9 +1736,9 @@ class LlmService extends BaseLlmService
                     $payload
                 );
             } catch (Exception $logException) {
-                $this->logWarning('LLM API normalization auto-log failed', ['error' => $logException->getMessage()]);
+                LlmErrorReporter::log('LLM API normalization auto-log', $logException);
             }
-            $this->logWarning('Provider normalization error', ['error' => $e->getMessage()]);
+            LlmErrorReporter::log('Provider normalization', $e);
             throw LlmApiException::normalizationFailed($provider->getProviderName(), $e->getMessage(), $response, $payload);
         }
     }

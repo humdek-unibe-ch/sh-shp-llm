@@ -48,9 +48,13 @@ class LlmResponseView extends StyleView
         } else {
             if (is_a($this->model, "BaseStyleModel")) {
                 $pd = new ParsedownExtension();
+                // text_md has {{placeholders}} resolved from LLM output and
+                // participant data, so it is not trusted CMS content: safe mode
+                // escapes raw HTML and neutralizes javascript: URLs / on* attributes.
+                $pd->setSafeMode(true);
                 $md = $pd->text($this->text_md);
             } else {
-                $md = $this->text_md;
+                $md = htmlspecialchars($this->text_md, ENT_QUOTES, 'UTF-8');
             }
             require __DIR__ . "/tpl_llmResponse.php";
         }

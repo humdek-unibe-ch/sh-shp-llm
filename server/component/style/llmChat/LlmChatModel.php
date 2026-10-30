@@ -6,7 +6,9 @@
 <?php
 require_once __DIR__ . "/../../../../../../component/style/StyleModel.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
+require_once __DIR__ . "/../../../service/LlmSafetyConfigService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
 
 /**
@@ -106,7 +108,12 @@ class LlmChatModel extends StyleModel
             return null;
         }
 
-        return $this->llm_service->getConversation($cid, $this->user_id);
+        $conversation = $this->llm_service->getConversation($cid, $this->user_id);
+        if (is_array($conversation)) {
+            // Internal interview draft; the mobile JSON built from this row never needs it
+            unset($conversation['state']);
+        }
+        return $conversation;
     }
 
     /**
@@ -154,6 +161,13 @@ class LlmChatModel extends StyleModel
     {
         if (!$this->conversation_id_resolved) {
             $this->conversation_id_resolved = true;
+
+            // Always-new mode: never resume a previous session
+            if ($this->isAlwaysStartNewConversation()) {
+                $this->conversation_id = null;
+                return $this->conversation_id;
+            }
+
             $this->conversation_id = $_GET['conversation'] ?? null;
 
             if (!$this->isConversationsListEnabled()) {
@@ -237,8 +251,22 @@ class LlmChatModel extends StyleModel
 
     /** @return bool Whether the conversation list sidebar is shown to the user. */
     public function isConversationsListEnabled() { return $this->get_db_field('enable_conversations_list', '0') === '1'; }
+    /**
+     * Whether every page load starts a fresh chat (previous sessions hidden).
+     * @return bool
+     */
+    public function isAlwaysStartNewConversation()
+    {
+        return $this->get_db_field('always_start_new_conversation', '0') === '1';
+    }
+    /**
+     * Whether the visitor is the shared guest account. Guests get no per-user storage
+     * (uploads, audio, saved records), so those features are hidden and refused for them.
+     * @return bool
+     */
+    public function isGuestSession() { return $this->llm_service->isGuestUser($this->user_id); }
     /** @return bool Whether file upload button is available in the chat input. */
-    public function isFileUploadsEnabled() { return $this->get_db_field('enable_file_uploads', '0') == '1'; }
+    public function isFileUploadsEnabled() { return !$this->isGuestSession() && $this->get_db_field('enable_file_uploads', '0') == '1'; }
     /** @return bool Whether to reload the full page after conversation actions (delete, new). */
     public function isFullPageReloadEnabled() { return $this->get_db_field('enable_full_page_reload', '0') == '1'; }
 
@@ -263,7 +291,7 @@ class LlmChatModel extends StyleModel
             $llmService = new LlmService($this->services);
             return $llmService->modelSupportsVision($model);
         } catch (Exception $e) {
-            return llm_is_vision_model($model);
+            return LlmModelCapabilities::isVisionModel($model);
         }
     }
 
@@ -343,25 +371,6 @@ class LlmChatModel extends StyleModel
         return $messages;
     }
 
-    /**
-     * Resolve the opening assistant message for auto-start.
-     *
-     * Default (v1.4.1+): returns the CMS `auto_start_message` as authored.
-     * Conversation context is still attached as system context elsewhere; it is
-     * not mixed into this greeting.
-     *
-     * To mix context topics into the greeting again, use
-     * `LlmAutoStartService::generateAutoStartMessage()` — see the class docblock
-     * in `server/service/LlmAutoStartService.php` for the re-enable snippet.
-     * That service is intentionally kept for that reuse path.
-     *
-     * @return string Auto-start message
-     */
-    public function generateContextAwareAutoStartMessage()
-    {
-        return $this->getAutoStartMessage();
-    }
-
     // ===== Feature Flags =====
 
     /** @return bool Whether the chat auto-starts a conversation when opened. */
@@ -413,6 +422,28 @@ class LlmChatModel extends StyleModel
     public function getFloatingButtonLabel() { return $this->get_db_field('floating_button_label', ''); }
     /** @return string Title shown in the floating chat panel header. */
     public function getFloatingChatTitle() { return $this->get_db_field('floating_chat_title', 'AI Assistant'); }
+
+    /**
+     * Seconds the floating shortcut tray stays open after mouse leave / blur.
+     * CMS field `floating_shortcuts_hide_delay` (default 2). Clamped to 0–60.
+     *
+     * @return float
+     */
+    public function getFloatingShortcutsHideDelay()
+    {
+        $raw = $this->get_db_field('floating_shortcuts_hide_delay', '2');
+        if (!is_numeric($raw)) {
+            return 2.0;
+        }
+        $seconds = (float)$raw;
+        if ($seconds < 0) {
+            return 0.0;
+        }
+        if ($seconds > 60) {
+            return 60.0;
+        }
+        return $seconds;
+    }
 
     /**
      * Parse the llm_chat_shortcuts JSON field into a normalized array.
@@ -510,6 +541,18 @@ class LlmChatModel extends StyleModel
     public function shouldShowProgressTopics() { return $this->get_db_field('progress_show_topics', '0') === '1'; }
 
     /**
+     * Whether the model is told to answer in the participant's UI language
+     * (`llm_use_user_language`, on by default to match pre-1.6.0 behaviour;
+     * uncheck so the author context alone decides the language).
+     *
+     * @return bool
+     */
+    public function useUserLanguage()
+    {
+        return $this->get_db_field('llm_use_user_language', '1') === '1';
+    }
+
+    /**
      * Get the context language for progress confirmation questions.
      * Auto-detected from session locale via LlmLanguageUtility.
      */
@@ -534,14 +577,12 @@ class LlmChatModel extends StyleModel
         ];
     }
 
-    // ===== Danger Detection =====
+    // ===== Danger Detection (always on; empty section values use the global LLM settings) =====
 
-    /** @return bool Whether keyword-based danger/crisis detection is active. */
-    public function isDangerDetectionEnabled() { return $this->get_db_field('enable_danger_detection', '0') === '1'; }
     /** @return string Newline-separated list of danger keywords/phrases. */
     public function getDangerKeywords() { return $this->get_db_field('danger_keywords', ''); }
-    /** @return string Markdown message shown to the user when danger keywords are detected. */
-    public function getDangerBlockedMessage() { return $this->get_db_field('danger_blocked_message', "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you're in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*"); }
+    /** @return string Section markdown message shown when danger is detected; empty uses the global LLM settings. */
+    public function getDangerBlockedMessage() { return $this->get_db_field('danger_blocked_message', ''); }
 
     /**
      * Parse the semicolon/newline-separated list of notification email addresses.
@@ -565,7 +606,8 @@ class LlmChatModel extends StyleModel
      */
     public function isSpeechToTextEnabled()
     {
-        return $this->get_db_field('enable_speech_to_text', '0') === '1'
+        return !$this->isGuestSession()
+            && $this->get_db_field('enable_speech_to_text', '0') === '1'
             && !empty($this->get_db_field('speech_to_text_model', ''));
     }
 
@@ -584,12 +626,14 @@ class LlmChatModel extends StyleModel
         $f = function ($name, $default = '') { return $this->get_db_field($name, $default); };
         return [
             'userId' => $this->getUserId(),
+            'csrfToken' => LlmCsrfService::getToken(),
             'sectionId' => $this->getSectionId(),
             'currentConversationId' => $this->getConversationId(),
             'configuredModel' => $this->getConfiguredModel(),
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
             'maxFileSize' => LLM_MAX_FILE_SIZE,
             'enableConversationsList' => $this->isConversationsListEnabled(),
+            'alwaysStartNewConversation' => $this->isAlwaysStartNewConversation(),
             'enableFileUploads' => $this->isFileUploadsEnabled(),
             'enableFullPageReload' => $this->isFullPageReloadEnabled(),
             'acceptedFileTypes' => implode(',', array_map(fn($ext) => ".{$ext}", $this->getAcceptedFileTypes())),
@@ -612,6 +656,7 @@ class LlmChatModel extends StyleModel
             'floatingButtonLabel' => $this->getFloatingButtonLabel(),
             'floatingChatTitle' => $this->getFloatingChatTitle(),
             'floatingShortcuts' => $this->getFloatingShortcuts(),
+            'floatingShortcutsHideDelay' => $this->getFloatingShortcutsHideDelay(),
             'messagePlaceholder' => $f('message_placeholder', 'Type your message here...'),
             'noConversationsMessage' => $f('no_conversations_message', 'No conversations yet. Start a new chat!'),
             'newConversationTitleLabel' => $f('new_conversation_title_label', 'New Conversation'),
@@ -649,7 +694,7 @@ class LlmChatModel extends StyleModel
             'noVisionSupportText' => $f('no_vision_support_text', 'No vision'),
             'sendMessageTitle' => $f('send_message_title', 'Send message'),
             'removeFileTitle' => $f('remove_file_title', 'Remove file'),
-            'conversationBlockedMessage' => $this->getDangerBlockedMessage(),
+            'conversationBlockedMessage' => (new LlmSafetyConfigService($this->services, $this))->getBlockedMessage(),
             'fileConfig' => [
                 'maxFileSize' => LLM_MAX_FILE_SIZE,
                 'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,

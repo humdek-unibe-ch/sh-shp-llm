@@ -14,6 +14,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { MemoryManager } from './components/memory/MemoryManager';
+import { setCsrfToken } from './utils/api';
 import './components/memory/MemoryRulesEditor.css';
 
 /** Parse config from the DOM container and mount the MemoryManager tree. */
@@ -35,6 +36,9 @@ function initializeMemoryManager(): void {
     container.innerHTML = '<div class="alert alert-danger m-3">Memory config missing</div>';
     return;
   }
+
+  // The memory endpoints refuse changes that do not carry the session's token
+  setCsrfToken(typeof config.csrfToken === 'string' ? config.csrfToken : '');
 
   const root = ReactDOM.createRoot(container);
   root.render(<MemoryManager config={config as any} />);

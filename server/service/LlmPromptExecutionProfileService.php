@@ -154,6 +154,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function resolveExecutionProfileByPromptSlot($descriptor)
     {
+        if (($descriptor['prompt_slot'] ?? '') === 'llm_interview_context') {
+            return 'interview_runtime';
+        }
         return '';
     }
 
@@ -198,13 +201,13 @@ class LlmPromptExecutionProfileService extends BaseLlmService
                 'progress_bar_label',
                 'progress_complete_message',
                 'progress_show_topics',
-                'enable_danger_detection',
                 'danger_keywords',
                 'danger_notification_emails',
                 'danger_blocked_message',
                 'enable_floating_button',
                 'enable_media_rendering',
-                'allowed_media_domains'
+                'allowed_media_domains',
+                'llm_use_user_language'
             );
         }
 
@@ -212,7 +215,8 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             return array(
                 'llm_model',
                 'llm_temperature',
-                'llm_max_tokens'
+                'llm_max_tokens',
+                'llm_use_user_language'
             );
         }
 
@@ -246,6 +250,19 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function getExtendedCompanionFieldNames($profile)
     {
+        if ($profile === 'interview_runtime') {
+            return array(
+                'llm_model',
+                'llm_temperature',
+                'llm_max_tokens',
+                'llm_reasoning_effort',
+                'llm_interview_include_history',
+                'llm_interview_writable_hidden_fields',
+                'extra_params',
+                'llm_use_user_language',
+                'data_config'
+            );
+        }
         return array();
     }
 
@@ -257,6 +274,9 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function getExtendedPlaygroundRuntimeType($profile)
     {
+        if ($profile === 'interview_runtime') {
+            return 'chat';
+        }
         return 'none';
     }
 
@@ -268,7 +288,7 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function isExtendedChatLikeExecutionProfile($profile)
     {
-        return false;
+        return $profile === 'interview_runtime';
     }
 
     /**
@@ -391,10 +411,12 @@ class LlmPromptExecutionProfileService extends BaseLlmService
             $snapshot['strict_conversation_mode'] = $this->toBoolString($runtime_values['strict_conversation_mode'] ?? null);
             $snapshot['enable_form_mode'] = $this->toBoolString($runtime_values['enable_form_mode'] ?? null);
             $snapshot['enable_progress_tracking'] = $this->toBoolString($runtime_values['enable_progress_tracking'] ?? null);
-            $snapshot['enable_danger_detection'] = $this->toBoolString($runtime_values['enable_danger_detection'] ?? null);
             $snapshot['danger_keywords'] = $runtime_values['danger_keywords'] ?? '';
             $snapshot['enable_floating_button'] = $this->toBoolString($runtime_values['enable_floating_button'] ?? null);
             $snapshot['enable_media_rendering'] = $this->toBoolString($runtime_values['enable_media_rendering'] ?? null);
+        }
+        if ($profile === 'chat_runtime' || $profile === 'form_runtime') {
+            $snapshot['use_user_language'] = $this->toBoolString($runtime_values['llm_use_user_language'] ?? null);
         }
 
         $extended = $this->getExtendedConfigSnapshotFields($profile, $runtime_values);
@@ -414,6 +436,17 @@ class LlmPromptExecutionProfileService extends BaseLlmService
      */
     public function getExtendedConfigSnapshotFields($profile, $runtime_values)
     {
+        if ($profile === 'interview_runtime') {
+            return array(
+                'reasoning_effort' => $runtime_values['llm_reasoning_effort'] ?? null,
+                'include_history' => $this->toBoolString($runtime_values['llm_interview_include_history'] ?? null),
+                'use_user_language' => $this->toBoolString($runtime_values['llm_use_user_language'] ?? null),
+                'writable_hidden_fields' => $this->decodeJsonValue($runtime_values['llm_interview_writable_hidden_fields'] ?? null),
+                // The URL parameter declaration (name=default&...), not resolved values.
+                'extra_params' => $runtime_values['extra_params'] ?? null,
+                'data_config' => $this->decodeJsonValue($runtime_values['data_config'] ?? null)
+            );
+        }
         return array();
     }
 

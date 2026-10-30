@@ -14,6 +14,10 @@ require_once __DIR__ . "/../service/LlmMemoryConfigService.php";
 require_once __DIR__ . "/../service/LlmMemoryTriggerService.php";
 require_once __DIR__ . "/../service/LlmMemoryRuleService.php";
 require_once __DIR__ . "/../service/LlmMemorySubmissionContextService.php";
+require_once __DIR__ . "/../service/LlmCsrfService.php";
+require_once __DIR__ . "/../service/LlmTransaction.php";
+require_once __DIR__ . "/../service/LlmErrorReporter.php";
+require_once __DIR__ . "/../service/LlmApiKeysConfigService.php";
 
 /**
  * The class to define the hooks for the LLM plugin.
@@ -304,9 +308,11 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Build the multi select of memory rules for the llm_memory_rule_ids CMS field.
-     * Only rules of source type form_action_submit are offered (same filter as the
-     * form action job config); disabled rules stay visible so saved ids are not lost.
+     * Build the multi select of memory rules for the shared select-llm-memory-rules CMS widget.
+     * Field name picks the source-type filter:
+     * - llm_memory_rule_ids (forms / surveys / LogList) → form_action_submit
+     * - memory_rule_ids (llmChat fallback) → llm_chat_form_submit
+     * Disabled rules stay visible so saved ids are not lost.
      *
      * @param object $args
      * @param int $disabled
@@ -317,14 +323,19 @@ class LlmHooks extends BaseHooks
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
 
-        if (($field['name'] ?? '') !== LLM_MEMORY_FIELD_RULE_IDS) {
+        $field_name = $field['name'] ?? '';
+        if ($field_name === LLM_MEMORY_FIELD_RULE_IDS) {
+            $source_type = LLM_MEMORY_SOURCE_FORM_ACTION;
+        } elseif ($field_name === LLM_MEMORY_FIELD_CHAT_RULE_IDS) {
+            $source_type = LLM_MEMORY_SOURCE_LLM_CHAT_FORM;
+        } else {
             return $res;
         }
 
         $config_service = new LlmMemoryConfigService($this->services);
         $items = array();
         foreach ($config_service->getRules() as $rule) {
-            if (($rule['source_type'] ?? '') !== LLM_MEMORY_SOURCE_FORM_ACTION) {
+            if (($rule['source_type'] ?? '') !== $source_type) {
                 continue;
             }
             $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
@@ -398,26 +409,92 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Queue the selected rules for a finished submission. dispatchForRuleIds checks every
-     * rule (missing or disabled rules are skipped) and starts one detached background
+     * Queue the selected rules for a finished submission as one scheduled job
+     * (scheduleRuleJob), listed under Scheduled Jobs. Running it checks every rule
+     * (missing or disabled rules are skipped) and starts one detached background
      * worker per rule and memory key, so the participant never waits for the LLM.
      *
      * @param int[] $rule_ids
      * @param array $context Snapshot from LlmMemorySubmissionContextService
      * @param int|string $record_id The saved record id
+     * @param string $trigger_type finished, or deleted for an entry that was deleted
+     * @param int|null $user_id Whose memory is updated; null for the session user
      */
-    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id)
+    private function queueSubmissionMemoryRules($rule_ids, $context, $record_id, $trigger_type = actionTriggerTypes_finished, $user_id = null)
     {
         $trigger_service = new LlmMemoryTriggerService($this->services);
         $normalized = $trigger_service->normalizeFormActionPayload(array(
             'form_fields'  => $context['fields'],
             'form_name'    => $context['form_name'],
             'table_name'   => $context['table_name'],
-            'trigger_type' => actionTriggerTypes_finished,
+            'trigger_type' => $trigger_type,
             'record_id'    => $record_id,
-        ), (int)$_SESSION['id_user']);
+        ), $user_id !== null ? (int)$user_id : (int)$_SESSION['id_user']);
         $normalized['readable_text'] = $context['readable_text'];
-        $trigger_service->dispatchForRuleIds($rule_ids, $normalized, true);
+        $trigger_service->scheduleRuleJob(
+            $rule_ids,
+            $normalized,
+            true,
+            'LLM Memory Update (form: ' . $context['form_name']
+                . ($trigger_type === actionTriggerTypes_deleted ? ', entry deleted' : '') . ')'
+        );
+    }
+
+    /**
+     * Build a lookup-backed select for one of the `llm_interview_*` option
+     * fields (`llmFormLogList` style). One hook pair serves all four
+     * fields: the lookup family is chosen by field name and any other
+     * field falls through to the default renderer.
+     *
+     * @param object $args
+     * @param int $disabled
+     * @return object
+     */
+    private function returnSelectLlmInterviewField($args, $disabled)
+    {
+        $field = $this->get_param_by_name($args, 'field');
+        $res = $this->execute_private_method($args);
+
+        // name => expected custom field type + lookup family; both must
+        // match so a same-named field of another type gets no extra control
+        static $field_map = array(
+            'llm_interview_progress_layout' => array('select-llm-interview-progress-layout', LLM_LOOKUP_INTERVIEW_PROGRESS_LAYOUT),
+            'llm_interview_chat_retention'  => array('select-llm-interview-retention', LLM_LOOKUP_INTERVIEW_RETENTION),
+            'llm_interview_chat_position'   => array('select-llm-interview-chat-position', LLM_LOOKUP_INTERVIEW_CHAT_POSITION),
+            'llm_interview_confirm'         => array('select-llm-interview-confirm', LLM_LOOKUP_INTERVIEW_CONFIRM),
+        );
+        $field_name = $field['name'] ?? '';
+        $spec = $field_map[$field_name] ?? null;
+        if ($spec === null || (string)($field['type'] ?? '') !== $spec[0]) {
+            return $res;
+        }
+
+        $items = array();
+        foreach ($this->db->get_lookups($spec[1]) as $option) {
+            $items[] = array(
+                "value" => (string)($option['lookup_code'] ?? ''),
+                "text" => (string)($option['lookup_value'] ?? '')
+            );
+        }
+
+        $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
+        $selectField = new BaseStyleComponent("select", array(
+            "value" => $field['content'] ?? '',
+            "name" => $field_name_prefix . "[content]",
+            "max" => 10,
+            "live_search" => 0,
+            "is_required" => 0,
+            "disabled" => $disabled,
+            "items" => $items
+        ));
+
+        if ($selectField && $res) {
+            $children = $res->get_view()->get_children();
+            $children[] = $selectField;
+            $res->get_view()->set_children($children);
+        }
+
+        return $res;
     }
 
     /* Public Methods *********************************************************/
@@ -493,7 +570,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for llm_memory_rule_ids (edit).
+     * CMS multi select of memory rules for llm_memory_rule_ids / memory_rule_ids (edit).
      *
      * @param object $args
      * @return object
@@ -504,7 +581,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for llm_memory_rule_ids (view).
+     * CMS multi select of memory rules for llm_memory_rule_ids / memory_rule_ids (view).
      *
      * @param object $args
      * @return object
@@ -512,6 +589,28 @@ class LlmHooks extends BaseHooks
     public function outputFieldLlmMemoryRulesView($args)
     {
         return $this->returnSelectLlmMemoryRulesField($args, 1);
+    }
+
+    /**
+     * CMS select for the llm_interview_* option fields (edit).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmInterviewSelectEdit($args)
+    {
+        return $this->returnSelectLlmInterviewField($args, 0);
+    }
+
+    /**
+     * CMS select for the llm_interview_* option fields (view).
+     *
+     * @param object $args
+     * @return object
+     */
+    public function outputFieldLlmInterviewSelectView($args)
+    {
+        return $this->returnSelectLlmInterviewField($args, 1);
     }
 
     /**
@@ -1173,7 +1272,7 @@ class LlmHooks extends BaseHooks
                 "metaInputName" => $field_name_prefix . "[meta]",
                 "jsonConfig" => json_encode(array(
                     'endpoint' => $endpoint,
-                    'csrfToken' => $this->resolveCsrfToken(),
+                    'csrfToken' => LlmCsrfService::getToken(),
                     'disabled' => $disabled ? 1 : 0,
                     'ownerType' => LLM_PROMPT_OWNER_STYLE_FIELD,
                     'ownerId' => $cms_model->get_active_section_id(),
@@ -1200,25 +1299,6 @@ class LlmHooks extends BaseHooks
         return $res;
     }
 
-    /**
-     * Resolve CSRF token from known core session keys.
-     *
-     * @return string
-     */
-    private function resolveCsrfToken()
-    {
-        if (!empty($_SESSION['csrf_token'])) {
-            return (string)$_SESSION['csrf_token'];
-        }
-        if (!empty($_SESSION['token'])) {
-            return (string)$_SESSION['token'];
-        }
-        if (!empty($_SESSION['security_token'])) {
-            return (string)$_SESSION['security_token'];
-        }
-
-        return '';
-    }
 
     /**
      * Output custom prompt field in edit mode.
@@ -1243,13 +1323,21 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Sync prompt version history after the normal CMS field save completed.
+     * Hook on CmsModel::update_db. Before the normal CMS field save it
+     * validates, merges and encrypts the API keys list (the editor only knows
+     * servers without keys); after the save it syncs the prompt version
+     * history.
      *
      * @param array $args
      * @return mixed
      */
     public function syncPromptVersionOnCmsSave($args)
     {
+        $args = $this->protectApiKeysBeforeCmsSave($args);
+        if ($args === false) {
+            return false;
+        }
+
         $res = $this->execute_private_method($args);
 
         if ($res !== true) {
@@ -1279,6 +1367,56 @@ class LlmHooks extends BaseHooks
         }
 
         return $res;
+    }
+
+    /**
+     * The CMS editor of the `llm_api_keys` field posts the list it was given:
+     * servers without their keys (LlmApiKeysConfigService::toClient). Merge it
+     * with the stored list so keys are kept, new keys are encrypted and
+     * nothing invalid is stored.
+     *
+     * @param array $args update_db hook arguments
+     * @return array|false The arguments to continue with (content replaced by
+     *                     the merged JSON), or false to store nothing
+     */
+    private function protectApiKeysBeforeCmsSave($args)
+    {
+        if ($this->get_param_by_name($args, 'relation') !== RELATION_PAGE_FIELD) {
+            return $args;
+        }
+
+        $field_id = (int)$this->get_param_by_name($args, 'id');
+        $field = $this->services->get_db()->query_db_first(
+            "SELECT name FROM fields WHERE id = :id",
+            array(':id' => $field_id)
+        );
+        if (!$field || $field['name'] !== 'llm_api_keys') {
+            return $args;
+        }
+
+        $stored = $this->services->get_db()->query_db_first(
+            "SELECT content FROM pages_fields_translation
+             WHERE id_pages = :page AND id_fields = :field AND id_languages = :lang",
+            array(
+                ':page' => $args['hookedClassInstance']->get_active_page_id(),
+                ':field' => $field_id,
+                ':lang' => (int)$this->get_param_by_name($args, 'id_language')
+            )
+        );
+
+        $errors = array();
+        $merged = LlmApiKeysConfigService::prepareForSave(
+            (string)$this->get_param_by_name($args, 'content'),
+            $stored['content'] ?? '',
+            $errors
+        );
+        if ($merged === null) {
+            error_log('[LLM] The API keys were not saved: ' . implode(' ', $errors));
+            return false;
+        }
+
+        $args['content'] = $merged;
+        return $args;
     }
 
     /**
@@ -1473,10 +1611,8 @@ class LlmHooks extends BaseHooks
             return $res;
         }
 
-        $entries = json_decode($field['content'] ?? '[]', true);
-        if (!is_array($entries)) {
-            $entries = [];
-        }
+        // Never hand the stored keys to the browser: servers without keys.
+        $json_value = LlmApiKeysConfigService::toClientJson($field['content'] ?? '');
 
         $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
         $inputName = $field_name_prefix . "[content]";
@@ -1488,8 +1624,12 @@ class LlmHooks extends BaseHooks
                 "uid" => $uid,
                 "fieldNamePrefix" => $field_name_prefix,
                 "inputName" => $inputName,
-                "jsonValue" => json_encode($entries, JSON_UNESCAPED_SLASHES),
+                "jsonValue" => $json_value,
                 "disabled" => $disabled,
+                // Each server change is stored right away through the settings endpoint
+                // (same validation, ACL and CSRF as the settings page)
+                "saveUrl" => $disabled ? '' : (string)$this->get_link_url(PAGE_LLM_CONFIG),
+                "csrfToken" => $disabled ? '' : LlmCsrfService::getToken(),
                 "fieldId" => $field['id'] ?? '',
                 "fieldType" => $field['type'] ?? '',
                 "fieldRelation" => $field['relation'] ?? '',
@@ -1686,6 +1826,8 @@ class LlmHooks extends BaseHooks
         $form_table = (string)(
             $config['form_data']['table_name']
             ?? $config['form_data']['form_name']
+            // jobs from LlmMemoryTriggerService::scheduleRuleJob() carry no form_data
+            ?? $config['normalized_payload']['match_criteria']['table_name']
             ?? ''
         );
         $record_id = $config['form_data']['record_id']
@@ -1717,13 +1859,22 @@ class LlmHooks extends BaseHooks
         $run_async = !empty($config['run_async']);
 
         $trigger_service = new LlmMemoryTriggerService($this->services);
-        $normalized = $trigger_service->normalizeFormActionPayload([
-            'form_fields'  => $form_fields,
-            'form_name'    => $config['form_data']['form_name'] ?? $form_table,
-            'table_name'   => $form_table,
-            'trigger_type' => $config['trigger_type'] ?? 'finished',
-            'record_id'    => $record_id,
-        ], $user_id);
+        if (isset($config['normalized_payload']) && is_array($config['normalized_payload'])) {
+            // Scheduled by LlmMemoryTriggerService::scheduleRuleJob() with the
+            // payload its trigger already built (style rules, chat forms).
+            $normalized = $config['normalized_payload'];
+            $normalized['user_id'] = $user_id;
+        } else {
+            $normalized = $trigger_service->normalizeFormActionPayload([
+                'form_fields'  => $form_fields,
+                'form_name'    => $config['form_data']['form_name'] ?? $form_table,
+                'table_name'   => $form_table,
+                'trigger_type' => $config['trigger_type'] ?? 'finished',
+                'record_id'    => $record_id,
+            ], $user_id);
+        }
+        // The update reports its result on this job (Scheduled Jobs).
+        $normalized['scheduled_job_id'] = (int)($args['task_info']['id'] ?? 0);
 
         if (!empty($config['memory_key_override'])) {
             $normalized['memory_key_override'] = $config['memory_key_override'];
@@ -1733,7 +1884,12 @@ class LlmHooks extends BaseHooks
         }
 
         if (!empty($rule_ids)) {
-            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async);
+            // Core runs this task inside JobScheduler::execute_job()'s own
+            // transaction, but only after UserInput::save_data() committed
+            // the submission (or later, from the cron queue), so the update
+            // may run now. Inside an LlmTransaction (form interview
+            // approval) it still waits for that commit.
+            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, [], true);
         } else {
             $this->transaction->add_transaction(
                 transactionTypes_insert,
@@ -1887,7 +2043,7 @@ class LlmHooks extends BaseHooks
             $normalized = $trigger_service->normalizeLoginPayload($user_id, $profile, $login_at);
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
-            error_log('LLM Memory: login trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory login trigger', $e);
         }
 
         return $res;
@@ -1940,7 +2096,7 @@ class LlmHooks extends BaseHooks
             unset($profile_snapshot['last_login']);
             $profile['profile_json'] = json_encode($profile_snapshot, JSON_UNESCAPED_SLASHES);
         } catch (Exception $e) {
-            error_log('LLM Memory: failed to build login profile: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory login profile', $e);
         }
 
         return $profile;
@@ -1983,7 +2139,7 @@ class LlmHooks extends BaseHooks
             $normalized = $trigger_service->normalizeProfileNamePayload($user_id, $old_name, $new_name);
             $trigger_service->dispatchMemoryUpdate($normalized);
         } catch (Exception $e) {
-            error_log('LLM Memory: profile name change trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory profile name change trigger', $e);
         }
 
         return $res;
@@ -2017,7 +2173,67 @@ class LlmHooks extends BaseHooks
                 $this->queueSubmissionMemoryRules($rule_ids, $context, $res);
             }
         } catch (\Throwable $e) {
-            error_log('LLM Memory: form rule trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory form rule trigger', $e);
+        }
+
+        return $res;
+    }
+
+    /**
+     * Run the memory rules selected on a form after one of its entries was
+     * deleted (status changed to deleted). Only the rules whose trigger types
+     * include "deleted" run ("Also run when an entry is deleted" in the rule
+     * editor). The memory prompt gets the entry's last values and is told the
+     * participant deleted it; whether the memory forgets it or keeps it as
+     * history is up to the rule's own instructions.
+     * Hook on FormUserInputModel::delete_user_input (hook_overwrite_return,
+     * priority 20). The entry is read before the delete runs; the delete
+     * itself is never changed and a failure here is only logged.
+     */
+    public function onFormDeletedMemoryRules($args)
+    {
+        $snapshot = null;
+        $rule_ids = array();
+        $record_id = (int)($args['record_id'] ?? 0);
+        $model = $args['hookedClassInstance'] ?? null;
+        try {
+            if ($record_id > 0 && is_object($model)) {
+                $rule_service = new LlmMemoryRuleService($this->services);
+                foreach ($this->getSubmissionMemoryRuleIds($model) as $rule_id) {
+                    $rule = $rule_service->getRuleById($rule_id);
+                    if ($rule && in_array(actionTriggerTypes_deleted, (array)($rule['trigger_types'] ?? array()), true)) {
+                        $rule_ids[] = (int)$rule_id;
+                    }
+                }
+                if (!empty($rule_ids)) {
+                    $snapshot = $model->get_form_entry_record($record_id, $model->get_db_field('own_entries_only', 1));
+                }
+            }
+        } catch (\Throwable $e) {
+            LlmErrorReporter::log('Memory form delete trigger', $e);
+        }
+
+        $res = $this->execute_private_method($args);
+        if (!$res || empty($rule_ids) || !is_array($snapshot) || empty($snapshot)) {
+            return $res;
+        }
+
+        try {
+            // The memory of the entry's owner learns about the delete, not the
+            // deleter's (with own_entries_only off they can differ).
+            $owner_id = (int)($snapshot['id_users'] ?? 0);
+            if ($owner_id <= 0 || $owner_id === GUEST_USER_ID) {
+                return $res;
+            }
+            // the stored row carries bookkeeping columns next to the answers
+            foreach (array(ENTRY_RECORD_ID, 'entry_date', 'id_users', 'user_name', 'user_code',
+                'id_actionTriggerTypes', 'triggerType', '_history_log') as $system_key) {
+                unset($snapshot[$system_key]);
+            }
+            $context = (new LlmMemorySubmissionContextService())->buildFormContext($model, $snapshot, $record_id);
+            $this->queueSubmissionMemoryRules($rule_ids, $context, $record_id, actionTriggerTypes_deleted, $owner_id);
+        } catch (\Throwable $e) {
+            LlmErrorReporter::log('Memory form delete trigger', $e);
         }
 
         return $res;
@@ -2048,7 +2264,7 @@ class LlmHooks extends BaseHooks
                 }
             }
         } catch (\Throwable $e) {
-            error_log('LLM Memory: survey rule trigger failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory survey rule trigger', $e);
         }
 
         return $res;
@@ -2071,23 +2287,23 @@ class LlmHooks extends BaseHooks
         }
 
         try {
-            $this->db->begin_transaction();
+            LlmTransaction::begin($this->db);
 
             $cleanup_ok = true;
             $cleanup_ok &= $this->db->remove_by_fk('refresh_events', 'id_users', $uid);
             $cleanup_ok &= $this->db->remove_by_fk('llmConversations', 'id_users', $uid);
 
             if (!$cleanup_ok) {
-                $this->db->rollback();
+                LlmTransaction::rollback($this->db);
                 error_log('LLM cleanup after clean_user_data failed for user ' . $uid);
                 return false;
             }
 
-            $this->db->commit();
+            LlmTransaction::commit($this->db);
             return true;
-        } catch (Exception $e) {
-            $this->db->rollback();
-            error_log('LLM cleanup after clean_user_data exception for user ' . $uid . ': ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            LlmTransaction::rollback($this->db);
+            LlmErrorReporter::log('Cleanup after clean_user_data for user ' . $uid, $e);
             return false;
         }
     }

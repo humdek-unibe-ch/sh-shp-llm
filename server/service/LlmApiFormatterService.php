@@ -59,7 +59,7 @@ class LlmApiFormatterService extends BaseLlmService
     {
         $api_messages = [];
         $configuredModel = $model ?? $this->model ?? $this->getConfiguredModel();
-        $isVisionModel = llm_is_vision_model($configuredModel);
+        $isVisionModel = LlmModelCapabilities::isVisionModel($configuredModel);
 
         // Prepend context messages if provided
         if (!empty($context_messages) && is_array($context_messages)) {
@@ -95,8 +95,8 @@ class LlmApiFormatterService extends BaseLlmService
             if (!empty($message['attachments'])) {
                 // Attachments stored as JSON
                 $decoded = json_decode($message['attachments'], true);
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                    $attachments = $decoded;
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $attachments = $this->normalizeStoredAttachments($decoded);
                 }
             }
 
@@ -132,6 +132,58 @@ class LlmApiFormatterService extends BaseLlmService
     }
 
     /**
+     * Reduce the decoded `attachments` column to a list of file attachments.
+     *
+     * The column also carries UI metadata that is not a file, for example the
+     * {"type":"form_submission","values":{...}} payload built from participant
+     * input. Only a list of attachment objects is treated as files; everything
+     * else is ignored so participant supplied values can never be interpreted
+     * as file references.
+     *
+     * @param mixed $decoded Result of json_decode() on the stored column
+     * @return array|null List of attachment arrays, or null when there are none
+     */
+    private function normalizeStoredAttachments($decoded)
+    {
+        return is_array($decoded) && array_is_list($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Resolve a stored attachment path (relative to the plugin root) to a real
+     * file inside the plugin upload folder.
+     *
+     * Anything that is empty, escapes the upload folder (traversal, absolute
+     * paths, symlinks) or is not a regular file is rejected.
+     *
+     * @param mixed $path Path as stored in the attachment record
+     * @return string|null Absolute file path, or null when it is not allowed
+     */
+    private function resolveUploadFile($path)
+    {
+        if (!is_string($path) || $path === '' || strpos($path, "\0") !== false) {
+            return null;
+        }
+
+        // Plugin root is two levels above server/service/
+        $pluginRoot = realpath(__DIR__ . '/../../');
+        if ($pluginRoot === false) {
+            return null;
+        }
+        $uploadRoot = realpath($pluginRoot . '/' . LLM_UPLOAD_FOLDER);
+        $fullPath = realpath($pluginRoot . '/' . ltrim(str_replace('\\', '/', $path), '/'));
+        if ($uploadRoot === false || $fullPath === false || !is_file($fullPath)) {
+            return null;
+        }
+
+        $prefix = rtrim($uploadRoot, '/\\') . DIRECTORY_SEPARATOR;
+        $inside = DIRECTORY_SEPARATOR === '\\'
+            ? stripos($fullPath, $prefix) === 0
+            : strpos($fullPath, $prefix) === 0;
+
+        return $inside ? $fullPath : null;
+    }
+
+    /**
      * Format an attachment for API request
      *
      * @param array $attachment Attachment info array
@@ -144,14 +196,18 @@ class LlmApiFormatterService extends BaseLlmService
             return null;
         }
         $path = $attachment['path'] ?? '';
-        if (is_array($path)) {
+        if (!is_string($path)) {
             $path = '';
         }
-        // Go up 2 levels from server/plugins/sh-shp-llm/server/service/ to reach plugin root
-        $fullPath = __DIR__ . "/../../{$path}";
         $originalName = $attachment['original_name'] ?? ($path ? basename($path) : 'unknown');
+        if (!is_string($originalName)) {
+            $originalName = 'unknown';
+        }
 
-        if (!file_exists($fullPath)) {
+        // Only files inside the plugin upload folder may be read
+        $fullPath = $this->resolveUploadFile($path);
+
+        if ($fullPath === null) {
             // Return a note about the missing attachment instead of null
             return [
                 'type' => 'text',

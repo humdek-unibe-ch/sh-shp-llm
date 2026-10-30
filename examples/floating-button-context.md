@@ -12,6 +12,7 @@ Floating Button Position: bottom-right (or: bottom-left, top-right, top-left, bo
 Floating Button Icon: fa-comments (or: fa-robot, fa-headset, fa-message)
 Floating Button Label: "Chat" (optional - leave empty for icon-only)
 Floating Chat Title: "AI Assistant"
+Floating Shortcuts Hide Delay: 2 (seconds the shortcut pills stay after mouse leave; 0 = hide immediately)
 Enable Conversations List: No (recommended for floating mode)
 ```
 

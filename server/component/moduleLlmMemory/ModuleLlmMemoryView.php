@@ -7,6 +7,7 @@
 require_once __DIR__ . "/../../../../../component/BaseView.php";
 require_once __DIR__ . "/../../../../../component/style/BaseStyleComponent.php";
 require_once __DIR__ . "/../moduleLlmShared/LlmAdminLayoutHelper.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 
 class ModuleLlmMemoryView extends BaseView
 {
@@ -79,28 +80,12 @@ class ModuleLlmMemoryView extends BaseView
         }
 
         return json_encode([
-            'csrfToken' => $this->resolveCsrfToken(),
+            'csrfToken' => LlmCsrfService::getToken(),
             'promptLabEndpoint' => $prompt_endpoint,
             'pageId' => $this->model->get_services()->get_db()->fetch_page_id_by_keyword(LLM_MEMORY_PAGE_KEYWORD),
             'pageUrl' => $this->model->get_link_url(LLM_MEMORY_PAGE_KEYWORD),
             'basePath' => defined('BASE_PATH') ? BASE_PATH : '',
         ]);
-    }
-
-    /** @return string CSRF token from session, checking multiple session key conventions. */
-    private function resolveCsrfToken()
-    {
-        if (!empty($_SESSION['csrf_token'])) {
-            return (string)$_SESSION['csrf_token'];
-        }
-        if (!empty($_SESSION['token'])) {
-            return (string)$_SESSION['token'];
-        }
-        if (!empty($_SESSION['security_token'])) {
-            return (string)$_SESSION['security_token'];
-        }
-
-        return '';
     }
 }
 ?>

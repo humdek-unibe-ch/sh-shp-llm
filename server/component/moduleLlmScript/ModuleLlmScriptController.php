@@ -6,6 +6,7 @@
 <?php
 require_once __DIR__ . "/../../../../../component/BaseController.php";
 require_once __DIR__ . "/../LlmJsonResponseTrait.php";
+require_once __DIR__ . "/../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../service/LlmScriptService.php";
 require_once __DIR__ . "/../../service/LlmService.php";
 
@@ -97,6 +98,24 @@ class ModuleLlmScriptController extends BaseController
         return $this->acl->$method($_SESSION['id_user'], $this->page_id);
     }
 
+    /**
+     * Actions that change data or call the model (create, update, delete,
+     * test) are POST only and carry the session CSRF token (POST field or
+     * X-CSRF-Token header). Called after the ACL check; sends 405 / 403 and
+     * exits otherwise.
+     */
+    private function requirePostWithCsrf()
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            $this->sendJsonResponse(['error' => 'Method not allowed'], 405);
+            exit;
+        }
+        if (!LlmCsrfService::verifyRequest()) {
+            $this->sendJsonResponse(['error' => 'Invalid CSRF token. Reload the page and try again.'], 403);
+            exit;
+        }
+    }
+
     /** Return all LLM scripts as JSON; requires select access. */
     private function handleList()
     {
@@ -143,6 +162,7 @@ class ModuleLlmScriptController extends BaseController
             $this->sendJsonResponse(['error' => 'Access denied: no insert permission'], 403);
             return;
         }
+        $this->requirePostWithCsrf();
         try {
             $sid = $this->scriptService->insert_new_script();
             if ($sid) {
@@ -163,6 +183,7 @@ class ModuleLlmScriptController extends BaseController
             $this->sendJsonResponse(['error' => 'Access denied: no update permission'], 403);
             return;
         }
+        $this->requirePostWithCsrf();
         $sid = intval($_POST['sid'] ?? 0);
         if ($sid <= 0) {
             $this->sendJsonResponse(['error' => 'Invalid script ID'], 400);
@@ -206,6 +227,7 @@ class ModuleLlmScriptController extends BaseController
             $this->sendJsonResponse(['error' => 'Access denied: no delete permission'], 403);
             return;
         }
+        $this->requirePostWithCsrf();
         $sid = intval($_POST['sid'] ?? 0);
         if ($sid <= 0) {
             $this->sendJsonResponse(['error' => 'Invalid script ID'], 400);
@@ -230,6 +252,7 @@ class ModuleLlmScriptController extends BaseController
             $this->sendJsonResponse(['error' => 'Access denied'], 403);
             return;
         }
+        $this->requirePostWithCsrf();
         try {
             $script_content = $_POST['script'] ?? '';
             $script_name = $_POST['script_name'] ?? 'Unnamed Script';

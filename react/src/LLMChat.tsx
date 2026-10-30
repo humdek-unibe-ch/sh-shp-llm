@@ -30,7 +30,7 @@ import ReactDOM from 'react-dom/client';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { LlmChat } from './components/styles/chat/LlmChat';
 import { FloatingChat } from './components/styles/chat/FloatingChat';
-import { configApi } from './utils/api';
+import { configApi, setCsrfToken } from './utils/api';
 import { parseConfig } from './utils/configParser';
 import type { LlmChatConfig } from './types';
 
@@ -137,6 +137,10 @@ function initializeSingleInstance(container: HTMLElement, instanceIndex: number)
   
   try {
     fallbackConfig = parseConfig(container);
+    // Before anything renders: the first request that changes data must already carry it
+    if (fallbackConfig.csrfToken) {
+      setCsrfToken(fallbackConfig.csrfToken);
+    }
     // Only use fallback if it has a valid user ID
     if (!fallbackConfig.userId || fallbackConfig.userId === 0) {
       fallbackConfig = undefined;

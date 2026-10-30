@@ -14,6 +14,9 @@ require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 require_once __DIR__ . '/LlmPromptResponseRenderService.php';
 require_once __DIR__ . '/LlmPromptRegistryService.php';
 require_once __DIR__ . '/LlmScriptService.php';
+require_once __DIR__ . '/LlmFormInterviewService.php';
+require_once __DIR__ . '/LlmDangerDetectionService.php';
+require_once __DIR__ . '/../component/style/llmFormLogList/LlmFormInterviewPreviewModel.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 /**
@@ -115,11 +118,61 @@ class LlmPromptPlaygroundService extends BaseLlmService
             );
         }
 
-        return array(
+        $result = array(
             'execution_profile' => $profile,
             'comparison_group_id' => $comparison_group_id,
             'runs' => $runs
         );
+        if (in_array($profile, array('chat_runtime', 'form_runtime', 'interview_runtime'), true)) {
+            $result['detected_keywords'] = $this->detectDangerKeywords($runtime_values, $variables, $message_history);
+        }
+        return $result;
+    }
+
+    /**
+     * Append the critical safety instruction to a form system prompt, as live
+     * llmFormRecord / llmFormLog calls do (danger detection is always on).
+     *
+     * @param string $system_prompt Form system prompt
+     * @param array $runtime_values Runtime values (danger_keywords may override the global list)
+     * @return string System prompt with the safety block (unchanged when no keywords exist)
+     */
+    public function withFormSafetyContext($system_prompt, $runtime_values)
+    {
+        $proxy = new LlmPromptChatRuntimeModel('', $runtime_values, null);
+        $danger = new LlmDangerDetectionService($this->services, $proxy);
+        $safety_context = $danger->getCriticalSafetyContext();
+        return $safety_context ? $system_prompt . "\n\n" . $safety_context : $system_prompt;
+    }
+
+    /**
+     * Danger keywords a participant text in this run would trigger (section value,
+     * else the global LLM settings). Report only: a test run sends no email, writes
+     * no audit log and blocks nothing; the LLM still answers so its own safety
+     * assessment can be checked.
+     *
+     * @param array $runtime_values Runtime values (danger_keywords may override the global list)
+     * @param array $variables Template variables (form / interview test values)
+     * @param array $message_history Conversation history; the last user message is scanned
+     * @return string[] Detected keywords
+     */
+    public function detectDangerKeywords($runtime_values, $variables, $message_history)
+    {
+        $text = '';
+        foreach (array_reverse((array)$message_history) as $message) {
+            if (is_array($message) && ($message['role'] ?? '') === 'user') {
+                $text = (string)($message['content'] ?? '');
+                break;
+            }
+        }
+        foreach ((array)$variables as $value) {
+            $text .= "
+" . (is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : (string)$value);
+        }
+
+        $proxy = new LlmPromptChatRuntimeModel('', $runtime_values, null);
+        $danger = new LlmDangerDetectionService($this->services, $proxy);
+        return $danger->detectKeywords($text);
     }
 
     /**
@@ -141,6 +194,24 @@ class LlmPromptPlaygroundService extends BaseLlmService
     private function runSingleModel($profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
     {
         $runtime_type = $this->profile_service->getPlaygroundRuntimeType($profile);
+
+        // The interview profile is dispatched before generic chat: it
+        // shares the chat message editor but runs the scoped form
+        // interview runtime with its own context assembly.
+        if ($profile === 'interview_runtime') {
+            return $this->runInterviewRuntime(
+                $profile,
+                $descriptor,
+                $draft_prompt,
+                $runtime_values,
+                $variables,
+                $message_history,
+                $model_name,
+                $config_snapshot,
+                $comparison_group_id,
+                $options
+            );
+        }
 
         if ($runtime_type === 'chat' || $this->profile_service->isChatLikeExecutionProfile($profile)) {
             return $this->runChatRuntime(
@@ -408,7 +479,8 @@ class LlmPromptPlaygroundService extends BaseLlmService
             $floating_mode_service,
             $strict_conversation_service,
             $form_mode_service,
-            null
+            null,
+            $this->services
         );
 
         $history = $this->normalizeMessageHistory($message_history);
@@ -485,6 +557,140 @@ class LlmPromptPlaygroundService extends BaseLlmService
     }
 
     /**
+     * Execute an interview-runtime preview turn: builds a read-only
+     * preview model for the owner section, logs the participant turn to
+     * a Prompt Lab conversation and delegates context assembly, schema
+     * validation and draft merging to LlmFormInterviewService::previewTurn.
+     * No interview state, participant record, approval or memory write
+     * ever happens; every compared model receives the same initial
+     * draft on an independent model instance.
+     *
+     * @param string $execution_profile
+     * @param array  $descriptor       Prompt owner descriptor (owner_id = section id).
+     * @param string $draft_prompt     Edited author prompt (llm_interview_context draft).
+     * @param array  $runtime_values   Companion field overrides.
+     * @param array  $variables        Test draft / external context values.
+     * @param array  $message_history  Playground message history.
+     * @param string $model_name
+     * @param array  $config_snapshot
+     * @param string|null $comparison_group_id
+     * @param array  $options
+     * @return array Normalized run result.
+     */
+    private function runInterviewRuntime($execution_profile, $descriptor, $draft_prompt, $runtime_values, $variables, $message_history, $model_name, $config_snapshot, $comparison_group_id, $options)
+    {
+        $section_id = (int)($descriptor['owner_id'] ?? 0);
+        if ($section_id <= 0) {
+            throw new Exception('Interview preview requires a style-field owner section');
+        }
+
+        $variables = is_array($variables) ? $variables : array();
+        $model = LlmFormInterviewPreviewModel::createIsolated(
+            $this->services,
+            $section_id,
+            (int)($descriptor['page_id'] ?? $descriptor['pageId'] ?? 0),
+            $variables
+        );
+        $overrides = array('llm_interview_context' => (string)$draft_prompt);
+        foreach ($this->profile_service->getCompanionFieldNames($execution_profile) as $key) {
+            if (array_key_exists($key, is_array($runtime_values) ? $runtime_values : array())) {
+                $overrides[$key] = $runtime_values[$key];
+            }
+        }
+        $model->setInterviewPreviewOverrides($overrides);
+
+        $history = $this->normalizeMessageHistory($message_history);
+        $conversation_id = $this->getOrCreatePromptLabConversation(
+            (int)($_SESSION['id_user'] ?? 0),
+            $model_name,
+            $config_snapshot['temperature'] ?? LLM_DEFAULT_TEMPERATURE,
+            $config_snapshot['max_tokens'] ?? LLM_DEFAULT_MAX_TOKENS,
+            $section_id,
+            (string)($descriptor['prompt_slot'] ?? 'llm_interview_context')
+        );
+
+        $last_user = '';
+        for ($i = count($history) - 1; $i >= 0; $i--) {
+            if ($history[$i]['role'] === 'user') {
+                $last_user = $history[$i]['content'];
+                break;
+            }
+        }
+        $request_msg_id = $this->llm_service->addMessage(
+            $conversation_id,
+            'user',
+            $last_user !== '' ? $last_user : '(interview preview start)',
+            null,
+            $model_name,
+            0,
+            null,
+            null,
+            null,
+            true,
+            null
+        );
+
+        $interview_service = new LlmFormInterviewService($this->services, $this->llm_service);
+        $result = $interview_service->previewTurn($model, $variables, $history, array(
+            'conversation_id' => $conversation_id,
+            'model' => $model_name,
+            'temperature' => $config_snapshot['temperature'] ?? null,
+            'max_tokens' => $config_snapshot['max_tokens'] ?? null,
+            'reasoning_effort' => $config_snapshot['reasoning_effort'] ?? null,
+            'start' => empty($history)
+        ));
+
+        if (empty($result['ok'])) {
+            $error = isset($result['error']) && is_array($result['error']) ? $result['error'] : array();
+            $normalized = array(
+                'model' => $model_name,
+                'execution_profile' => $execution_profile,
+                'raw_content' => '',
+                'display_content' => '',
+                'parsed_response' => null,
+                'request_payload' => $result['request_payload'] ?? null,
+                'effective_context' => $result['effective_context'] ?? null,
+                'id_llmConversations' => $conversation_id,
+                'id_llmMessages_request' => $request_msg_id,
+                'id_llmMessages_response' => $result['logged_message_id'] ?? null,
+                'tokens_used' => null,
+                'duration_ms' => null,
+                'logged_message_id' => $result['logged_message_id'] ?? null,
+                'field_errors' => $result['field_errors'] ?? null,
+                'parse_errors' => array((string)($error['message'] ?? 'Interview preview failed'))
+            );
+            $normalized['id_llm_prompt_playground_runs'] = $this->logRun(
+                $descriptor, $config_snapshot, $variables, $normalized, $comparison_group_id, $options
+            );
+            return $normalized;
+        }
+
+        $rendered = $this->render_service->render((string)($result['content'] ?? ''), $model_name);
+        $normalized = array_merge($rendered, array(
+            'model' => $model_name,
+            'execution_profile' => $execution_profile,
+            'request_payload' => $result['request_payload'] ?? null,
+            'effective_context' => $result['effective_context'] ?? null,
+            'id_llmConversations' => $conversation_id,
+            'id_llmMessages_request' => $request_msg_id,
+            'id_llmMessages_response' => $result['logged_message_id'] ?? null,
+            'tokens_used' => $result['tokens_used'] ?? null,
+            'duration_ms' => $result['duration_ms'] ?? null,
+            'logged_message_id' => $result['logged_message_id'] ?? null,
+            'parsed_response' => $result['data'] ?? null,
+            'interview_draft' => $result['draft'] ?? array(),
+            'interview_fields' => $result['fields'] ?? array(),
+            'interview_progress' => $result['progress'] ?? null,
+            'field_errors' => $result['field_errors'] ?? null,
+            'attempts' => $result['attempts'] ?? null
+        ));
+        $normalized['id_llm_prompt_playground_runs'] = $this->logRun(
+            $descriptor, $config_snapshot, $variables, $normalized, $comparison_group_id, $options
+        );
+        return $normalized;
+    }
+
+    /**
      * Execute a form-style playground run: interpolates variables into the prompt, builds system+user messages, and calls the LLM.
      *
      * @param string $execution_profile   Profile code.
@@ -517,10 +723,14 @@ class LlmPromptPlaygroundService extends BaseLlmService
         $language_code = $this->getSessionLanguageCode();
         $system_prompt = $interpolated_context;
 
-        if ($language_code !== '') {
+        // Same opt-in as the production form (`llm_use_user_language`).
+        $use_user_language = (string)(is_array($runtime_values) && isset($runtime_values['llm_use_user_language'])
+            ? $runtime_values['llm_use_user_language'] : '0') === '1';
+        if ($language_code !== '' && $use_user_language) {
             $suffix = $this->prompt_assets->load('core.playground.language_suffix');
             $system_prompt .= "\n\n" . strtr($suffix, array('{{language_code}}' => $language_code));
         }
+        $system_prompt = $this->withFormSafetyContext($system_prompt, $runtime_values);
 
         $messages = array(
             array('role' => 'system', 'content' => $system_prompt),
@@ -965,6 +1175,12 @@ class LlmPromptChatRuntimeModel
         return $this->prompt;
     }
 
+    /** @return bool Whether the language rule is appended (`llm_use_user_language`). */
+    public function useUserLanguage()
+    {
+        return (string)($this->runtime_values['llm_use_user_language'] ?? '0') === '1';
+    }
+
     /** @return string Two-letter session language code (defaults to 'en'). */
     public function getContextLanguage()
     {
@@ -1006,12 +1222,6 @@ class LlmPromptChatRuntimeModel
     public function isFormModeEnabled()
     {
         return ($this->runtime_values['enable_form_mode'] ?? '0') === '1';
-    }
-
-    /** @return bool Whether danger keyword detection is enabled. */
-    public function isDangerDetectionEnabled()
-    {
-        return ($this->runtime_values['enable_danger_detection'] ?? '0') === '1';
     }
 
     /** @return string Comma-separated danger keywords, or empty string. */

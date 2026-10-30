@@ -225,9 +225,9 @@ class LlmFileUploadService
 
         // Validate MIME type using finfo (more reliable than browser-provided type)
         $detectedMimeType = LlmFileUtility::detectMimeType($file['tmp_name']);
-        if (!llm_validate_mime_type($extension, $detectedMimeType)) {
+        if (!LlmModelCapabilities::validateMimeType($extension, $detectedMimeType)) {
             // Allow if browser-reported type matches (some systems have different finfo databases)
-            if (!llm_validate_mime_type($extension, $file['type'])) {
+            if (!LlmModelCapabilities::validateMimeType($extension, $file['type'])) {
                 throw new Exception('File "' . $originalName . '" has invalid content type. Expected type for .' . $extension . ' but got ' . $detectedMimeType);
             }
         }
@@ -240,7 +240,7 @@ class LlmFileUploadService
         }
 
         // Determine file type category
-        $fileCategory = llm_get_file_type_category($extension);
+        $fileCategory = LlmModelCapabilities::getFileTypeCategory($extension);
 
         // Generate secure filename using the naming service
         // Initially save as temp file (message ID not yet known)
@@ -279,7 +279,6 @@ class LlmFileUploadService
             'extension' => $extension,
             'category' => $fileCategory,
             'hash' => $fileHash,
-            'url' => LlmFileNamingService::buildFileUrl($relativePath),
             'is_image' => $fileCategory === LLM_FILE_TYPE_IMAGE,
             // Store context for later filename update
             'user_id' => $userId,
@@ -324,7 +323,6 @@ class LlmFileUploadService
                 // Update the file info with new path
                 $file['filename'] = $newFileName;
                 $file['path'] = $newRelativePath;
-                $file['url'] = LlmFileNamingService::buildFileUrl($newRelativePath);
                 $file['message_id'] = $messageId;
             }
             

@@ -11,6 +11,12 @@ require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 class LlmFormModeService
 {
+    /** Maximum number of fields accepted in one form submission */
+    const MAX_FORM_FIELDS = 200;
+
+    /** Maximum length of a single field id */
+    const MAX_FIELD_ID_LENGTH = 128;
+
     /** @var LlmPromptAssetLoader */
     private $prompt_assets;
 
@@ -92,20 +98,44 @@ class LlmFormModeService
 
     /**
      * Parse and validate form values JSON
+     *
+     * A submission is a flat map of field id => scalar or list of scalars
+     * (radio / checkbox / text answers). Nested structures are rejected so that
+     * participant input cannot masquerade as any other kind of stored metadata.
      * 
      * @param string $form_values_json JSON string of form values
      * @return array|null Parsed array or null if invalid
      */
     public function parseFormValues($form_values_json)
     {
-        if (empty($form_values_json)) {
+        if (empty($form_values_json) || !is_string($form_values_json)) {
             return null;
         }
 
         $form_values = json_decode($form_values_json, true);
         
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($form_values)) {
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($form_values)
+            || count($form_values) > self::MAX_FORM_FIELDS) {
             return null;
+        }
+
+        foreach ($form_values as $field_id => $value) {
+            $field_id = (string)$field_id;
+            if ($field_id === '' || strlen($field_id) > self::MAX_FIELD_ID_LENGTH) {
+                return null;
+            }
+            if (is_array($value)) {
+                if (!array_is_list($value)) {
+                    return null;
+                }
+                foreach ($value as $item) {
+                    if (!is_scalar($item)) {
+                        return null;
+                    }
+                }
+            } elseif ($value !== null && !is_scalar($value)) {
+                return null;
+            }
         }
 
         return $form_values;

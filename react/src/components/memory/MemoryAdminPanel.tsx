@@ -20,7 +20,24 @@ interface MemoryRule {
   enabled: boolean;
   source_type?: string;
   memory_keys?: string[];
+  /** Where the rule is used (from the write sources). */
+  used_in?: MemoryRuleUse[];
 }
+
+interface MemoryRuleUse {
+  source_category: string;
+  target_label: string;
+  target_secondary?: string;
+  target_url?: string | null;
+}
+
+/** Labels of the write source categories (same as the Sources tab). */
+const RULE_USE_LABELS: Record<string, string> = {
+  form_action: 'Form action',
+  section_field: 'Form / survey section',
+  llm_chat_fallback: 'llmChat',
+  system: 'System hook',
+};
 
 interface MemoryOverview {
   enabled: boolean;
@@ -317,6 +334,9 @@ export const MemoryAdminPanel: React.FC<{
     );
   }
 
+  // Rules tab: only the rules that write to the selected memory key
+  const keyRules = overview.rules.filter(rule => (rule.memory_keys || []).includes(selectedMemoryKey));
+
   if (!overview.enabled) {
     return (
       <Alert variant="info" className="m-3">
@@ -606,14 +626,17 @@ export const MemoryAdminPanel: React.FC<{
                       )}
                     </div>
                   </Tab>
-                  <Tab eventKey="rules" title="Rules">
+                  <Tab eventKey="rules" title={`Rules (${keyRules.length})`}>
                     <div className="p-3">
-                      {overview.rules.length === 0 ? (
-                        <div className="text-muted text-center py-3">No memory rules configured</div>
+                      <div className="text-muted small mb-2">
+                        Rules that write to <code>{selectedMemoryKey}</code>. The play button runs a rule now for this user without new data; it reprocesses the current memory.
+                      </div>
+                      {keyRules.length === 0 ? (
+                        <div className="text-muted text-center py-3">No rule writes to this memory key</div>
                       ) : (
-                        overview.rules.map(rule => (
+                        keyRules.map(rule => (
                           <Card key={rule.id} className="mb-2 border">
-                            <Card.Body className="py-2 px-3 d-flex justify-content-between align-items-center">
+                            <Card.Body className="py-2 px-3 d-flex justify-content-between align-items-start">
                               <div>
                                 <Badge variant={rule.enabled ? 'success' : 'secondary'} className="mr-2">
                                   {rule.enabled ? 'ON' : 'OFF'}
@@ -622,13 +645,33 @@ export const MemoryAdminPanel: React.FC<{
                                 <span className="text-muted ml-2 small">
                                   {rule.source_type || 'any'}
                                 </span>
+                                <div className="small mt-1">
+                                  {(rule.memory_keys || []).map(key => (
+                                    <Badge key={key} variant={key === selectedMemoryKey ? 'info' : 'light'} className="mr-1">{key}</Badge>
+                                  ))}
+                                </div>
+                                <div className="small text-muted mt-1">
+                                  {(rule.used_in || []).length === 0 ? (
+                                    <span>Not used by any form, form action or chat yet</span>
+                                  ) : (
+                                    (rule.used_in || []).map((use, index) => (
+                                      <div key={index}>
+                                        {RULE_USE_LABELS[use.source_category] || use.source_category}:{' '}
+                                        {use.target_url ? (
+                                          <a href={use.target_url} target="_blank" rel="noopener noreferrer">{use.target_label}</a>
+                                        ) : use.target_label}
+                                        {use.target_secondary ? <span> ({use.target_secondary})</span> : null}
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
                               </div>
                               <Button
                                 size="sm"
                                 variant="outline-primary"
                                 onClick={() => handleRerunRule(rule.id)}
                                 disabled={actionLoading || !rule.enabled}
-                                title="Re-run this rule for selected user"
+                                title="Run this rule now for this user without new data (reprocesses the current memory)"
                               >
                                 <i className="fas fa-play"></i>
                               </Button>

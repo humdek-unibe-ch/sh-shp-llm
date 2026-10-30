@@ -11,18 +11,59 @@ import './components/styles/apikeys/LlmApiKeys.css';
  * appear after initial page load due to CMS dynamic rendering),
  * reads the hidden textarea JSON, and builds an interactive card
  * list with add / edit / delete capabilities.
+ *
+ * Stored keys never reach the browser: the server sends every server with
+ * `has_key` / `key_hint` / `key_source` / `key_readable` only. On save the
+ * server matches entries by `id`: an entry without a typed `api_key` keeps its
+ * stored key, `clear_key` removes it.
+ *
+ * In edit mode the container carries `data-save-url` and `data-csrf-token`:
+ * every add / edit / delete is then stored right away through the settings
+ * endpoint (`save_config`), and the textarea is refreshed with the stored,
+ * key-less list - a later CMS page save keeps the keys. Without a save URL
+ * the change only lands in the textarea and is stored with the CMS form.
  */
 
 interface ServerEntry {
+  id?: string;
   name: string;
   base_url: string;
-  api_key: string;
+  /** Typed by the administrator, never sent by the server. */
+  api_key?: string;
+  /** Remove the stored key. */
+  clear_key?: boolean;
+  has_key?: boolean;
+  key_source?: string;
+  key_hint?: string;
+  key_readable?: boolean;
 }
 
-/** maskKey function. */
-function maskKey(key: string): string {
-  if (!key || key.length < 8) return '********';
-  return key.substring(0, 4) + '****' + key.substring(key.length - 4);
+/** Text shown for the key of a server. */
+function describeKey(entry: ServerEntry): string {
+  if (entry.api_key) return 'New key (saved with the page)';
+  if (entry.clear_key) return 'Key will be removed';
+  if (!entry.has_key) return 'No key';
+  const label = entry.key_source === 'env'
+    ? 'Environment variable ' + (entry.key_hint || '')
+    : 'Key: ' + (entry.key_hint || '********');
+  return entry.key_readable === false ? label + ' (cannot be read - enter the key again)' : label;
+}
+
+/** Same rules as the server: https (http only for localhost), no credentials/query/fragment. */
+function baseUrlError(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const local = ['localhost', '127.0.0.1', '[::1]'].indexOf(url.hostname) !== -1;
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
+      return 'The base URL must use https (http is only accepted for localhost).';
+    }
+    if (url.username || url.password || url.search || url.hash) {
+      return 'The base URL must not contain credentials, a query string or a fragment.';
+    }
+    return null;
+  } catch {
+    return 'The base URL must look like https://host/v1.';
+  }
 }
 
 /** initApiKeysManager function. */
@@ -33,11 +74,47 @@ function initApiKeysManager(container: HTMLElement): void {
   if (!textarea || !listEl) return;
 
   const isDisabled = container.dataset.disabled === '1';
+  const saveUrl = container.dataset.saveUrl || '';
+  const csrfToken = container.dataset.csrfToken || '';
 
   /** Fetch or retrieve get data data. */
   function getData(): ServerEntry[] {
     try { return JSON.parse(textarea!.value) || []; }
     catch { return []; }
+  }
+
+  /**
+   * Store the list. With a save URL it is saved right away; resolves with an
+   * error message, or null on success.
+   */
+  async function persist(data: ServerEntry[]): Promise<string | null> {
+    if (!saveUrl) {
+      setData(data);
+      return null;
+    }
+    try {
+      const url = new URL(saveUrl, window.location.href);
+      url.searchParams.set('action', 'save_config');
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+        body: JSON.stringify({ fields: { llm_api_keys: JSON.stringify(data) } }),
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json && json.success && Array.isArray(json.api_keys)) {
+        // The stored state, without keys: nothing is left for the CMS form to save
+        textarea!.value = JSON.stringify(json.api_keys);
+        render();
+        return null;
+      }
+      const fieldErrors = json && json.errors && json.errors.llm_api_keys;
+      if (Array.isArray(fieldErrors) && fieldErrors.length > 0) return fieldErrors.join('\n');
+      if (json && typeof json.error === 'string') return json.error;
+      return 'The servers could not be saved (HTTP ' + res.status + ').';
+    } catch {
+      return 'The servers could not be saved. Check the connection and try again.';
+    }
   }
 
   /** setData function. */
@@ -113,7 +190,7 @@ function initApiKeysManager(container: HTMLElement): void {
 
       const keyDiv = document.createElement('div');
       keyDiv.className = 'llm-apk-key';
-      keyDiv.textContent = 'Key: ' + maskKey(entry.api_key);
+      keyDiv.textContent = describeKey(entry);
       card.appendChild(keyDiv);
 
       listEl!.appendChild(card);
@@ -121,7 +198,7 @@ function initApiKeysManager(container: HTMLElement): void {
   }
 
   /** showForm function. */
-  function showForm(entry: Partial<ServerEntry>, onSave: (e: ServerEntry) => void): void {
+  function showForm(entry: Partial<ServerEntry>, onSave: (e: ServerEntry) => Promise<string | null>): void {
     const overlay = document.createElement('div');
     overlay.className = 'llm-apk-card llm-apk-form';
 
@@ -131,24 +208,59 @@ function initApiKeysManager(container: HTMLElement): void {
     overlay.appendChild(title);
 
     /** makeField function. */
-    function makeField(label: string, cls: string, placeholder: string, value: string): HTMLDivElement {
+    function makeField(label: string, cls: string, placeholder: string, value: string, type: string = 'text'): HTMLDivElement {
       const group = document.createElement('div');
       group.className = 'form-group mb-2';
       const lbl = document.createElement('label');
       lbl.textContent = label;
       group.appendChild(lbl);
       const input = document.createElement('input');
-      input.type = 'text';
+      input.type = type;
       input.className = 'form-control form-control-sm ' + cls;
       input.placeholder = placeholder;
       input.value = value;
+      if (type === 'password') input.autocomplete = 'new-password';
       group.appendChild(input);
       return group;
     }
 
+    const hasStoredKey = !!entry.has_key;
     overlay.appendChild(makeField('Server Name', 'llm-f-name', 'e.g. GPUStack Production', entry.name || ''));
     overlay.appendChild(makeField('Base URL', 'llm-f-url', 'e.g. https://gpustack.example.com/v1', entry.base_url || ''));
-    overlay.appendChild(makeField('API Key', 'llm-f-key', 'e.g. sk-abc123...', entry.api_key || ''));
+    const keyGroup = makeField(
+      'API Key',
+      'llm-f-key',
+      hasStoredKey ? 'Leave empty to keep the current key' : 'e.g. sk-abc123... or env:LLM_API_KEY_NAME',
+      '',
+      'password'
+    );
+    const keyHelp = document.createElement('small');
+    keyHelp.className = 'form-text text-muted';
+    keyHelp.textContent = 'The key is stored encrypted and is never shown again. Use env:LLM_NAME to read it from an environment variable instead.';
+    keyGroup.appendChild(keyHelp);
+    overlay.appendChild(keyGroup);
+
+    let clearBox: HTMLInputElement | null = null;
+    if (hasStoredKey) {
+      const clearGroup = document.createElement('div');
+      clearGroup.className = 'form-check mb-2';
+      clearBox = document.createElement('input');
+      clearBox.type = 'checkbox';
+      clearBox.className = 'form-check-input llm-f-clear';
+      clearBox.id = 'llm-f-clear-' + Math.random().toString(36).slice(2);
+      const clearLbl = document.createElement('label');
+      clearLbl.className = 'form-check-label';
+      clearLbl.htmlFor = clearBox.id;
+      clearLbl.textContent = 'Remove the stored key';
+      clearGroup.appendChild(clearBox);
+      clearGroup.appendChild(clearLbl);
+      overlay.appendChild(clearGroup);
+    }
+
+    const errorBox = document.createElement('div');
+    errorBox.className = 'alert alert-danger py-1 px-2 mb-2 d-none';
+    errorBox.style.whiteSpace = 'pre-line';
+    overlay.appendChild(errorBox);
 
     const btnRow = document.createElement('div');
     btnRow.className = 'd-flex justify-content-end mt-2';
@@ -157,13 +269,37 @@ function initApiKeysManager(container: HTMLElement): void {
     saveBtn.type = 'button';
     saveBtn.className = 'btn btn-sm btn-primary mr-2';
     saveBtn.textContent = 'Save';
-    saveBtn.addEventListener('click', () => {
+    saveBtn.addEventListener('click', async () => {
       const n = (overlay.querySelector<HTMLInputElement>('.llm-f-name')!).value.trim();
       const u = (overlay.querySelector<HTMLInputElement>('.llm-f-url')!).value.trim();
       const k = (overlay.querySelector<HTMLInputElement>('.llm-f-key')!).value.trim();
       if (!n) { alert('Server name is required.'); return; }
       if (!u) { alert('Base URL is required.'); return; }
-      onSave({ name: n, base_url: u, api_key: k });
+      const urlError = baseUrlError(u);
+      if (urlError) { alert(urlError); return; }
+      const clear = !!clearBox && clearBox.checked;
+      // Keep a key typed earlier in this session when the field stays empty.
+      const typed = k || (clear ? '' : entry.api_key || '');
+      saveBtn.disabled = true;
+      errorBox.classList.add('d-none');
+      const error = await onSave({
+        id: entry.id,
+        name: n,
+        base_url: u,
+        has_key: entry.has_key,
+        key_source: entry.key_source,
+        key_hint: entry.key_hint,
+        key_readable: entry.key_readable,
+        api_key: typed || undefined,
+        clear_key: clear && !typed ? true : undefined,
+      });
+      saveBtn.disabled = false;
+      if (error) {
+        // Keep the form (and what was typed) open so it can be corrected
+        errorBox.textContent = error;
+        errorBox.classList.remove('d-none');
+        return;
+      }
       overlay.remove();
     });
     btnRow.appendChild(saveBtn);
@@ -186,16 +322,17 @@ function initApiKeysManager(container: HTMLElement): void {
     listEl!.querySelectorAll('.llm-apk-form').forEach(f => f.remove());
     showForm(data[idx], updated => {
       data[idx] = updated;
-      setData(data);
+      return persist(data);
     });
   }
 
   /** deleteEntry function. */
   function deleteEntry(idx: number): void {
-    const doDelete = () => {
+    const doDelete = async () => {
       const data = getData();
       data.splice(idx, 1);
-      setData(data);
+      const error = await persist(data);
+      if (error) alert(error);
     };
 
     if (typeof (window as any).$.confirm === 'function') {
@@ -222,7 +359,7 @@ function initApiKeysManager(container: HTMLElement): void {
       showForm({}, entry => {
         const data = getData();
         data.push(entry);
-        setData(data);
+        return persist(data);
       });
     });
   }

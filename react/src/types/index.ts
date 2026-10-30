@@ -111,8 +111,12 @@ export interface Message {
   content: string;
   /** Message creation timestamp (ISO format) */
   timestamp: string;
-  /** Number of tokens used (for assistant messages) */
+  /** Total tokens used (for assistant messages) */
   tokens_used?: number;
+  /** Prompt / input tokens (admin monitor; null on older messages) */
+  prompt_tokens?: number | null;
+  /** Completion / output tokens (admin monitor; null on older messages) */
+  completion_tokens?: number | null;
   /** JSON string of file attachments */
   attachments?: string;
   /** Model used for this message */
@@ -267,12 +271,19 @@ export interface LlmChatConfig {
   userId: number;
   /** Section ID (for multi-section support) */
   sectionId?: number;
+  /** Session CSRF token, sent as X-CSRF-Token with every request that changes data */
+  csrfToken?: string;
   /** Current conversation ID (if any) */
   currentConversationId?: string;
   /** Configured LLM model */
   configuredModel: string;
   /** Whether conversations list is enabled */
   enableConversationsList: boolean;
+  /**
+   * When true, every page load starts a fresh chat and previous sessions are hidden.
+   * When false, existing sessions are shown (if enableConversationsList is on).
+   */
+  alwaysStartNewConversation: boolean;
   /** Whether file uploads are enabled */
   enableFileUploads: boolean;
   /** Whether to do full page reload after request completion (default: false - React refresh only) */
@@ -338,6 +349,11 @@ export interface LlmChatConfig {
   floatingChatTitle: string;
   /** Quick-start message shortcuts for the floating button */
   floatingShortcuts?: LlmChatShortcut[];
+  /**
+   * Seconds the shortcut tray stays visible after mouse leave / blur.
+   * Default 2. CMS field `floating_shortcuts_hide_delay`.
+   */
+  floatingShortcutsHideDelay?: number;
   /** Whether the chat is currently in floating mode */
   isFloatingMode: boolean;
   /** Force scroll to bottom (used by floating chat when panel opens) */
@@ -440,6 +456,7 @@ export interface LlmChatConfig {
 export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   configuredModel: 'gpt-oss-120b',
   enableConversationsList: true,
+  alwaysStartNewConversation: false,
   enableFileUploads: true,
   enableFullPageReload: false,
   acceptedFileTypes: '',
@@ -470,6 +487,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   floatingButtonLabel: '',
   floatingChatTitle: 'AI Assistant',
   floatingShortcuts: [],
+  floatingShortcutsHideDelay: 2,
   isFloatingMode: false,
   forceScrollToBottom: false,
   messagePlaceholder: 'Type your message...',
@@ -539,8 +557,8 @@ export interface GetConversationResponse {
  * Used for danger detection and intervention
  */
 export interface SafetyAssessment {
-  /** True if content is safe */
-  is_safe: boolean;
+  /** True if content is safe, false if not, null when the model gave no assessment */
+  is_safe: boolean | null;
   /** Danger level: null (safe), warning, critical, emergency */
   danger_level: null | 'warning' | 'critical' | 'emergency';
   /** Detected concern categories */
@@ -560,6 +578,8 @@ export interface SendMessageResponse {
   is_new_conversation?: boolean;
   progress?: ProgressData;
   error?: string;
+  /** Fixed text for the participant when the turn produced no usable reply (nothing new is stored for them) */
+  notice?: string;
   // Structured response data
   structured?: LlmStructuredResponse;
   // Safety assessment from LLM
@@ -654,6 +674,17 @@ export interface AdminConfig {
     dateToLabel: string;
   };
   csrfToken?: string;
+  /**
+   * What the current user may do on the console page. The server enforces the
+   * same ACL modes; the UI only hides the actions it would refuse.
+   * Missing = everything shown.
+   */
+  permissions?: {
+    /** Block and unblock conversations (update ACL). */
+    canModerate: boolean;
+    /** Delete conversations (delete ACL). */
+    canDelete: boolean;
+  };
 }
 
 /** A user or entity option for admin filter dropdowns. */
@@ -670,6 +701,7 @@ export interface AdminFiltersResponse {
     users: AdminFilterOption[];
     sections: { id: number; name: string }[];
     scripts: { id: number; name: string }[];
+    sources: { id: number; code: string; label?: string | null }[];
   };
   error?: string;
 }
@@ -694,6 +726,14 @@ export interface AdminConversation extends Conversation {
   blocked_by?: number;
   /** Whether conversation is deleted (soft delete) */
   deleted?: boolean | number;
+  /** Producer source lookup value (e.g. 'chat', 'form_interview') */
+  source_type?: string | null;
+  /** Producer source lookup description */
+  source_label?: string | null;
+  /** Bound core data row (form interview approval target), null = unbound draft */
+  id_dataRows?: number | null;
+  /** When the producing unit of work completed (e.g. interview approval) */
+  completed_at?: string | null;
 }
 
 export interface AdminConversationsResponse {
@@ -861,6 +901,8 @@ export interface FormSubmissionResponse {
   user_message?: Message;
   /** Progress data (if progress tracking is enabled) */
   progress?: ProgressData;
+  /** Fixed text for the participant when the turn produced no usable reply */
+  notice?: string;
   /** Error message if failed */
   error?: string;
 }

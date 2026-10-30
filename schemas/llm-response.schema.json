@@ -203,6 +203,36 @@
         }
       }
     },
+    "interview": {
+      "type": "object",
+      "description": "Optional form interview patch. Required only by the interview runtime; the server validates field names, eligibility, permissions and native values.",
+      "required": ["collected_fields", "active_field", "ready_for_approval"],
+      "additionalProperties": false,
+      "properties": {
+        "collected_fields": {
+          "type": "object",
+          "description": "Only changed, currently writable form fields. Omit unchanged values; null explicitly clears a field.",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": ["string", "number", "boolean", "null"] },
+              {
+                "type": "array",
+                "items": { "type": ["string", "number", "boolean"] }
+              }
+            ]
+          }
+        },
+        "active_field": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "description": "An eligible visible interview field name, or null. Never a hidden, excluded or native-only field."
+        },
+        "ready_for_approval": {
+          "type": "boolean",
+          "description": "Suggestion only. The server determines readiness and requires an explicit participant approval action to save."
+        }
+      }
+    },
     "progress": {
       "type": ["object", "null"],
       "description": "Optional progress tracking for educational modules/topics",

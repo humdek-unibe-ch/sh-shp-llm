@@ -12,9 +12,12 @@
  */
 
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
-import { Container, Row, Col, Alert, Card, Dropdown, Button } from 'react-bootstrap';
+import { Container, Row, Col, Alert, Card, Dropdown } from 'react-bootstrap';
 import { MessageList } from '../shared/MessageList';
+import { MarkdownRenderer } from '../shared/MarkdownRenderer';
 import { MessageInput } from '../shared/MessageInput';
+import type { MessageInputHandle } from '../shared/MessageInput';
+import { ChatPanelHeader } from '../shared/ChatPanelHeader';
 import { ConversationSidebar } from '../shared/ConversationSidebar';
 import { LoadingIndicator } from '../shared/LoadingIndicator';
 import { ProgressIndicator } from '../shared/ProgressIndicator';
@@ -83,7 +86,8 @@ function useSmartScroll(containerRef: React.RefObject<HTMLDivElement>) {
 }
 
 /**
- * Shortcut request object for safe "send exactly once" behavior
+ * Shortcut request: insert message into the composer for the user to edit/send.
+ * Request IDs guard against React StrictMode double-consumption.
  */
 interface ShortcutRequest {
   id: string;
@@ -96,7 +100,7 @@ interface ShortcutRequest {
 interface LlmChatProps {
   /** Component configuration from PHP backend */
   config: LlmChatConfig;
-  /** Optional shortcut request from floating chat */
+  /** Optional shortcut prefill request from floating chat */
   shortcutRequest?: ShortcutRequest | null;
   /** Callback to notify when shortcut request is consumed */
   onShortcutRequestConsumed?: () => void;
@@ -143,12 +147,14 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   // Local state for progress tracking
   const [progress, setProgress] = useState<ProgressData | null>(null);
 
-  // Track consumed shortcut request IDs to prevent duplicate sends in React StrictMode
+  // Track consumed shortcut request IDs to prevent duplicate prefills in React StrictMode
   const consumedShortcutRequestIdsRef = useRef<Set<string>>(new Set());
   const [isProgressUpdating, setIsProgressUpdating] = useState(false);
 
   // Ref for messages container (for smooth scrolling)
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // Ref for composer — used to prefill shortcut text without auto-sending
+  const messageInputRef = useRef<MessageInputHandle>(null);
 
   // Smart scroll management
   const {
@@ -172,6 +178,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
     selectConversation,
     sendMessage,
     addUserMessage,
+    clearCurrentConversation,
     clearError,
     setError,
     setCurrentConversation
@@ -200,22 +207,21 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   }, [config.enableProgressTracking, config.sectionId]);
 
   /**
-   * Initialize chat on mount
+   * Always-new mode: leave the chat empty, or auto-start a brand-new thread.
+   * Previous sessions are never loaded into the UI.
    */
-  useEffect(() => {
-    const initializeChat = async () => {
-      if (config.enableConversationsList) {
-        // Load conversations list - this will also load the current conversation's messages
-        // if there's a conversation ID in the URL/config
-        await loadConversations();
-      } else {
-        // Single conversation mode - load current or last conversation
-        await loadCurrentConversation();
-      }
-    };
-    
-    initializeChat();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const startFreshConversation = useCallback(async () => {
+    clearCurrentConversation();
+    if (!config.autoStartConversation) {
+      return;
+    }
+    try {
+      // createConversation seeds auto-start when enabled
+      await createConversation();
+    } catch (err) {
+      // Empty composer is fine if auto-start fails
+    }
+  }, [clearCurrentConversation, config.autoStartConversation, createConversation]);
 
   /**
    * Load current conversation for single-conversation mode
@@ -237,7 +243,31 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
       }
     }
   }, [config.currentConversationId, loadConversationMessages, loadConversations, config.enableProgressTracking, loadProgress]);
-  
+
+  /**
+   * Initialize chat on mount
+   */
+  useEffect(() => {
+    const initializeChat = async () => {
+      // Always-new mode: never resume previous sessions (optionally auto-start a fresh one)
+      if (config.alwaysStartNewConversation) {
+        await startFreshConversation();
+        return;
+      }
+
+      if (config.enableConversationsList) {
+        // Load conversations list - this will also load the current conversation's messages
+        // if there's a conversation ID in the URL/config
+        await loadConversations();
+      } else {
+        // Single conversation mode - load current or last conversation
+        await loadCurrentConversation();
+      }
+    };
+    
+    initializeChat();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /**
    * Handle sending a message
    */
@@ -309,28 +339,43 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   ]);
 
   /**
-   * Send shortcut message if request is provided and not yet consumed
-   * This implements safe "send exactly once" behavior with request ID tracking
+   * Prefill the composer from a floating shortcut — never auto-submit.
+   * Request IDs ensure each click is applied exactly once (StrictMode-safe).
    */
   useEffect(() => {
     if (!shortcutRequest) {
       return;
     }
 
-    // Check if this request was already consumed
     if (consumedShortcutRequestIdsRef.current.has(shortcutRequest.id)) {
       return;
     }
 
-    // Only send if not already processing or loading
-    if (!isProcessing && !isLoading) {
-      // Mark as consumed before sending
-      consumedShortcutRequestIdsRef.current.add(shortcutRequest.id);
-      handleSendMessage(shortcutRequest.message, []);
-      // Notify parent that request was consumed
-      onShortcutRequestConsumed?.();
+    // Wait until conversations finish loading so the composer is mounted
+    if (isLoading) {
+      return;
     }
-  }, [shortcutRequest, isProcessing, isLoading, handleSendMessage, onShortcutRequestConsumed]);
+
+    const applyPrefill = (): boolean => {
+      if (!messageInputRef.current) {
+        return false;
+      }
+      consumedShortcutRequestIdsRef.current.add(shortcutRequest.id);
+      messageInputRef.current.prefill(shortcutRequest.message);
+      onShortcutRequestConsumed?.();
+      return true;
+    };
+
+    if (applyPrefill()) {
+      return;
+    }
+
+    // Panel just opened: composer may mount one tick later
+    const timer = window.setTimeout(() => {
+      applyPrefill();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [shortcutRequest, isLoading, onShortcutRequestConsumed]);
   
   /**
    * Handle conversation creation
@@ -391,6 +436,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
         
         // Refresh messages
         await loadConversationMessages(conversationId);
+
+        // No usable reply (provider failure): the reload shows nothing new, so say so.
+        // After the reload, which clears the error.
+        if (result.notice) {
+          setError(result.notice);
+        }
       } finally {
         setIsProcessing(false);
         setIsFormSubmitting(false);
@@ -457,6 +508,12 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
         if (config.enableConversationsList) {
           await loadConversations();
         }
+      }
+
+      // No usable reply (provider failure): the reload shows nothing new, so say so.
+      // After the reloads, which clear the error.
+      if (result.notice) {
+        setError(result.notice);
       }
     } catch (error) {
       console.error('Failed to submit form:', error);
@@ -595,9 +652,11 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
   // Determine if conversation is blocked
   const isConversationBlocked = currentConversation?.blocked === true || currentConversation?.blocked === 1;
 
+  // Always-new mode hides previous sessions; otherwise respect enableConversationsList
+  const showSessions = !config.alwaysStartNewConversation && config.enableConversationsList;
   // In floating mode, use a compact conversation dropdown instead of the full sidebar
-  const showFullSidebar = config.enableConversationsList && !config.isFloatingMode;
-  const showFloatingConversationSwitcher = config.enableConversationsList && config.isFloatingMode;
+  const showFullSidebar = showSessions && !config.isFloatingMode;
+  const showFloatingConversationSwitcher = showSessions && config.isFloatingMode;
 
   return (
     <Container fluid className={`llm-chat-container llm-chat-shell ${config.isFloatingMode ? 'p-0' : 'p-3'}`}>
@@ -664,23 +723,15 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
             </div>
           )}
           <Card className="h-100 border-0 shadow-sm llm-chat-panel d-flex flex-column">
-            {/* Chat Header — hidden in floating mode by CSS */}
-            <Card.Header className="llm-chat-header bg-white border-0 d-flex justify-content-between align-items-center">
-              <div className="d-flex align-items-center" style={{ minWidth: 0, flex: 1 }}>
-                {!config.isFloatingMode && (
-                  <div className="bg-primary rounded-circle d-flex align-items-center justify-content-center mr-3 flex-shrink-0" style={{width: '40px', height: '40px'}}>
-                    <i className="fas fa-robot text-white"></i>
-                  </div>
-                )}
-                <h5 className="mb-0">{currentConversation?.title || config.defaultChatTitle}</h5>
-              </div>
-              <div className="d-flex align-items-center flex-shrink-0 ml-2">
-                <span className={`badge ${isModelMismatch ? 'badge-warning' : 'badge-secondary'} llm-model-badge`}>
-                  <i className={`fas ${isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'} mr-1`}></i>
-                  {activeModel}
-                </span>
-              </div>
-            </Card.Header>
+            {/* Chat Header - shared with the floating panel; hidden in floating mode by CSS */}
+            <div className="llm-chat-header llm-chat-header-shared">
+              <ChatPanelHeader
+                title={currentConversation?.title || config.defaultChatTitle}
+                status={activeModel}
+                statusIcon={isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'}
+                warning={!!isModelMismatch}
+              />
+            </div>
 
             {/* Progress Indicator */}
             {config.enableProgressTracking && progress && (
@@ -703,7 +754,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
                 ref={messagesContainerRef}
                 id="messages-container"
                 onScroll={handleScroll}
-                className="flex-grow-1 overflow-auto p-3"
+                className="flex-grow-1 overflow-auto p-3 llm-slim-scroll"
               >
                 <MessageList
                   messages={messages}
@@ -733,14 +784,17 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
             {/* Message Input */}
             <Card.Footer className="bg-white border-0 p-3 llm-chat-footer">
               {isConversationBlocked ? (
-                <Alert variant="warning" className="mb-0">
-                  <i className="fas fa-ban mr-2"></i>
-                  <span dangerouslySetInnerHTML={{
-                    __html: config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'
-                  }} />
+                <Alert variant="warning" className="mb-0 d-flex align-items-start">
+                  <i className="fas fa-ban mr-2 mt-1"></i>
+                  <div className="flex-grow-1">
+                    <MarkdownRenderer
+                      content={config.conversationBlockedMessage || 'This conversation has been blocked. You cannot send any more messages.'}
+                    />
+                  </div>
                 </Alert>
               ) : (
                 <MessageInput
+                  ref={messageInputRef}
                   onSend={handleSendMessage}
                   selectedFiles={selectedFiles}
                   onFilesChange={handleFilesChange}

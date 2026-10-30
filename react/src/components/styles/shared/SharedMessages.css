@@ -890,3 +890,36 @@
   }
 }
 
+/* ===== Slim scrollbar (message list, composer, side pane, dialogs) =====
+ * One quiet look on every chat surface: a rounded thumb without arrow
+ * buttons in Chromium/Safari, the thin standard scrollbar in Firefox. (The
+ * standard properties are limited to Firefox because Chromium ignores
+ * ::-webkit-scrollbar once they are set.) */
+.llm-slim-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.llm-slim-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+.llm-slim-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+.llm-slim-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
+  background-clip: padding-box;
+}
+.llm-slim-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+@supports (-moz-appearance: none) {
+  .llm-slim-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+  }
+}

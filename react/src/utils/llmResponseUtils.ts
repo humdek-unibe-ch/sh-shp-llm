@@ -647,8 +647,9 @@ export function isLlmStructuredResponse(obj: unknown): obj is LlmStructuredRespo
 export function llmResponseToMarkdown(response: LlmStructuredResponse): string {
   const parts: string[] = [];
 
-  // Add safety message if danger detected
-  if (!response.safety.is_safe && response.safety.safety_message) {
+  // Add safety message if danger detected. `is_safe` is tri-state: only an explicit
+  // false is "not safe"; null means the model gave no assessment.
+  if (response.safety.is_safe === false && response.safety.safety_message) {
     parts.push(`⚠️ **Safety Notice**: ${response.safety.safety_message}`);
     parts.push('');
   }

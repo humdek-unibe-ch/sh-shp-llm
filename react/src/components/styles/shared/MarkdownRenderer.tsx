@@ -16,7 +16,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import type { Components } from 'react-markdown';
+import { markdownSanitizeSchema } from './markdownSanitizeSchema';
 import { normalizeEscapedText } from '../../../utils/text';
 import {
   isAudioUrl,
@@ -39,6 +41,9 @@ interface MarkdownRendererProps {
  * Props for code block component
  */
 interface CodeBlockProps {
+  /** react-markdown's hast node: never a DOM attribute, kept out of the spread props */
+  node?: unknown;
+  /** Inline code unless PreBlock says it sits in a <pre> (react-markdown v9 passes no `inline` prop) */
   inline?: boolean;
   className?: string;
   children?: React.ReactNode;
@@ -107,7 +112,7 @@ const extractTextFromNode = (node: React.ReactNode): string => {
  * Custom Code Block Component
  * Renders code with syntax highlighting and copy button
  */
-const CodeBlock: React.FC<CodeBlockProps> = ({ inline, className, children, ...props }) => {
+const CodeBlock: React.FC<CodeBlockProps> = ({ node: _node, inline = true, className, children, ...props }) => {
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : '';
   const codeString = extractTextFromNode(children).replace(/\n$/, '');
@@ -146,10 +151,20 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ inline, className, children, ...p
 
 /**
  * Custom Pre Component (wrapper for code blocks)
+ * Only block code (fenced, indented) sits inside a <pre>, so this is where its
+ * <code> child is told it is a block: CodeBlock renders everything else inline.
  */
 const PreBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   // Don't wrap in pre again, CodeBlock handles it
-  return <>{children}</>;
+  return (
+    <>
+      {React.Children.map(children, (child) =>
+        React.isValidElement(child)
+          ? React.cloneElement(child as React.ReactElement<CodeBlockProps>, { inline: false })
+          : child
+      )}
+    </>
+  );
 };
 
 /**
@@ -358,12 +373,14 @@ const BlockquoteComponent: React.FC<{ children?: React.ReactNode }> = ({ childre
  * Custom Input Component (for task lists)
  */
 interface InputComponentProps {
+  /** react-markdown's hast node: never a DOM attribute, kept out of the spread props */
+  node?: unknown;
   type?: string;
   checked?: boolean;
 }
 
 /** InputComponent React component. */
-const InputComponent: React.FC<InputComponentProps> = ({ type, checked, ...props }) => {
+const InputComponent: React.FC<InputComponentProps> = ({ node: _node, type, checked, ...props }) => {
   if (type === 'checkbox') {
     return (
       <input 
@@ -406,7 +423,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeHighlight]}
         components={markdownComponents}
       >
         {normalized}

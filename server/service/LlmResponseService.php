@@ -18,19 +18,25 @@
  * 
  * @see doc/response-schema.md for complete schema documentation
  * @see server/constants/LlmResponseSchema.php for schema definition
- * @version 1.0.0
  */
 
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/../constants/LlmResponseSchema.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/LlmErrorReporter.php';
 
 class LlmResponseService
 {
     /**
-     * Maximum retry attempts for invalid responses
+     * Characters of a failed reply echoed back to the model in the retry turn
      */
-    const MAX_RETRY_ATTEMPTS = 3;
+    const RETRY_ECHO_MAX_CHARS = 8000;
+
+    /**
+     * Fixed text a participant sees when a turn produced no usable answer: the provider
+     * failed, or no reply passed the response schema. Never the model's text or the reason.
+     */
+    const NO_ANSWER_NOTICE = 'There was an issue getting a response. Please try again.';
 
     /**
      * @var object Model instance for configuration
@@ -110,7 +116,7 @@ class LlmResponseService
             $schema = LlmResponseSchema::getSchema();
             $schema_json = json_encode($schema, JSON_PRETTY_PRINT);
         } catch (Exception $e) {
-            error_log('Failed to load JSON schema file: ' . $e->getMessage());
+            LlmErrorReporter::log('Loading the response JSON schema', $e);
             throw $e;
         }
 
@@ -209,11 +215,13 @@ class LlmResponseService
         $cleaned = $this->cleanJsonContent($content);
 
         // Try to parse JSON
+        $raw_source = $cleaned;
         $parsed = json_decode($cleaned, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             // Try fixing common syntax errors from weaker models
             $fixed = $this->fixJsonSyntax($cleaned);
             $parsed = json_decode($fixed, true);
+            $raw_source = $fixed;
         }
         if ($parsed === null && json_last_error() !== JSON_ERROR_NONE) {
             return [
@@ -227,8 +235,10 @@ class LlmResponseService
         // Normalize non-conforming responses from weaker models
         $parsed = $this->normalizeResponse($parsed);
 
-        // Validate against schema
-        $validation = LlmResponseSchema::validate($parsed);
+        // Validate against schema; the object-decoded copy preserves the
+        // JSON object/array distinction that assoc decoding loses
+        $raw_object = json_decode($raw_source);
+        $validation = LlmResponseSchema::validate($parsed, $raw_object);
         if (!$validation['valid']) {
             return [
                 'valid' => false,
@@ -246,28 +256,46 @@ class LlmResponseService
     }
 
     /**
+     * Safety state used when no model-produced assessment exists (the model omitted
+     * it, or the response is a server-built fallback). `is_safe` is null - unknown -
+     * and `assessed` is false, so nothing downstream mistakes it for "checked and safe".
+     *
+     * @return array Unassessed safety structure
+     */
+    private function unassessedSafety()
+    {
+        return [
+            'assessed' => false,
+            'is_safe' => null,
+            'danger_level' => null,
+            'detected_concerns' => [],
+            'requires_intervention' => false,
+            'safety_message' => null
+        ];
+    }
+
+    /**
      * Check if response indicates danger
+     *
+     * `assessed` is false when the response carries no model-produced safety
+     * assessment (missing, or a fallback built after validation failed); in that
+     * case `is_safe` is null rather than a made-up "safe".
      * 
      * @param array $parsed_response Parsed response data
-     * @return array Safety assessment with 'is_safe', 'danger_level', 'requires_intervention', etc
+     * @return array Safety assessment with 'assessed', 'is_safe', 'danger_level', 'requires_intervention', etc
      */
     public function assessSafety($parsed_response)
     {
-        if (!isset($parsed_response['safety'])) {
-            return [
-                'is_safe' => true,
-                'danger_level' => null,
-                'detected_concerns' => [],
-                'requires_intervention' => false,
-                'safety_message' => null
-            ];
-        }
+        $safety = is_array($parsed_response) ? ($parsed_response['safety'] ?? null) : null;
 
-        $safety = $parsed_response['safety'];
+        if ($safety === null || (is_array($safety) && ($safety['assessed'] ?? true) === false)) {
+            return $this->unassessedSafety();
+        }
 
         if (!is_array($safety)) {
             $isSafe = is_string($safety) && strtolower($safety) === 'safe';
             return [
+                'assessed' => true,
                 'is_safe' => $isSafe,
                 'danger_level' => $isSafe ? null : 'warning',
                 'detected_concerns' => [],
@@ -275,9 +303,20 @@ class LlmResponseService
                 'safety_message' => null
             ];
         }
-        
+
+        // A block without an explicit flag is never "safe": a danger level alone
+        // means "not safe" (as in normalizeResponse()), nothing at all means unassessed
+        $isSafe = $safety['is_safe'] ?? null;
+        if (!is_bool($isSafe)) {
+            if (empty($safety['danger_level'])) {
+                return $this->unassessedSafety();
+            }
+            $isSafe = false;
+        }
+
         return [
-            'is_safe' => $safety['is_safe'] ?? true,
+            'assessed' => true,
+            'is_safe' => $isSafe,
             'danger_level' => $safety['danger_level'] ?? null,
             'detected_concerns' => $safety['detected_concerns'] ?? [],
             'requires_intervention' => $safety['requires_intervention'] ?? false,
@@ -330,28 +369,36 @@ class LlmResponseService
 
         // Normalize safety field
         if (!isset($parsed['safety'])) {
-            $parsed['safety'] = [
-                'is_safe' => true,
-                'danger_level' => null,
-                'detected_concerns' => [],
-                'requires_intervention' => false
-            ];
+            // The model gave no assessment: record that, do not invent "safe"
+            $parsed['safety'] = $this->unassessedSafety();
         } elseif (!is_array($parsed['safety'])) {
-            $safeStr = is_string($parsed['safety']) ? strtolower($parsed['safety']) : '';
-            $isSafe = in_array($safeStr, ['safe', 'low', 'none', '']);
-            $parsed['safety'] = [
-                'is_safe' => $isSafe,
-                'danger_level' => $isSafe ? null : 'warning',
-                'detected_concerns' => [],
-                'requires_intervention' => false
-            ];
+            $safeStr = is_string($parsed['safety']) ? strtolower(trim($parsed['safety'])) : '';
+            if ($safeStr === '') {
+                // An empty string, a bare boolean or a number says nothing: record the gap, do not invent "safe"
+                $parsed['safety'] = $this->unassessedSafety();
+            } else {
+                $isSafe = in_array($safeStr, ['safe', 'low', 'none'], true);
+                $parsed['safety'] = [
+                    'is_safe' => $isSafe,
+                    'danger_level' => $isSafe ? null : 'warning',
+                    'detected_concerns' => [],
+                    'requires_intervention' => false
+                ];
+            }
         } else {
             // Safety is array but might have non-standard keys
             $s = $parsed['safety'];
             if (!isset($s['is_safe'])) {
-                $classifier = $s['classifier'] ?? $s['level'] ?? $s['status'] ?? 'safe';
-                $isSafe = is_string($classifier) && in_array(strtolower($classifier), ['safe', 'low', 'none']);
-                $s['is_safe'] = $isSafe;
+                $classifier = $s['classifier'] ?? $s['level'] ?? $s['status'] ?? null;
+                if ($classifier !== null) {
+                    $s['is_safe'] = is_string($classifier) && in_array(strtolower($classifier), ['safe', 'low', 'none']);
+                } elseif (!empty($s['danger_level'])) {
+                    // A danger level without an explicit flag still means "not safe"
+                    $s['is_safe'] = false;
+                } else {
+                    $s['is_safe'] = null;
+                    $s['assessed'] = false;
+                }
             }
             if (!isset($s['danger_level'])) $s['danger_level'] = null;
             if (!isset($s['detected_concerns'])) $s['detected_concerns'] = [];
@@ -490,8 +537,9 @@ class LlmResponseService
     {
         $output = [];
 
-        // Handle safety message if dangerous
-        if (isset($structured['safety']) && !$structured['safety']['is_safe']) {
+        // Handle safety message if dangerous. `is_safe` is tri-state: only an explicit
+        // false is "not safe"; null means the model gave no assessment.
+        if (isset($structured['safety']) && ($structured['safety']['is_safe'] ?? null) === false) {
             if (!empty($structured['safety']['safety_message'])) {
                 $output[] = "⚠️ **Safety Notice**: " . $structured['safety']['safety_message'];
                 $output[] = "";
@@ -543,13 +591,7 @@ class LlmResponseService
     {
         return [
             'type' => 'response',
-            'safety' => [
-                'is_safe' => true,
-                'danger_level' => null,
-                'detected_concerns' => [],
-                'requires_intervention' => false,
-                'safety_message' => null
-            ],
+            'safety' => $this->unassessedSafety(),
             'content' => [
                 'text_blocks' => [
                     [
@@ -593,6 +635,9 @@ class LlmResponseService
      *
      * @param callable $callable Function that makes the LLM API call
      * @param array $api_messages Messages to send to LLM
+     * @param callable|null $semantic_validator Optional callback receiving
+     *   the parsed response data and returning an array of semantic errors
+     *   (empty = valid); absent keeps existing behavior unchanged
      * @return array [
      *   'response' => parsed_response,
      *   'attempts' => int,
@@ -602,17 +647,19 @@ class LlmResponseService
      *   'all_attempts' => array (all attempts with their full payloads and responses for debugging)
      * ]
      */
-    public function callLlmWithSchemaValidation($callable, $api_messages)
+    public function callLlmWithSchemaValidation($callable, $api_messages, $semantic_validator = null)
     {
-        $max_attempts = self::MAX_RETRY_ATTEMPTS;
+        $max_attempts = max(1, (int) LLM_RESPONSE_MAX_ATTEMPTS);
         $last_response = null;
         $last_parsed = null;
         $last_error = null;
         $last_full_payload = null;
+        $attempts_made = 0;
         $all_attempts = []; // Track all attempts for debugging/admin view
-        $current_messages = $api_messages; // Keep track of current messages (modified with retry instructions)
+        $current_messages = $api_messages; // Messages for the next attempt (original + retry turns)
 
         for ($attempt = 1; $attempt <= $max_attempts; $attempt++) {
+            $attempts_made = $attempt;
             $attempt_data = [
                 'attempt' => $attempt,
                 'request_payload' => null, // Will be set to full payload from API response
@@ -641,6 +688,13 @@ class LlmResponseService
 
                 // Parse and validate the response
                 $parsed = $this->parseResponse($assistant_message);
+                if ($parsed['valid'] && is_callable($semantic_validator)) {
+                    $semantic_errors = call_user_func($semantic_validator, $parsed['data']);
+                    if (!empty($semantic_errors)) {
+                        $parsed['valid'] = false;
+                        $parsed['errors'] = array_values($semantic_errors);
+                    }
+                }
                 $last_parsed = $parsed;
                 $attempt_data['parsed'] = $parsed;
                 $attempt_data['valid'] = $parsed['valid'];
@@ -669,23 +723,26 @@ class LlmResponseService
                     break;
                 }
 
-                // Add retry instruction to messages for next attempt
-                $retry_instruction = [
-                    'role' => 'system',
-                    'content' => "⚠️ Your previous response did not match the required JSON schema. " .
-                               "Please review the schema carefully and provide a response that strictly follows it. " .
-                               "Errors: " . implode(', ', $parsed['errors'])
+                // Next attempt = the original conversation + the model's rejected answer +
+                // the retry prompt as the latest user turn. Rebuilt from $api_messages every
+                // time, so the system prompt stays first and retries never stack up.
+                $current_messages = $api_messages;
+                if (is_string($assistant_message) && $assistant_message !== '') {
+                    $current_messages[] = [
+                        'role' => 'assistant',
+                        'content' => mb_substr($assistant_message, 0, self::RETRY_ECHO_MAX_CHARS)
+                    ];
+                }
+                $current_messages[] = [
+                    'role' => 'user',
+                    'content' => $this->createRetryPrompt(array_slice($parsed['errors'], 0, 10))
                 ];
-
-                // Prepend retry instruction to messages
-                array_unshift($current_messages, $retry_instruction);
 
                 // Small delay before retry to avoid overwhelming the API
                 usleep(500000); // 0.5 seconds
 
             } catch (Exception $e) {
-                $error_msg = 'LLM API call failed on attempt ' . $attempt . ': ' . $e->getMessage();
-                error_log($error_msg);
+                LlmErrorReporter::log('LLM API call on attempt ' . $attempt, $e);
                 $last_error = $e;
                 $attempt_data['error'] = $e->getMessage();
                 
@@ -698,7 +755,8 @@ class LlmResponseService
                 // Record this attempt even if it failed
                 $all_attempts[] = $attempt_data;
 
-                if ($attempt >= $max_attempts) {
+                // Asking again cannot fix a rate limit, bad request, or rejected credentials
+                if ($attempt >= $max_attempts || !$this->isRetryableFailure($e)) {
                     break;
                 }
 
@@ -715,7 +773,7 @@ class LlmResponseService
             $fallback = $this->createFallbackResponse($last_response['content'], $last_parsed);
             return [
                 'response' => $fallback,
-                'attempts' => $max_attempts,
+                'attempts' => $attempts_made,
                 'valid' => false,
                 'raw_response' => $last_response,
                 'validation_errors' => $last_parsed['errors'] ?? [],
@@ -724,18 +782,50 @@ class LlmResponseService
             ];
         }
 
-        // No response at all - create error fallback
+        // No response at all - create error fallback (participants get a generic notice;
+        // the technical reason stays in 'error' for logs and the admin console)
         $error_message = $last_error ? $last_error->getMessage() : 'Failed to get response from LLM';
-        $error_fallback = $this->createErrorFallback($error_message);
+        $error_fallback = $this->createErrorFallback();
         return [
             'response' => $error_fallback,
-            'attempts' => $max_attempts,
+            'attempts' => $attempts_made,
             'valid' => false,
             'raw_response' => null,
             'error' => $error_message,
             'request_payload' => $last_full_payload,
             'all_attempts' => $all_attempts
         ];
+    }
+
+    /**
+     * Whether asking the provider again can help after this failure.
+     *
+     * Timeouts, connection problems, 408/425/429 and 5xx are transient. Rate limits
+     * raised by the plugin itself, invalid arguments, other 4xx statuses (bad request,
+     * rejected credentials) and unknown models fail the same way every time.
+     *
+     * @param Exception $e The failure thrown by the API call
+     * @return bool True when another attempt is worthwhile
+     */
+    private function isRetryableFailure(Exception $e)
+    {
+        if ($e instanceof LlmRateLimitException
+            || $e instanceof LlmValidationException
+            || $e instanceof InvalidArgumentException) {
+            return false;
+        }
+
+        if ($e instanceof LlmApiException) {
+            if ($e->getContextValue('error_type') === 'model_not_found') {
+                return false;
+            }
+            $status = (int) $e->getContextValue('http_status', 0);
+            if ($status >= 400 && $status < 500 && !in_array($status, [408, 425, 429], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -764,7 +854,7 @@ class LlmResponseService
             
             return [
                 'valid' => true, // Mark as valid so it renders
-                'data' => $this->buildFallbackStructure($textContent, $model),
+                'data' => $this->buildFallbackStructure($textContent, $model, $this->extractModelSafety($data)),
                 'errors' => [],
                 'is_fallback' => true,
                 'original_errors' => $parsedAttempt['errors'] ?? []
@@ -779,6 +869,35 @@ class LlmResponseService
             'data' => $this->buildFallbackStructure($extractedText, $model),
             'errors' => [],
             'is_fallback' => true
+        ];
+    }
+
+    /**
+     * Keep a safety assessment the model really produced, even when another part of
+     * its response failed validation, so a real danger flag is never discarded.
+     *
+     * @param array $data Partially parsed response data
+     * @return array|null Sanitized safety structure, or null when the model gave none
+     */
+    private function extractModelSafety($data)
+    {
+        $safety = $data['safety'] ?? null;
+        if (!is_array($safety) || !isset($safety['is_safe']) || !is_bool($safety['is_safe'])) {
+            return null;
+        }
+
+        $danger_level = $safety['danger_level'] ?? null;
+        $concerns = is_array($safety['detected_concerns'] ?? null)
+            ? array_values(array_filter($safety['detected_concerns'], 'is_string'))
+            : [];
+
+        return [
+            'assessed' => true,
+            'is_safe' => $safety['is_safe'],
+            'danger_level' => in_array($danger_level, ['warning', 'critical', 'emergency'], true) ? $danger_level : null,
+            'detected_concerns' => $concerns,
+            'requires_intervention' => ($safety['requires_intervention'] ?? false) === true,
+            'safety_message' => is_string($safety['safety_message'] ?? null) ? $safety['safety_message'] : null
         ];
     }
 
@@ -938,19 +1057,14 @@ class LlmResponseService
      *
      * @param string $textContent Text content to wrap
      * @param string $model Model name
+     * @param array|null $safety Safety assessment the model produced, or null if it gave none
      * @return array Structured response data
      */
-    private function buildFallbackStructure($textContent, $model = 'unknown')
+    private function buildFallbackStructure($textContent, $model = 'unknown', $safety = null)
     {
         return [
             'type' => 'response',
-            'safety' => [
-                'is_safe' => true,
-                'danger_level' => null,
-                'detected_concerns' => [],
-                'requires_intervention' => false,
-                'safety_message' => null
-            ],
+            'safety' => $safety ?? $this->unassessedSafety(),
             'content' => [
                 'text_blocks' => [
                     [
@@ -975,32 +1089,23 @@ class LlmResponseService
     /**
      * Create error fallback when no response was received at all
      *
-     * @param string $errorMessage Error message to display
+     * The participant only sees a generic notice; the technical reason is
+     * logged per attempt by callLlmWithSchemaValidation().
+     *
      * @return array Fallback response structure
      */
-    private function createErrorFallback($errorMessage)
+    private function createErrorFallback()
     {
         return [
             'valid' => true, // Mark as valid so it renders
             'data' => [
                 'type' => 'response',
-                'safety' => [
-                    'is_safe' => true,
-                    'danger_level' => null,
-                    'detected_concerns' => [],
-                    'requires_intervention' => false,
-                    'safety_message' => null
-                ],
+                'safety' => $this->unassessedSafety(),
                 'content' => [
                     'text_blocks' => [
                         [
                             'type' => 'warning',
-                            'content' => 'There was an issue getting a response. Please try again.',
-                            'style' => 'default'
-                        ],
-                        [
-                            'type' => 'text',
-                            'content' => 'Technical details: ' . $errorMessage,
+                            'content' => self::NO_ANSWER_NOTICE,
                             'style' => 'default'
                         ]
                     ],

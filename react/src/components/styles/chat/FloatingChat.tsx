@@ -19,6 +19,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { LlmChat } from './LlmChat';
+import { ChatPanelHeader, HeaderButton } from '../shared/ChatPanelHeader';
 import type { LlmChatConfig, FloatingButtonPosition } from '../../../types';
 import './FloatingChat.css';
 
@@ -26,7 +27,7 @@ import './FloatingChat.css';
  * Props for FloatingChat component
  */
 /**
- * Shortcut request object for safe "send exactly once" behavior
+ * Shortcut request: open the panel and prefill the composer (user edits/sends).
  */
 interface ShortcutRequest {
   id: string;
@@ -124,6 +125,13 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
 
   // Generate unique IDs based on section_id for multiple floating buttons
   const uniqueId = useMemo(() => `llm-float-${config.sectionId || 'default'}`, [config.sectionId]);
+
+  // CMS field floating_shortcuts_hide_delay (seconds, default 2) → ms for setTimeout
+  const shortcutTrayHideDelayMs = useMemo(() => {
+    const seconds = Number(config.floatingShortcutsHideDelay);
+    const safe = Number.isFinite(seconds) && seconds >= 0 ? seconds : 2;
+    return Math.min(safe, 60) * 1000;
+  }, [config.floatingShortcutsHideDelay]);
   
   // Calculate z-index offset for stacking multiple buttons
   const zIndexOffset = useMemo(
@@ -150,7 +158,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     setPendingShortcutRequest(null);
   }, []);
 
-  // Handle shortcut click - generates unique request ID for safe "send exactly once"
+  // Handle shortcut click — open chat and prefill the composer (do not auto-send)
   const handleShortcutClick = useCallback((message: string) => {
     // Clear any pending timeout since we're closing the tray immediately
     if (shortcutTrayTimeoutRef.current) {
@@ -160,6 +168,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     const requestId = `shortcut-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     setPendingShortcutRequest({ id: requestId, message });
     setIsOpen(true);
+    setShowShortcutTray(false);
   }, []);
 
   // Handle escape key to close panel
@@ -247,11 +256,11 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
           }
         }}
         onMouseLeave={() => {
-          // Delay hiding the tray by 5 seconds to allow clicking shortcuts
+          // Delay hiding the tray so users can click shortcuts (CMS: floating_shortcuts_hide_delay)
           shortcutTrayTimeoutRef.current = window.setTimeout(() => {
             setShowShortcutTray(false);
             shortcutTrayTimeoutRef.current = null;
-          }, 5000);
+          }, shortcutTrayHideDelayMs);
         }}
         onFocus={() => {
           if (shortcutTrayTimeoutRef.current) {
@@ -268,7 +277,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
             shortcutTrayTimeoutRef.current = window.setTimeout(() => {
               setShowShortcutTray(false);
               shortcutTrayTimeoutRef.current = null;
-            }, 5000);
+            }, shortcutTrayHideDelayMs);
           }
         }}
       >
@@ -327,44 +336,20 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
           aria-labelledby={`${uniqueId}-title`}
           style={panelStyle}
         >
-          {/* Panel Header */}
-          <div className="llm-float-panel-header card-header bg-primary text-white d-flex align-items-center justify-content-between py-2 px-3">
-            <div className="d-flex align-items-center">
-              <div className="llm-float-panel-avatar mr-2">
-                <i className={`${iconClass} text-primary`}></i>
-              </div>
-              <div>
-                <h6 id={`${uniqueId}-title`} className="mb-0 font-weight-normal">
-                  {config.floatingChatTitle}
-                </h6>
-                <small className="d-flex align-items-center">
-                  <span className="llm-float-status-dot bg-success mr-1"></span>
-                  <i className="fas fa-robot fa-xs mr-1"></i>
-                  {config.configuredModel}
-                </small>
-              </div>
-            </div>
-            <div className="llm-float-panel-actions">
-              <button
-                type="button"
-                className="btn btn-link text-white p-1"
-                onClick={handleClose}
-                aria-label="Minimize chat"
-                title="Minimize"
-              >
-                <i className="fas fa-minus"></i>
-              </button>
-              <button
-                type="button"
-                className="btn btn-link text-white p-1 ml-1"
-                onClick={handleClose}
-                aria-label="Close chat"
-                title="Close"
-              >
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-          </div>
+          {/* Panel Header (shared with the inline chat and the form interview) */}
+          <ChatPanelHeader
+            title={config.floatingChatTitle}
+            titleId={`${uniqueId}-title`}
+            iconClass={iconClass}
+            status={config.configuredModel}
+            statusIcon="fa-robot"
+            actions={
+              <>
+                <HeaderButton icon="fa-minus" label="Minimize chat" onClick={handleClose} />
+                <HeaderButton icon="fa-times" label="Close chat" onClick={handleClose} />
+              </>
+            }
+          />
 
           {/* Panel Body - Chat Interface */}
           <div className="llm-float-panel-body">

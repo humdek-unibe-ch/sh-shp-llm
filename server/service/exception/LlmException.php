@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+require_once __DIR__ . '/../LlmErrorReporter.php';
+
 /**
  * Base LLM Exception
  * 
@@ -23,7 +25,6 @@
  * ```
  * 
  * @package LLM Plugin
- * @version 1.0.0
  */
 class LlmException extends Exception
 {
@@ -120,7 +121,8 @@ class LlmException extends Exception
     }
 
     /**
-     * Log the exception using error_log
+     * Write the exception to the server log (LlmErrorReporter, the plugin's
+     * one convention for exceptions)
      * 
      * @return void
      */
@@ -129,6 +131,6 @@ class LlmException extends Exception
         $contextStr = !empty($this->context) 
             ? ' | Context: ' . json_encode($this->context, JSON_UNESCAPED_SLASHES) 
             : '';
-        error_log("[LLM Exception] {$this->getExceptionType()}: {$this->getMessage()}{$contextStr}");
+        LlmErrorReporter::log('LLM exception' . $contextStr, $this);
     }
 }

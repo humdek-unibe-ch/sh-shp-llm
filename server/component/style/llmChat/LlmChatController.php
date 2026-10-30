@@ -7,6 +7,8 @@
 require_once __DIR__ . "/../../../../../../component/BaseController.php";
 require_once __DIR__ . "/../../LlmJsonResponseTrait.php";
 require_once __DIR__ . "/../../../service/LlmService.php";
+require_once __DIR__ . "/../../../service/LlmCsrfService.php";
+require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../../../service/LlmFileUploadService.php";
 require_once __DIR__ . "/../../../service/LlmApiFormatterService.php";
 require_once __DIR__ . "/../../../service/LlmStrictConversationService.php";
@@ -90,7 +92,9 @@ class LlmChatController extends BaseController
 
         // CRITICAL: Validate section_id FIRST
         // This ensures only the correct controller handles the request
-        if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->current_keyword == 'admin') {
+        // `current_keyword` is filled lazily, so it must be resolved through the getter; reading the
+        // bare property returned null and let CMS saves (admin/cms_update/...) reach handleRequest().
+        if (!$this->isRequestForThisSection() || $model->get_services()->get_router()->get_keyword_from_url() == 'admin') {
             return; // Another controller will handle this request
         }
 
@@ -179,7 +183,8 @@ class LlmChatController extends BaseController
             $floating_mode_service,
             $strict_conversation_service,
             $api_formatter_service,
-            $this->progress_tracking_service  // Pass progress tracking service for context building
+            $this->progress_tracking_service,  // Pass progress tracking service for context building
+            $services
         );
 
         // Speech-to-text service (standalone, separate from LLM chat)
@@ -200,7 +205,13 @@ class LlmChatController extends BaseController
 
         // Handle POST requests
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $action = $_POST['action'] ?? 'send_message';
+            // Only POSTs that explicitly address the chat API are ours (an `action`, or the legacy bare
+            // `message`). Anything else - a CMS save, another form on the same page - must pass through
+            // untouched instead of being answered as an empty chat message.
+            $action = $_POST['action'] ?? (isset($_POST['message']) ? 'send_message' : null);
+            if ($action === null) {
+                return;
+            }
             $this->current_action = $action;
             $this->handlePostRequest($action);
             return;
@@ -216,12 +227,31 @@ class LlmChatController extends BaseController
     }
 
     /**
+     * Answer a request another website made on the participant's behalf with
+     * a 403 (see LlmCsrfService::verifyRequestOrTrustedClient for what passes).
+     *
+     * @return bool True when the request was refused
+     */
+    private function rejectCrossSiteRequest()
+    {
+        if (LlmCsrfService::verifyRequestOrTrustedClient()) {
+            return false;
+        }
+        $this->sendJsonResponse(['error' => 'Security check failed. Please reload the page and try again.'], 403);
+        return true;
+    }
+
+    /**
      * Handle POST requests
      * 
      * @param string $action The action to perform
      */
     private function handlePostRequest($action)
     {
+        if ($this->rejectCrossSiteRequest()) {
+            return;
+        }
+
         switch ($action) {
             case 'send_message':
                 $this->handleSendMessage();
@@ -274,7 +304,10 @@ class LlmChatController extends BaseController
                 $this->handleGetAutoStarted();
                 break;
             case 'start_auto_conversation':
-                $this->handleStartAutoConversation();
+                // The only GET that changes data (it creates a conversation)
+                if (!$this->rejectCrossSiteRequest()) {
+                    $this->handleStartAutoConversation();
+                }
                 break;
             case 'get_progress':
                 $this->handleGetProgress();
@@ -349,7 +382,27 @@ class LlmChatController extends BaseController
             $conv = $this->resolveConversationWithRateLimit($user_id, $conversation_id, $message);
             $conversation_id = $conv['conversation_id'];
 
-            $uploaded_files = $this->file_upload_service->handleFileUploads($user_id, $section_id, $conversation_id);
+            // Keyword pre-scan before storing the user message or calling the LLM.
+            $danger_check = $this->danger_detection_service->checkMessage(
+                $message,
+                $user_id,
+                $conversation_id
+            );
+            if (empty($danger_check['safe'])) {
+                $this->sendJsonResponse([
+                    'blocked' => true,
+                    'type' => 'danger_detected',
+                    'message' => $danger_check['message'] ?? $this->danger_detection_service->getBlockedMessage(),
+                    'detected_keywords' => $danger_check['detected_keywords'] ?? [],
+                    'conversation_id' => $conversation_id,
+                ]);
+                return;
+            }
+
+            // Guests share one account (and one upload folder), so they cannot attach files
+            $uploaded_files = $this->llm_service->isGuestUser($user_id)
+                ? null
+                : $this->file_upload_service->handleFileUploads($user_id, $section_id, $conversation_id);
 
             $message_id = $this->llm_service->addMessage(
                 $conversation_id,
@@ -366,7 +419,7 @@ class LlmChatController extends BaseController
             $this->sendLlmRequestAndRespond($conversation_id, $conv['is_new']);
 
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -410,6 +463,22 @@ class LlmChatController extends BaseController
             $conv = $this->resolveConversationWithRateLimit($user_id, $conversation_id, $readable_text);
             $conversation_id = $conv['conversation_id'];
 
+            $danger_check = $this->danger_detection_service->checkMessage(
+                $readable_text,
+                $user_id,
+                $conversation_id
+            );
+            if (empty($danger_check['safe'])) {
+                $this->sendJsonResponse([
+                    'blocked' => true,
+                    'type' => 'danger_detected',
+                    'message' => $danger_check['message'] ?? $this->danger_detection_service->getBlockedMessage(),
+                    'detected_keywords' => $danger_check['detected_keywords'] ?? [],
+                    'conversation_id' => $conversation_id,
+                ]);
+                return;
+            }
+
             $form_metadata = $this->form_mode_service->createFormMetadata($form_values);
             $message_id = $this->llm_service->addMessage(
                 $conversation_id,
@@ -419,12 +488,16 @@ class LlmChatController extends BaseController
                 $this->model->getConfiguredModel()
             );
 
-            if ($this->model->isDataSavingEnabled()) {
-                $this->saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id);
-            } else {
-                // Direct memory dispatch is a fallback only when the canonical
-                // UserInput/form-action pipeline is unavailable.
-                $this->dispatchMemoryUpdateIfEnabled($form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id);
+            // Saved records and memories are keyed by user id; every guest shares one,
+            // so guest answers stay in the guest's own conversation only.
+            if (!$this->llm_service->isGuestUser($user_id)) {
+                if ($this->model->isDataSavingEnabled()) {
+                    $this->saveFormDataToUserInput($form_values, $user_id, $message_id, $conversation_id);
+                } else {
+                    // Direct memory dispatch is a fallback only when the canonical
+                    // UserInput/form-action pipeline is unavailable.
+                    $this->dispatchMemoryUpdateIfEnabled($form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id);
+                }
             }
 
             if ($this->model->isProgressTrackingEnabled()) {
@@ -434,7 +507,7 @@ class LlmChatController extends BaseController
             $this->sendLlmRequestAndRespond($conversation_id, $conv['is_new']);
 
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -460,6 +533,10 @@ class LlmChatController extends BaseController
                 return;
             }
 
+            if ($this->guardConversationBlocked($conversation_id)) {
+                return;
+            }
+
             $rate_data = $this->llm_service->checkRateLimit($user_id);
 
             $this->llm_service->addMessage(
@@ -475,7 +552,7 @@ class LlmChatController extends BaseController
             $this->sendLlmRequestAndRespond($conversation_id, false);
 
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -490,6 +567,11 @@ class LlmChatController extends BaseController
      */
     private function sendLlmRequestAndRespond($conversation_id, $is_new_conversation)
     {
+        // Single choke point for every model call: a blocked conversation never reaches the LLM
+        if ($this->guardConversationBlocked($conversation_id)) {
+            return;
+        }
+
         // Get messages and build API request
         $messages = $this->llm_service->getConversationMessages($conversation_id, 50);
         if (empty($messages)) {
@@ -598,10 +680,22 @@ class LlmChatController extends BaseController
             'is_new_conversation' => $is_new_conversation
         ];
 
+        // Without a validated reply the message list shows nothing new, so the
+        // participant gets only a fixed notice: the answer carries neither the raw
+        // reply nor the technical reason (no `structured` block either). Both stay
+        // in the unvalidated log row (admin console only).
+        if (!$result['valid']) {
+            $response_data['message'] = LlmResponseService::NO_ANSWER_NOTICE;
+            $response_data['notice'] = LlmResponseService::NO_ANSWER_NOTICE;
+        }
+
         if ($parsed['valid'] && isset($parsed['data'])) {
-            $response_data['structured'] = $parsed['data'];
+            if ($result['valid']) {
+                $response_data['structured'] = $parsed['data'];
+            }
+            // A danger flag the model really produced is kept even on a failed turn
             $safety = $this->response_service->assessSafety($parsed['data']);
-            if (!$safety['is_safe'] || $safety['danger_level'] !== null) {
+            if ($safety['is_safe'] === false || $safety['danger_level'] !== null) {
                 $response_data['safety'] = $safety;
             }
         }
@@ -658,7 +752,7 @@ class LlmChatController extends BaseController
 
             $this->sendJsonResponse(['conversation_id' => $conversation_id]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -676,10 +770,10 @@ class LlmChatController extends BaseController
         }
 
         try {
-            $this->llm_service->deleteConversation($conversation_id, $user_id);
+            $this->llm_service->deleteConversation($conversation_id, $user_id, $this->model->getSectionId());
             $this->sendJsonResponse(['success' => true]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -737,7 +831,7 @@ class LlmChatController extends BaseController
                 $this->sendJsonResponse(['error' => 'Failed to confirm topic'], 500);
             }
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -754,7 +848,7 @@ class LlmChatController extends BaseController
             $config = $this->model->getChatConfig();
             $this->sendJsonResponse(['config' => $config]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -794,7 +888,7 @@ class LlmChatController extends BaseController
 
             $this->sendJsonResponse($response);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -835,7 +929,7 @@ class LlmChatController extends BaseController
 
             $this->sendJsonResponse(['progress' => $progress]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -880,7 +974,7 @@ class LlmChatController extends BaseController
 
             $this->sendJsonResponse(['debug' => $debug]);
         } catch (Exception $e) {
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -970,14 +1064,15 @@ class LlmChatController extends BaseController
                 true  // Keep the audio file after transcription
             );
 
-            // Return the result (includes audio_file info)
-            $this->sendJsonResponse($result);
+            // Return the result (includes audio_file info); a refusal carries its own status
+            $status = !empty($result['success']) ? null : LlmSpeechToTextService::failureStatus($result);
+            $this->sendJsonResponse($result, $status ?? 200);
 
         } catch (Exception $e) {
-            error_log("Speech transcription error: " . $e->getMessage());
+            LlmErrorReporter::log('Speech transcription', $e);
             $this->sendJsonResponse([
                 'success' => false,
-                'error' => 'Speech transcription failed: ' . $e->getMessage()
+                'error' => 'Speech transcription failed. Please try again.'
             ], 500);
         }
     }
@@ -1033,7 +1128,7 @@ class LlmChatController extends BaseController
 
             $this->sendJsonResponse(['conversations' => $conversations]);
         } catch (Exception $e) {
-            error_log('LLM getConversationsData error for user ' . $user_id . ': ' . $e->getMessage());
+            LlmErrorReporter::log('Loading conversations for user ' . $user_id, $e);
             $this->sendJsonResponse(['error' => 'Failed to load conversations'], 500);
         }
     }
@@ -1081,6 +1176,11 @@ class LlmChatController extends BaseController
                     return;
                 }
 
+                // Seeding may call the model; never do that in a blocked conversation
+                if ($this->guardConversationBlocked($conversation_id)) {
+                    return;
+                }
+
                 $this->performAutoStartConversation($conversation_id);
             } else {
                 // First-visit path: only when the user has no active conversation yet
@@ -1100,6 +1200,10 @@ class LlmChatController extends BaseController
                         $this->sendJsonResponse(['error' => 'Conversations already exist'], 400);
                         return;
                     }
+                }
+
+                if ($this->guardConversationBlocked(null)) {
+                    return;
                 }
 
                 $this->performAutoStartConversation();
@@ -1122,8 +1226,7 @@ class LlmChatController extends BaseController
                 'messages' => $messages ?: []
             ]);
         } catch (Exception $e) {
-            error_log('Client-initiated auto-start failed: ' . $e->getMessage());
-            $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+            $this->sendExceptionResponse($e);
         }
     }
 
@@ -1283,7 +1386,7 @@ class LlmChatController extends BaseController
             }
 
         } catch (Exception $e) {
-            error_log('LLM Form Mode Auto-start failed: ' . $e->getMessage());
+            LlmErrorReporter::log('Form mode auto-start', $e);
             throw $e;
         }
     }
@@ -1298,7 +1401,27 @@ class LlmChatController extends BaseController
      */
     private function guardConversationBlocked($conversation_id)
     {
-        if ($conversation_id && $this->danger_detection_service->isConversationBlocked($conversation_id)) {
+        $user_id = $this->model->getUserId();
+        try {
+            // A detection anywhere locks the user out of every LLM, new conversations included
+            $user_blocked = $this->danger_detection_service->isUserBlocked($user_id);
+            $blocked = !$user_blocked && $conversation_id
+                && $this->danger_detection_service->isConversationBlocked($conversation_id, $user_id);
+        } catch (Exception $e) {
+            // "Could not check" is not "not blocked": stop before anything reaches the LLM
+            $this->sendExceptionResponse($e);
+            return true;
+        }
+        if ($user_blocked) {
+            $this->sendJsonResponse([
+                'blocked' => true,
+                'type' => 'danger_detected',
+                'message' => $this->danger_detection_service->getBlockedMessage(),
+                'error' => 'User blocked'
+            ]);
+            return true;
+        }
+        if ($blocked) {
             $this->sendJsonResponse([
                 'blocked' => true,
                 'type' => 'conversation_blocked',
@@ -1308,6 +1431,28 @@ class LlmChatController extends BaseController
             return true;
         }
         return false;
+    }
+
+    /**
+     * Send a JSON error for a failed request without leaking internals.
+     *
+     * Messages written for the participant (rate limits, input validation,
+     * missing conversation) are passed through; everything else - provider
+     * errors, SQL/runtime exceptions - is logged and replaced by a generic text.
+     *
+     * @param Exception $e The caught exception
+     */
+    private function sendExceptionResponse(Exception $e)
+    {
+        if ($e instanceof LlmRateLimitException) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 429);
+        } elseif ($e instanceof LlmValidationException) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 400);
+        } elseif ($e instanceof LlmException && !($e instanceof LlmApiException) && $e->getCode() === 404) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 404);
+        } else {
+            $this->sendJsonResponse(['error' => LlmErrorReporter::report('Chat ' . ($this->current_action ?? 'request'), $e)], 500);
+        }
     }
 
     /**
@@ -1353,14 +1498,22 @@ class LlmChatController extends BaseController
                 $form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id
             );
 
+            // Run as a scheduled job (listed under Scheduled Jobs): the
+            // section's own rules, otherwise the rules matching a chat form.
             $rule_ids = $this->model->getMemoryRuleIds();
-            if (!empty($rule_ids)) {
-                $trigger_service->dispatchForRuleIds($rule_ids, $normalized);
-            } else {
-                $trigger_service->dispatchMemoryUpdate($normalized);
+            if (empty($rule_ids)) {
+                $rule_ids = array_map(function ($rule) {
+                    return (int)$rule['id'];
+                }, $trigger_service->findRulesForPayload($normalized));
             }
+            $trigger_service->scheduleRuleJob(
+                $rule_ids,
+                $normalized,
+                true,
+                'LLM Memory Update (chat section ' . (int)$section_id . ')'
+            );
         } catch (Exception $e) {
-            error_log('LLM memory dispatch error in chat form: ' . $e->getMessage());
+            LlmErrorReporter::log('Memory dispatch for a chat form', $e);
         }
     }
 
@@ -1398,7 +1551,7 @@ class LlmChatController extends BaseController
                 }
             }
         } catch (Exception $e) {
-            error_log('LLM saveFormDataToUserInput error: ' . $e->getMessage());
+            LlmErrorReporter::log('Saving chat form data', $e);
         }
     }
 
@@ -1512,7 +1665,7 @@ class LlmChatController extends BaseController
                 "mobile" => 0
             ]);
         } catch (Exception $e) {
-            error_log('LLM API activity logging failed: ' . $e->getMessage());
+            LlmErrorReporter::log('API activity logging', $e);
         }
     }
 }
