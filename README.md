@@ -203,10 +203,9 @@ These are configured per chat section and override module defaults where applica
 | `enable_file_uploads` | checkbox | on | Allow file attachments |
 | `enable_speech_to_text` | checkbox | off | Enable voice input button |
 | `speech_to_text_model` | select | — | Whisper model for transcription |
-| `enable_danger_detection` | checkbox | off | Enable LLM safety assessment |
-| `danger_keywords` | text | — | Safety topics for LLM context (comma-separated) |
-| `danger_notification_emails` | text | — | Email addresses for safety alerts |
-| `danger_blocked_message` | markdown | — | Message shown when conversation is blocked |
+| `danger_keywords` | text | — (global) | Danger keywords (comma-separated); empty uses LLM Settings → Safety |
+| `danger_notification_emails` | text | — (global) | Alert recipients; empty uses LLM Settings → Safety |
+| `danger_blocked_message` | markdown | — (global) | Message shown when danger is detected; empty uses LLM Settings → Safety |
 | `conversation_limit` | number | `20` | Max conversations in sidebar |
 | `message_limit` | number | `100` | Max messages per conversation |
 

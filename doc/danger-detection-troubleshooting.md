@@ -4,18 +4,16 @@
 
 To enable and test danger word detection, follow these steps:
 
-### 1. Enable Danger Detection in CMS
+### 1. Danger Detection Is Always On
 
-1. Go to your llmChat component in the SelfHelp CMS
-2. Find the **"Enable Danger Detection"** checkbox
-3. ✅ **Check it to enable**
-4. Click Save
-
-**Default:** Disabled (unchecked) - you must enable it manually
+There is nothing to enable: every LLM section (llmChat, llmFormLogList,
+llmFormRecord, llmFormLog) scans participant text. Configure the values in
+**LLM Settings → Safety**. A section can replace each value in its own field;
+an empty section field uses the global value.
 
 ### 2. Configure Danger Keywords
 
-In the **"Danger Keywords"** field, enter keywords (comma-separated):
+In **LLM Settings → Safety → Danger Keywords** (or the section's own field), enter keywords (comma-separated):
 
 ```
 suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden
@@ -29,7 +27,7 @@ suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm my
 
 ### 3. Configure Notification Emails
 
-In the **"Danger Notification Emails"** field, enter email addresses (one per line or semicolon-separated):
+In **LLM Settings → Safety → Notification Emails** (or the section's own field), enter email addresses (one per line or semicolon-separated):
 
 ```
 researcher@university.edu
@@ -37,7 +35,7 @@ safety-team@university.edu
 admin@example.com
 ```
 
-**Note:** If this field is empty, NO emails will be sent (only audit logging)
+**Note:** If no email is set globally or on the section, NO emails will be sent (only audit logging). The settings page warns about this.
 
 ### 4. Test the System
 
@@ -79,8 +77,8 @@ admin@example.com
 
 1. **Check Configuration**
    ```
-   - Is "Enable Danger Detection" checked? ✅
-   - Are emails configured in "Danger Notification Emails"? ✅
+   - Are emails configured in LLM Settings → Safety, or in the section's own field? ✅
+     (a section value replaces the global list)
    - Are emails valid format (name@domain.com)? ✅
    ```
 
@@ -114,9 +112,9 @@ admin@example.com
 
 **Causes & Solutions:**
 
-1. **Danger Detection Not Enabled**
-   - Verify checkbox is checked in CMS
-   - Default is disabled - must be manually enabled
+1. **Section Keywords Replace the Global List**
+   - A section with its own `danger_keywords` uses only those keywords
+   - Clear the section field to use the global list from LLM Settings → Safety
 
 2. **Keyword Not Matched**
    - Check exact keyword: "kill myself" ≠ "kill myslef" (typo)

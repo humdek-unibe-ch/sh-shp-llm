@@ -51,17 +51,38 @@ The Danger Word Detection System is a critical safety feature of the LLM Chat pl
 
 ## Configuration
 
-### CMS Fields
+### Always On, Configured Globally
 
-The danger detection system is configured per `llmChat` **and**
-`llmFormLogList` (form interview) section via the following CMS fields:
+Danger detection is always on (since v1.6.0 there is no enable checkbox).
+The values are set once in **LLM Settings → Safety** (`sh_module_llm`):
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `enable_danger_detection` | Checkbox | Enable/disable the feature |
-| `danger_keywords` | Textarea | Comma-separated list of keywords |
-| `danger_notification_emails` | Textarea | Email addresses for notifications |
-| `danger_blocked_message` | Markdown | Message shown to users when blocked |
+| `danger_keywords` | Textarea | Comma-separated list of keywords (the migration fills in a default list) |
+| `danger_notification_emails` | Textarea | Alert recipients, one per line or separated by semicolons (empty by default) |
+| `danger_blocked_message` | Markdown, per language | Message shown to the participant when danger is detected |
+
+The same three fields exist on every LLM section (`llmChat`,
+`llmFormLogList`, `llmFormRecord`, `llmFormLog`). **A section value replaces
+the global value; an empty section value uses it.** Values are never merged.
+When the global value is empty too, the built-in defaults in `globals.php`
+apply (`LLM_DEFAULT_DANGER_KEYWORDS`, `LLM_DEFAULT_DANGER_BLOCKED_MESSAGE`).
+`LlmSafetyConfigService` resolves the values.
+
+### Where Detection Runs
+
+| Entry point | Keyword check before the call | Safety prompt | LLM safety assessment |
+|---|---|---|---|
+| llmChat (send, form-mode submit) | yes | yes | yes |
+| llmFormLogList interview turn | yes | yes | yes |
+| llmFormRecord / llmFormLog feedback | yes | yes | no (plain-text response) |
+| Prompt Lab runs (chat, form, interview) | reported only (no email, no log, no block) | yes | as live |
+
+Form feedback scans the generated user prompt and every submitted value that
+is put into the context, not the author's own context text. On a hit the LLM
+is not called, the blocked message is shown as the feedback (`llm_meta.status`
+is `safety_blocked`), the detection is logged and the alert email is sent. The
+form conversation is not blocked.
 
 On form interviews, keyword hits and critical/emergency LLM safety both
 return `danger_detected` with the CMS blocked message and lock the
@@ -72,7 +93,7 @@ same scope while the blocked transcript remains for audit — see
 
 ### Example Configuration
 
-**Enable Danger Detection:** ☑ Enabled
+Set these in **LLM Settings → Safety**, or in a section to replace them there.
 
 **Danger Keywords:**
 ```
@@ -226,14 +247,16 @@ When a dangerous keyword is detected:
 
 ### Keywords Not Triggering
 
-1. Check that `enable_danger_detection` is enabled
+1. Check the keywords in **LLM Settings → Safety**, or the section's own
+   `danger_keywords` (a section value replaces the global list)
 2. Verify keywords are comma-separated without extra spaces
 3. Check for typos in keyword list
 4. Remember: word-boundary matching prevents partial matches
 
 ### Emails Not Sending
 
-1. Verify email addresses are valid
+1. Verify email addresses are valid, in **LLM Settings → Safety** and in the
+   section's own field (a section value replaces the global list)
 2. Check SelfHelp's mail configuration
 3. Review scheduled jobs in admin panel
 4. Check server mail logs
@@ -278,4 +301,5 @@ See the plugin source code for implementation details:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2025-12-23 | Initial implementation |
+| 1.6.0 | 2026-10-30 | Always on; global settings with per-section override; form feedback and Prompt Lab covered |
 

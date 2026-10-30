@@ -31,6 +31,9 @@ chat improvements and token reporting.
   [README > CSRF and cross-origin clients](README.md#csrf-and-cross-origin-clients).
 - The `llm*` tables must use InnoDB so that a failed interview approval is
   rolled back completely. See [README > Database engine](README.md#database-engine).
+- **Danger detection:** enter the alert recipients in **LLM Settings →
+  Safety → Notification Emails**. The migration fills in the global keywords
+  and blocked message, but no email address.
 
 ### Added
 
@@ -59,9 +62,9 @@ chat improvements and token reporting.
     fields can only be written when allowlisted
     (`llm_interview_writable_hidden_fields`). Manual edits require
     `llm_interview_allow_manual_edit`.
-  - **Crisis detection:** the same settings as `llmChat`
-    (`enable_danger_detection`, keywords, notification emails, blocked
-    message). A blocked interview shows the blocked message and locks the
+  - **Crisis detection:** always on, with the same keywords, notification
+    emails and blocked message as every LLM section (global in LLM Settings →
+    Safety, a section value replaces it). A blocked interview shows the blocked message and locks the
     composer. The transcript is kept for review.
   - **Reuse and URL parameters:** one interview form can be reused on many
     pages through a reference section in a `loop`. URL parameters declared in
@@ -98,6 +101,14 @@ chat improvements and token reporting.
 
 ### Changed
 
+- **Danger detection is always on and configured globally.** The
+  `enable_danger_detection` checkbox is gone. Keywords, alert emails and the
+  blocked message (per language) are set in **LLM Settings → Safety**. A
+  section value replaces the global value; an empty section value uses it.
+  Detection now also covers form feedback (`llmFormRecord`, `llmFormLog`): a
+  hit skips the LLM, shows the blocked message as the feedback and sends the
+  alert. Prompt Lab runs report keyword hits without email, log or block.
+  See [danger word detection](doc/danger-word-detection.md).
 - **API keys are never sent to a browser.** The settings page and the CMS
   editor show only whether a server has a key, its last four characters and
   where it comes from. Leaving the key field empty keeps the stored key, but
