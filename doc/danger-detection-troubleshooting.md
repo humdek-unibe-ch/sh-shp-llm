@@ -44,7 +44,7 @@ admin@example.com
 **Expected Behavior:**
 1. Message is blocked before reaching AI
 2. User sees safety message
-3. Conversation is blocked (user must start new conversation)
+3. Conversation is blocked and the user gets no LLM answer anywhere until an admin unblocks it
 4. Emails sent to configured addresses
 5. Detection logged to transactions table
 
@@ -146,7 +146,8 @@ admin@example.com
 
 **This is now FIXED in latest version:**
 - Conversations are automatically blocked when danger keywords detected
-- User must start a new conversation
+- The user is locked out of every LLM (also new conversations) until an admin
+  unblocks all their blocked conversations
 - Blocked conversations don't appear in conversation list
 - Attempting to send messages to blocked conversation returns error
 

@@ -109,6 +109,13 @@ chat improvements and token reporting.
   hit skips the LLM, shows the blocked message as the feedback and sends the
   alert. Prompt Lab runs report keyword hits without email, log or block.
   See [danger word detection](doc/danger-word-detection.md).
+- **Danger detection locks the whole user.** A keyword hit or a
+  critical/emergency LLM safety assessment in any chat, interview or form
+  blocks that conversation, and a participant with a blocked conversation gets
+  no LLM answer anywhere (no new chat, no interview, no form feedback) until an
+  admin unblocks it. Form feedback now asks the model for the structured reply
+  with a safety assessment, like chat and interviews; the participant sees its
+  text. Guests share one account, so for them the lock stays per conversation.
 - **API keys are never sent to a browser.** The settings page and the CMS
   editor show only whether a server has a key, its last four characters and
   where it comes from. Leaving the key field empty keeps the stored key, but

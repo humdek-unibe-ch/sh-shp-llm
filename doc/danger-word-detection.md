@@ -75,20 +75,33 @@ apply (`LLM_DEFAULT_DANGER_KEYWORDS`, `LLM_DEFAULT_DANGER_BLOCKED_MESSAGE`).
 |---|---|---|---|
 | llmChat (send, form-mode submit) | yes | yes | yes |
 | llmFormLogList interview turn | yes | yes | yes |
-| llmFormRecord / llmFormLog feedback | yes | yes | no (plain-text response) |
+| llmFormRecord / llmFormLog feedback | yes | yes | yes (structured reply; the feedback is its text) |
 | Prompt Lab runs (chat, form, interview) | reported only (no email, no log, no block) | yes | as live |
+
+### User-wide lock
+
+Every live entry point reacts the same way. A keyword hit, or an LLM safety
+assessment of `critical` / `emergency`, blocks the conversation it happened
+in, logs the detection and sends the alert email (`requires_intervention`
+below critical only sends the email). A participant with **any** blocked
+conversation is then locked out of every LLM - chat (new conversations
+included), form interviews (no new `open`, no turn) and form feedback - in all
+sections, and sees the blocked message instead of an answer. The lock lasts
+until an admin unblocks every blocked conversation of that participant in the
+admin console. Guests share one account, so for them the lock stays on the
+conversation.
 
 Form feedback scans the generated user prompt and every submitted value that
 is put into the context, not the author's own context text. On a hit the LLM
 is not called, the blocked message is shown as the feedback (`llm_meta.status`
-is `safety_blocked`), the detection is logged and the alert email is sent. The
-form conversation is not blocked.
+is `safety_blocked`) and the form conversation is blocked. Otherwise the model
+answers in the structured response format; its text blocks become the
+feedback, and a critical/emergency assessment replaces them with the blocked
+message.
 
 On form interviews, keyword hits and critical/emergency LLM safety both
 return `danger_detected` with the CMS blocked message and lock the
-composer. Blocked interview threads are skipped on the next `open` /
-reload (including `new_on_open`), so a fresh interview may start for the
-same scope while the blocked transcript remains for audit — see
+composer — see
 [LLM form interviews](llm-form-interview.md#drafts-approval-and-retention).
 
 ### Example Configuration
@@ -200,8 +213,8 @@ When a dangerous keyword is detected:
 
 1. Their message appears in the chat (as they typed it)
 2. Instead of an AI response, they see the safety message
-3. **The conversation is BLOCKED** - no further messages can be sent in that conversation
-4. The user must start a new conversation to continue chatting
+3. **The conversation is BLOCKED** and the user is locked out of every LLM
+   (chat, interviews, form feedback) until an admin unblocks it
 
 ## API Response Format
 
