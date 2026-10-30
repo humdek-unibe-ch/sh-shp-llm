@@ -136,6 +136,7 @@ class LlmFormInterviewService
             if (mb_strlen($open_token, 'UTF-8') > self::MAX_TOKEN_LENGTH) {
                 throw new LlmFormInterviewAbort('validation', 'The open token is too long');
             }
+            $this->assertActorNotBlocked($actor, $model);
 
             LlmTransaction::begin($this->db);
             try {
@@ -151,9 +152,8 @@ class LlmFormInterviewService
                 $completed = null;
                 $unfinished_rows = array();
                 foreach ($this->state_service->listScopedConversations($scope) as $row) {
-                    // Crisis/danger blocks are per-thread: open never resumes
-                    // a blocked conversation. Reload and new_on_open may
-                    // therefore start a fresh interview for the same scope.
+                    // Open never resumes a blocked conversation (a user who
+                    // has one is already refused by assertActorNotBlocked).
                     if (!empty($row['blocked'])) {
                         continue;
                     }
@@ -483,6 +483,7 @@ class LlmFormInterviewService
             if (mb_strlen($message, 'UTF-8') > self::MAX_MESSAGE_LENGTH) {
                 throw new LlmFormInterviewAbort('validation', 'Message is too long');
             }
+            $this->assertActorNotBlocked($actor, $model);
 
             $pre_merge_revision = null;
             $conversation = null;
@@ -1448,6 +1449,21 @@ class LlmFormInterviewService
         $this->authorizeRecord($model, (int)$row['id_dataRows']);
         $scope = $this->scope($actor, (int)$model->get_section_id(), null, $context_key);
         return array($row, $scope);
+    }
+
+    /**
+     * A detection anywhere (chat, interview, form) locks the participant out of
+     * every LLM: no new interview opens and no turn reaches the model.
+     */
+    private function assertActorNotBlocked($actor, $model)
+    {
+        if ((new LlmDangerDetectionService($this->services, $model))->isUserBlocked($actor)) {
+            $msg = (new LlmSafetyConfigService($this->services, $model))->getBlockedMessage();
+            throw new LlmFormInterviewAbort('danger_detected', $msg, array(
+                'blocked' => true,
+                'safety_message' => $msg,
+            ));
+        }
     }
 
     private function assertConversationUsable(array $conversation, $model = null)

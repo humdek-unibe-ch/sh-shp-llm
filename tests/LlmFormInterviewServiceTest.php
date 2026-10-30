@@ -213,6 +213,8 @@ class InterviewFakeDb
         if (strpos($sql, 'where id = :id') !== false && (int)$row['id'] !== (int)$args[':id']) return false;
         if (strpos($sql, 'deleted = 0') !== false && (int)$row['deleted'] !== 0) return false;
         if (strpos($sql, 'id_users = :sc_user') !== false && (int)$row['id_users'] !== (int)$args[':sc_user']) return false;
+        if (strpos($sql, 'id_users = :id_users') !== false && (int)$row['id_users'] !== (int)$args['id_users']) return false;
+        if (strpos($sql, 'blocked = 1') !== false && empty($row['blocked'])) return false;
         if (strpos($sql, 'id_sections <=>') !== false && !$this->eq($row['id_sections'], $args[':sc_section'])) return false;
         if (strpos($sql, 'id_llm_conversation_sources <=>') !== false && !$this->eq($row['id_llm_conversation_sources'], $args[':sc_source'])) return false;
         if (strpos($sql, 'id_datarows <=>') !== false && !$this->eq($row['id_dataRows'], $args[':sc_row'])) return false;
@@ -1557,6 +1559,25 @@ $again_m = $svc_m->turn($model_m, null, $res_m['state']['conversation_id'], $res
 check('blocked conversation: an empty section message shows the global / built-in message',
     empty($again_m['ok']) && $again_m['error']['type'] === 'danger_detected'
     && $again_m['error']['message'] === LLM_DEFAULT_DANGER_BLOCKED_MESSAGE);
+// User-wide lock: a blocked conversation anywhere (e.g. a chat in another section)
+// refuses every new interview and every turn of an interview that is still open
+list($db_u, , , $llm_u, , , $svc_u) = env();
+$model_u = new InterviewDangerNoMessageModel();
+$res_u = $svc_u->open($model_u, null, 'tok-u');
+$other_u = $db_u->conversations[$res_u['state']['conversation_id']];
+$db_u->conversations[9001] = array_merge($other_u, array('id' => 9001, 'id_sections' => 999, 'blocked' => 1));
+$open_u = $svc_u->open($model_u, null, 'tok-u2');
+check('user lock: no interview opens for a user blocked elsewhere',
+    empty($open_u['ok']) && $open_u['error']['type'] === 'danger_detected'
+    && $open_u['error']['message'] === LLM_DEFAULT_DANGER_BLOCKED_MESSAGE);
+$turn_u = $svc_u->turn($model_u, null, $res_u['state']['conversation_id'], $res_u['state']['revision'],
+    'hello', array(), 'req-u');
+check('user lock: an interview that is still open gets no turn',
+    empty($turn_u['ok']) && $turn_u['error']['type'] === 'danger_detected' && $llm_u->api_calls === 0);
+$_SESSION = array('id_user' => 6);
+check('user lock: another user is not affected', !empty($svc_u->open($model_u, null, 'tok-u3')['ok']));
+$_SESSION = array('id_user' => 5);
+
 check('danger pre-scan: conversation blocked after the transaction ended',
     count($db_d->updates) === 1 && $db_d->updates[0][0] === 'llmConversations'
     && (int)$db_d->updates[0][1]['blocked'] === 1 && $db_d->updates[0][3] === 0);
