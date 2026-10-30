@@ -116,6 +116,11 @@ class LlmDangerDetectionService
         $GLOBALS['T']['side_effects'][] = 'checkMessage';
     }
 
+    public function getCriticalSafetyContext()
+    {
+        return '[CRITICAL SAFETY INSTRUCTION] ' . $this->model->getDangerKeywords();
+    }
+
     public function sendNotifications()
     {
         $GLOBALS['T']['side_effects'][] = 'sendNotifications';
@@ -188,6 +193,14 @@ check('playground: variable values (form / interview runs) are scanned', $found 
 $GLOBALS['T'] = array('scanned' => array(), 'side_effects' => array(), 'danger_models' => array());
 check('playground: a harmless run reports nothing',
     $playground->detectDangerKeywords(array('danger_keywords' => 'kill myself'), array('a' => 'hello'), array()) === array());
+
+/* =========================================================================
+ * Form runtime: the safety block is in the system prompt, as in live forms
+ * ========================================================================= */
+
+$prompt = $playground->withFormSafetyContext('Reflect on the answers.', array('danger_keywords' => 'kill myself'));
+check('form runtime system prompt carries the critical safety block (as live)',
+    $prompt === "Reflect on the answers.\n\n[CRITICAL SAFETY INSTRUCTION] kill myself");
 
 echo "\n$total checks, $failed failures\n";
 exit($failed === 0 ? 0 : 1);

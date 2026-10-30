@@ -130,6 +130,22 @@ class LlmPromptPlaygroundService extends BaseLlmService
     }
 
     /**
+     * Append the critical safety instruction to a form system prompt, as live
+     * llmFormRecord / llmFormLog calls do (danger detection is always on).
+     *
+     * @param string $system_prompt Form system prompt
+     * @param array $runtime_values Runtime values (danger_keywords may override the global list)
+     * @return string System prompt with the safety block (unchanged when no keywords exist)
+     */
+    public function withFormSafetyContext($system_prompt, $runtime_values)
+    {
+        $proxy = new LlmPromptChatRuntimeModel('', $runtime_values, null);
+        $danger = new LlmDangerDetectionService($this->services, $proxy);
+        $safety_context = $danger->getCriticalSafetyContext();
+        return $safety_context ? $system_prompt . "\n\n" . $safety_context : $system_prompt;
+    }
+
+    /**
      * Danger keywords a participant text in this run would trigger (section value,
      * else the global LLM settings). Report only: a test run sends no email, writes
      * no audit log and blocks nothing; the LLM still answers so its own safety
@@ -714,6 +730,7 @@ class LlmPromptPlaygroundService extends BaseLlmService
             $suffix = $this->prompt_assets->load('core.playground.language_suffix');
             $system_prompt .= "\n\n" . strtr($suffix, array('{{language_code}}' => $language_code));
         }
+        $system_prompt = $this->withFormSafetyContext($system_prompt, $runtime_values);
 
         $messages = array(
             array('role' => 'system', 'content' => $system_prompt),
