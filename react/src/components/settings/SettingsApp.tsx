@@ -1,9 +1,10 @@
 /**
  * Settings App — main container for the LLM Settings admin page.
  *
- * Renders three collapsible sections:
+ * Renders these sections:
  * - **API Keys**: Provider API key management (ApiKeysSection)
  * - **Model Defaults**: Default model, temperature, max tokens (ModelDefaultsSection)
+ * - **Safety**: Global danger detection keywords, alert emails, blocked message (SafetySection)
  * - **Memory Config**: Summary of memory subsystem configuration (MemorySettingsSummary)
  *
  * Loads initial config from a bootstrap payload passed by the PHP view.
@@ -14,6 +15,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { SettingsBootConfig } from '../../settings';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ModelDefaultsSection } from './ModelDefaultsSection';
+import { SafetySection } from './SafetySection';
 import { MemorySettingsSummary } from './MemorySettingsSummary';
 
 interface FieldDef {
@@ -21,10 +23,13 @@ interface FieldDef {
   type: string;
   label: string;
   help: string;
-  value: string;
+  /** A string; a per-language field (translatable) sends {id_languages: text}. */
+  value: any;
   options?: { value: string; label: string }[];
   /** Extra information from the server (API keys: encryption status). */
   meta?: any;
+  translatable?: boolean;
+  languages?: { id: number; locale: string; language: string }[];
 }
 
 interface SettingsGroup {
@@ -49,7 +54,7 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [dirty, setDirty] = useState<Record<string, string>>({});
+  const [dirty, setDirty] = useState<Record<string, string | Record<string, string>>>({});
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [protecting, setProtecting] = useState(false);
 
@@ -93,7 +98,7 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
     fetchModels();
   }, [fetchConfig, fetchModels]);
 
-  const handleChange = (name: string, value: string) => {
+  const handleChange = (name: string, value: string | Record<string, string>) => {
     setDirty(prev => ({ ...prev, [name]: value }));
     setSuccess(null);
   };
@@ -223,9 +228,13 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
     data.settings[group]?.fields.find(f => f.name === name);
 
   const getVal = (group: string, name: string): string => {
-    if (dirty[name] !== undefined) return dirty[name];
+    if (typeof dirty[name] === 'string') return dirty[name] as string;
     return getField(group, name)?.value ?? '';
   };
+
+  const blockedMessages: Record<string, string> =
+    (dirty.danger_blocked_message as Record<string, string> | undefined)
+    ?? { ...(getField('safety', 'danger_blocked_message')?.value ?? {}) };
 
   return (
     <div className="llm-settings-app">
@@ -262,6 +271,14 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
         getVal={(n: string) => getVal('model_defaults', n)}
         onChange={handleChange}
         models={models}
+        disabled={!canUpdate}
+      />
+
+      <SafetySection
+        getField={(n: string) => getField('safety', n)}
+        getVal={(n: string) => getVal('safety', n)}
+        messages={blockedMessages}
+        onChange={handleChange}
         disabled={!canUpdate}
       />
 
