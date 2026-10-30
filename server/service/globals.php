@@ -64,6 +64,17 @@ define('LLM_MODELS_FETCH_TIMEOUT', 5);
 define('LLM_DEFAULT_CONVERSATION_LIMIT', 20);
 define('LLM_DEFAULT_MESSAGE_LIMIT', 100);
 
+// Danger detection fallbacks, used only when neither the section nor the global
+// LLM settings (Safety) provide a value. The migration seeds the same values.
+define('LLM_DEFAULT_DANGER_KEYWORDS', 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis,kill someone,jemanden töten,harm others,anderen schaden');
+define('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE', "I noticed some concerning content in your message. While I want to help, I'm not equipped to handle sensitive topics like this.\n\n"
+    . "**Please consider reaching out to:**\n"
+    . "- A trusted friend or family member\n"
+    . "- A mental health professional\n"
+    . "- Crisis hotlines in your area\n\n"
+    . "If you're in immediate danger, please contact emergency services.\n\n"
+    . "*Your well-being is important. Take care of yourself.*");
+
 /**
  * Reasoning / thinking effort (OpenAI, Anthropic, future GPUStack).
  * Options live in `lookups` (type_code = LLM_LOOKUP_TYPE_REASONING_EFFORT).

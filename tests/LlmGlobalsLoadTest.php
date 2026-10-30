@@ -118,6 +118,26 @@ file_put_contents($sandbox . '/service/globals_untracked.php', "<?php\ndefine('L
 list($code, $out) = runGlobals($sandbox);
 check('a present globals_untracked.php is still loaded', $code === 0 && strpos($out, 'secret=a-local-test-secret-value') !== false);
 
+// --- 4. built-in danger detection defaults (used when the global settings are empty) ---
+file_put_contents($sandbox . '/defaults.php', <<<'PHP'
+<?php
+require __DIR__ . '/service/globals.php';
+echo json_encode(array(
+    'keywords' => defined('LLM_DEFAULT_DANGER_KEYWORDS') ? LLM_DEFAULT_DANGER_KEYWORDS : null,
+    'message' => defined('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE') ? LLM_DEFAULT_DANGER_BLOCKED_MESSAGE : null,
+));
+PHP
+);
+$o = array();
+exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($sandbox . '/defaults.php') . ' 2>&1', $o);
+$defaults = json_decode(implode("\n", $o), true);
+check('LLM_DEFAULT_DANGER_KEYWORDS contains "kill myself" and "selbstmord"',
+    is_string($defaults['keywords'] ?? null)
+    && strpos($defaults['keywords'], 'kill myself') !== false
+    && strpos($defaults['keywords'], 'selbstmord') !== false);
+check('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE is a non-empty text',
+    is_string($defaults['message'] ?? null) && trim($defaults['message']) !== '');
+
 removeTree($sandbox);
 
 echo "\n$total checks, $failed failures\n";

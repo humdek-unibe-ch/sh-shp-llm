@@ -57,7 +57,12 @@
 --  12. Registers the delete hook for memory rules picked on a form
 --      (FormUserInputModel::delete_user_input): rules that also run on
 --      "deleted" are queued when an entry is deleted.
---  13. Bumps the plugin version LAST so a failed DDL statement can never
+--  13. Danger detection is always on and configured globally: drops the
+--      `enable_danger_detection` switch, links keywords / notification
+--      emails / blocked message to the LLM settings page (seeded) and to
+--      llmChat, llmFormLogList, llmFormRecord and llmFormLog with empty
+--      defaults (a section value overrides the global value).
+--  14. Bumps the plugin version LAST so a failed DDL statement can never
 --      mark v1.6.0 as installed.
 --
 -- NOTE: Apart from the help refresh of the released `llm_chat_shortcuts`
@@ -337,41 +342,65 @@ WHERE id_styles = get_style_id('llmChat')
   AND id_fields = get_field_id('llm_chat_shortcuts');
 
 -- =====================================================
--- 7. Danger / crisis detection on llmFormLogList
---    (same fields as llmChat; linked here for interviews)
+-- 7. Danger / crisis detection - always on, configured globally
 -- =====================================================
+-- Detection runs on every LLM call that carries participant text (llmChat,
+-- llmFormLogList, llmFormRecord, llmFormLog). Keywords, notification emails and
+-- the blocked message live on the LLM settings page (sh_module_llm, "Safety").
+-- A section value replaces the global value; an empty section value uses it.
 
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
-VALUES (
-    get_style_id('llmFormLogList'),
-    get_field_id('enable_danger_detection'),
-    '0',
-    'Enable danger word detection for this interview. When enabled, participant messages are scanned for dangerous keywords before the coach answers. If detected:\n\n- The message is not sent to the LLM\n- A safety message is shown\n- The interview conversation is blocked\n- Email notifications are sent to configured addresses\n- The detection is logged for audit\n- The coach context includes critical safety instructions\n\nLLM responses can also mark critical safety concerns and block the conversation after a turn.'
-);
+SET @danger_style_help_keywords = 'Comma-separated list of danger keywords. Case-insensitive, word-boundary matching (e.g. `skill` will not match `kill`); phrases tolerate small typos.\n\n**Leave empty to use the global value from LLM Settings → Safety. A value here replaces the global value for this section.**\n\nDanger detection is always on: participant messages are scanned before the LLM is called and the keywords are added to the LLM safety instructions.';
+SET @danger_style_help_emails = 'Email addresses to notify when danger is detected. One per line or separated by semicolons. Emails are sent through the SelfHelp job scheduler.\n\n**Leave empty to use the global value from LLM Settings → Safety. A value here replaces the global value for this section.**';
+SET @danger_style_help_message = 'Message shown to the participant when danger is detected. Supports markdown.\n\n**Leave empty to use the global value from LLM Settings → Safety. A value here replaces the global value for this section.**';
 
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
-VALUES (
-    get_style_id('llmFormLogList'),
-    get_field_id('danger_keywords'),
-    'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis,kill someone,jemanden töten,harm others,anderen schaden',
-    'Comma-separated list of danger keywords. Case-insensitive. Supports multi-language.\n\n**Example:**\nsuicide,selbstmord,kill myself,mich umbringen,self-harm,harm others\n\n**Tips:**\n- Include variations in all languages your study uses\n- Prefer phrases for accuracy (e.g. `kill myself` vs just `kill`)\n- These keywords are also injected into the coach context as critical safety instructions\n- Word-boundary matching reduces false positives (e.g. `skill` will not match `kill`)'
-);
+-- The per-section switch is gone: detection always runs.
+DELETE FROM `styles_fields`
+WHERE id_fields = get_field_id('enable_danger_detection')
+  AND id_styles IN (get_style_id('llmChat'), get_style_id('llmFormLogList'));
 
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
-VALUES (
-    get_style_id('llmFormLogList'),
-    get_field_id('danger_notification_emails'),
-    '',
-    'Email addresses to notify when danger keywords (or critical LLM safety) are detected in this interview.\nOne email per line or separated by semicolons.\n\n**Example:**\nadmin@example.com\nresearcher@example.com\n\n**Note:** If empty, only audit logging occurs (no email notifications). Emails are sent via the SelfHelp job scheduler.'
-);
+-- llmChat (linked in v1.0.0): empty defaults so unset sections use the global value
+UPDATE `styles_fields` SET default_value = '', help = @danger_style_help_keywords
+WHERE id_styles = get_style_id('llmChat') AND id_fields = get_field_id('danger_keywords');
+UPDATE `styles_fields` SET default_value = '', help = @danger_style_help_emails
+WHERE id_styles = get_style_id('llmChat') AND id_fields = get_field_id('danger_notification_emails');
+UPDATE `styles_fields` SET default_value = '', help = @danger_style_help_message
+WHERE id_styles = get_style_id('llmChat') AND id_fields = get_field_id('danger_blocked_message');
 
-INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`)
-VALUES (
-    get_style_id('llmFormLogList'),
-    get_field_id('danger_blocked_message'),
-    'I noticed some concerning content in your message. While I want to help, I''m not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you''re in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*',
-    'Message shown when danger keywords are detected (or when the interview conversation is blocked for safety). Supports markdown. The conversation is blocked and further messages cannot be sent.'
-);
+-- llmFormLogList, llmFormRecord, llmFormLog
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(get_style_id('llmFormLogList'), get_field_id('danger_keywords'), '', @danger_style_help_keywords),
+(get_style_id('llmFormLogList'), get_field_id('danger_notification_emails'), '', @danger_style_help_emails),
+(get_style_id('llmFormLogList'), get_field_id('danger_blocked_message'), '', @danger_style_help_message),
+(get_style_id('llmFormRecord'), get_field_id('danger_keywords'), '', @danger_style_help_keywords),
+(get_style_id('llmFormRecord'), get_field_id('danger_notification_emails'), '', @danger_style_help_emails),
+(get_style_id('llmFormRecord'), get_field_id('danger_blocked_message'), '', @danger_style_help_message),
+(get_style_id('llmFormLog'), get_field_id('danger_keywords'), '', @danger_style_help_keywords),
+(get_style_id('llmFormLog'), get_field_id('danger_notification_emails'), '', @danger_style_help_emails),
+(get_style_id('llmFormLog'), get_field_id('danger_blocked_message'), '', @danger_style_help_message);
+
+-- Global values on the LLM settings page
+SET @id_page_llm_config = (SELECT id FROM pages WHERE keyword = 'sh_module_llm');
+SET @danger_default_keywords = 'suicide,selbstmord,kill myself,mich umbringen,self-harm,selbstverletzung,harm myself,mir schaden,end my life,mein leben beenden,overdose,überdosis,kill someone,jemanden töten,harm others,anderen schaden';
+SET @danger_default_message = 'I noticed some concerning content in your message. While I want to help, I''m not equipped to handle sensitive topics like this.\n\n**Please consider reaching out to:**\n- A trusted friend or family member\n- A mental health professional\n- Crisis hotlines in your area\n\nIf you''re in immediate danger, please contact emergency services.\n\n*Your well-being is important. Take care of yourself.*';
+
+INSERT IGNORE INTO `pageType_fields` (`id_pageType`, `id_fields`, `default_value`, `help`) VALUES
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('danger_keywords'), '', 'Danger keywords for every LLM section. A section can override them in its own field.'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('danger_notification_emails'), '', 'Alert recipients for every LLM section. A section can override them in its own field.'),
+((SELECT id FROM pageType WHERE `name` = 'sh_module_llm'), get_field_id('danger_blocked_message'), '', 'Message shown when danger is detected, per language. A section can override it in its own field.');
+
+INSERT IGNORE INTO `pages_fields` (`id_pages`, `id_fields`, `default_value`, `help`) VALUES
+(@id_page_llm_config, get_field_id('danger_keywords'), '', 'Danger keywords for every LLM section.'),
+(@id_page_llm_config, get_field_id('danger_notification_emails'), '', 'Alert recipients for every LLM section.'),
+(@id_page_llm_config, get_field_id('danger_blocked_message'), '', 'Message shown when danger is detected.');
+
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`) VALUES
+(@id_page_llm_config, get_field_id('danger_keywords'), '0000000001', @danger_default_keywords),
+(@id_page_llm_config, get_field_id('danger_notification_emails'), '0000000001', '');
+
+INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_languages`, `content`)
+SELECT @id_page_llm_config, get_field_id('danger_blocked_message'), l.id, @danger_default_message
+FROM `languages` l
+WHERE l.id > 1;
 
 -- =====================================================
 -- 8. Memory rule picker UX (llmChat + core LogList)
