@@ -112,6 +112,13 @@ class Sh_module_llmModel extends BaseModel
                         'Markdown message shown to the participant when danger is detected, per language. A section can replace it in its own field.'),
                 ],
             ],
+            'audit' => [
+                'label' => 'Request Audit',
+                'fields' => [
+                    $this->buildField('llm_trace_store_blobs', $fields + ['llm_trace_store_blobs' => LLM_TRACE_STORE_BLOBS_DEFAULT], 'checkbox', 'Store full request payloads',
+                        'Every LLM call is stored as a verified request trace. While this is on, the full context and request payload are stored too (dual write) so traces can be compared with them (llm_verify_traces.php reports blob_mismatch). Off (default): payloads are stored only for a request whose trace could not be verified.'),
+                ],
+            ],
             'memory' => [
                 'label' => 'Memory Configuration',
                 'fields' => [
@@ -480,6 +487,7 @@ class Sh_module_llmModel extends BaseModel
             'llm_temperature' => '1',
             'llm_max_tokens' => '2048',
             'llm_timeout' => '30',
+            'llm_trace_store_blobs' => LLM_TRACE_STORE_BLOBS_DEFAULT,
         ];
         $defaultValue = $defaults[$fieldName] ?? '';
         $help = $fieldName === 'llm_default_model'

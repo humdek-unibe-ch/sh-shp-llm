@@ -145,6 +145,7 @@ class Sh_module_llmController extends BaseController
                 'llm_memory_enabled',
                 'llm_memory_storage_mode',
                 'danger_keywords', 'danger_notification_emails', 'danger_blocked_message',
+                'llm_trace_store_blobs',
             ];
 
             $posted = [];

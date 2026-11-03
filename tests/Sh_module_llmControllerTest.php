@@ -27,6 +27,7 @@ foreach (array(
     'PAGE_LLM_CONFIG' => 'sh_module_llm',
     'TRANSACTION_BY_LLM_PLUGIN' => 'by_llm_plugin',
     'transactionTypes_update' => 'update',
+    'LLM_TRACE_STORE_BLOBS_DEFAULT' => '1',
 ) as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
@@ -224,6 +225,7 @@ class FakeDb
         'llm_max_tokens' => 104, 'llm_reasoning_effort' => 105, 'llm_timeout' => 106,
         'llm_memory_enabled' => 107, 'llm_memory_storage_mode' => 108,
         'danger_keywords' => 109, 'danger_notification_emails' => 110, 'danger_blocked_message' => 111,
+        'llm_trace_store_blobs' => 112,
     );
     /** @var array field name => [id_languages => content] for translated (per-language) rows */
     public $translations = array();
@@ -645,6 +647,22 @@ list($status, $data) = request($s, 'save_config', 'POST', array('fields' => arra
     'danger_blocked_message' => array('99' => 'x'),
 )));
 check('unknown_language_rejected', $status === 422 && isset($data['errors']['danger_blocked_message']) && $s->db->writes === 0);
+
+// --- Request traces: store full payloads (dual-write) --------------------------
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'get_config', 'GET');
+$audit = $data['settings']['audit'] ?? null;
+check('structured_settings_has_audit_group', $status === 200 && $audit
+    && array_column($audit['fields'], 'name') === array('llm_trace_store_blobs')
+    && $audit['fields'][0]['type'] === 'checkbox');
+
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'save_config', 'POST', array('fields' => array('llm_trace_store_blobs' => '0')));
+check('saves_trace_store_blobs_setting', $status === 200 && $s->db->fields['llm_trace_store_blobs'] === '0');
+
+$s = newServices($baseFields);
+list($status, $data) = request($s, 'save_config', 'POST', array('fields' => array('llm_trace_store_blobs' => 'yes')));
+check('trace_store_blobs_rejects_non_boolean', $status === 422 && isset($data['errors']['llm_trace_store_blobs']) && $s->db->writes === 0);
 
 masterOff();
 echo "\n$total checks, $failed failed\n";
