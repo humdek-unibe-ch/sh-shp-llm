@@ -530,6 +530,11 @@ check('an owner type that is not a section is not authorized by a page', error_o
 $result = call($ajax, array('action' => 'list_datasets', 'owner_id' => 100, 'page_id' => 10));
 check('a descriptor without an owner type is not authorized by a page', error_of($result) === 'Access denied');
 
+// Built-in system prompts (request traces) change only with the plugin's asset files
+$result = call($ajax, array('action' => 'bootstrap_owner', 'owner_type' => 'system', 'owner_id' => 0,
+    'prompt_slot' => 'core.response.schema.instruction', 'page_id' => 10, 'active_content' => 'forged'));
+check('system_entry_edit_refused: a system prompt cannot be written through Prompt Lab', error_of($result) === 'Access denied' && !reached_service());
+
 $result = call($ajax, array('action' => 'list_datasets', 'owner_type' => 'llm_script', 'owner_id' => 5));
 check('the editor has no scripts module access', error_of($result) === 'Access denied');
 

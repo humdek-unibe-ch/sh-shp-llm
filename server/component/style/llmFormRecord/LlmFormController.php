@@ -12,6 +12,7 @@ require_once __DIR__ . "/../../../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../../../service/LlmDangerDetectionService.php";
 require_once __DIR__ . "/../../../service/LlmResponseService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
+require_once __DIR__ . "/../../../service/trace/LlmPromptVersionLinker.php";
 
 /**
  * Controller for LLM form styles (llmFormRecord and llmFormLog).
@@ -450,6 +451,8 @@ class LlmFormController extends FormUserInputController
     private function callLlmWithData($model, $form_data)
     {
         $context_template = $model->getLlmContext();
+        // Request trace: link the CMS-saved version of this prompt
+        LlmPromptVersionLinker::noteSectionField($model->get_section_id(), 'llm_context', (int)($_SESSION['user_language'] ?? 1));
         // Strip HTML tags - the context field is markdown type which gets
         // converted to HTML by Parsedown. We need raw text for the LLM.
         $context_clean = strip_tags($context_template);
