@@ -9,6 +9,8 @@ require_once __DIR__ . '/LlmResponseService.php';
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 require_once __DIR__ . '/LlmSafetyConfigService.php';
+require_once __DIR__ . '/trace/LlmTraceHints.php';
+require_once __DIR__ . '/trace/LlmPromptVersionLinker.php';
 
 /**
  * Builds the LLM context of one interview turn (v1.6.0): the frozen
@@ -68,6 +70,10 @@ class LlmFormInterviewContextBuilder
         $interp = $this->interpolationEntry($model, $payload);
         $author_template = trim((string)$model->getInterviewContextTemplate());
         if ($author_template !== '') {
+            // Request trace: link the CMS-saved version of this prompt
+            if (method_exists($model, 'get_section_id')) {
+                LlmPromptVersionLinker::noteSectionField($model->get_section_id(), 'llm_interview_context', (int)($_SESSION['user_language'] ?? 1));
+            }
             $resolved_author = method_exists($model, 'resolveInterviewTemplate')
                 ? $model->resolveInterviewTemplate($author_template, $interp)
                 : $model->get_entry_value($interp, $author_template);
@@ -115,16 +121,16 @@ class LlmFormInterviewContextBuilder
         $use_user_language = method_exists($model, 'useUserLanguage') && $model->useUserLanguage();
         if ($use_user_language && $language !== '') {
             $language_name = LlmLanguageUtility::getLanguageName($language);
-            $messages[] = array(
-                'role' => 'system',
-                'content' => 'CRITICAL LANGUAGE INSTRUCTION: '
-                    . LlmLanguageUtility::generateLanguageInstruction($language)
-                    . " Use {$language_name} and ONLY {$language_name} for all coach text and quick-reply suggestions,"
-                    . ' even when the author context, field labels, option labels or earlier messages are in another language,'
-                    . ' and even when the author context itself is written in another language or tells you to speak that language.'
-                    . ' This overrides any other instruction about language unless the participant explicitly asks to switch.'
-                    . ' Field names and option values inside interview.collected_fields stay exactly as supplied by the server.',
-            );
+            $language_rule = 'CRITICAL LANGUAGE INSTRUCTION: '
+                . LlmLanguageUtility::generateLanguageInstruction($language)
+                . " Use {$language_name} and ONLY {$language_name} for all coach text and quick-reply suggestions,"
+                . ' even when the author context, field labels, option labels or earlier messages are in another language,'
+                . ' and even when the author context itself is written in another language or tells you to speak that language.'
+                . ' This overrides any other instruction about language unless the participant explicitly asks to switch.'
+                . ' Field names and option values inside interview.collected_fields stay exactly as supplied by the server.';
+            // Code text plus the language name: the request trace stores it once for all users
+            LlmTraceHints::share($language_rule);
+            $messages[] = array('role' => 'system', 'content' => $language_rule);
         }
 
         if ($start) {

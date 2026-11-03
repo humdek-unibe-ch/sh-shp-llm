@@ -377,7 +377,12 @@ class LlmMemoryUpdateService extends BaseLlmService
 
         $data_config = $rule['data_config'] ?? [];
         if (!empty($data_config) && is_array($data_config)) {
-            $resolved_data_config = $this->db->replace_calced_values($data_config, $vars);
+            // Form values are entered by users: a typed {{...}} stays text and can
+            // never remove a filter (PageDb::mark_interpolation_values(), SelfHelp v7.13.0)
+            $resolved_data_config = $this->db->unmark_interpolation_values(
+                $this->db->replace_calced_values($data_config, $this->db->mark_interpolation_values($vars)),
+                array('@')
+            );
             $this->resolveDataConfig($resolved_data_config, $normalized_payload, $vars);
         }
 
@@ -615,7 +620,10 @@ class LlmMemoryUpdateService extends BaseLlmService
     private function resolveAdminInstructions($rule, $variables)
     {
         $template = $this->resolvePromptTemplate($rule);
-        $interpolated = trim($this->db->replace_calced_values($template, $variables));
+        // One value must not resolve a {{placeholder}} typed into another
+        $interpolated = trim($this->db->unmark_interpolation_values(
+            $this->db->replace_calced_values($template, $this->db->mark_interpolation_values($variables))
+        ));
         return $interpolated;
     }
 

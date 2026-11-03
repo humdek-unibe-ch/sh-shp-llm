@@ -620,10 +620,13 @@ class LlmFormInterviewService
             $llm_max_tokens = $model->getLlmMaxTokens();
             $llm_reasoning = $model->getLlmReasoningEffort();
             $conversation_id = (int)$conversation['id'];
+            // The request trace references these stored rows (replayed coach
+            // message, participant message) instead of copying their text
+            $trace_rows = $this->llm_service->getConversationMessages($conversation_id, 50);
             $rate_limited = null;
             $callable = function ($messages) use (
                 $llm_service, $llm_model, $llm_temperature, $llm_max_tokens,
-                $llm_reasoning, $conversation_id, $actor, &$rate_limited
+                $llm_reasoning, $conversation_id, $actor, &$rate_limited, $trace_rows
             ) {
                 try {
                     $rate_data = $llm_service->checkRateLimit($actor);
@@ -638,6 +641,7 @@ class LlmFormInterviewService
                         'sent_context' => $messages,
                         'is_validated' => false,
                         'reasoning_effort' => $llm_reasoning,
+                        'trace_rows' => is_array($trace_rows) ? $trace_rows : array(),
                     ));
             };
             $semantic_validator = function ($data) use ($service, $model, $payload) {
@@ -1806,9 +1810,11 @@ class LlmFormInterviewService
                 ? (int)$options['max_tokens'] : $model->getLlmMaxTokens();
             $llm_reasoning = isset($options['reasoning_effort'])
                 ? (string)$options['reasoning_effort'] : $model->getLlmReasoningEffort();
+            // The request trace references the replayed coach message instead of copying it
+            $trace_rows = $this->llm_service->getConversationMessages((int)$conversation_id, 50);
             $callable = function ($messages) use (
                 $llm_service, $llm_model, $llm_temperature,
-                $llm_max_tokens, $llm_reasoning, $conversation_id
+                $llm_max_tokens, $llm_reasoning, $conversation_id, $trace_rows
             ) {
                 return $llm_service->callLlmApi($messages, $llm_model, $llm_temperature,
                     $llm_max_tokens, array(
@@ -1816,6 +1822,7 @@ class LlmFormInterviewService
                         'sent_context' => $messages,
                         'is_validated' => false,
                         'reasoning_effort' => $llm_reasoning,
+                        'trace_rows' => is_array($trace_rows) ? $trace_rows : array(),
                     ));
             };
             $service = $this;
