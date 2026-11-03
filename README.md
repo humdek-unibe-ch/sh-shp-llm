@@ -70,9 +70,10 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.3.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.4.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.5.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.6.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.7.0.sql
 ```
 
-This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), and the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
 It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached). The same core release provides `CORS_ALLOWED_ORIGINS`, the exact-match list of cross-origin clients that the chat and form endpoints trust without a CSRF token ([CSRF and cross-origin clients](#csrf-and-cross-origin-clients)).
 
 **Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.5.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It enables the memory rule selection on `surveyJS` sections (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
@@ -589,6 +590,17 @@ Four tables are created:
 - **`llmMessages`** — Individual messages with role, content, attachments, tokens, sent context, validation status, and full request payload
 - **`llmConversationProgress`** — Topic coverage tracking per conversation
 - **`llm_scripts`** — Reusable prompt templates with execution configuration
+
+#### Request traces (v1.7.0)
+
+Every LLM call stores a hash-verified **request trace** next to its assistant
+message (`llmRequestTraces`, deduplicated text in `llmTraceChunks`, prompt
+version links in `llmTracePromptVersions`). The trace rebuilds exactly what was
+sent, so the full `sent_context` / `request_payload` no longer need to be stored
+on every message. **LLM Settings → Request Audit → Store full request payloads**
+(default off) keeps them as well so the verifier
+(`server/scripts/llm_verify_traces.php`) reports no mismatch. See
+[doc/request-traces.md](doc/request-traces.md).
 
 ### Response Schema
 

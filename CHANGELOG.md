@@ -2,6 +2,62 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.7.0]
+
+**Request traces:** every LLM call keeps a small, hash-checked record of what
+was sent, so the full context and request payload no longer need to be stored
+on every message. Details: [doc/request-traces.md](doc/request-traces.md).
+
+### Upgrade notes
+
+- Requires **SelfHelp v7.13.0** and PHP 8.2+.
+- Run `server/db/v1.7.0.sql` after `v1.6.0.sql`, **before** deploying this
+  code, then clear the SelfHelp cache (**Admin > Cache > Clear all**).
+
+### Breaking
+
+- `sent_context` and `request_payload` are **not stored by default**. They are
+  kept only when a trace cannot be verified. Turn on **LLM Settings → Request
+  Audit → Store full request payloads** for dual write (e.g. during a pilot).
+- Deleting a memory rule **archives** its Prompt Lab entry; prompt versions
+  are never removed.
+- A chat/history message referenced by a request trace can no longer have its
+  `content` or `attachments` changed (`updateMessage` returns 409).
+
+### Added
+
+- **Request traces** for every logged LLM reply: shared code/config text once
+  for all users, participant text per user (removed with the user), history
+  and images by reference. A write-time check rebuilds the request; on failure
+  the full payload is kept. Long Global Values used in prompts are stored once
+  when they are long enough to matter for deduplication.
+- **Prompt version links** on each trace: which built-in assets and CMS prompt
+  fields (`conversation_context`, `llm_context`, `llm_interview_context`) were
+  in effect (Prompt Lab versions).
+- **Admin:** badge per reply (**Trace verified** / **Trace mismatch** /
+  **Stored payload**); context and payload rebuilt when only a trace exists.
+- **Verifier:** `server/scripts/llm_verify_traces.php` reports hash mismatches,
+  blob differences, failed checks, and model replies without a trace.
+- **Setting:** Store full request payloads (`llm_trace_store_blobs`).
+
+### Changed
+
+- Uploaded images are resized once to `<upload>.llm.jpg` and reused on later
+  turns (stable bytes, less work per request).
+- Deleting a user, or clearing a user's data, also removes their LLM upload
+  files (including `.llm.jpg`) and their per-user trace text.
+- If the provider response has no `raw_response`, the stored copy no longer
+  includes the request payload.
+
+### Fixed
+
+- Participants no longer receive `sent_context` in the conversation message
+  window (author prompt, danger keywords, and response schema stayed in the
+  browser before).
+- Placeholders a participant types (e.g. `{{memory_text}}`) are no longer
+  expanded in interview/script/memory prompts or in `data_config` (where they
+  could drop a filter). The model gets the text as typed.
+
 ## [1.6.0]
 
 The main features of this release are **LLM form interviews**, where a coach
