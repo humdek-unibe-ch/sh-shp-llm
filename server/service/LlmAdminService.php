@@ -265,7 +265,7 @@ class LlmAdminService extends LlmService
     public function getAdminMessages($conversation_id, $limit = LLM_DEFAULT_MESSAGE_LIMIT, $include_debug = false)
     {
         $debug_columns = $include_debug ? ", m.sent_context, m.request_payload" : "";
-        return $this->db->query_db(
+        $rows = $this->db->query_db(
             "SELECT
                 m.id,
                 m.role,
@@ -284,6 +284,49 @@ class LlmAdminService extends LlmService
              LIMIT " . (int)$limit,
             [':conversation_id' => $conversation_id]
         ) ?: [];
+        if (!$include_debug || empty($rows)) {
+            return $rows;
+        }
+
+        // Messages stored without blobs show the request rebuilt from their trace
+        require_once __DIR__ . '/trace/LlmRequestTraceService.php';
+        require_once __DIR__ . '/LlmApiFormatterService.php';
+        $formatter = new LlmApiFormatterService($this->services);
+        return (new LlmRequestTraceService($this->db))->fillForReaders($rows, function ($row) use ($formatter) {
+            return $formatter->formatStoredMessage($row, false);
+        }, array($this, 'toWirePayload'), array($formatter, 'imageDataUrl'));
+    }
+
+    /**
+     * The request as the provider received it, rebuilt from a trace, so the
+     * admin payload view can be pasted into Postman like a stored payload.
+     *
+     * The stored params are already the adapted payload; only the messages are
+     * adapted again, exactly as callLlmApi() did: providers with a top-level
+     * system prompt (Anthropic) lift it out of the messages, the others get
+     * LlmModelCapabilities::convertMessagesForModel(). Images become the same
+     * placeholder a stored payload has.
+     *
+     * @param string $provider_id
+     * @param array $params Adapted payload without messages / system
+     * @param array $messages Neutral messages
+     * @return array
+     */
+    public function toWirePayload($provider_id, array $params, array $messages)
+    {
+        require_once __DIR__ . '/LlmModelCapabilities.php';
+        $model = (string)($params['model'] ?? '');
+        $provider = LlmProviderRegistry::getProviderById($provider_id);
+        if ($provider && $provider->usesTopLevelSystemPrompt()) {
+            $adapted = $provider->adaptChatCompletionPayload(array('model' => $model, 'messages' => $messages));
+            $wire = array('model' => $model)
+                + (isset($adapted['system']) ? array('system' => $adapted['system']) : array())
+                + array('messages' => $adapted['messages'] ?? array())
+                + $params;
+        } else {
+            $wire = array('model' => $model, 'messages' => LlmModelCapabilities::convertMessagesForModel($messages, $model)) + $params;
+        }
+        return $this->sanitizePayloadForStorage($wire);
     }
 
     /**

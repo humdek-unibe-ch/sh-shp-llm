@@ -75,7 +75,7 @@ register_shutdown_function(function () use ($root) {
 });
 
 // Real files, byte for byte
-foreach (array('service/LlmApiFormatterService.php', 'service/LlmFileUtility.php') as $file) {
+foreach (array('service/LlmApiFormatterService.php', 'service/LlmFileUtility.php', 'service/trace/LlmTraceHints.php') as $file) {
     sandbox_write($plugin . '/server/' . $file, file_get_contents($real_server . '/' . $file));
 }
 
@@ -97,6 +97,14 @@ class BaseLlmService
     }
 
     protected function logWarning($message, $context = array())
+    {
+    }
+
+    protected function logError($message, $context = array())
+    {
+    }
+
+    protected function logDebug($message, $context = array())
     {
     }
 
@@ -264,6 +272,104 @@ foreach (array(
     check("stored attachments column with $label: plain text message", $error === null && $api !== null
         && $api[0]['content'] === 'Please look at this');
 }
+
+/* =========================================================================
+ * Request traces: an image is sent with the same bytes on every turn
+ * ========================================================================= */
+
+// The LLM-ready JPEG is written once next to the upload (<path>.llm.jpg) and
+// re-sent as is, so the request hash and a rebuild see identical bytes.
+$img = imagecreatetruecolor(1200, 600);
+imagefilledrectangle($img, 0, 0, 1199, 599, imagecolorallocate($img, 30, 120, 200));
+ob_start();
+imagepng($img);
+sandbox_write($plugin . '/upload/7/photo.png', ob_get_clean());
+imagedestroy($img);
+$derivative = $plugin . '/upload/7/photo.png.llm.jpg';
+$photo = array(array('path' => 'upload/7/photo.png', 'original_name' => 'photo.png', 'is_image' => true, 'type' => 'image/png'));
+
+list($api1, $json1) = formatted($photo);
+check('derivative_created_once: the first send writes <path>.llm.jpg', is_file($derivative));
+$sent_url = $api1[0]['content'][1]['image_url']['url'] ?? '';
+check('the sent image is the derivative file as is',
+    is_file($derivative) && $sent_url === 'data:image/jpeg;base64,' . base64_encode(file_get_contents($derivative)));
+if (is_file($derivative)) {
+    touch($derivative, time() - 3600);
+}
+clearstatcache();
+$mtime = @filemtime($derivative);
+list($api2, $json2) = formatted($photo);
+clearstatcache();
+check('derivative_created_once: a later send does not rewrite it', $mtime !== false && @filemtime($derivative) === $mtime);
+check('same_data_url_every_turn', $json1 === $json2);
+@unlink($derivative);
+list($api3, $json3) = formatted($photo);
+check('old_upload_gets_derivative_on_first_send', is_file($derivative) && $json3 === $json1);
+
+$formatter = new LlmApiFormatterService(new stdClass(), 'test-model');
+$row = array('id' => 9, 'role' => 'user', 'content' => 'Look', 'attachments' => json_encode($photo));
+check('formatStoredMessage gives what convertToApiFormat sends for that row',
+    method_exists($formatter, 'formatStoredMessage')
+    && $formatter->formatStoredMessage($row, false) === $formatter->convertToApiFormat(array($row))[0]);
+check('formatStoredMessage skips an empty assistant message like the send path',
+    method_exists($formatter, 'formatStoredMessage')
+    && $formatter->formatStoredMessage(array('role' => 'assistant', 'content' => '  '), false) === null);
+
+// Golden output of formatStoredMessage(): a request trace replays {"m": id}
+// history rows through it, so any change here breaks the hash of every trace
+// stored without its payload. Change it only with a new LLM_TRACE_FORMAT_VERSION.
+$golden = array(
+    'text' => array(
+        array('id' => 1, 'role' => 'user', 'content' => 'Hello', 'attachments' => null),
+        array('role' => 'user', 'content' => 'Hello'),
+    ),
+    'assistant' => array(
+        array('id' => 2, 'role' => 'assistant', 'content' => 'Hi there', 'attachments' => null),
+        array('role' => 'assistant', 'content' => 'Hi there'),
+    ),
+    'text document' => array(
+        array('id' => 3, 'role' => 'user', 'content' => 'Read this',
+            'attachments' => json_encode(array(array('path' => 'upload/7/note.txt', 'original_name' => 'note.txt', 'is_image' => false)))),
+        array('role' => 'user', 'content' => array(
+            array('type' => 'text', 'text' => 'Read this'),
+            array('type' => 'text', 'text' => "\n\n--- File: note.txt ---\n```txt\nUPLOAD-OK-CONTENT\n```\n--- End of file ---\n"),
+        )),
+    ),
+    'form submission metadata' => array(
+        array('id' => 4, 'role' => 'user', 'content' => 'Name: Ana',
+            'attachments' => json_encode(array('type' => 'form_submission', 'values' => array('name' => 'Ana')))),
+        array('role' => 'user', 'content' => 'Name: Ana'),
+    ),
+    'missing file' => array(
+        array('id' => 5, 'role' => 'user', 'content' => 'Gone',
+            'attachments' => json_encode(array(array('path' => 'upload/7/missing.png', 'original_name' => 'missing.png', 'is_image' => true)))),
+        array('role' => 'user', 'content' => array(
+            array('type' => 'text', 'text' => 'Gone'),
+            array('type' => 'text', 'text' => "\n[Attachment not found: missing.png]\n"),
+        )),
+    ),
+    'image' => array(
+        $row,
+        array('role' => 'user', 'content' => array(
+            array('type' => 'text', 'text' => 'Look'),
+            array('type' => 'image_url', 'image_url' => array('url' => $sent_url)),
+        )),
+    ),
+);
+foreach ($golden as $name => $case) {
+    foreach (array(false, true) as $vision) {
+        check("formatStoredMessage golden: $name" . ($vision ? ' (vision model)' : ''), $formatter->formatStoredMessage($case[0], $vision) === $case[1]);
+    }
+}
+check('formatStoredMessage golden: an empty user message is not sent',
+    $formatter->formatStoredMessage(array('role' => 'user', 'content' => ''), false) === null);
+
+// Request traces store a sent image as a reference to its upload
+$hint = LlmTraceHints::images()[hash('sha256', $sent_url)] ?? null;
+check('a sent image is declared with its upload path for the request trace',
+    $hint !== null && $hint['path'] === 'upload/7/photo.png' && strpos(json_encode($hint), 'base64') === false);
+check('imageDataUrl rebuilds exactly the sent data URL from that reference', $formatter->imageDataUrl($hint) === $sent_url);
+check('imageDataUrl refuses a path outside the upload folder', $formatter->imageDataUrl(array('path' => 'secret.txt')) === null);
 
 echo "\n$total checks, $failed failed\n";
 exit($failed === 0 ? 0 : 1);
