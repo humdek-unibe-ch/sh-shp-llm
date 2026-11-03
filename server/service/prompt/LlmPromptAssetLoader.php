@@ -4,6 +4,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . '/LlmPromptAssetRegistry.php';
+require_once __DIR__ . '/../trace/LlmTraceHints.php';
+require_once __DIR__ . '/../trace/LlmPromptVersionLinker.php';
 
 /**
  * LLM Prompt Asset Loader
@@ -45,6 +47,9 @@ class LlmPromptAssetLoader
         }
 
         if (isset(self::$cache[$key])) {
+            // An asset sent verbatim is code text: the request trace stores it once for all users
+            LlmTraceHints::share(self::$cache[$key]);
+            LlmPromptVersionLinker::noteAsset($key, self::$cache[$key]);
             return self::$cache[$key];
         }
 
@@ -65,12 +70,15 @@ class LlmPromptAssetLoader
             throw new RuntimeException('Failed to read prompt asset for key ' . $key . ': ' . $full_path);
         }
 
-        $content = trim($content);
+        // Same bytes on every checkout (Windows autocrlf vs Linux): request traces hash them
+        $content = trim(str_replace(array("\r\n", "\r"), "\n", $content));
         if ($content === '') {
             throw new RuntimeException('Prompt asset is empty for key ' . $key . ': ' . $full_path);
         }
 
         self::$cache[$key] = $content;
+        LlmTraceHints::share($content);
+        LlmPromptVersionLinker::noteAsset($key, $content);
         return self::$cache[$key];
     }
 }
