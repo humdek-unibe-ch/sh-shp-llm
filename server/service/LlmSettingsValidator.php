@@ -78,6 +78,7 @@ class LlmSettingsValidator
                     : self::fail('Unknown reasoning effort.');
 
             case 'llm_memory_enabled':
+            case 'llm_trace_store_blobs':
                 return in_array($value, array('', '0', '1'), true)
                     ? self::ok($value)
                     : self::fail('The value must be 0 or 1.');

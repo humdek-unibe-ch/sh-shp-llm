@@ -75,6 +75,16 @@ define('LLM_DEFAULT_DANGER_BLOCKED_MESSAGE', "I noticed some concerning content 
     . "If you're in immediate danger, please contact emergency services.\n\n"
     . "*Your well-being is important. Take care of yourself.*");
 
+// Request traces (see doc/request-traces.md): every LLM call stores a verified trace.
+// sent_context / request_payload are stored only for a request whose trace could not
+// be verified, unless llm_trace_store_blobs is switched on (dual write).
+define('LLM_TRACE_FORMAT_VERSION', 1);
+define('LLM_TRACE_STORE_BLOBS_DEFAULT', '0');
+define('LLM_PROMPT_OWNER_SYSTEM', 'system');
+// Global Values at least this long are stored once for all users in a trace
+// (shared chunk) instead of inside the per-user text of every request.
+define('LLM_TRACE_SHARED_GLOBAL_VALUE_MIN_LENGTH', 200);
+
 /**
  * Reasoning / thinking effort (OpenAI, Anthropic, future GPUStack).
  * Options live in `lookups` (type_code = LLM_LOOKUP_TYPE_REASONING_EFFORT).
