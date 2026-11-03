@@ -11,6 +11,44 @@
  */
 class LlmFileUtility
 {
+    /** Suffix of the LLM-ready image stored next to an upload (<path>.llm.jpg). */
+    const LLM_DERIVATIVE_SUFFIX = '.llm.jpg';
+
+    /**
+     * Resolve a stored attachment path (relative to the plugin root) to a real
+     * file inside the plugin upload folder.
+     *
+     * Anything that is empty, escapes the upload folder (traversal, absolute
+     * paths, symlinks) or is not a regular file is rejected.
+     *
+     * @param mixed $path Path as stored in the attachment record
+     * @return string|null Absolute file path, or null when it is not allowed
+     */
+    public static function resolveUploadFile($path)
+    {
+        if (!is_string($path) || $path === '' || strpos($path, "\0") !== false) {
+            return null;
+        }
+
+        // Plugin root is two levels above server/service/
+        $pluginRoot = realpath(__DIR__ . '/../../');
+        if ($pluginRoot === false) {
+            return null;
+        }
+        $uploadRoot = realpath($pluginRoot . '/' . LLM_UPLOAD_FOLDER);
+        $fullPath = realpath($pluginRoot . '/' . ltrim(str_replace('\\', '/', $path), '/'));
+        if ($uploadRoot === false || $fullPath === false || !is_file($fullPath)) {
+            return null;
+        }
+
+        $prefix = rtrim($uploadRoot, '/\\') . DIRECTORY_SEPARATOR;
+        $inside = DIRECTORY_SEPARATOR === '\\'
+            ? stripos($fullPath, $prefix) === 0
+            : strpos($fullPath, $prefix) === 0;
+
+        return $inside ? $fullPath : null;
+    }
+
     /**
      * Detect MIME type using finfo
      * Falls back to file extension-based detection if finfo fails

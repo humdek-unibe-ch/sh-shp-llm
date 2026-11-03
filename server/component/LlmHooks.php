@@ -16,6 +16,7 @@ require_once __DIR__ . "/../service/LlmMemoryRuleService.php";
 require_once __DIR__ . "/../service/LlmMemorySubmissionContextService.php";
 require_once __DIR__ . "/../service/LlmCsrfService.php";
 require_once __DIR__ . "/../service/LlmTransaction.php";
+require_once __DIR__ . "/../service/LlmFileUtility.php";
 require_once __DIR__ . "/../service/LlmErrorReporter.php";
 require_once __DIR__ . "/../service/LlmApiKeysConfigService.php";
 
@@ -2289,9 +2290,21 @@ class LlmHooks extends BaseHooks
         try {
             LlmTransaction::begin($this->db);
 
+            // Uploads of the user's messages (and the LLM-ready images next to
+            // them) are removed only once the rows are gone for good
+            $files = $this->getUserUploadFiles($uid);
+            LlmTransaction::afterCommit($this->db, function () use ($files) {
+                foreach ($files as $file) {
+                    @unlink($file);
+                    @unlink($file . LlmFileUtility::LLM_DERIVATIVE_SUFFIX);
+                }
+            });
+
             $cleanup_ok = true;
             $cleanup_ok &= $this->db->remove_by_fk('refresh_events', 'id_users', $uid);
             $cleanup_ok &= $this->db->remove_by_fk('llmConversations', 'id_users', $uid);
+            // Per-user trace text (may hold participant data); its FK cascades only on a users delete
+            $cleanup_ok &= $this->db->remove_by_fk('llmTraceChunks', 'id_users', $uid);
 
             if (!$cleanup_ok) {
                 LlmTransaction::rollback($this->db);
@@ -2306,6 +2319,68 @@ class LlmHooks extends BaseHooks
             LlmErrorReporter::log('Cleanup after clean_user_data for user ' . $uid, $e);
             return false;
         }
+    }
+
+    /**
+     * Hook: Login::delete_user (hook_overwrite_return).
+     *
+     * Deleting a user cascades users -> llmConversations -> llmMessages (and
+     * the request traces / per-user trace chunks with them), but the uploaded
+     * files stay on disk. Their paths are read before the delete, because the
+     * rows that list them are gone afterwards, and the files are removed only
+     * when the core delete succeeded. A failure here never blocks the delete.
+     */
+    public function onDeleteUserLlmFiles($args)
+    {
+        $uid = (int)($args['uid'] ?? 0);
+        $files = array();
+        if ($uid > 0) {
+            try {
+                $files = $this->getUserUploadFiles($uid);
+            } catch (\Throwable $e) {
+                LlmErrorReporter::log('Listing the LLM uploads of a deleted user', $e);
+            }
+        }
+
+        $res = $this->execute_private_method($args);
+        if ($res === true) {
+            foreach ($files as $file) {
+                @unlink($file);
+                @unlink($file . LlmFileUtility::LLM_DERIVATIVE_SUFFIX);
+            }
+        }
+        return $res;
+    }
+
+    /**
+     * Upload files of a user's LLM messages. Only real attachment lists count
+     * (not form_submission metadata), and only files inside the upload folder.
+     *
+     * @param int $uid
+     * @return string[] absolute paths
+     */
+    private function getUserUploadFiles($uid)
+    {
+        $rows = $this->db->query_db(
+            "SELECT m.attachments FROM llmMessages m
+             INNER JOIN llmConversations c ON c.id = m.id_llmConversations
+             WHERE c.id_users = :uid AND m.attachments IS NOT NULL",
+            array(':uid' => $uid)
+        ) ?: array();
+        $files = array();
+        foreach ($rows as $row) {
+            $attachments = json_decode((string)$row['attachments'], true);
+            if (!is_array($attachments) || !array_is_list($attachments)) {
+                continue;
+            }
+            foreach ($attachments as $attachment) {
+                $file = is_array($attachment) ? LlmFileUtility::resolveUploadFile($attachment['path'] ?? null) : null;
+                if ($file !== null) {
+                    $files[$file] = $file;
+                }
+            }
+        }
+        return array_values($files);
     }
 
 

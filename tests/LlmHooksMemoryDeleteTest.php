@@ -84,6 +84,7 @@ foreach (array(
     'component/LlmHooks.php',
     'service/LlmCsrfService.php',
     'service/LlmTransaction.php',
+    'service/LlmFileUtility.php',
     'service/LlmErrorReporter.php',
     'service/LlmSecretService.php',
     'service/LlmSettingsValidator.php',
