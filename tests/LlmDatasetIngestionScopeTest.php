@@ -120,6 +120,15 @@ foreach (array(
     'service/cache/LlmCacheManager.php',
     'service/LlmSecretService.php',
     'service/LlmErrorReporter.php',
+    'service/LlmTransaction.php',
+    // request traces: a memory reply stored without blobs is replayed from its trace
+    'service/trace/LlmRequestTraceService.php',
+    'service/trace/LlmTraceBuilder.php',
+    'service/trace/LlmTraceCanonicalizer.php',
+    'service/trace/LlmTraceHints.php',
+    'service/trace/LlmPromptVersionLinker.php',
+    'service/LlmApiFormatterService.php',
+    'service/LlmFileUtility.php',
 ) as $file) {
     sandbox_write($root . '/server/' . $file, file_get_contents($real_server . '/' . $file));
 }
@@ -175,6 +184,9 @@ class SqliteDb
                 timestamp TEXT, role TEXT, content TEXT, sent_context TEXT)',
             'CREATE TABLE llm_scripts (id INTEGER PRIMARY KEY, name TEXT, model TEXT, updated_at TEXT, data_config TEXT,
                 test_variables TEXT, temperature REAL, max_tokens INTEGER)',
+            'CREATE TABLE llmRequestTraces (id INTEGER PRIMARY KEY, id_llmMessages INTEGER, provider TEXT, params_json TEXT,
+                recipe_json TEXT, request_hash TEXT)',
+            'CREATE TABLE llmTraceChunks (id INTEGER PRIMARY KEY, owner INTEGER, id_users INTEGER, sha256 TEXT, content TEXT)',
         ) as $ddl) {
             $this->pdo->exec($ddl);
         }
@@ -615,6 +627,37 @@ $service->addCasesFromSource(3, 'conversation_message', array(11), array(
 check('an imported memory update replays its stored prompt', $dataset_service->cases[0]['input_payload']['execution_profile'] === 'memory_runtime'
     && $dataset_service->cases[0]['expected_output'] === array('assistant_text' => 'Memory of alpha')
     && $dataset_service->cases[0]['input_payload']['memory_context']['memory_key'] === 'alpha');
+$from_blob = $dataset_service->cases[0]['input_payload'];
+
+// Request traces, trace-only mode: the same reply without sent_context, with its trace
+require_once $service_dir . '/trace/LlmTraceCanonicalizer.php';
+$memory_messages = json_decode($memory_context, true);
+$pdo->exec("INSERT INTO llmTraceChunks (id, owner, id_users, sha256, content) VALUES "
+    . "(1, 0, NULL, 'a', " . $pdo->quote($memory_messages[0]['content']) . "), "
+    . "(2, 6, 6, 'b', " . $pdo->quote($memory_messages[1]['content']) . ")");
+$pdo->prepare("INSERT INTO llmRequestTraces (id, id_llmMessages, provider, params_json, recipe_json, request_hash) VALUES (1, 11, 'gpustack', '{}', :recipe, :hash)")
+    ->execute(array(
+        ':recipe' => json_encode(array(array('role' => 'system', 'c' => array(1)), array('role' => 'user', 'c' => array(2)))),
+        ':hash' => LlmTraceCanonicalizer::hash('gpustack', array(), $memory_messages),
+    ));
+$pdo->exec("UPDATE llmMessages SET sent_context = NULL WHERE id = 11");
+$dataset_service->cases = array();
+$service->addCasesFromSource(3, 'conversation_message', array(11), array(
+    'descriptor' => $memory, 'execution_profile' => 'memory_runtime', 'runtime_overrides' => array(),
+));
+check('dataset_ingestion_reads_rebuilt_context: a memory update stored without sent_context replays its prompt from the trace',
+    count($dataset_service->cases) === 1 && $dataset_service->cases[0]['input_payload'] === $from_blob);
+
+// The trace is gone (e.g. a broken row): the import goes on with what is stored, like a legacy row
+$pdo->exec("DELETE FROM llmRequestTraces");
+$dataset_service->cases = array();
+$service->addCasesFromSource(3, 'conversation_message', array(11), array(
+    'descriptor' => $memory, 'execution_profile' => 'memory_runtime', 'runtime_overrides' => array(),
+));
+check('dataset_ingestion_reads_rebuilt_context: without blob and trace the import still works (empty prompt)',
+    count($dataset_service->cases) === 1 && $dataset_service->cases[0]['expected_output'] === array('assistant_text' => 'Memory of alpha'));
+$pdo->exec("UPDATE llmMessages SET sent_context = " . $pdo->quote($memory_context) . " WHERE id = 11");
+$pdo->exec("DELETE FROM llmTraceChunks");
 
 $dataset_service->cases = array();
 $created = $service->addCasesFromSource(3, 'conversation_message', array(array('x'), 'abc', null, 0, -1, '3'), array(

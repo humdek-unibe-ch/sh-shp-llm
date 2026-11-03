@@ -961,7 +961,8 @@ class LlmFormLogListModel extends FormUserInputLogListModel
             return null;
         }
         $entry = is_array($this->entry_record) ? $this->entry_record : array();
-        $cfg = $this->get_entry_value($entry, $raw);
+        // Keep entered {{...}} / @... out of the passes below, like core StyleModel
+        $cfg = $this->get_entry_value($entry, $raw, true);
         $global_vars = $this->get_global_vars();
         if (strpos($cfg, '__language__') !== false) {
             $global_vars['__language__'] = $this->db->get_user_language_id($_SESSION['id_user']);
@@ -975,6 +976,7 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         if ($global_values) {
             $cfg = $this->db->replace_calced_values($cfg, $global_values);
         }
+        $cfg = $this->db->unmark_interpolation_values($cfg, array('@'));
         $decoded = json_decode($cfg, true);
         return is_array($decoded) ? $decoded : null;
     }

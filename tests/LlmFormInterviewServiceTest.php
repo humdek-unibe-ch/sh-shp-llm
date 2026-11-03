@@ -432,6 +432,7 @@ class StubLlmService
     /** @var array queue of response contents (JSON strings) or exceptions */
     public $scripted = array();
     public $api_calls = 0;
+    public $last_log_options = null;
     public $rate_limited = false;
     /** @var bool updateMessage() reports failure (the merge cannot validate the reply) */
     public $fail_update = false;
@@ -509,6 +510,7 @@ class StubLlmService
     {
         $this->api_calls++;
         $this->last_messages = $messages;
+        $this->last_log_options = $log_options;
         if (is_callable($this->on_call)) {
             call_user_func($this->on_call);
         }
@@ -829,6 +831,10 @@ check('turn: coach message validated + natural', count($assistant) === 1
 $users = array_filter($msgs, function ($m) { return $m['role'] === 'user'; });
 check('turn: participant message logged', count($users) === 1 && end($users)['content'] === 'hi');
 check('turn: no unvalidated assistant messages visible', count($assistant) === 1);
+$trace_rows = $llm->last_log_options['trace_rows'] ?? null;
+check('turn: the stored conversation rows are passed as trace_rows (request trace references them)',
+    is_array($trace_rows) && !empty($trace_rows)
+    && end($trace_rows)['role'] === 'user' && end($trace_rows)['content'] === 'hi');
 
 // request replay returns without another API call
 $calls_before = $llm->api_calls;

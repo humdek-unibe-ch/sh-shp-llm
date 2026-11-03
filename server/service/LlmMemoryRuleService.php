@@ -204,9 +204,10 @@ class LlmMemoryRuleService extends BaseLlmService
                 )
             );
 
+            // Archived, never deleted: request traces keep pointing at its prompt versions
             if (!empty($entry['id'])) {
-                $this->db->query_db(
-                    "DELETE FROM llm_prompt_entries WHERE id = :id",
+                $this->db->execute_update_db(
+                    "UPDATE llm_prompt_entries SET archived_at = NOW() WHERE id = :id AND archived_at IS NULL",
                     array(':id' => (int)$entry['id'])
                 );
             }

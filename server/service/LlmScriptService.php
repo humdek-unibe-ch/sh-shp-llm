@@ -256,7 +256,12 @@ class LlmScriptService extends BaseLlmService
                 ? (defined('LLM_MAX_SCRIPT_SOURCE_IMAGES') ? (int)LLM_MAX_SCRIPT_SOURCE_IMAGES : 12)
                 : $apiMax;
 
-            $data_config = $this->db->replace_calced_values($data_config, $variables);
+            // Form values are entered by users: a typed {{...}} stays text and can
+            // never remove a filter (PageDb::mark_interpolation_values(), SelfHelp v7.13.0)
+            $data_config = $this->db->unmark_interpolation_values(
+                $this->db->replace_calced_values($data_config, $this->db->mark_interpolation_values($variables)),
+                array('@')
+            );
             $data_config_values = $data_config ? $this->fetch_data($data_config, $id_users) : [];
             $merged_vars = array_merge($data_config_values, $variables);
 
@@ -296,7 +301,10 @@ class LlmScriptService extends BaseLlmService
                 );
             }
             $attachments = $imageService->attachmentsForStorage($combineResult['attachments']);
-            $prompt = $this->db->replace_calced_values($script, $promptVars);
+            // One value must not resolve a {{placeholder}} typed into another
+            $prompt = $this->db->unmark_interpolation_values(
+                $this->db->replace_calced_values($script, $this->db->mark_interpolation_values($promptVars))
+            );
             $prompt = $imageService->scrubBase64FromPrompt($prompt);
             $prompt = $imageService->appendImageGuideToPrompt(
                 $prompt,

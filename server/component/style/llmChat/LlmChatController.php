@@ -597,9 +597,10 @@ class LlmChatController extends BaseController
         }
 
         $context_messages = $this->context_service->getContextForTracking();
+        $history_rows = $messages;
 
         // Call API with schema validation and retry logic
-        $llm_callable = function ($messages) use ($conversation_id, $context_messages, $model) {
+        $llm_callable = function ($messages) use ($conversation_id, $context_messages, $model, $history_rows) {
             return $this->llm_service->callLlmApi(
                 $messages,
                 $model,
@@ -611,6 +612,8 @@ class LlmChatController extends BaseController
                     // mark false initially; final validated attempt is updated below
                     'is_validated' => false,
                     'reasoning_effort' => $this->model->getLlmReasoningEffort(),
+                    // the request trace references these rows instead of copying them
+                    'trace_rows' => $history_rows,
                 ]
             );
         };

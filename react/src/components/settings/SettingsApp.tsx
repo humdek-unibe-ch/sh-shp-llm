@@ -16,6 +16,7 @@ import type { SettingsBootConfig } from '../../settings';
 import { ApiKeysSection } from './ApiKeysSection';
 import { ModelDefaultsSection } from './ModelDefaultsSection';
 import { SafetySection } from './SafetySection';
+import { AuditSection } from './AuditSection';
 import { MemorySettingsSummary } from './MemorySettingsSummary';
 
 interface FieldDef {
@@ -278,6 +279,13 @@ export const SettingsApp: React.FC<Props> = ({ config }) => {
         getField={(n: string) => getField('safety', n)}
         getVal={(n: string) => getVal('safety', n)}
         messages={blockedMessages}
+        onChange={handleChange}
+        disabled={!canUpdate}
+      />
+
+      <AuditSection
+        getField={(n: string) => getField('audit', n)}
+        getVal={(n: string) => getVal('audit', n)}
         onChange={handleChange}
         disabled={!canUpdate}
       />

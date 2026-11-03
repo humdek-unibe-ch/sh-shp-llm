@@ -6,6 +6,7 @@
 require_once __DIR__ . '/LlmResponseService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 require_once __DIR__ . '/LlmSafetyConfigService.php';
+require_once __DIR__ . '/trace/LlmTraceHints.php';
 
 /**
  * LLM Context Service
@@ -218,6 +219,8 @@ class LlmContextService
             'role' => 'system',
             'content' => "CRITICAL LANGUAGE INSTRUCTION: " . $language_instruction . " Use {$language_name} and ONLY {$language_name} for all responses unless the user specifically requests to switch to a different language later in the conversation. This is your primary language rule that overrides any other instructions."
         ];
+        // Code text plus the language name: the request trace stores it once for all users
+        LlmTraceHints::share($language_context['content']);
 
         // Add as the very first context message
         array_unshift($context_messages, $language_context);

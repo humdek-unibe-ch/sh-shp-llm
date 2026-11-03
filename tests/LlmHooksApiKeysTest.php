@@ -86,6 +86,7 @@ foreach (array(
     'component/tpl_api_keys_manager.php',
     'service/LlmCsrfService.php',
     'service/LlmTransaction.php',
+    'service/LlmFileUtility.php',
     'service/LlmErrorReporter.php',
     'service/LlmSecretService.php',
     'service/LlmSettingsValidator.php',

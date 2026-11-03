@@ -10,6 +10,7 @@ require_once __DIR__ . "/../../../service/LlmCsrfService.php";
 require_once __DIR__ . "/../../../service/LlmLanguageUtility.php";
 require_once __DIR__ . "/../../../service/LlmSafetyConfigService.php";
 require_once __DIR__ . "/../../../service/prompt/LlmPromptAssetLoader.php";
+require_once __DIR__ . "/../../../service/trace/LlmPromptVersionLinker.php";
 
 /**
  * The model class for the LLM chat component.
@@ -348,6 +349,8 @@ class LlmChatModel extends StyleModel
         $messages = [];
 
         if (!empty($context)) {
+            // Request trace: link the CMS-saved version of this prompt
+            LlmPromptVersionLinker::noteSectionField($this->getSectionId(), 'conversation_context', (int)($_SESSION['user_language'] ?? 1));
             if (substr($context, 0, 1) === '[') {
                 $parsed = json_decode($context, true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {

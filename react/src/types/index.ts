@@ -127,6 +127,10 @@ export interface Message {
   is_validated?: number | boolean | string;
   /** JSON payload sent to LLM API for debugging (stored on assistant messages) */
   request_payload?: string;
+  /** Admin: where sent_context / request_payload come from (blob = stored, trace = rebuilt from the request trace) */
+  trace_status?: 'blob' | 'trace' | 'none';
+  /** Admin: the request trace rebuilds exactly what was sent (null = no trace) */
+  trace_verified?: boolean | null;
 }
 
 /**

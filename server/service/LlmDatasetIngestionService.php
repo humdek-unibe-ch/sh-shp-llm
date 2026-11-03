@@ -635,6 +635,34 @@ class LlmDatasetIngestionService extends BaseLlmService
     }
 
     /**
+     * A message stored without blobs (request traces, trace-only mode) gets its
+     * sent_context from the trace rebuild. Any failure keeps the row as it is.
+     *
+     * @param array $message llmMessages row with id and sent_context
+     * @return array
+     */
+    private function withRebuiltContext(array $message)
+    {
+        try {
+            require_once __DIR__ . '/trace/LlmRequestTraceService.php';
+            require_once __DIR__ . '/LlmApiFormatterService.php';
+            $formatter = new LlmApiFormatterService($this->services);
+            $rows = (new LlmRequestTraceService($this->db))->fillForReaders(
+                array($message + array('request_payload' => null)),
+                function ($row) use ($formatter) {
+                    return $formatter->formatStoredMessage($row, false);
+                },
+                null,
+                array($formatter, 'imageDataUrl')
+            );
+            $message['sent_context'] = $rows[0]['sent_context'];
+        } catch (\Throwable $e) {
+            LlmErrorReporter::log('Rebuilding the sent context of message ' . (int)$message['id'], $e);
+        }
+        return $message;
+    }
+
+    /**
      * Import a conversation user message (with history window) as a dataset case.
      *
      * @return array|null Created case row, or null if out of scope.
@@ -672,7 +700,11 @@ class LlmDatasetIngestionService extends BaseLlmService
         }
         if ($is_memory_owner) {
             // The source row IS the assistant reply (memory workers only log
-            // assistant messages); the original prompt lives in `sent_context`.
+            // assistant messages); the original prompt lives in `sent_context`,
+            // or in its request trace when the reply was stored without it.
+            if (($message['sent_context'] ?? null) === null) {
+                $message = $this->withRebuiltContext($message);
+            }
             $history = $this->dataset_service->normalizeMessages(
                 $this->dataset_service->decodeJsonColumn((string)($message['sent_context'] ?? ''), array())
             );

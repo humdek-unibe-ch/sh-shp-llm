@@ -5,6 +5,7 @@
 
 require_once __DIR__ . "/LlmFileUtility.php";
 require_once __DIR__ . "/base/BaseLlmService.php";
+require_once __DIR__ . "/trace/LlmTraceHints.php";
 
 /**
  * LLM API Formatter Service
@@ -73,62 +74,80 @@ class LlmApiFormatterService extends BaseLlmService
             }
         }
 
-        foreach ($messages as $index => $message) {
-            // Skip empty assistant messages (failed previous attempts)
-            $rawContent = $message['content'] ?? '';
-            if ($message['role'] === 'assistant' && !is_array($rawContent) && empty(trim($rawContent))) {
-                continue;
+        foreach ($messages as $message) {
+            $api_message = $this->formatStoredMessage($message, $isVisionModel);
+            if ($api_message !== null) {
+                $api_messages[] = $api_message;
             }
-            
-            // Skip user messages with no content (shouldn't happen, but just in case)
-            if ($message['role'] === 'user' && !is_array($rawContent) && empty(trim($rawContent))) {
-                continue;
-            }
-            
-            $api_message = [
-                'role' => $message['role'],
-                'content' => $message['content']
-            ];
-
-            // Handle attachments for multimodal content
-            $attachments = null;
-            if (!empty($message['attachments'])) {
-                // Attachments stored as JSON
-                $decoded = json_decode($message['attachments'], true);
-                if (json_last_error() === JSON_ERROR_NONE) {
-                    $attachments = $this->normalizeStoredAttachments($decoded);
-                }
-            }
-
-            if (!empty($attachments)) {
-                $contentParts = [];
-
-                // Add text content first
-                if (!empty($message['content'])) {
-                    $contentParts[] = [
-                        'type' => 'text',
-                        'text' => $message['content']
-                    ];
-                }
-
-                // Add each attachment based on type
-                foreach ($attachments as $attachment) {
-                    $attachmentContent = $this->formatAttachmentForApi($attachment, $isVisionModel);
-                    if ($attachmentContent) {
-                        $contentParts[] = $attachmentContent;
-                    }
-                }
-
-                // Only use multimodal format if we have attachments
-                if (count($contentParts) > 1 || (count($contentParts) === 1 && $contentParts[0]['type'] !== 'text')) {
-                    $api_message['content'] = $contentParts;
-                }
-            }
-
-            $api_messages[] = $api_message;
         }
 
         return $api_messages;
+    }
+
+    /**
+     * Format one stored message (llmMessages row) exactly as it is sent.
+     *
+     * The send path and the request trace rebuild both use this, so a trace
+     * reference {"m": id} rebuilds to the same API message.
+     *
+     * @param array $message Row with role, content and optional attachments (JSON)
+     * @param bool $isVisionModel Whether the model supports vision
+     * @return array|null API message, or null when the message is not sent (empty)
+     */
+    public function formatStoredMessage($message, $isVisionModel)
+    {
+        // Skip empty assistant messages (failed previous attempts)
+        $rawContent = $message['content'] ?? '';
+        if ($message['role'] === 'assistant' && !is_array($rawContent) && empty(trim($rawContent))) {
+            return null;
+        }
+
+        // Skip user messages with no content (shouldn't happen, but just in case)
+        if ($message['role'] === 'user' && !is_array($rawContent) && empty(trim($rawContent))) {
+            return null;
+        }
+
+        $api_message = [
+            'role' => $message['role'],
+            'content' => $message['content']
+        ];
+
+        // Handle attachments for multimodal content
+        $attachments = null;
+        if (!empty($message['attachments'])) {
+            // Attachments stored as JSON
+            $decoded = json_decode($message['attachments'], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $attachments = $this->normalizeStoredAttachments($decoded);
+            }
+        }
+
+        if (!empty($attachments)) {
+            $contentParts = [];
+
+            // Add text content first
+            if (!empty($message['content'])) {
+                $contentParts[] = [
+                    'type' => 'text',
+                    'text' => $message['content']
+                ];
+            }
+
+            // Add each attachment based on type
+            foreach ($attachments as $attachment) {
+                $attachmentContent = $this->formatAttachmentForApi($attachment, $isVisionModel);
+                if ($attachmentContent) {
+                    $contentParts[] = $attachmentContent;
+                }
+            }
+
+            // Only use multimodal format if we have attachments
+            if (count($contentParts) > 1 || (count($contentParts) === 1 && $contentParts[0]['type'] !== 'text')) {
+                $api_message['content'] = $contentParts;
+            }
+        }
+
+        return $api_message;
     }
 
     /**
@@ -149,38 +168,20 @@ class LlmApiFormatterService extends BaseLlmService
     }
 
     /**
-     * Resolve a stored attachment path (relative to the plugin root) to a real
-     * file inside the plugin upload folder.
+     * The image data URL an attachment is sent as. A request trace stores an
+     * image as a reference to its upload and rebuilds the data URL with this.
      *
-     * Anything that is empty, escapes the upload folder (traversal, absolute
-     * paths, symlinks) or is not a regular file is rejected.
-     *
-     * @param mixed $path Path as stored in the attachment record
-     * @return string|null Absolute file path, or null when it is not allowed
+     * @param array $attachment Stored attachment (path, type, is_collage)
+     * @return string|null data URL, or null when the image cannot be sent
      */
-    private function resolveUploadFile($path)
+    public function imageDataUrl($attachment)
     {
-        if (!is_string($path) || $path === '' || strpos($path, "\0") !== false) {
+        $fullPath = is_array($attachment) ? LlmFileUtility::resolveUploadFile($attachment['path'] ?? null) : null;
+        if ($fullPath === null) {
             return null;
         }
-
-        // Plugin root is two levels above server/service/
-        $pluginRoot = realpath(__DIR__ . '/../../');
-        if ($pluginRoot === false) {
-            return null;
-        }
-        $uploadRoot = realpath($pluginRoot . '/' . LLM_UPLOAD_FOLDER);
-        $fullPath = realpath($pluginRoot . '/' . ltrim(str_replace('\\', '/', $path), '/'));
-        if ($uploadRoot === false || $fullPath === false || !is_file($fullPath)) {
-            return null;
-        }
-
-        $prefix = rtrim($uploadRoot, '/\\') . DIRECTORY_SEPARATOR;
-        $inside = DIRECTORY_SEPARATOR === '\\'
-            ? stripos($fullPath, $prefix) === 0
-            : strpos($fullPath, $prefix) === 0;
-
-        return $inside ? $fullPath : null;
+        $part = $this->encodeImageForApi($fullPath, $attachment);
+        return $part['image_url']['url'] ?? null;
     }
 
     /**
@@ -205,7 +206,7 @@ class LlmApiFormatterService extends BaseLlmService
         }
 
         // Only files inside the plugin upload folder may be read
-        $fullPath = $this->resolveUploadFile($path);
+        $fullPath = LlmFileUtility::resolveUploadFile($path);
 
         if ($fullPath === null) {
             // Return a note about the missing attachment instead of null
@@ -327,9 +328,26 @@ class LlmApiFormatterService extends BaseLlmService
         $mimeType = $attachment['type'] ?? LlmFileUtility::detectMimeType($fullPath) ?? 'image/jpeg';
         $isCollage = !empty($attachment['is_collage']);
         
-        // Optimize image for LLM while preserving multi-panel collage legibility
-        $imageData = $this->getOptimizedImageData($fullPath, $mimeType, $originalName, $isCollage);
-        
+        // The LLM-ready image is computed once and kept next to the upload, so
+        // every turn (and a request trace rebuild) sends the same bytes
+        $derivativePath = $fullPath . LlmFileUtility::LLM_DERIVATIVE_SUFFIX;
+        $imageData = is_file($derivativePath) ? file_get_contents($derivativePath) : false;
+        if ($imageData === false || $imageData === '') {
+            // Optimize image for LLM while preserving multi-panel collage legibility
+            $imageData = $this->getOptimizedImageData($fullPath, $mimeType, $originalName, $isCollage);
+            // Written under a temporary name and renamed, so a concurrent send
+            // never reads a half-written file
+            $tmpPath = $derivativePath . '.' . getmypid() . '.tmp';
+            if ($imageData !== false && $imageData !== null
+                && (@file_put_contents($tmpPath, $imageData) === false || !@rename($tmpPath, $derivativePath))) {
+                @unlink($tmpPath);
+                // Another request may have stored it first: that file is used next turn
+                if (!is_file($derivativePath)) {
+                    $this->logWarning("Could not store the LLM image next to the upload: {$originalName}");
+                }
+            }
+        }
+
         if ($imageData === false || $imageData === null) {
             return [
                 'type' => 'text',
@@ -345,10 +363,14 @@ class LlmApiFormatterService extends BaseLlmService
         $reduction = round((1 - $finalSizeKb / $originalSizeKb) * 100, 1);
         $this->logDebug("Image optimized for API: {$originalName} ({$originalSizeKb}KB -> {$finalSizeKb}KB, -{$reduction}%)");
 
+        $url = "data:image/jpeg;base64,{$base64Data}";
+        // A request trace stores a reference to the upload instead of these bytes
+        LlmTraceHints::image($url, $attachment);
+
         return [
             'type' => 'image_url',
             'image_url' => [
-                'url' => "data:image/jpeg;base64,{$base64Data}"
+                'url' => $url
             ]
         ];
     }

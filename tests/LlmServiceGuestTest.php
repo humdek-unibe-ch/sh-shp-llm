@@ -579,5 +579,27 @@ $minute_cache->minute_over = true;
 $minute_service->consumeSpeechRateLimit(7);
 check('speech: a new minute starts a new budget', $minute_cache->rate['speech_7']['requests'] === 1);
 
+/* =========================================================================
+ * Participant message window never carries the sent context
+ * ========================================================================= */
+
+// getConversationMessages() feeds the participant chat JSON and the mobile view;
+// sent_context (author prompt, keyword list, schema) is admin-only.
+class SqlCapturingDb extends FakeDb
+{
+    public $sql = array();
+
+    public function query_db($sql, $params = array())
+    {
+        $this->sql[] = $sql;
+        return array();
+    }
+}
+$window_services = new FakeServices();
+$window_services->db = new SqlCapturingDb();
+(new LlmService($window_services))->getConversationMessages(5, 50);
+check('conversation messages have no sent_context',
+    count($window_services->db->sql) === 1 && strpos($window_services->db->sql[0], 'sent_context') === false);
+
 fwrite(STDOUT, "\n$total checks, $failed failed\n");
 exit($failed === 0 ? 0 : 1);

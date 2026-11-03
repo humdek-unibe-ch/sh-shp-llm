@@ -159,6 +159,17 @@ class LlmPromptAssetLoader
 PHP
 );
 
+sandbox_write($plugin_server . '/service/trace/LlmPromptVersionLinker.php', <<<'PHP'
+<?php
+class LlmPromptVersionLinker
+{
+    public static function noteSectionField($section_id, $field_name, $id_languages)
+    {
+    }
+}
+PHP
+);
+
 sandbox_write($plugin_server . '/service/LlmService.php', <<<'PHP'
 <?php
 class LlmRateLimitException extends Exception

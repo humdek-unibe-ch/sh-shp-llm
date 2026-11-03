@@ -1,0 +1,373 @@
+[
+    {
+        "name": "chat",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [
+            "Respond ONLY with JSON matching this schema:\n{\n  \"type\": \"object\",\n  \"required\": [\"content\", \"safety\"]\n}",
+            "CRITICAL SAFETY DETECTION: watch for suicide, kill myself, self-harm"
+        ],
+        "rows": [
+            {
+                "id": 101,
+                "role": "user",
+                "content": "Hallo, ich bin müde."
+            },
+            {
+                "id": 102,
+                "role": "assistant",
+                "content": "{\"content\":{\"text_blocks\":[{\"type\":\"text\",\"content\":\"Was macht dich müde?\"}]},\"safety\":{\"is_safe\":true}}"
+            },
+            {
+                "id": 103,
+                "role": "user",
+                "content": "Die Arbeit. O'Brien sagt, ich soll Pausen machen."
+            }
+        ],
+        "messages": [
+            {
+                "role": "system",
+                "content": "CRITICAL LANGUAGE INSTRUCTION: Respond in German. Use German and ONLY German for all responses."
+            },
+            {
+                "role": "system",
+                "content": "Respond ONLY with JSON matching this schema:\n{\n  \"type\": \"object\",\n  \"required\": [\"content\", \"safety\"]\n}\n\nCRITICAL SAFETY DETECTION: watch for suicide, kill myself, self-harm"
+            },
+            {
+                "role": "system",
+                "content": "You are a coach for Ana (age 34). Topics: sleep, stress."
+            },
+            {
+                "role": "user",
+                "content": "Hallo, ich bin müde."
+            },
+            {
+                "role": "assistant",
+                "content": "{\"content\":{\"text_blocks\":[{\"type\":\"text\",\"content\":\"Was macht dich müde?\"}]},\"safety\":{\"is_safe\":true}}"
+            },
+            {
+                "role": "user",
+                "content": "Die Arbeit. O'Brien sagt, ich soll Pausen machen."
+            }
+        ],
+        "hash": "5b4f7d74ce8ab82475468398c5c30df9d7e2f723f218d65702f2170730e86a06"
+    },
+    {
+        "name": "chat_retry",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [
+            "Respond ONLY with JSON matching this schema:\n{\n  \"type\": \"object\",\n  \"required\": [\"content\", \"safety\"]\n}",
+            "CRITICAL SAFETY DETECTION: watch for suicide, kill myself, self-harm"
+        ],
+        "rows": [
+            {
+                "id": 101,
+                "role": "user",
+                "content": "Hallo, ich bin müde."
+            },
+            {
+                "id": 102,
+                "role": "assistant",
+                "content": "{\"content\":{\"text_blocks\":[{\"type\":\"text\",\"content\":\"Was macht dich müde?\"}]},\"safety\":{\"is_safe\":true}}"
+            },
+            {
+                "id": 103,
+                "role": "user",
+                "content": "Die Arbeit. O'Brien sagt, ich soll Pausen machen."
+            }
+        ],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Respond ONLY with JSON matching this schema:\n{\n  \"type\": \"object\",\n  \"required\": [\"content\", \"safety\"]\n}\n\nCRITICAL SAFETY DETECTION: watch for suicide, kill myself, self-harm"
+            },
+            {
+                "role": "system",
+                "content": "You are a coach for Ana (age 34). Topics: sleep, stress."
+            },
+            {
+                "role": "user",
+                "content": "Hallo, ich bin müde."
+            },
+            {
+                "role": "assistant",
+                "content": "{\"content\":{\"text_blocks\":[{\"type\":\"text\",\"content\":\"Was macht dich müde?\"}]},\"safety\":{\"is_safe\":true}}"
+            },
+            {
+                "role": "user",
+                "content": "Die Arbeit. O'Brien sagt, ich soll Pausen machen."
+            },
+            {
+                "role": "assistant",
+                "content": "{\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": {\"broken\": "
+            },
+            {
+                "role": "user",
+                "content": "Your previous response was invalid: missing content.text_blocks. Respond again with valid JSON."
+            }
+        ],
+        "hash": "00f5ddd2dca53febf58d033fbbad953000db142fa56f02d9ce459f79af5b9b59"
+    },
+    {
+        "name": "chat_anthropic",
+        "provider": "anthropic",
+        "params": {
+            "model": "claude-sonnet-5-5",
+            "max_tokens": 2048,
+            "temperature": 0.7
+        },
+        "shared_texts": [
+            "Respond ONLY with JSON matching this schema:\n{\n  \"type\": \"object\",\n  \"required\": [\"content\", \"safety\"]\n}",
+            "CRITICAL SAFETY DETECTION: watch for suicide, kill myself, self-harm"
+        ],
+        "rows": [
+            {
+                "id": 101,
+                "role": "user",
+                "content": "Hallo, ich bin müde."
+            },
+            {
+                "id": 102,
+                "role": "assistant",
+                "content": "{\"content\":{\"text_blocks\":[{\"type\":\"text\",\"content\":\"Was macht dich müde?\"}]},\"safety\":{\"is_safe\":true}}"
+            },
+            {
+                "id": 103,
+                "role": "user",
+                "content": "Die Arbeit. O'Brien sagt, ich soll Pausen machen."
+            }
+        ],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Respond ONLY with JSON matching this schema:\n{\n  \"type\": \"object\",\n  \"required\": [\"content\", \"safety\"]\n}\n\nCRITICAL SAFETY DETECTION: watch for suicide, kill myself, self-harm"
+            },
+            {
+                "role": "system",
+                "content": "You are a coach for Ana (age 34). Topics: sleep, stress."
+            },
+            {
+                "role": "user",
+                "content": "Hallo, ich bin müde."
+            },
+            {
+                "role": "assistant",
+                "content": "{\"content\":{\"text_blocks\":[{\"type\":\"text\",\"content\":\"Was macht dich müde?\"}]},\"safety\":{\"is_safe\":true}}"
+            },
+            {
+                "role": "user",
+                "content": "Die Arbeit. O'Brien sagt, ich soll Pausen machen."
+            }
+        ],
+        "hash": "9523b21e08c28a99684962e572b9b523d029a594afda1aa6c4d128c9430f7374"
+    },
+    {
+        "name": "form_record",
+        "provider": "openai",
+        "params": {
+            "model": "gpt-5",
+            "max_completion_tokens": 1024,
+            "temperature": 1.0
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Give short feedback on the mood entry.\nMood: 3/10\nNote: slept badly\n\nCRITICAL SAFETY INSTRUCTION: ..."
+            },
+            {
+                "role": "user",
+                "content": "mood: 3\nnote: slept badly"
+            }
+        ],
+        "hash": "d8724d9be868d866345c8de92a7bfe685b844adbfc68fc921c275ce6c51b0bda"
+    },
+    {
+        "name": "form_interview",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "You run a guided form interview."
+            },
+            {
+                "role": "system",
+                "content": "MACHINE CONTEXT\n{\"fields\":[{\"name\":\"sleep_hours\",\"value\":\"6\"}]}"
+            },
+            {
+                "role": "assistant",
+                "content": "How many hours did you sleep last night?"
+            },
+            {
+                "role": "user",
+                "content": "About six."
+            }
+        ],
+        "hash": "1df436b481f1a08b9f8b78164024dbbe5a50b952544eac0c14bcb6ff06eda503"
+    },
+    {
+        "name": "memory",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Update the participant memory. Return JSON."
+            },
+            {
+                "role": "user",
+                "content": "CURRENT MEMORY\n- sleeps badly\nSUBMITTED DATA\nmood: 3"
+            }
+        ],
+        "hash": "0549f63eda749dd1586e4b6912d02c135ebdacd6980e409999c44172bc83bba3"
+    },
+    {
+        "name": "script_image",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Describe the drawing."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64,/9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j//9j/"
+                        }
+                    }
+                ]
+            }
+        ],
+        "hash": "febfab5eec0e34e8805a67d16fc874f72a0975376020359dc5c86e67aa045798"
+    },
+    {
+        "name": "evaluation_judge",
+        "provider": "openai",
+        "params": {
+            "model": "gpt-5",
+            "temperature": 0.0,
+            "max_completion_tokens": 512
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a strict evaluator. Score 1-5."
+            },
+            {
+                "role": "user",
+                "content": "TRANSCRIPT\nuser: Hallo\nassistant: Hallo Ana"
+            }
+        ],
+        "hash": "00c72ae3b749a3f014ff0517c552d17ad5e46b05a2c8510481c3c7bca0d96654"
+    },
+    {
+        "name": "dataset_import",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Parse pasted examples into dataset cases."
+            },
+            {
+                "role": "user",
+                "content": "Q: Wie geht's?\nA: Gut."
+            }
+        ],
+        "hash": "7146224d4b6c107816d153a78f470d203dc5ebb8424602d2a1492f13b87a6266"
+    },
+    {
+        "name": "prompt_builder",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Help the author write a prompt."
+            },
+            {
+                "role": "user",
+                "content": "A coach for sleep problems"
+            }
+        ],
+        "hash": "59a415b7074d31d1f1534566c3dffe9bb06ba204c98c4268518f44211b30dd3c"
+    },
+    {
+        "name": "playground",
+        "provider": "gpustack",
+        "params": {
+            "model": "gpt-oss-120b",
+            "temperature": 1.0,
+            "max_tokens": 2048,
+            "stream": false,
+            "reasoning_effort": "low"
+        },
+        "shared_texts": [],
+        "rows": [],
+        "messages": [
+            {
+                "role": "system",
+                "content": "Draft prompt v7 for {{name}}"
+            },
+            {
+                "role": "user",
+                "content": "Test message"
+            }
+        ],
+        "hash": "a6d392aa3fafd4e4bd17d74c652b1b9779bf6786d23bf209b97b6ccd8c05c8c1"
+    }
+]

@@ -23,6 +23,7 @@
 require_once __DIR__ . '/LlmLanguageUtility.php';
 require_once __DIR__ . '/../constants/LlmResponseSchema.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
+require_once __DIR__ . '/trace/LlmTraceHints.php';
 require_once __DIR__ . '/LlmErrorReporter.php';
 
 class LlmResponseService
@@ -124,6 +125,8 @@ class LlmResponseService
         $instruction = strtr($template, array(
             '{{schema_json}}' => $schema_json,
         ));
+        // Code-only text (~20 KB): the request trace stores it once for all users
+        LlmTraceHints::share($instruction);
 
         if ($include_progress && !empty($progress_data)) {
             $instruction .= "\n\n" . $this->buildProgressInstruction($progress_data);
@@ -144,6 +147,8 @@ class LlmResponseService
         $keywords_list = implode(', ', array_slice($keywords, 0, 50));
         $template = $this->prompt_assets->load('core.response.safety_detection');
         $safety_instruction = strtr($template, array('{{keywords_list}}' => $keywords_list));
+        // Built from configured keywords only, never from participant text
+        LlmTraceHints::share($safety_instruction);
 
         return $instruction . "\n\n" . $safety_instruction;
     }

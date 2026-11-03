@@ -34,6 +34,10 @@ if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
     exit(0);
 }
 
+if (!defined('LLM_UPLOAD_FOLDER')) {
+    define('LLM_UPLOAD_FOLDER', 'upload');
+}
+
 $log_file = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'llm_hooks_cleanup_test_' . getmypid() . '.log';
 ini_set('log_errors', '1');
 ini_set('error_log', $log_file);
@@ -83,6 +87,7 @@ foreach (array(
     'service/LlmCsrfService.php',
     'service/LlmTransaction.php',
     'service/LlmErrorReporter.php',
+    'service/LlmFileUtility.php',
     'service/LlmSecretService.php',
     'service/LlmSettingsValidator.php',
     'service/LlmApiKeysConfigService.php',
@@ -186,6 +191,14 @@ class CleanupFakeDb
         return $this->cache;
     }
 
+    /** Same contract as BaseDb::query_db(): rows as associative arrays (reads are not events). */
+    public function query_db($sql, $params = array())
+    {
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /** Same contract as BaseDb::remove_by_fk(): true/false, SQL errors never escape. */
     public function remove_by_fk($table, $fk, $id)
     {
@@ -231,6 +244,24 @@ class FakeUserModel
     }
 }
 
+/** The hooked Login: core user delete, recorded (its rows cascade in the real DB). */
+class FakeLogin
+{
+    public $result = true;
+    public $calls = array();
+
+    public function delete_user($uid, $email, $transaction_by = 'by_system')
+    {
+        $GLOBALS['events'][] = 'core_delete_user';
+        $this->calls[] = array($uid, $email);
+        // The cascade removes the rows that list the uploads
+        if ($this->result) {
+            $GLOBALS['db']->pdo->exec("DELETE FROM llmMessages WHERE id_llmConversations = 1");
+        }
+        return $this->result;
+    }
+}
+
 /* =========================================================================
  * Helpers
  * ========================================================================= */
@@ -254,7 +285,7 @@ function check($label, $condition)
 function seed($db)
 {
     $db->throw_on = array();
-    foreach (array('refresh_events', 'llmConversations') as $table) {
+    foreach (array('refresh_events', 'llmConversations', 'llmTraceChunks') as $table) {
         $db->pdo->exec("DROP TRIGGER IF EXISTS block_$table");
         $db->pdo->exec("DROP TABLE IF EXISTS $table");
         $db->pdo->exec("CREATE TABLE $table (id INTEGER PRIMARY KEY AUTOINCREMENT, id_users INTEGER)");
@@ -262,8 +293,25 @@ function seed($db)
             $db->pdo->exec("INSERT INTO $table (id_users) VALUES ($uid)");
         }
     }
+    // Messages with uploads: conversation 1 belongs to user 7, conversation 3 to user 8
+    $db->pdo->exec("DROP TABLE IF EXISTS llmMessages");
+    $db->pdo->exec("CREATE TABLE llmMessages (id INTEGER PRIMARY KEY AUTOINCREMENT, id_llmConversations INTEGER, attachments TEXT)");
+    $db->pdo->exec("INSERT INTO llmMessages (id_llmConversations, attachments) VALUES "
+        . "(1, '[{\"path\":\"upload/7/a.png\",\"original_name\":\"a.png\"}]'), "
+        . "(1, '{\"type\":\"form_submission\",\"values\":{\"path\":\"upload/8/b.png\"}}'), "
+        . "(1, NULL), "
+        . "(3, '[{\"path\":\"upload/8/b.png\",\"original_name\":\"b.png\"}]')");
+    foreach (array('upload/7/a.png', 'upload/7/a.png.llm.jpg', 'upload/8/b.png') as $file) {
+        sandbox_write($GLOBALS['plugin_root'] . '/' . $file, 'IMG');
+    }
     $GLOBALS['events'] = array();
     $GLOBALS['log_file'] && file_put_contents($GLOBALS['log_file'], '');
+}
+
+function uploaded($file)
+{
+    clearstatcache();
+    return is_file($GLOBALS['plugin_root'] . '/' . $file);
 }
 
 /** DELETEs on this table fail at SQL level (BaseDb::remove_by_fk then answers false). */
@@ -307,6 +355,7 @@ function noCacheClears()
 }
 
 $GLOBALS['log_file'] = $log_file;
+$GLOBALS['plugin_root'] = dirname($plugin_server);
 $db = new CleanupFakeDb();
 $hooks = new LlmHooks(new CleanupFakeServices($db));
 
@@ -318,13 +367,17 @@ $core = new FakeUserModel();
 $res = $hooks->onCleanUserDataLlmCleanup(hookArgs($core, 7));
 check('success: true is returned', $res === true);
 check('success: the original method ran first, once, with the user id', $GLOBALS['events'][0] === 'core_clean' && $core->calls === array(7));
-check('success: both tables are cleaned inside one begin/commit',
-    $GLOBALS['events'] === array('core_clean', 'begin', 'delete:refresh_events', 'delete:llmConversations', 'commit'));
+check('success: all tables are cleaned inside one begin/commit',
+    $GLOBALS['events'] === array('core_clean', 'begin', 'delete:refresh_events', 'delete:llmConversations', 'delete:llmTraceChunks', 'commit'));
 check('success: the rows of the user are gone', rows($db, 'refresh_events', 7) === 0 && rows($db, 'llmConversations', 7) === 0);
-check('success: the rows of another user are untouched', rows($db, 'refresh_events', 8) === 1 && rows($db, 'llmConversations', 8) === 1);
+check('success: the per-user trace chunks of the user are gone', rows($db, 'llmTraceChunks', 7) === 0);
+check('success: the rows of another user are untouched', rows($db, 'refresh_events', 8) === 1 && rows($db, 'llmConversations', 8) === 1
+    && rows($db, 'llmTraceChunks', 8) === 1);
 check('success: no transaction is left open', !$db->pdo->inTransaction());
 check('success: no cache is cleared and nothing is logged', noCacheClears() && logText() === '');
 check('success: no transaction frame (and no after-commit queue) is left behind', openFrames() === 0);
+check('success: the uploads of the user and their LLM images are deleted', !uploaded('upload/7/a.png') && !uploaded('upload/7/a.png.llm.jpg'));
+check('success: the upload of another user is kept (also when named in form values)', uploaded('upload/8/b.png'));
 
 /* =========================================================================
  * Nothing to do
@@ -353,8 +406,9 @@ $core = new FakeUserModel();
 $res = $hooks->onCleanUserDataLlmCleanup(hookArgs($core, 7));
 check('first delete fails: false is returned', $res === false);
 check('first delete fails: rolled back through the PDO handle, never BaseDb::rollback',
-    $GLOBALS['events'] === array('core_clean', 'begin', 'delete:refresh_events', 'delete:llmConversations', 'rollback'));
-check('first delete fails: the delete that did run is undone (nothing half cleaned)', rows($db, 'refresh_events', 7) === 2 && rows($db, 'llmConversations', 7) === 2);
+    $GLOBALS['events'] === array('core_clean', 'begin', 'delete:refresh_events', 'delete:llmConversations', 'delete:llmTraceChunks', 'rollback'));
+check('first delete fails: the deletes that did run are undone (nothing half cleaned)', rows($db, 'refresh_events', 7) === 2 && rows($db, 'llmConversations', 7) === 2
+    && rows($db, 'llmTraceChunks', 7) === 2);
 check('first delete fails: no transaction is left open', !$db->pdo->inTransaction());
 check('first delete fails: the application cache is not wiped', noCacheClears());
 check('first delete fails: the failure is logged with the user id', strpos(logText(), 'LLM cleanup after clean_user_data failed for user 7') !== false);
@@ -368,6 +422,7 @@ check('second delete fails: the already deleted first table is restored', rows($
 check('second delete fails: rolled back through the handle, no wipe, no open transaction',
     in_array('rollback', $GLOBALS['events'], true) && noCacheClears() && !$db->pdo->inTransaction());
 check('second delete fails: the rows of the other user are untouched too', rows($db, 'refresh_events', 8) === 1 && rows($db, 'llmConversations', 8) === 1);
+check('second delete fails: no upload is deleted (the rows are back)', uploaded('upload/7/a.png') && uploaded('upload/7/a.png.llm.jpg'));
 
 /* =========================================================================
  * A delete that throws
@@ -420,6 +475,36 @@ $core = new FakeUserModel();
 $res = $hooks->onCleanUserDataLlmCleanup(hookArgs($core, 8));
 check('after the failures a cleanup still succeeds', $res === true && rows($db, 'refresh_events', 8) === 0 && rows($db, 'llmConversations', 8) === 0);
 check('no transaction frame is left behind by any of the failures', openFrames() === 0);
+
+/* =========================================================================
+ * Core user delete (Login::delete_user): the uploads go with the user
+ * ========================================================================= */
+function deleteArgs($login, $uid)
+{
+    return array('uid' => $uid, 'email' => 'a@example.org', 'hookedClassInstance' => $login, 'methodName' => 'delete_user');
+}
+
+seed($db);
+$login = new FakeLogin();
+$res = $hooks->onDeleteUserLlmFiles(deleteArgs($login, 7));
+check('delete user: the core delete ran once and its result is returned', $res === true && $login->calls === array(array(7, 'a@example.org')));
+check('delete user: the uploads of the user and their LLM images are deleted', !uploaded('upload/7/a.png') && !uploaded('upload/7/a.png.llm.jpg'));
+check('delete user: the upload of another user is kept', uploaded('upload/8/b.png'));
+
+seed($db);
+$login = new FakeLogin();
+$login->result = false;
+$res = $hooks->onDeleteUserLlmFiles(deleteArgs($login, 7));
+check('delete user refused: false is returned and the files are kept', $res === false && uploaded('upload/7/a.png') && uploaded('upload/7/a.png.llm.jpg'));
+
+seed($db);
+$login = new FakeLogin();
+$login->result = true;
+// The upload lookup joins the conversations: without them it fails
+$db->pdo->exec("DROP TABLE llmConversations");
+$res = $hooks->onDeleteUserLlmFiles(deleteArgs($login, 7));
+check('delete user: a failing upload lookup never blocks the delete (and is logged)', $res === true && count($login->calls) === 1
+    && strpos(logText(), 'deleted user') !== false);
 
 echo "\n$total checks, $failed failed\n";
 exit($failed === 0 ? 0 : 1);

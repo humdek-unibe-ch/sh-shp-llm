@@ -189,5 +189,25 @@ $garbled = $svc->callLlmWithSchemaValidation(function ($messages) {
 check('a reply that never passes the schema is not valid (the chat keys its notice on this)',
     $garbled['valid'] === false && $garbled['raw_response']['content'] === 'this is not the JSON the schema asks for');
 
+// --- Request traces: code / config text is declared shared ------------------------
+// The schema instruction (~20 KB, identical for everyone) and the safety block
+// (global keywords) are stored once for all users; progress data is not shared.
+require_once __DIR__ . '/../server/service/trace/LlmTraceHints.php';
+LlmTraceHints::reset();
+$ctx = $svc->buildResponseContext(array(), false, array(), array('enabled' => true, 'keywords' => array('kill myself')));
+$schema_text = null;
+$safety_text = null;
+foreach (LlmTraceHints::sharedTexts() as $text) {
+    if (strpos($text, '"text_blocks"') !== false && strpos($text, '{{') === false) {
+        $schema_text = $text;
+    } elseif (strpos($text, 'kill myself') !== false) {
+        $safety_text = $text;
+    }
+}
+check('the rendered schema instruction is declared shared', $schema_text !== null);
+check('the rendered safety block is declared shared', $safety_text !== null);
+check('the system message is exactly schema + blank line + safety (text unchanged)',
+    $ctx[0]['content'] === $schema_text . "\n\n" . $safety_text);
+
 echo "\n$total checks, $failed failures\n";
 exit($failed === 0 ? 0 : 1);

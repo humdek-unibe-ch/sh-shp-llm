@@ -197,6 +197,30 @@ export const AdminMessageList: React.FC<AdminMessageListProps> = ({
                     Payload
                   </button>
                 )}
+
+                {/* Request trace: is what is shown proven to be what was sent? */}
+                {!isUser && message.trace_verified === false && (
+                  <Badge variant="danger" className="py-1 px-2" style={{ fontSize: '0.65rem' }}
+                    title="The request trace does not rebuild what was sent. Check the trace verifier.">
+                    <i className="fas fa-exclamation-circle mr-1"></i>
+                    Trace mismatch
+                  </Badge>
+                )}
+                {!isUser && message.trace_verified === true && (
+                  <Badge variant="success" className="py-1 px-2" style={{ fontSize: '0.65rem' }}
+                    title={message.trace_status === 'trace'
+                      ? 'Context and payload are rebuilt from the request trace; its hash matches the request that was sent.'
+                      : 'Stored payload; the request trace also rebuilds it and its hash matches the request that was sent.'}>
+                    <i className="fas fa-shield-alt mr-1"></i>
+                    Trace verified
+                  </Badge>
+                )}
+                {!isUser && message.trace_verified == null && message.trace_status === 'blob' && (
+                  <Badge variant="secondary" className="py-1 px-2" style={{ fontSize: '0.65rem' }}
+                    title="Stored payload without a request trace (sent before request traces, or an API error).">
+                    Stored payload
+                  </Badge>
+                )}
               </div>
               
               {/* Message Content */}

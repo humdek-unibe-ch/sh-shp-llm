@@ -959,6 +959,24 @@ class LlmService extends BaseLlmService
      */
     public function updateMessage($message_id, $data)
     {
+        // A request trace rebuilds sent history from these columns: once a
+        // trace references the row, what was sent must stay what is stored.
+        // The lock is a condition of the UPDATE itself, so a trace recorded at
+        // the same time cannot slip in between check and write, and a database
+        // without the column (code deployed before v1.7.0.sql) fails the update.
+        if (array_key_exists('content', $data) || array_key_exists('attachments', $data)) {
+            $updated = $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id, 'trace_locked' => 0]);
+            if ($updated === 0) {
+                $row = $this->db->query_db_first(
+                    'SELECT trace_locked FROM llmMessages WHERE id = :id',
+                    [':id' => (int)$message_id]
+                );
+                if (!empty($row['trace_locked'])) {
+                    throw new LlmException('Message is referenced by a request trace', 409);
+                }
+            }
+            return $updated;
+        }
         return $this->db->update_by_ids('llmMessages', $data, ['id' => $message_id]);
     }
 
@@ -979,7 +997,7 @@ class LlmService extends BaseLlmService
 
         // Only return validated messages (is_validated = 1) for user-facing chat
         $messages = $this->db->query_db(
-            "SELECT m.id, m.role, m.content, m.attachments, m.model, m.tokens_used, m.timestamp, m.sent_context
+            "SELECT m.id, m.role, m.content, m.attachments, m.model, m.tokens_used, m.timestamp
              FROM llmMessages m
              INNER JOIN (
                  SELECT id FROM llmMessages
@@ -1558,8 +1576,105 @@ class LlmService extends BaseLlmService
     }
 
     /**
+     * Log the assistant reply of a successful call together with its request
+     * trace (doc/request-traces.md).
+     *
+     * The reply and its trace are written in one LlmTransaction (a savepoint
+     * when the caller already has one open, so only this write is undone). The
+     * reply is written with its full sent_context / request_payload first; they
+     * are cleared only after the trace is stored and verified, and only when
+     * the `llm_trace_store_blobs` setting is off. A message therefore always
+     * has the blobs, a verified trace, or both. Tracing never fails the call:
+     * record() rolls back its own part and reports a fallback instead.
+     *
+     * @param array $log_options callLlmApi() options; `trace_rows` = history rows the caller sent
+     * @param string $content Assistant content to log
+     * @param string $model
+     * @param array|null $sent_context
+     * @param array $normalized Normalized response incl. request_payload
+     * @param bool $is_validated
+     * @param array $messages Neutral messages passed to callLlmApi()
+     * @param string $provider_id
+     * @param array $payload Wire payload
+     * @param array $config getLlmConfig()
+     * @return int Message id
+     */
+    protected function logAssistantWithTrace($log_options, $content, $model, $sent_context, $normalized, $is_validated, $messages, $provider_id, $payload, $config)
+    {
+        require_once __DIR__ . '/trace/LlmRequestTraceService.php';
+        require_once __DIR__ . '/LlmApiFormatterService.php';
+        require_once __DIR__ . '/LlmModelCapabilities.php';
+        require_once __DIR__ . '/LlmTransaction.php';
+
+        $logged = $normalized;
+        if (!array_key_exists('raw_response', $logged)) {
+            // raw_response falls back to the whole response: keep the request out of it
+            $raw = $normalized;
+            unset($raw['request_payload']);
+            $logged['raw_response'] = $raw;
+        }
+        LlmTransaction::begin($this->db);
+        try {
+            $message_id = $this->addAssistantMessageFromApiResponse(
+                (int)$log_options['conversation_id'],
+                $content,
+                $model,
+                $sent_context,
+                $logged,
+                $is_validated
+            );
+
+            // record() never throws; its setup must not either, or the
+            // rollback below would also drop the reply
+            try {
+                $formatter = new LlmApiFormatterService($this->services, $model);
+                $is_vision = LlmModelCapabilities::isVisionModel($model);
+                $format_row = function ($row) use ($formatter, $is_vision) {
+                    return $formatter->formatStoredMessage($row, $is_vision);
+                };
+                $trace = (new LlmRequestTraceService($this->db))->record(
+                    $message_id,
+                    (int)$log_options['conversation_id'],
+                    (string)$provider_id,
+                    LlmRequestTraceService::paramsOf(is_array($payload) ? $payload : array()),
+                    is_array($messages) ? $messages : array(),
+                    is_array($log_options['trace_rows'] ?? null) ? $log_options['trace_rows'] : array(),
+                    $format_row,
+                    $this->getPluginVersion(),
+                    array($formatter, 'imageDataUrl')
+                );
+            } catch (\Throwable $e) {
+                LlmErrorReporter::log('trace_fallback: preparing the request trace of message ' . (int)$message_id, $e);
+                $trace = array('trace_id' => null, 'verified' => false, 'fallback' => 'exception');
+            }
+
+            if ($trace['verified'] && !LlmRequestTraceService::storeBlobsEnabled($config)) {
+                $this->db->update_by_ids('llmMessages', array('sent_context' => null, 'request_payload' => null), array('id' => $message_id));
+            }
+            LlmTransaction::commit($this->db);
+        } catch (\Throwable $e) {
+            LlmTransaction::rollback($this->db);
+            throw $e;
+        }
+        return $message_id;
+    }
+
+    /**
+     * @return string Installed plugin version (plugins.version), '' when unknown
+     */
+    private function getPluginVersion()
+    {
+        static $version = null;
+        if ($version === null) {
+            $row = $this->db->query_db_first("SELECT version FROM plugins WHERE `name` = 'llm'");
+            $version = (string)($row['version'] ?? '');
+        }
+        return $version;
+    }
+
+    /**
      * Call LLM API for chat completion
-     * 
+     *
      * Uses provider abstraction to handle different API formats.
      * 
      * @param array $messages Messages to send
@@ -1572,6 +1687,8 @@ class LlmService extends BaseLlmService
      *   - is_validated (bool, default true)
      *   - assistant_content (string|null, optional override for logged content)
      *   - reasoning_effort (string|null, optional: none|minimal|low|medium|high|xhigh|max)
+     *   - trace_rows (array, optional: the llmMessages rows sent as history; the
+     *     request trace references them instead of storing their text)
      * @return array Normalized response with 'request_payload' containing the full API request
      * @throws LlmApiException If API call fails
      * @throws InvalidArgumentException If strict logging options are missing
@@ -1706,13 +1823,17 @@ class LlmService extends BaseLlmService
                 : true;
 
             try {
-                $logged_message_id = $this->addAssistantMessageFromApiResponse(
-                    (int)$log_options['conversation_id'],
+                $logged_message_id = $this->logAssistantWithTrace(
+                    $log_options,
                     trim((string)$assistant_content),
                     $model,
                     $sent_context,
                     $normalized,
-                    $is_validated
+                    $is_validated,
+                    $messages,
+                    $provider->getProviderId(),
+                    $payload,
+                    $config
                 );
                 $normalized['logged_message_id'] = $logged_message_id;
             } catch (Exception $logException) {
