@@ -979,7 +979,7 @@ class LlmService extends BaseLlmService
 
         // Only return validated messages (is_validated = 1) for user-facing chat
         $messages = $this->db->query_db(
-            "SELECT m.id, m.role, m.content, m.attachments, m.model, m.tokens_used, m.timestamp, m.sent_context
+            "SELECT m.id, m.role, m.content, m.attachments, m.model, m.tokens_used, m.timestamp
              FROM llmMessages m
              INNER JOIN (
                  SELECT id FROM llmMessages
