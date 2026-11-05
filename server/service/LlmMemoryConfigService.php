@@ -192,10 +192,9 @@ class LlmMemoryConfigService extends BaseLlmService
 
     /**
      * @param string $source_type
-     * @param array $source_match_criteria
      * @return array
      */
-    public function findMatchingRules($source_type, $source_match_criteria = [])
+    public function findMatchingRules($source_type)
     {
         $matches = [];
 
@@ -204,9 +203,6 @@ class LlmMemoryConfigService extends BaseLlmService
                 continue;
             }
             if ($rule['source_type'] !== $source_type) {
-                continue;
-            }
-            if (!$this->matchesSourceCriteria($rule, $source_match_criteria)) {
                 continue;
             }
             $matches[] = $rule;
@@ -329,7 +325,6 @@ class LlmMemoryConfigService extends BaseLlmService
             'enabled' => true,
             'memory_keys' => [LLM_MEMORY_DEFAULT_KEY],
             'source_type' => '',
-            'source_match' => [],
             'trigger_types' => ['finished'],
             'storage_mode_override' => '',
             'data_config' => [],
@@ -343,30 +338,6 @@ class LlmMemoryConfigService extends BaseLlmService
             'llm_max_tokens' => '',
             'refresh_sections' => [],
         ], $rule);
-    }
-
-    /**
-     * @param array $rule
-     * @param array $criteria
-     * @return bool
-     */
-    private function matchesSourceCriteria($rule, $criteria)
-    {
-        $match_config = $rule['source_match'] ?? [];
-        if (empty($match_config)) {
-            return true;
-        }
-
-        foreach ($match_config as $field => $expected) {
-            if (!isset($criteria[$field])) {
-                return false;
-            }
-            if ((string)$criteria[$field] !== (string)$expected) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**
