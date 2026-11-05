@@ -68,6 +68,8 @@ These settings override global defaults for specific chat instances.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enable_conversations_list` | checkbox | `true` | Show conversation sidebar |
+| `css` | text | - | CSS classes on the chat root (`.llm-chat-root`), like every other style (v1.9.0; before, the field was ignored). |
+| `show_model_info` | checkbox | `true` | Show the model id under the chat header title (v1.9.0). Off for study participants who should not see the model. |
 | `enable_file_uploads` | checkbox | `true` | Allow file attachments |
 | `strict_conversation_mode` | checkbox | `false` | Enable strict conversation mode to keep AI focused on defined topics |
 | `enable_form_mode` | checkbox | `false` | Enable Interactive Form Mode - LLM returns structured forms instead of text |
@@ -714,7 +716,7 @@ All UI text is configurable and supports SelfHelp translations:
 |-------|---------|-------------|
 | `chat_description` | "Chat with AI assistant" | Description above chat |
 | `message_placeholder` | "Type your message here..." | Input placeholder |
-| `default_chat_title` | "AI Chat" | Default conversation title |
+| `default_chat_title` | "AI Chat" | Title of a new chat; also names an auto-started chat (v1.9.0, before "AI Assistant - <date>"). With the conversation list on, the date is appended. The header shows it. |
 
 #### Buttons
 

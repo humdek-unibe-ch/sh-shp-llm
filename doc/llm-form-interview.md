@@ -100,7 +100,10 @@ view hooks and the `selfhelp:loglist:before-replace` /
    context the coach opens correctly: it asks the first relevant question
    for a new record and "what would you like to change?" for an existing
    one (built-in start instructions, `assets/prompts/core/form-interview/`);
-   the author context tailors that.
+   the author context tailors that. Since v1.9.0 the author context may
+   also say how the first message of a new record opens (for example "ask
+   whether the video above was clear before the first field"); the
+   built-in opener then defers to it.
 5. Optionally set **`extra_params`** - the URL parameters the section
    accepts, e.g. `module_id=&list_status=active` (see
    [URL parameters](#url-parameters-extra_params)).
@@ -145,7 +148,7 @@ Every field also appears in the CMS with its own help text.
 | `show_list` | `1` | The list below the launcher card. Off = no list; the interview opens as soon as the page loads. |
 | `llm_interview_title` / `llm_interview_subtitle` | - | Chat header text. Translatable; both support `{{field}}` / loop-variable interpolation (e.g. `Your personal plan for {{module_topic}}`). |
 | `llm_interview_input_placeholder` / `llm_interview_send_label` / `llm_interview_approve_label` | defaults | UI labels. The start button uses the core `label_new` field. |
-| `llm_interview_labels` | - | Translatable JSON that overrides every remaining participant-facing text - see [Participant UI](#participant-ui). English, German and French are built in. |
+| `llm_interview_labels` | - | Translatable JSON that overrides every remaining participant-facing text - see [Participant UI](#participant-ui). English, German and French are built in; the German ones use "du" (set the keys here for "Sie"), and for a Swiss locale (`de-CH`) they use "ss" instead of "ß" (v1.9.0). |
 | `llm_use_user_language` | `1` | Append the language rule: the coach answers in the language the participant selected in SelfHelp. On by default (same as pre-1.6.0). Off = only the author context decides. Shared by `llmChat`, `llmFormRecord`, `llmFormLog`, `llmFormLogList` and Prompt Lab. |
 | `llm_chat_appearance` | blue/grey | Bubble colours and avatars, the same JSON contract as `llmChat` - see [Theming](#theming). |
 | `enable_speech_to_text` / `speech_to_text_model` | `0` / `faster-whisper-large-v3` | Microphone button in the composer (Whisper transcription) - see [Language, quick replies and speech](#language-quick-replies-and-speech). |

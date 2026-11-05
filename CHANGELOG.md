@@ -2,6 +2,39 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.9.0] (work in progress)
+
+### Upgrade notes
+
+- Run `server/db/v1.9.0.sql` after `v1.8.0.sql`, deploy the rebuilt bundles
+  (`js/ext`, `css/ext`), then clear the SelfHelp cache
+  (**Admin > Cache > Clear all**).
+
+### Added
+
+- **llmChat `show_model_info`** (checkbox, default on). Off hides the model id
+  under the chat header title (inline and floating chat).
+
+### Changed
+
+- **Auto-started chat title:** an auto-started `llmChat` conversation is named
+  after `default_chat_title` (before: always "AI Assistant - <date>", shown in
+  the header). The date is appended only when the conversation list is on.
+- **Swiss spelling:** for a Swiss locale (`de-CH`) the built-in German
+  interview texts use "ss" instead of "ß" (e.g. "Schliessen").
+- **Interview opener:** the built-in opener of a new record
+  (`assets/prompts/core/form-interview/start-new.md`) defers to the author
+  context when it says how the first message opens (for example a question
+  about a video before the first field). Without such an instruction the
+  coach opens as before.
+
+### Fixed
+
+- **llmChat `css`:** the section's `css` field (and the core's
+  `selfHelp-locale-*` / `style-section-*` classes) is now printed on the chat
+  root `.llm-chat-root`. Before, the field was ignored, so a page could not
+  theme or target the chat.
+
 ## [1.8.0]
 
 **One memory rule field for every style:** forms, surveys, log lists, llmChat
