@@ -7,11 +7,14 @@ $container_class = 'llm-chat-root';
 if ($enable_floating) {
     $container_class .= ' llm-floating-mode';
 }
+// The section's css field (plus the core's selfHelp-locale-* / style-section-* classes),
+// like every other style, so a page can theme or target this chat.
+$container_class = trim($container_class . ' ' . $this->css);
 ?>
 <!-- LLM Chat React App Container -->
 <!-- Uses class instead of ID to support multiple instances on the same page -->
 <!-- llm-floating-mode class hides regular chat content when floating button is enabled -->
-<div class="<?php echo $container_class; ?>"
+<div class="<?php echo htmlspecialchars($container_class); ?>"
      data-user-id="<?php echo $user_id; ?>"
      data-section-id="<?php echo $section_id; ?>"
      data-enable-floating="<?php echo $enable_floating ? '1' : '0'; ?>"
