@@ -1304,8 +1304,13 @@ class LlmChatController extends BaseController
                 $section_id
             );
 
-            // Generate title for freshly created / first-visit conversations
-            $title = 'AI Assistant - ' . date('M j, H:i');
+            // Title of a freshly created / first-visit conversation: the section's
+            // default_chat_title; the date is added only where the conversation list
+            // needs titles that can be told apart.
+            $title = trim($this->model->get_db_field('default_chat_title', '')) ?: 'AI Assistant';
+            if ($this->model->isConversationsListEnabled()) {
+                $title .= ' - ' . date('M j, H:i');
+            }
             $this->llm_service->updateConversation($conversation_id, $user_id, ['title' => $title]);
         }
 
