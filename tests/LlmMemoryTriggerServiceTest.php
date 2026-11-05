@@ -114,7 +114,7 @@ class LlmMemoryConfigService
     public function __construct($services = null) {}
     public function isMemoryEnabled() { return $GLOBALS['mem']['enabled']; }
     public function getRuleTargetMemoryKeys($rule) { return $GLOBALS['mem']['keys']; }
-    public function findMatchingRules($source_type, $criteria) { return array_values($GLOBALS['mem']['rules']); }
+    public function findMatchingRules($source_type) { return array_values($GLOBALS['mem']['rules']); }
     public function getRuleById($id)
     {
         return isset($GLOBALS['mem']['rules'][(int)$id]) ? $GLOBALS['mem']['rules'][(int)$id] : null;
@@ -145,6 +145,9 @@ class LlmMemoryUpdateService
     {
         if ($GLOBALS['mem']['fail_rule'] === (int)$rule['id']) {
             throw new RuntimeException('summarization failed for rule ' . (int)$rule['id']);
+        }
+        if ($GLOBALS['mem']['false_rule'] === (int)$rule['id']) {
+            return false;
         }
         $GLOBALS['updates'][] = array(
             'rule' => (int)$rule['id'],
@@ -299,7 +302,7 @@ function fresh_world(array $rule_ids = array(1), array $keys = array('mem_key'))
 {
     LlmTransaction::reportUnflushed(); // forget any transaction a previous case left open
     $GLOBALS['updates'] = array();
-    $GLOBALS['mem'] = array('enabled' => true, 'keys' => $keys, 'rules' => array(), 'fail_rule' => 0);
+    $GLOBALS['mem'] = array('enabled' => true, 'keys' => $keys, 'rules' => array(), 'fail_rule' => 0, 'false_rule' => 0);
     foreach ($rule_ids as $id) {
         $GLOBALS['mem']['rules'][$id] = array(
             'id' => $id, 'enabled' => true, 'label' => 'rule ' . $id, 'trigger_types' => array(),
@@ -540,6 +543,35 @@ $svc = fresh_world(array(1, 2));
 $GLOBALS['mem']['rules'][2]['trigger_types'] = array('started');
 $ids = array_map(function ($r) { return (int)$r['id']; }, $svc->findRulesForPayload(payload()));
 check('chat: matching rules exclude a rule whose trigger types do not fit', $ids === array(1));
+
+/* =========================================================================
+ * 8. Sync failures are reported to the caller (job status "failed")
+ * ========================================================================= */
+
+$svc = fresh_world(array(1, 2, 3));
+$GLOBALS['mem']['false_rule'] = 1;
+$GLOBALS['mem']['fail_rule'] = 2;
+$out = $svc->dispatchForRuleIds(array(1, 2, 3), payload(), false, array(), true, $failed);
+check('sync result: a false and a throwing update are reported as failed', $failed === array(1, 2));
+check('sync result: the third rule still ran', count($GLOBALS['updates']) === 1 && $GLOBALS['updates'][0]['rule'] === 3);
+
+$svc = fresh_world();
+$svc->dispatchForRuleIds(array(1), payload(), false, array(), true, $failed);
+check('sync result: success reports no failure', $failed === array());
+
+// async only starts workers: their result is not known here
+$svc = fresh_world();
+$GLOBALS['mem']['false_rule'] = 1;
+$svc->dispatchForRuleIds(array(1), payload(), true, array(), true, $failed);
+check('async result: a worker failure is not reported to the caller', $failed === array());
+
+// deferred until a commit: the result is not known yet
+$svc = fresh_world();
+$GLOBALS['mem']['false_rule'] = 1;
+LlmTransaction::begin($GLOBALS['db']);
+$svc->dispatchForRuleIds(array(1), payload(), false, array(), true, $failed);
+check('deferred result: nothing reported before the commit', $failed === array());
+LlmTransaction::rollback($GLOBALS['db']);
 
 /* =========================================================================
  * Summary

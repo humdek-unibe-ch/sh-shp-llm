@@ -24,7 +24,7 @@ if (!is_file($core_hooks)) {
 
 foreach (array(
     'GUEST_USER_ID' => 1,
-    'LLM_MEMORY_FIELD_RULE_IDS' => 'llm_memory_rule_ids',
+    'LLM_MEMORY_FIELD_RULE_IDS' => 'memory_rule_ids',
     'ENTRY_RECORD_ID' => 'record_id',
     'actionTriggerTypes_finished' => 'finished',
     'actionTriggerTypes_deleted' => 'deleted',
@@ -218,7 +218,7 @@ class FakeFormModel
 
     public function get_db_field($name, $default = '')
     {
-        if ($name === 'llm_memory_rule_ids') {
+        if ($name === 'memory_rule_ids') {
             return $this->rule_ids;
         }
         return $name === 'id' ? 822 : $default;
