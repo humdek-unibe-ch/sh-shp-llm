@@ -20,6 +20,9 @@ class LlmMemoryRuleService extends BaseLlmService
     /** @var bool|null */
     private $has_rule_key_bindings = null;
 
+    /** @var array<string, string>|null */
+    private $source_type_labels = null;
+
     /**
      * @param object $services SelfHelp services container.
      */
@@ -471,7 +474,6 @@ class LlmMemoryRuleService extends BaseLlmService
             'enabled' => !empty($row['enabled']) && $row['enabled'] !== '0',
             'memory_keys' => $key_codes,
             'source_type' => (string)($row['source_type'] ?? ''),
-            'source_match' => $this->decodeJsonObject($row['source_match_json'] ?? '{}'),
             'trigger_types' => $this->decodeJsonArray($row['trigger_types_json'] ?? '["finished"]', array('finished')),
             'storage_mode_override' => (string)($row['storage_mode_override'] ?? ''),
             'data_config' => $this->decodeJsonArray($row['data_config_json'] ?? '[]'),
@@ -509,7 +511,6 @@ class LlmMemoryRuleService extends BaseLlmService
             'label' => $label,
             'enabled' => !empty($payload['enabled']) ? 1 : 0,
             'source_type' => trim((string)($payload['source_type'] ?? '')),
-            'source_match_json' => $this->encodeJson($payload['source_match'] ?? array()),
             'trigger_types_json' => $this->encodeJson($payload['trigger_types'] ?? array('finished')),
             'storage_mode_override' => trim((string)($payload['storage_mode_override'] ?? '')),
             'data_config_json' => $this->encodeJson($payload['data_config'] ?? array()),
@@ -645,6 +646,31 @@ class LlmMemoryRuleService extends BaseLlmService
     }
 
     /**
+     * Memory source types registered in the llmMemorySourceType lookups (by this plugin
+     * and by other plugins), in insert order.
+     *
+     * @return array<string, string> source type (lookup_code) => label (lookup_value)
+     */
+    public function getSourceTypeLabels()
+    {
+        if ($this->source_type_labels !== null) {
+            return $this->source_type_labels;
+        }
+        $labels = array();
+        $rows = $this->db->query_db(
+            "SELECT lookup_code, lookup_value FROM lookups WHERE type_code = :type ORDER BY id",
+            array(':type' => LLM_LOOKUP_MEMORY_SOURCE_TYPE)
+        );
+        foreach ($rows ?: array() as $row) {
+            $code = (string)($row['lookup_code'] ?? '');
+            if ($code !== '') {
+                $labels[$code] = (string)($row['lookup_value'] ?? $code);
+            }
+        }
+        return $this->source_type_labels = $labels;
+    }
+
+    /**
      * Assemble the full bootstrap payload for the memory-rule editor UI.
      *
      * @param object|null $settings_model Optional settings model (unused, reserved for future overrides).
@@ -653,12 +679,13 @@ class LlmMemoryRuleService extends BaseLlmService
     public function getEditorBootstrap($settings_model = null)
     {
         $llm_config = $this->getLlmConfig();
-        $source_type_options = array(
-            array('value' => LLM_MEMORY_SOURCE_FORM_ACTION, 'label' => 'Form / survey submit'),
-            array('value' => LLM_MEMORY_SOURCE_LLM_CHAT_FORM, 'label' => 'llmChat form submit'),
-            array('value' => LLM_MEMORY_SOURCE_LOGIN, 'label' => 'Login'),
-            array('value' => LLM_MEMORY_SOURCE_PROFILE_NAME, 'label' => 'Profile name change'),
-        );
+        $source_type_options = array();
+        foreach ($this->getSourceTypeLabels() as $code => $label) {
+            // admin_manual is written by admin actions; no rule can listen to it
+            if ($code !== LLM_MEMORY_SOURCE_ADMIN_MANUAL) {
+                $source_type_options[] = array('value' => $code, 'label' => $label);
+            }
+        }
         $storage_mode_options = array(
             array('value' => '', 'label' => 'Use module default'),
             array('value' => 'record', 'label' => 'Record only'),
@@ -756,22 +783,6 @@ class LlmMemoryRuleService extends BaseLlmService
         }
 
         return !empty($meta) ? json_encode($meta) : '{}';
-    }
-
-    /**
-     * Decode a JSON string into an associative array, returning empty array on failure.
-     *
-     * @param string|array $value JSON string or already-decoded array.
-     * @return array Decoded associative array.
-     */
-    private function decodeJsonObject($value)
-    {
-        if (is_array($value)) {
-            return $value;
-        }
-
-        $decoded = is_string($value) ? json_decode($value, true) : null;
-        return is_array($decoded) ? $decoded : array();
     }
 
     /**
