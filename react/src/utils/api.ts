@@ -604,7 +604,6 @@ interface MemoryRule {
   enabled: boolean;
   memory_keys?: string[];
   source_type?: string;
-  source_match?: Record<string, unknown>;
   trigger_types?: string[];
   storage_mode_override?: string;
   prompt_binding?: Record<string, string>;
@@ -659,7 +658,6 @@ interface MemoryRuleRecord {
   memory_keys: string[];
   trigger_types?: string[];
   storage_mode_override: string;
-  source_match: Record<string, unknown>;
   data_config: Array<Record<string, unknown>>;
   llm_model: string;
   llm_temperature: string;

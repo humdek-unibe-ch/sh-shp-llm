@@ -76,7 +76,6 @@ export interface MemoryRuleDraft {
   enabled: boolean;
   memory_keys: string[];
   source_type: string;
-  source_match: Record<string, unknown>;
   trigger_types: string[];
   storage_mode_override: string;
   data_config: Array<Record<string, unknown>>;
@@ -155,7 +154,6 @@ function getDefaultRule(index = 0): MemoryRuleDraft {
     enabled: true,
     memory_keys: ['global'],
     source_type: 'form_action_submit',
-    source_match: {},
     trigger_types: ['finished'],
     storage_mode_override: '',
     data_config: [],
@@ -185,7 +183,6 @@ function normalizeRule(raw: any, index: number): MemoryRuleDraft {
     enabled: raw?.enabled !== false,
     memory_keys: nextMemoryKeys,
     source_type: typeof raw?.source_type === 'string' ? raw.source_type : fallback.source_type,
-    source_match: raw?.source_match && typeof raw.source_match === 'object' && !Array.isArray(raw.source_match) ? raw.source_match : {},
     trigger_types: Array.isArray(raw?.trigger_types) ? raw.trigger_types.map((value: unknown) => String(value)) : ['finished'],
     storage_mode_override: typeof raw?.storage_mode_override === 'string' ? raw.storage_mode_override : '',
     data_config: Array.isArray(raw?.data_config) ? raw.data_config : [],
@@ -207,7 +204,6 @@ function sanitizeRule(rule: MemoryRuleDraft): Record<string, unknown> {
     enabled: !!rule.enabled,
     memory_keys: rule.memory_keys,
     source_type: rule.source_type.trim(),
-    source_match: rule.source_match || {},
     trigger_types: rule.trigger_types.filter(Boolean),
     storage_mode_override: rule.storage_mode_override || '',
     data_config: rule.data_config || [],
@@ -676,7 +672,6 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
     try {
       nextDraft = {
         ...draft,
-        source_match: {},
         data_config: parseJsonArray<Record<string, unknown>>(dataConfigJson),
         refresh_sections: parseJsonArray<number | string>(refreshSectionsJson),
         prompt_meta_json: stringifyPromptMeta(metaState),
@@ -842,7 +837,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
 
                 <Card className="memory-rule-section"><Card.Header>When This Runs</Card.Header><Card.Body>
                   <Row>
-                    <Col md={12}><Form.Group className="mb-0"><Form.Label>Source Type</Form.Label><SearchableSelect options={sourceTypeOptions} value={draft.source_type} onChange={(value) => setDraftPatch({ source_type: value })} placeholder="Select source type" /><Form.Text className="text-muted">This decides whether the rule runs from login, profile updates, form actions, or llmChat fallback.</Form.Text></Form.Group></Col>
+                    <Col md={12}><Form.Group className="mb-0"><Form.Label>Source Type</Form.Label><SearchableSelect options={sourceTypeOptions} value={draft.source_type} onChange={(value) => setDraftPatch({ source_type: value })} placeholder="Select source type" /><Form.Text className="text-muted">Login and profile name change rules run automatically. Every other source labels the rule; it runs where it is picked.</Form.Text></Form.Group></Col>
                   </Row>
                   {draft.source_type === 'form_action_submit' ? (
                     <Form.Group className="mb-0 mt-3">
@@ -860,7 +855,7 @@ export const MemoryRulesEditorApp: React.FC<{ config: MemoryRulesEditorPageConfi
                       <Form.Text className="text-muted">For forms that select this rule: when the participant deletes an entry, the rule runs again with the entry&apos;s last values and is told it was deleted. Your instructions decide whether the memory forgets it or keeps it as history.</Form.Text>
                     </Form.Group>
                   ) : null}
-                  {showAutomaticSourceHint ? <Alert variant="info" className="mb-0 mt-3">This source runs automatically from the system hook.</Alert> : <Alert variant="light" className="mb-0 mt-3">This rule runs only when it is explicitly attached to a form action, a form / survey section (Memory rules field), an llmChat fallback, or a matching source hook.</Alert>}
+                  {showAutomaticSourceHint ? <Alert variant="info" className="mb-0 mt-3">This source runs automatically from the system hook.</Alert> : <Alert variant="light" className="mb-0 mt-3">This rule runs only where it is picked: in the memory_rule_ids field of a section (form, survey, llmChat, agentic chat, ...) or in a form action with job type llm_memory_update.</Alert>}
                 </Card.Body></Card>
 
                 <Card className="memory-rule-section"><Card.Header>Where It Writes</Card.Header><Card.Body><Form.Group className="mb-0"><Form.Label>Memory Keys</Form.Label><CreatableSelect isMulti className="memory-rule-select" classNamePrefix="react-select" value={selectedKeyOptions} options={memoryKeyOptions} placeholder="Search or create memory keys..." onCreateOption={(inputValue) => { const code = inputValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, ''); if (!code) return; upsertAvailableKeys([{ code, label: humanizeKeyLabel(code), description: '', enabled: true }]); setDraftPatch({ memory_keys: Array.from(new Set([...(draft.memory_keys || []), code])) }); }} onChange={(values) => { const nextKeys = (values || []).map((item) => item.value); setDraftPatch({ memory_keys: nextKeys }); }} /><Form.Text className="text-muted">Selected keys become the memory spaces this rule updates. You can search existing keys or create new ones here.</Form.Text></Form.Group></Card.Body></Card>
