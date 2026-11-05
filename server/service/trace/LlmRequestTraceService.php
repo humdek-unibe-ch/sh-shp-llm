@@ -305,12 +305,13 @@ class LlmRequestTraceService
 
     /**
      * Insert missing chunks and return their ids by builder ref.
+     * Public so other plugins store their text the same way (once per owner and sha256).
      *
-     * @param array $chunks ref => {owner, sha256, content}
+     * @param array $chunks ref "<owner>:<sha256>" => {owner, sha256, content}; owner 0 = shared, else id_users
      * @param int $user_id
      * @return array<string, int>
      */
-    private function storeChunks(array $chunks, $user_id)
+    public function storeChunks(array $chunks, $user_id)
     {
         $ids = array();
         if (empty($chunks)) {
