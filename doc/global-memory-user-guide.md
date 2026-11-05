@@ -85,7 +85,7 @@ When a form or survey is finished, memory can be updated in two ways. Both can b
 #### Select the rules on the form or survey (recommended)
 
 1. In the CMS open the section of the form (`formUserInput`, `formUserInputRecord`, `formUserInputLog`, `formUserInputLogList`, `llmFormRecord`, `llmFormLog`, `llmFormLogList`) or of the survey (`surveyJS`).
-2. Open the field `llm_memory_rule_ids` and select one or more memory rules. Only rules with the source `form_action_submit` are listed. Leave the field empty to switch this off for the form.
+2. Open the field `memory_rule_ids` and select one or more memory rules. Every rule is listed as "Label (Source)"; a picked rule runs on this form whatever its source. Leave the field empty to switch this off for the form.
 3. Save the section. No form action is needed.
 
 What happens:
@@ -123,13 +123,13 @@ A form action with job type `llm_memory_update` works exactly as before. It send
 
 #### SurveyJS installed after the LLM plugin
 
-`surveyJS` is a style of the separate SurveyJS plugin. The LLM migration `v1.5.0` adds `llm_memory_rule_ids` to it and registers the save hook only when the `surveyJS` style already exists. If SurveyJS was installed afterwards, or the field is missing on a SurveyJS section, run this file once:
+`surveyJS` is a style of the separate SurveyJS plugin. The LLM migration `v1.8.0` registers the survey save hook always (it is skipped while SurveyJS is not installed) and links `memory_rule_ids` to `surveyJS` when the style exists. If SurveyJS was installed afterwards, or the field is missing on a SurveyJS section, run this file once:
 
 ```bash
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql
 ```
 
-Then clear the SelfHelp cache, because hooks, styles and fields are cached. The file can be run again at any time. It changes nothing when SurveyJS or the LLM `v1.5.0` migration is missing.
+Then clear the SelfHelp cache, because styles and fields are cached. The file can be run again at any time. It changes nothing when SurveyJS or the LLM `v1.8.0` migration is missing.
 
 ### llmChat With Data Saving Enabled
 
@@ -137,9 +137,41 @@ Use the same `llm_memory_update` form action on the generated chat data table. T
 
 ### llmChat With Data Saving Disabled
 
-1. Create a memory rule with source `llmChat form submit` (`llm_chat_form_submit`) on the LLM Memory → Rules tab.
-2. On the `llmChat` section, open `memory_rule_ids` and select one or more of those rules (multi-select). Leave empty to auto-match every enabled rule of that source.
+1. Create a memory rule on the LLM Memory → Rules tab (source `llmChat form submit` labels it for chats; any rule can be picked).
+2. On the `llmChat` section, open `memory_rule_ids` and select one or more rules. Leave empty to switch memory off for the chat.
 3. Memory still runs only on **chat form** submissions (structured answers), not on free-text messages.
+
+### Sources Of Other Plugins
+
+Other plugins can add their own source, for example the agentic chat plugin
+(`Agentic chat end`, when a conversation ends). Select the rules in the same
+field `memory_rule_ids` on the plugin's section. The plugin's documentation
+says when they run.
+
+### Register A Memory Source From A Plugin
+
+For developers. A plugin needs no hook to add a memory source:
+
+1. Insert one lookup row in the plugin's migration. `lookup_code` is the source
+   type, `lookup_value` the label shown in the LLM Memory page:
+   ```sql
+   INSERT IGNORE INTO lookups (type_code, lookup_code, lookup_value, lookup_description)
+   VALUES ('llmMemorySourceType', 'my_source', 'My source', 'Triggered when ...');
+   ```
+2. Link the field `memory_rule_ids` to the plugin's style (`styles_fields`).
+   The CMS shows the rule picker in it, and the Sources tab shows the
+   sections that select rules. Read the selected ids with
+   `get_db_field(LLM_MEMORY_FIELD_RULE_IDS)`; empty = off.
+3. When the event happens, schedule the selected rules:
+   ```php
+   $trigger = new LlmMemoryTriggerService($services);
+   $payload = $trigger->normalizeSourcePayload('my_source', $source_ref, $fields, $user_id, $readable_text);
+   $trigger->scheduleRuleJob($rule_ids, $payload, true, 'LLM Memory Update (my source)');
+   ```
+   `fields` is shown to the rule as Submitted Data. `source_ref` (e.g.
+   `section_id`, `conversation_id`) is part of the dedupe key: it must identify
+   the event, so the same event never updates memory twice. Its `section_id`
+   and `conversation_id` are shown in the Activity tab.
 
 ### Login
 
@@ -153,7 +185,7 @@ Rules with `source_type = profile_name_change` run automatically after a success
 
 Memory is only used when you load it explicitly through `data_config`.
 
-Example:
+Example (the memory of the key `reflection`):
 
 ```json
 [
@@ -161,19 +193,30 @@ Example:
     "table": "llm_memory",
     "retrieve": "last",
     "current_user": true,
-    "map_fields": [
-      { "field_name": "memory_text", "value": "memory_text" },
-      { "field_name": "memory_json", "value": "memory_json" },
-      { "field_name": "preferred_tone", "value": "preferred_tone" }
+    "filter": "AND memory_key = 'reflection' ORDER BY record_id DESC",
+    "fields": [
+      { "field_name": "memory_text", "field_holder": "reflection_memory", "not_found_text": "No memory yet." },
+      { "field_name": "preferred_tone", "field_holder": "preferred_tone", "not_found_text": "" },
+      { "field_name": "memory_key", "field_holder": "reflection_memory_key", "not_found_text": "" }
     ]
   }
 ]
 ```
 
-Then use the mapped values in prompts or content:
+- All memory keys share the table `llm_memory` (one row per user and key), so
+  filter by `memory_key`; without the filter the newest row of any key is used.
+  Keys are stored in lower case. Core only selects the columns listed in
+  `fields`, so `memory_key` must be listed there for the filter to use it.
+- `field_name` is the column (`memory_text`, `memory_json` or a flat field the
+  rule writes), `field_holder` the name used in the text. `not_found_text`
+  replaces the placeholder while the participant has no memory yet.
+- `map_fields` only applies to `"retrieve": "JSON"`; with `first` / `last` /
+  `all` use `fields`.
+
+Then use the values in prompts or content:
 
 ```text
-Current user memory summary: {{memory_text}}
+Current user memory summary: {{reflection_memory}}
 Preferred tone: {{preferred_tone}}
 ```
 
@@ -186,7 +229,7 @@ On the `LLM Memory` page:
 - `Overview`: shows whether memory is enabled, storage mode, tables, and quick links
 - `Keys`: list the memory keys with their rule count and the number of current / history rows
 - `Rules`: create and manage update rules
-- `Sources`: inspect which source events can write to memory (form / survey sections with selected rules, form actions with a memory-update job, llmChat fallback rules, login / profile hooks)
+- `Sources`: inspect which source events can write to memory (sections of any style with selected rules, form actions with a memory-update job, login / profile hooks)
 - `Users`: browse the current memory and history for users
 - `Activity`: event log of every memory update with participant (name, email, code), rule, memory key, what triggered it (form / survey submit, llmChat form, login, profile change, admin action) and the result; filter by participant, rule, key, trigger, status and date
 
@@ -204,7 +247,7 @@ Recommended default:
 1. Enable global memory in `LLM Konfiguration`.
 2. Open `LLM Memory`.
 3. Create one or more rules with a prompt that describes what to extract.
-4. Select the rules in `llm_memory_rule_ids` on the forms or surveys that should update memory (or add `llm_memory_update` as a form action).
+4. Select the rules in `memory_rule_ids` on the forms or surveys that should update memory (or add `llm_memory_update` as a form action).
 5. Load memory later with `data_config` wherever you want the LLM to use it.
 6. Review memory writes and user state in the `Users` tab.
 
@@ -258,7 +301,7 @@ If memory is not updating, check:
 - your prompt or field actually loads memory via `data_config`
 
 If a form or survey with selected rules does not update memory, also check:
-- `llm_memory_rule_ids` is filled on the section that was submitted
+- `memory_rule_ids` is filled on the section that was submitted
 - the SelfHelp cache was cleared after the migration (and, for SurveyJS, the field is listed on the section; otherwise run `enable_surveyjs_llm_memory_rules.sql`)
 - the submission was finished and saved (started or updated surveys never trigger)
 - the participant is logged in (guests are skipped)

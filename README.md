@@ -71,12 +71,13 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.4.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.5.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.6.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.7.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.8.0.sql
 ```
 
-This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), and the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code), and the v1.8.0 memory source labels (memory sources of other plugins are registered as `llmMemorySourceType` lookups, see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md#register-a-memory-source-from-a-plugin)). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
 It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached). The same core release provides `CORS_ALLOWED_ORIGINS`, the exact-match list of cross-origin clients that the chat and form endpoints trust without a CSRF token ([CSRF and cross-origin clients](#csrf-and-cross-origin-clients)).
 
-**Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.5.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It enables the memory rule selection on `surveyJS` sections (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
+**Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.8.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It links `memory_rule_ids` to `surveyJS`; the save hook is registered by `v1.8.0` (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
 
 ### 3. Build Frontend Assets
 
@@ -278,9 +279,6 @@ Memory rules are stored in the normalized `llm_memory_rules` table and edited th
   "label": "Sleep Form Finished",
   "enabled": true,
   "source_type": "form_action_submit",
-  "source_match_json": {
-    "table_name": "0000001234"
-  },
   "trigger_types_json": ["finished"],
   "storage_mode_override": "both",
   "llm_model": "",
@@ -321,7 +319,7 @@ The runtime guarantees:
 
 **Core forms and surveys (v1.5.0)** — select the memory rules directly on the style, no form action needed:
 
-- Field `llm_memory_rule_ids` (comma-separated `llm_memory_rules.id`, multi select in the CMS) on `formUserInput`, `formUserInputRecord`, `formUserInputLog`, `formUserInputLogList` (v1.6.0), `llmFormRecord`, `llmFormLog`, `llmFormLogList` (v1.6.0) and `surveyJS`. Empty = off. Only `form_action_submit` rules are offered.
+- Field `memory_rule_ids` (comma-separated `llm_memory_rules.id`, multi select in the CMS; `llm_memory_rule_ids` before v1.8.0) on `formUserInput`, `formUserInputRecord`, `formUserInputLog`, `formUserInputLogList` (v1.6.0), `llmFormRecord`, `llmFormLog`, `llmFormLogList` (v1.6.0) and `surveyJS`. Empty = off. Every rule is offered as "Label (Source)"; a picked rule runs whatever its source type.
 - Hooks registered by `v1.5.0.sql`: `FormUserInputModel::save_user_input` / `update_user_input` and `SurveyJSModel::save_survey` → `LlmHooks::onFormSavedMemoryRules` / `onSurveySavedMemoryRules`. The original save runs first and is never changed. The rules are queued only after a saved `finished` submission of a logged-in (non-guest) user while memory is enabled. The hooked model is the submitting section, so the selection always belongs to the section that was submitted.
 - Execution reuses the existing pipeline: `LlmMemoryTriggerService::normalizeFormActionPayload()` + `dispatchForRuleIds(..., async = true)`. The request only starts one detached worker per rule and memory key; missing or disabled rules are skipped; dedupe, ordering and failure handling are unchanged. Errors in the hook are logged (`LLM Memory: form rule trigger failed` / `survey rule trigger failed`) and never change the save result.
 - `LlmMemorySubmissionContextService` builds the labeled snapshot inside the save request (the worker has no session language and no live form model). `fields` stays the flat name → value map; `readable_text` carries the JSON context (question labels, readable choice texts) that `LlmMemoryUpdateService` adds to the prompt as `## Submission Context` for `form_action_submit` payloads.
@@ -350,7 +348,7 @@ Form-action job config example:
 
 **llmChat with data saving enabled** — use a form action on the generated `llmChat_*` data table, same as above.
 
-**llmChat with data saving disabled** — select rules in the section field `memory_rule_ids` (multi-select of `llm_chat_form_submit` rules, v1.6.0). When empty, rules are matched by `source_type = llm_chat_form_submit`.
+**llmChat with data saving disabled** — select rules in the section field `memory_rule_ids` (the same multi-select). Empty = off (v1.8.0; before, every `llm_chat_form_submit` rule ran).
 
 **Login** — no configuration needed. Rules with `source_type = login` fire automatically after successful login. Example rule:
 
@@ -375,19 +373,22 @@ Memory is never injected automatically. Load it explicitly through `data_config`
     "table": "llm_memory",
     "retrieve": "last",
     "current_user": true,
-    "map_fields": [
-      { "field_name": "memory_text", "value": "memory_text" },
-      { "field_name": "memory_json", "value": "memory_json" },
-      { "field_name": "preferred_tone", "value": "preferred_tone" }
+    "filter": "AND memory_key = 'reflection' ORDER BY record_id DESC",
+    "fields": [
+      { "field_name": "memory_text", "field_holder": "reflection_memory", "not_found_text": "No memory yet." },
+      { "field_name": "preferred_tone", "field_holder": "preferred_tone", "not_found_text": "" },
+      { "field_name": "memory_key", "field_holder": "reflection_memory_key", "not_found_text": "" }
     ]
   }
 ]
 ```
 
-Then reference the mapped values in any prompt or content field:
+All memory keys share `llm_memory` (keys are stored in lower case), so filter by `memory_key`; core only selects the columns listed in `fields`, so `memory_key` must be listed there. Core `data_config` reads `fields` for `first` / `last` / `all`; `map_fields` only applies to `"retrieve": "JSON"`.
+
+Then reference the values in any prompt or content field:
 
 ```
-Current user memory summary: {{memory_text}}
+Current user memory summary: {{reflection_memory}}
 Preferred tone: {{preferred_tone}}
 ```
 
@@ -399,8 +400,8 @@ This works in `conversation_context`, LLM script prompts, `llmResponse` template
 2. Open the dedicated `LLM Memory` page.
 3. Create one or more rules in the `Rules` tab.
 4. Edit the rule prompt in Prompt Lab from that page.
-5. For core forms and surveys (including `formUserInputLogList` / `llmFormLogList`), select the rules in `llm_memory_rule_ids` on the section (or add a `llm_memory_update` form action and select the rule key).
-7. For `llmChat` without data saving, select rules in `memory_rule_ids` on the section (create rules with source `llm_chat_form_submit`).
+5. For core forms and surveys (including `formUserInputLogList` / `llmFormLogList`), select the rules in `memory_rule_ids` on the section (or add a `llm_memory_update` form action and select the rule key).
+7. For `llmChat` without data saving, select rules in `memory_rule_ids` on the section.
 8. Load memory explicitly through `data_config` in prompts or content (see above).
 9. Use the dedicated memory page tabs to:
    - manage rules

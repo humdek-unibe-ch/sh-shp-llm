@@ -150,7 +150,7 @@ Every field also appears in the CMS with its own help text.
 | `llm_chat_appearance` | blue/grey | Bubble colours and avatars, the same JSON contract as `llmChat` - see [Theming](#theming). |
 | `enable_speech_to_text` / `speech_to_text_model` | `0` / `faster-whisper-large-v3` | Microphone button in the composer (Whisper transcription) - see [Language, quick replies and speech](#language-quick-replies-and-speech). |
 | `llm_model` / `llm_temperature` / `llm_max_tokens` / `llm_reasoning_effort` | module defaults | Same fallback chain as `llmChat`. |
-| `llm_memory_rule_ids` | - | Memory rules queued after the inherited `finished` save - same semantics as core forms (v1.5.0). |
+| `memory_rule_ids` | - | Memory rules queued after the inherited `finished` save - same semantics as core forms (v1.5.0). |
 
 Inherited core fields that behave differently here (their CMS help says so):
 `label`, `type` and `url_cancel` are **not used** - the save button is
@@ -763,7 +763,7 @@ never shown to the participant and never sent to the model again.
 
 ## Memory integration
 
-`llm_memory_rule_ids` on `llmFormLogList` behaves exactly like the core
+`memory_rule_ids` on `llmFormLogList` behaves exactly like the core
 form field (v1.5.0 / v1.6.0 also on plain `formUserInputLogList`): after
 the inherited `finished` save succeeds, the selected rules queue through
 `LlmMemoryTriggerService`. The interview adds nothing extra - if the
