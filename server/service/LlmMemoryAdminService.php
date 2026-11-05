@@ -8,7 +8,6 @@ require_once __DIR__ . '/LlmMemoryConfigService.php';
 require_once __DIR__ . '/LlmMemoryStorageService.php';
 require_once __DIR__ . '/LlmMemoryUpdateService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
-require_once __DIR__ . '/LlmPromptExecutionProfileService.php';
 
 /**
  * Admin-facing operations for the Memory tab in the LLM admin console.
@@ -372,7 +371,6 @@ class LlmMemoryAdminService extends BaseLlmService
         $sources = array();
         $sources = array_merge($sources, $this->getFormActionSources());
         $sources = array_merge($sources, $this->getSectionFieldSources());
-        $sources = array_merge($sources, $this->getLlmChatFallbackSources());
         $sources = array_merge($sources, $this->getSystemRuleSources());
         return $this->decorateSourcesWithRuleRefs($sources);
     }
@@ -598,24 +596,10 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Display labels for the source types found in the memory history.
-     *
-     * @return array source_type => label
-     */
-    private function getActivitySourceLabels()
-    {
-        return array(
-            LLM_MEMORY_SOURCE_FORM_ACTION => 'Form / survey submit',
-            LLM_MEMORY_SOURCE_LLM_CHAT_FORM => 'llmChat form submit',
-            LLM_MEMORY_SOURCE_LOGIN => 'Login',
-            LLM_MEMORY_SOURCE_PROFILE_NAME => 'Profile name change',
-            'admin_manual' => 'Admin action',
-        );
-    }
-
-    /**
      * Describe what triggered a history entry and who caused it.
      * Participants cause every source except admin_manual, where source_ref carries the acting admin.
+     * Sources without their own description (llmChat, plugin sources) show the section and
+     * conversation of their source_ref.
      *
      * @param array $entry      Hydrated history row.
      * @param array $source_ref Decoded source_ref JSON of the row.
@@ -625,7 +609,7 @@ class LlmMemoryAdminService extends BaseLlmService
     private function describeActivitySource($entry, $source_ref, $users_info)
     {
         $source_type = (string)($entry['source_type'] ?? '');
-        $labels = $this->getActivitySourceLabels();
+        $labels = $this->rule_service->getSourceTypeLabels();
         $detail = '';
         $triggered_by = array('type' => 'participant', 'label' => 'Participant', 'name' => '', 'email' => '');
 
@@ -636,16 +620,7 @@ class LlmMemoryAdminService extends BaseLlmService
             }
             $record_id = (int)($source_ref['record_id'] ?? 0);
             $detail = $form . ($record_id > 0 ? ' (record #' . $record_id . ')' : '');
-        } elseif ($source_type === LLM_MEMORY_SOURCE_LLM_CHAT_FORM) {
-            $parts = array();
-            if (!empty($source_ref['section_id'])) {
-                $parts[] = 'section #' . (int)$source_ref['section_id'];
-            }
-            if (!empty($source_ref['conversation_id'])) {
-                $parts[] = 'conversation #' . (int)$source_ref['conversation_id'];
-            }
-            $detail = implode(', ', $parts);
-        } elseif ($source_type === 'admin_manual') {
+        } elseif ($source_type === LLM_MEMORY_SOURCE_ADMIN_MANUAL) {
             $actions = array(
                 'admin_rerun' => 'Rule re-run',
                 'rebuild_from_history' => 'Rebuilt from history',
@@ -667,6 +642,15 @@ class LlmMemoryAdminService extends BaseLlmService
                 'name' => (string)($admin['name'] ?? ($admin_id > 0 ? 'User #' . $admin_id : '')),
                 'email' => (string)($admin['email'] ?? ''),
             );
+        } else {
+            $parts = array();
+            if (!empty($source_ref['section_id'])) {
+                $parts[] = 'section #' . (int)$source_ref['section_id'];
+            }
+            if (!empty($source_ref['conversation_id'])) {
+                $parts[] = 'conversation #' . (int)$source_ref['conversation_id'];
+            }
+            $detail = implode(', ', $parts);
         }
 
         return array(
@@ -703,7 +687,7 @@ class LlmMemoryAdminService extends BaseLlmService
         }
 
         $source_type_options = array();
-        foreach ($this->getActivitySourceLabels() as $value => $label) {
+        foreach ($this->rule_service->getSourceTypeLabels() as $value => $label) {
             $source_type_options[] = array('value' => $value, 'label' => $label);
         }
 
@@ -765,14 +749,15 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Collect memory write-sources from sections whose llm_memory_rule_ids field selects rules
-     * (formUserInput*, llmForm* and surveyJS styles). A finished submission of such a section runs the selected rules.
+     * Collect memory write-sources from sections whose memory_rule_ids field selects rules, on any
+     * style (forms, surveys, llmChat, plugin styles). The section's own trigger runs the selected
+     * rules; the style name (in target_secondary) tells which trigger that is.
      *
      * @return array Source descriptors with section/page metadata and resolved rule IDs.
      */
     private function getSectionFieldSources()
     {
-        // non-display fields are stored for language 1 / gender 1 (same as the llmChat fallback lookup)
+        // non-display fields are stored for language 1 / gender 1
         $rows = $this->db->query_db(
             "SELECT s.id AS section_id, s.name AS section_name, st.name AS style_name, sft.content AS rule_ids
              FROM sections_fields_translation sft
@@ -808,9 +793,9 @@ class LlmMemoryAdminService extends BaseLlmService
             $page = $pages[$section_id] ?? null;
             $sources[] = array(
                 'source_category' => 'section_field',
-                'source_type' => LLM_MEMORY_SOURCE_FORM_ACTION,
+                'source_type' => '',
                 'rule_ids' => $rule_ids_by_section[$section_id],
-                'trigger_type' => actionTriggerTypes_finished,
+                'trigger_type' => '',
                 'target_label' => trim((string)$row['section_name']) !== '' ? $row['section_name'] : ('Section #' . $section_id),
                 'target_secondary' => $row['style_name'] . ' | ' . ($page ? $page['page_url'] : 'not placed on a page'),
                 'target_id' => $section_id,
@@ -914,57 +899,6 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Collect memory write-sources from llmChat sections that have fallback memory_rule_ids configured.
-     *
-     * @return array Source descriptors with section/page metadata and resolved rule IDs.
-     */
-    private function getLlmChatFallbackSources()
-    {
-        $profile_service = new LlmPromptExecutionProfileService($this->services);
-        $section_rows = $this->db->query_db(
-            "SELECT s.id, s.name AS section_name, p.id AS page_id, p.url AS page_url
-             FROM sections s
-             INNER JOIN styles st ON st.id = s.id_styles
-             LEFT JOIN pages_sections ps ON ps.id_sections = s.id
-             LEFT JOIN pages p ON p.id = ps.id_pages
-             WHERE st.name = :style_name
-             ORDER BY p.id ASC, ps.position ASC, s.id ASC",
-            array(':style_name' => 'llmChat')
-        );
-
-        if (!is_array($section_rows)) {
-            return array();
-        }
-
-        $sources = array();
-        foreach ($section_rows as $row) {
-            $values = $profile_service->getStyleFieldValues((int)$row['id'], 1, array('memory_rule_ids'));
-            $rule_ids = $this->rule_service->normalizeRuleIds($values['memory_rule_ids'] ?? '');
-            if (empty($rule_ids)) {
-                continue;
-            }
-
-            $sources[] = array(
-                'source_category' => 'llm_chat_fallback',
-                'source_type' => LLM_MEMORY_SOURCE_LLM_CHAT_FORM,
-                'rule_ids' => $rule_ids,
-                'trigger_type' => 'finished',
-                'target_label' => $row['section_name'] ?? ('Section #' . $row['id']),
-                'target_secondary' => 'llmChat fallback',
-                'target_id' => (int)$row['id'],
-                'target_url' => !empty($row['page_url']) ? $row['page_url'] : null,
-                'details' => array(
-                    'section_id' => (int)$row['id'],
-                    'section_name' => $row['section_name'] ?? '',
-                    'page_id' => !empty($row['page_id']) ? (int)$row['page_id'] : null,
-                ),
-            );
-        }
-
-        return $sources;
-    }
-
-    /**
      * Collect memory write-sources from system-level rules (login, profile name change hooks).
      *
      * @return array Source descriptors for enabled rules with system source types.
@@ -1053,13 +987,15 @@ class LlmMemoryAdminService extends BaseLlmService
     }
 
     /**
-     * Enrich source descriptors with resolved rule reference objects (id, label).
+     * Enrich source descriptors with resolved rule reference objects (id, label) and the
+     * label of their source type.
      *
      * @param array $sources Source descriptors containing rule_ids arrays.
-     * @return array Same sources with an added rule_refs array on each entry.
+     * @return array Same sources with added rule_refs and source_label on each entry.
      */
     private function decorateSourcesWithRuleRefs($sources)
     {
+        $source_labels = $this->rule_service->getSourceTypeLabels();
         $rule_index = array();
         foreach ($this->rule_service->listRules() as $rule) {
             $rule_id = (int)($rule['id'] ?? 0);
@@ -1091,6 +1027,8 @@ class LlmMemoryAdminService extends BaseLlmService
                 }
             }
             $source['rule_refs'] = $refs;
+            $source_type = (string)($source['source_type'] ?? '');
+            $source['source_label'] = $source_labels[$source_type] ?? $source_type;
         }
         unset($source);
 
