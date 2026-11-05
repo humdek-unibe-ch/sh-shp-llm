@@ -100,9 +100,6 @@ class LlmMemoryTriggerService extends BaseLlmService
             'event_at'     => date('Y-m-d H:i:s'),
             'fields'       => $form_values,
             'readable_text' => $readable_text,
-            'match_criteria' => [
-                'section_id' => $section_id,
-            ],
         ], $this->resolveUserLanguage());
     }
 
@@ -130,7 +127,6 @@ class LlmMemoryTriggerService extends BaseLlmService
                 'login_time' => $event_at,
                 'user_id'    => (string)$user_id,
             ], $profile_fields),
-            'match_criteria' => [],
         ], $this->resolveUserLanguage());
     }
 
@@ -154,7 +150,35 @@ class LlmMemoryTriggerService extends BaseLlmService
                 'old_name' => $old_name,
                 'new_name' => $new_name,
             ],
-            'match_criteria' => [],
+        ], $this->resolveUserLanguage());
+    }
+
+    /**
+     * Normalize the payload of a memory source registered by another plugin
+     * (llmMemorySourceType lookup). The plugin passes the rule ids of its
+     * section field memory_rule_ids to scheduleRuleJob().
+     *
+     * source_ref is part of the dedupe key: it must identify the event, so the
+     * same event never updates memory twice.
+     *
+     * @param string $source_type   Lookup code of the source.
+     * @param array  $source_ref    Identifies the event (e.g. section_id, conversation_id).
+     * @param array  $fields        Data shown to the rule as Submitted Data.
+     * @param int    $user_id
+     * @param string $readable_text Optional text for the {{readable_text}} prompt variable.
+     * @param string $trigger_type
+     * @return array Normalized payload
+     */
+    public function normalizeSourcePayload($source_type, $source_ref, $fields, $user_id, $readable_text = '', $trigger_type = actionTriggerTypes_finished)
+    {
+        return array_merge([
+            'source_type'  => (string)$source_type,
+            'source_ref'   => json_encode($source_ref, JSON_UNESCAPED_SLASHES),
+            'trigger_type' => $trigger_type,
+            'user_id'      => $user_id,
+            'event_at'     => date('Y-m-d H:i:s'),
+            'fields'       => $fields,
+            'readable_text' => $readable_text,
         ], $this->resolveUserLanguage());
     }
 
@@ -173,7 +197,6 @@ class LlmMemoryTriggerService extends BaseLlmService
             'trigger_type' => (string)($normalized_payload['trigger_type'] ?? ''),
             'user_id' => (int)($normalized_payload['user_id'] ?? 0),
             'async' => !empty($async),
-            'match_criteria' => $normalized_payload['match_criteria'] ?? array(),
             'field_keys' => array_keys((array)($normalized_payload['fields'] ?? array())),
         ));
 
@@ -208,7 +231,7 @@ class LlmMemoryTriggerService extends BaseLlmService
     }
 
     /**
-     * Rules that match a payload by source type and criteria, without the
+     * Rules that match a payload by source type, without the
      * ones whose trigger types exclude the payload's trigger.
      *
      * @param array $normalized_payload
@@ -217,8 +240,7 @@ class LlmMemoryTriggerService extends BaseLlmService
     public function findRulesForPayload($normalized_payload)
     {
         $source_type = $normalized_payload['source_type'];
-        $match_criteria = $normalized_payload['match_criteria'] ?? [];
-        $rules = $this->config_service->findMatchingRules($source_type, $match_criteria);
+        $rules = $this->config_service->findMatchingRules($source_type);
         $this->appendWorkerLog('dispatchMemoryUpdate rules resolved', array(
             'source_type' => (string)$source_type,
             'rule_ids' => array_values(array_map(function ($rule) {
@@ -229,7 +251,6 @@ class LlmMemoryTriggerService extends BaseLlmService
         if (empty($rules)) {
             $this->appendWorkerLog('dispatchMemoryUpdate no matching rules', array(
                 'source_type' => (string)$source_type,
-                'match_criteria' => $match_criteria,
             ));
             return [];
         }
@@ -323,10 +344,12 @@ class LlmMemoryTriggerService extends BaseLlmService
      * @param bool $async
      * @param array $rule_overrides
      * @param bool $data_committed the submission is already committed (see LlmTransaction::afterCommit)
+     * @param array|null $failed_rule_ids Out: rules whose update failed while running inside this call (sync mode)
      * @return array Rule IDs dispatched
      */
-    public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [], $data_committed = false)
+    public function dispatchForRuleIds($rule_ids, $normalized_payload, $async = true, $rule_overrides = [], $data_committed = false, &$failed_rule_ids = null)
     {
+        $failed_rule_ids = [];
         if (!$this->config_service->isMemoryEnabled()) {
             $this->appendWorkerLog('dispatchForRuleIds skipped: memory disabled', array(
                 'rule_ids' => array_values(array_map('intval', (array)$rule_ids)),
@@ -369,9 +392,12 @@ class LlmMemoryTriggerService extends BaseLlmService
                 foreach ($target_keys as $target_memory_key) {
                     $payload_for_key = $normalized_payload;
                     $payload_for_key['memory_key_override'] = $target_memory_key;
-                    $this->enqueueMemoryUpdate($rule, $payload_for_key, $async, $data_committed);
+                    if (!$this->enqueueMemoryUpdate($rule, $payload_for_key, $async, $data_committed)) {
+                        $failed_rule_ids[] = (int)$rule['id'];
+                    }
                 }
             } catch (\Throwable $e) {
+                $failed_rule_ids[] = (int)$rule_id;
                 // One rule must not block the others on the same submission.
                 $this->appendWorkerLog('dispatchForRuleIds rule failed', array(
                     'rule_id' => (int)$rule_id,
@@ -386,6 +412,7 @@ class LlmMemoryTriggerService extends BaseLlmService
             'dispatched_rule_ids' => $dispatched,
         ));
 
+        $failed_rule_ids = array_values(array_unique($failed_rule_ids));
         return $dispatched;
     }
 
@@ -396,9 +423,12 @@ class LlmMemoryTriggerService extends BaseLlmService
      * @param array $normalized_payload
      * @param bool  $async
      * @param bool  $data_committed
+     * @return bool false only when a sync update ran inside this call and failed
+     *              (deferred updates and async workers report through the job log)
      */
     private function enqueueMemoryUpdate($rule, $normalized_payload, $async, $data_committed = false)
     {
+        $succeeded = true;
         $worker_args = [
             'rule_id'                => (int)$rule['id'],
             'user_id'                => $normalized_payload['user_id'],
@@ -431,7 +461,7 @@ class LlmMemoryTriggerService extends BaseLlmService
         // for the commit and is dropped when the transaction fails; with no
         // transaction open, or when the caller says the submission already
         // committed, it runs right away.
-        LlmTransaction::afterCommit($this->db, function () use ($rule, $normalized_payload, $async, $worker_args) {
+        LlmTransaction::afterCommit($this->db, function () use ($rule, $normalized_payload, $async, $worker_args, &$succeeded) {
             if (!$async) {
                 $this->appendWorkerLog('enqueueMemoryUpdate executing sync', array(
                     'rule_id' => (int)($rule['id'] ?? 0),
@@ -446,11 +476,14 @@ class LlmMemoryTriggerService extends BaseLlmService
                     throw $t;
                 }
                 $update_service->recordJobResult($job_id, $rule, $normalized_payload, (bool)$success);
+                $succeeded = (bool)$success;
                 return;
             }
 
             $this->spawnAsyncWorker($worker_args);
         }, $data_committed);
+
+        return $succeeded;
     }
 
     /**
