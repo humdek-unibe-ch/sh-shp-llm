@@ -2,6 +2,66 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.8.0] (work in progress)
+
+**One memory rule field for every style:** forms, surveys, log lists, llmChat
+and plugin styles all select their memory rules in `memory_rule_ids`, and the
+picker lists every rule. Memory sources are lookups, so another plugin can
+register its own source (e.g. the agentic chat's `agentic_chat_end`) with one
+row. Details:
+[doc/global-memory-user-guide.md](doc/global-memory-user-guide.md#register-a-memory-source-from-a-plugin).
+
+### Upgrade notes
+
+- Run `server/db/v1.8.0.sql` after `v1.7.0.sql`, then clear the SelfHelp cache
+  (**Admin > Cache > Clear all**).
+- **Breaking:** the section field `llm_memory_rule_ids` is renamed to
+  `memory_rule_ids`; the migration moves the selected rules, the style links
+  and the field versions, then deletes the old field. Code or SQL of your own
+  that reads `llm_memory_rule_ids` must use `memory_rule_ids`.
+- **Breaking:** an llmChat section with an empty `memory_rule_ids` runs no
+  memory rules (before: every enabled `llm_chat_form_submit` rule). Select the
+  rules on the section to keep them running.
+
+### Changed
+
+- **The memory rule picker lists every rule** as "Label (Source)", on every
+  style and in the `llm_memory_update` form-action config (before: only the
+  rules of one source). A picked rule runs on the section's own trigger
+  whatever its source type; the source type decides only what the automatic
+  sources (login, profile name change) run and labels the Activity.
+- **Memory sources from lookups:** the rule editor's Source Type list, the
+  Activity labels and filter, and the Sources tab read the
+  `llmMemorySourceType` lookups (`lookup_value` is the label). The migration
+  labels the five existing source types; a label an admin already changed is
+  kept.
+- The Sources tab lists every section that selects rules as *Section* with
+  its style and an "Open section" link (llmChat sections included).
+- The Activity detail shows the section and conversation of every source that
+  stores them in `source_ref` (before: llmChat only).
+- **SurveyJS:** the survey save hook is registered always (it is skipped
+  while SurveyJS is not installed), and the migration links `memory_rule_ids`
+  to `surveyJS` when SurveyJS is installed. When SurveyJS is installed later,
+  run `server/db/optional/enable_surveyjs_llm_memory_rules.sql` once; it now
+  only links the field.
+- **Docs:** the example that loads memory through `data_config` (README,
+  memory guide) now works: it uses `fields` (`map_fields` only applies to
+  `"retrieve": "JSON"`, so the old example never filled the placeholders)
+  and filters by `memory_key`.
+- For developers: `LLM_MEMORY_FIELD_RULE_IDS` is `memory_rule_ids`;
+  `LlmMemoryTriggerService::normalizeSourcePayload()` builds the payload of a
+  plugin source for `scheduleRuleJob()`;
+  `LlmRequestTraceService::storeChunks()` is public so other plugins store
+  text in `llmTraceChunks` the same way.
+
+### Fixed
+
+- **Memory form action with "Run async" off:** the scheduled job is now
+  `failed` when a memory update failed (before: always `done`, the failure
+  was only in the job log). With "Run async" on (default) and for the rules
+  selected on a section nothing changes: `done` means the workers were
+  started, their result is in the job log.
+
 ## [1.7.0]
 
 **Request traces:** every LLM call keeps a small, hash-checked record of what
