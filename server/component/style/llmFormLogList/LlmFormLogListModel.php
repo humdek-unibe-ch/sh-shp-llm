@@ -549,15 +549,29 @@ class LlmFormLogListModel extends FormUserInputLogListModel
         return $en;
     }
 
+    /** @return bool The participant uses a Swiss locale (de-CH, fr-CH, ...). */
+    private static function isSwissLocale()
+    {
+        $locale = (string)($_SESSION['user_language_locale'] ?? '');
+        return strtoupper(substr($locale, -3)) === '-CH';
+    }
+
     /**
      * Participant-facing strings: built-in defaults for the UI language,
-     * overlaid by the translatable `llm_interview_labels` JSON field.
+     * overlaid by the translatable `llm_interview_labels` JSON field. For a
+     * Swiss locale the built-in German texts use "ss" instead of "ß".
      *
      * @return array key => text
      */
     public function getInterviewLabels()
     {
-        $labels = self::defaultInterviewLabels($this->getUserLanguage());
+        $language = $this->getUserLanguage();
+        $labels = self::defaultInterviewLabels($language);
+        // Swiss Standard German has no "ß": built-in texts follow the locale
+        // (author texts in llm_interview_labels stay exactly as written).
+        if ($language === 'de' && self::isSwissLocale()) {
+            $labels = str_replace('ß', 'ss', $labels);
+        }
         $custom = $this->get_db_field('llm_interview_labels', '');
         if (!is_array($custom)) {
             $custom = json_decode((string)$custom, true);
