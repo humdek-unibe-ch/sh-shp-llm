@@ -34,8 +34,7 @@ interface MemoryRuleUse {
 /** Labels of the write source categories (same as the Sources tab). */
 const RULE_USE_LABELS: Record<string, string> = {
   form_action: 'Form action',
-  section_field: 'Form / survey section',
-  llm_chat_fallback: 'llmChat',
+  section_field: 'Section',
   system: 'System hook',
 };
 

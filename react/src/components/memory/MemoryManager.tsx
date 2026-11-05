@@ -54,6 +54,7 @@ interface SourceRuleRef {
 interface MemorySourceRecord {
   source_category?: string;
   source_type?: string;
+  source_label?: string;
   rule_ids?: number[];
   rule_refs?: SourceRuleRef[];
   trigger_type?: string;
@@ -64,11 +65,13 @@ interface MemorySourceRecord {
   details?: Record<string, unknown>;
 }
 
-/** Where a write source lives, by `source_category` (section_field = the "Memory rules" field of a form / survey section). */
+/**
+ * Where a write source lives, by `source_category` (section_field = the memory_rule_ids field of a
+ * section of any style; target_secondary names the style and page).
+ */
 const SOURCE_CATEGORY_LABELS: Record<string, string> = {
   form_action: 'Form action',
-  section_field: 'Form / survey section',
-  llm_chat_fallback: 'llmChat fallback',
+  section_field: 'Section',
   system: 'System hook',
 };
 
@@ -76,7 +79,6 @@ const SOURCE_CATEGORY_LABELS: Record<string, string> = {
 const SOURCE_OPEN_LABELS: Record<string, string> = {
   form_action: 'Open action',
   section_field: 'Open section',
-  llm_chat_fallback: 'Open page',
 };
 
 /** readUrlState function. */
@@ -496,7 +498,7 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                             <Card.Body>
                               <div>
                                 <div className="font-weight-bold">{String(source.target_label || 'Source')}</div>
-                                <div className="memory-source-card__meta">{SOURCE_CATEGORY_LABELS[String(source.source_category || '')] || String(source.source_category || '')} | {String(source.source_type || '')} {source.trigger_type ? `| ${String(source.trigger_type)}` : ''}</div>
+                                <div className="memory-source-card__meta">{SOURCE_CATEGORY_LABELS[String(source.source_category || '')] || String(source.source_category || '')}{source.source_label ? ` | ${String(source.source_label)}` : ''}{source.trigger_type ? ` | ${String(source.trigger_type)}` : ''}</div>
                                 {source.target_secondary ? <div className="memory-source-card__meta">{String(source.target_secondary)}</div> : null}
                               </div>
                               {(source.rule_refs || []).length > 0 ? (
