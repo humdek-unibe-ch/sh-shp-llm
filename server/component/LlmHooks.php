@@ -309,10 +309,33 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Build the multi select of memory rules for the shared select-llm-memory-rules CMS widget.
-     * Field name picks the source-type filter:
-     * - llm_memory_rule_ids (forms / surveys / LogList) → form_action_submit
-     * - memory_rule_ids (llmChat fallback) → llm_chat_form_submit
+     * Every memory rule for a rule picker (CMS field, form-action job config), labelled
+     * "Label (Source)" and "(disabled)" for a disabled rule so saved ids stay visible.
+     *
+     * @return array<int, array{value: string, text: string, source_type: string}>
+     */
+    private function getMemoryRuleOptions()
+    {
+        $source_labels = (new LlmMemoryRuleService($this->services))->getSourceTypeLabels();
+        $options = array();
+        foreach ((new LlmMemoryConfigService($this->services))->getRules() as $rule) {
+            $rule_id = (int)($rule['id'] ?? 0);
+            $source_type = (string)($rule['source_type'] ?? '');
+            $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . $rule_id);
+            $options[] = array(
+                'value' => (string)$rule_id,
+                'text' => $label . ' (' . ($source_labels[$source_type] ?? $source_type) . ')'
+                    . (!empty($rule['enabled']) ? '' : ' (disabled)'),
+                'source_type' => $source_type,
+            );
+        }
+        return $options;
+    }
+
+    /**
+     * Build the multi select of memory rules for the shared select-llm-memory-rules CMS widget
+     * (field memory_rule_ids on every style). It lists every rule as "Label (Source)": a picked
+     * rule runs on the section's own trigger whatever its source type.
      * Disabled rules stay visible so saved ids are not lost.
      *
      * @param object $args
@@ -324,26 +347,12 @@ class LlmHooks extends BaseHooks
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
 
-        $field_name = $field['name'] ?? '';
-        if ($field_name === LLM_MEMORY_FIELD_RULE_IDS) {
-            $source_type = LLM_MEMORY_SOURCE_FORM_ACTION;
-        } elseif ($field_name === LLM_MEMORY_FIELD_CHAT_RULE_IDS) {
-            $source_type = LLM_MEMORY_SOURCE_LLM_CHAT_FORM;
-        } else {
+        if (($field['type'] ?? '') !== 'select-llm-memory-rules') {
             return $res;
         }
-
-        $config_service = new LlmMemoryConfigService($this->services);
         $items = array();
-        foreach ($config_service->getRules() as $rule) {
-            if (($rule['source_type'] ?? '') !== $source_type) {
-                continue;
-            }
-            $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
-            $items[] = array(
-                "value" => (string)(int)($rule['id'] ?? 0),
-                "text" => $label . (!empty($rule['enabled']) ? '' : ' (disabled)')
-            );
+        foreach ($this->getMemoryRuleOptions() as $option) {
+            $items[] = array("value" => $option['value'], "text" => $option['text']);
         }
 
         $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
@@ -571,7 +580,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for llm_memory_rule_ids / memory_rule_ids (edit).
+     * CMS multi select of memory rules for memory_rule_ids (edit).
      *
      * @param object $args
      * @return object
@@ -582,7 +591,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for llm_memory_rule_ids / memory_rule_ids (view).
+     * CMS multi select of memory rules for memory_rule_ids (view).
      *
      * @param object $args
      * @return object
@@ -1890,7 +1899,8 @@ class LlmHooks extends BaseHooks
             // the submission (or later, from the cron queue), so the update
             // may run now. Inside an LlmTransaction (form interview
             // approval) it still waits for that commit.
-            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, [], true);
+            $failed_rule_ids = [];
+            $dispatched = $trigger_service->dispatchForRuleIds($rule_ids, $normalized, $run_async, [], true, $failed_rule_ids);
         } else {
             $this->transaction->add_transaction(
                 transactionTypes_insert,
@@ -1908,7 +1918,10 @@ class LlmHooks extends BaseHooks
             error_log('LLM Memory task: dispatched rules: ' . implode(', ', $dispatched) . ' for user ' . $user_id);
         }
 
-        return true;
+        // Sync mode ran the updates inside this job, so core marks the job
+        // "failed" when one of them failed. Async mode only started workers:
+        // "done" means dispatched, the workers write their result to the job log.
+        return $run_async || empty($failed_rule_ids);
     }
 
     /**
@@ -1920,20 +1933,14 @@ class LlmHooks extends BaseHooks
         $res = (string)$this->execute_private_method($args);
         $res = json_decode($res, true);
 
-        $config_service = new LlmMemoryConfigService($this->services);
-        $rules = $config_service->getRules();
-
-        $rule_titles = array();
-        $rule_ids = array();
-        foreach ($rules as $rule) {
-            if (($rule['source_type'] ?? '') !== LLM_MEMORY_SOURCE_FORM_ACTION) {
-                continue;
-            }
-            $label = trim((string)($rule['label'] ?? '')) ?: ('Rule #' . (int)($rule['id'] ?? 0));
-            $rule_titles[] = $label . (!empty($rule['enabled']) ? '' : ' (disabled)');
-            $rule_ids[] = (string)(int)($rule['id'] ?? 0);
-        }
-        $default_rule_id = !empty($rule_ids) ? $rule_ids[0] : '';
+        $rule_options = $this->getMemoryRuleOptions();
+        $rule_ids = array_column($rule_options, 'value');
+        $rule_titles = array_column($rule_options, 'text');
+        // a form action is a form submit: preselect the first rule of that source
+        $form_rules = array_values(array_filter($rule_options, function ($option) {
+            return $option['source_type'] === LLM_MEMORY_SOURCE_FORM_ACTION;
+        }));
+        $default_rule_id = !empty($form_rules) ? $form_rules[0]['value'] : (!empty($rule_ids) ? $rule_ids[0] : '');
 
         $dep = array(
             "job_type" => array(ACTION_JOB_TYPE_LLM_MEMORY_UPDATE)
