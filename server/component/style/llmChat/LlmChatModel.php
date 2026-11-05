@@ -252,6 +252,8 @@ class LlmChatModel extends StyleModel
 
     /** @return bool Whether the conversation list sidebar is shown to the user. */
     public function isConversationsListEnabled() { return $this->get_db_field('enable_conversations_list', '0') === '1'; }
+    /** Show the model id in the chat header (default on; participants of a study usually should not see it). */
+    public function isModelInfoShown() { return $this->get_db_field('show_model_info', '1') !== '0'; }
     /**
      * Whether every page load starts a fresh chat (previous sessions hidden).
      * @return bool
@@ -632,6 +634,7 @@ class LlmChatModel extends StyleModel
             'sectionId' => $this->getSectionId(),
             'currentConversationId' => $this->getConversationId(),
             'configuredModel' => $this->getConfiguredModel(),
+            'showModelInfo' => $this->isModelInfoShown(),
             'maxFilesPerMessage' => LLM_MAX_FILES_PER_MESSAGE,
             'maxFileSize' => LLM_MAX_FILE_SIZE,
             'enableConversationsList' => $this->isConversationsListEnabled(),

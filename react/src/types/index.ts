@@ -281,6 +281,8 @@ export interface LlmChatConfig {
   currentConversationId?: string;
   /** Configured LLM model */
   configuredModel: string;
+  /** Show the model id in the chat header (CMS field show_model_info, default on) */
+  showModelInfo: boolean;
   /** Whether conversations list is enabled */
   enableConversationsList: boolean;
   /**
@@ -459,6 +461,7 @@ export interface LlmChatConfig {
  */
 export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   configuredModel: 'gpt-oss-120b',
+  showModelInfo: true,
   enableConversationsList: true,
   alwaysStartNewConversation: false,
   enableFileUploads: true,

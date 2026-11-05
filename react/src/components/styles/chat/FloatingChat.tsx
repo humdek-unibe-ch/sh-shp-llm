@@ -341,7 +341,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
             title={config.floatingChatTitle}
             titleId={`${uniqueId}-title`}
             iconClass={iconClass}
-            status={config.configuredModel}
+            status={config.showModelInfo ? config.configuredModel : undefined}
             statusIcon="fa-robot"
             actions={
               <>

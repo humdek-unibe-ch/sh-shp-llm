@@ -101,6 +101,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     // Core settings
     currentConversationId: ds.currentConversationId || jsonConfig.currentConversationId,
     configuredModel: str(ds, 'configuredModel', jsonConfig, 'configuredModel', D.configuredModel!),
+    showModelInfo: bool(ds, 'showModelInfo', jsonConfig, 'showModelInfo', true),
     acceptedFileTypes: str(ds, 'acceptedFileTypes', jsonConfig, 'acceptedFileTypes', ''),
 
     // Boolean flags

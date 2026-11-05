@@ -727,7 +727,7 @@ export const LlmChat: React.FC<LlmChatProps> = ({ config, shortcutRequest, onSho
             <div className="llm-chat-header llm-chat-header-shared">
               <ChatPanelHeader
                 title={currentConversation?.title || config.defaultChatTitle}
-                status={activeModel}
+                status={config.showModelInfo ? activeModel : undefined}
                 statusIcon={isModelMismatch ? 'fa-exclamation-triangle' : 'fa-microchip'}
                 warning={!!isModelMismatch}
               />
