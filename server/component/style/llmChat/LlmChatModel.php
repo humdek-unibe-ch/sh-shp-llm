@@ -401,14 +401,13 @@ class LlmChatModel extends StyleModel
     // ===== Memory =====
 
     /**
-     * Get the comma-separated list of memory rule IDs configured for this chat section.
-     * Empty array means "use auto-matching by source_type".
+     * Memory rule IDs selected on this chat section (field memory_rule_ids). Empty = off.
      *
      * @return int[]
      */
     public function getMemoryRuleIds()
     {
-        $raw = $this->get_db_field('memory_rule_ids', '');
+        $raw = $this->get_db_field(LLM_MEMORY_FIELD_RULE_IDS, '');
         if (empty($raw)) return [];
         return array_values(array_filter(array_map('intval', explode(',', $raw))));
     }

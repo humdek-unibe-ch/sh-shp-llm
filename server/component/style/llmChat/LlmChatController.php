@@ -1492,7 +1492,8 @@ class LlmChatController extends BaseController
             require_once __DIR__ . "/../../../service/LlmMemoryTriggerService.php";
 
             $config_service = new LlmMemoryConfigService($this->services);
-            if (!$config_service->isMemoryEnabled()) {
+            $rule_ids = $this->model->getMemoryRuleIds();
+            if (empty($rule_ids) || !$config_service->isMemoryEnabled()) {
                 return;
             }
 
@@ -1501,14 +1502,7 @@ class LlmChatController extends BaseController
                 $form_values, $readable_text, $user_id, $section_id, $conversation_id, $message_id
             );
 
-            // Run as a scheduled job (listed under Scheduled Jobs): the
-            // section's own rules, otherwise the rules matching a chat form.
-            $rule_ids = $this->model->getMemoryRuleIds();
-            if (empty($rule_ids)) {
-                $rule_ids = array_map(function ($rule) {
-                    return (int)$rule['id'];
-                }, $trigger_service->findRulesForPayload($normalized));
-            }
+            // Run the section's rules as a scheduled job (listed under Scheduled Jobs).
             $trigger_service->scheduleRuleJob(
                 $rule_ids,
                 $normalized,
