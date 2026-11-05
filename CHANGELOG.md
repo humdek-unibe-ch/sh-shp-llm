@@ -2,7 +2,7 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.8.0] (work in progress)
+## [1.8.0]
 
 **One memory rule field for every style:** forms, surveys, log lists, llmChat
 and plugin styles all select their memory rules in `memory_rule_ids`, and the
