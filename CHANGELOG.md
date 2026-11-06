@@ -2,7 +2,7 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.9.0] (work in progress)
+## [1.9.0]
 
 ### Upgrade notes
 
