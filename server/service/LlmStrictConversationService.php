@@ -55,10 +55,11 @@ class LlmStrictConversationService
         $topics = $this->extractKeyTopics($rawContext);
         $topicList = !empty($topics) ? implode(', ', array_slice($topics, 0, 5)) : 'the defined subject matter';
 
-        // Create the enforcement system message
+        // Create the enforcement system message. It refers to the context instead of
+        // repeating it: $originalContext already carries the context once.
         $enforcementMessage = [
             'role' => 'system',
-            'content' => $this->buildEnforcementPrompt($rawContext, $topicList)
+            'content' => $this->buildEnforcementPrompt($topicList)
         ];
 
         // Prepend enforcement to original context
@@ -68,15 +69,13 @@ class LlmStrictConversationService
     /**
      * Build the enforcement prompt that instructs the LLM to stay on topic
      *
-     * @param string $context The conversation context
      * @param string $topicList Comma-separated list of key topics
      * @return string The enforcement prompt
      */
-    private function buildEnforcementPrompt(string $context, string $topicList): string
+    private function buildEnforcementPrompt(string $topicList): string
     {
         $template = $this->prompt_assets->load('core.strict_conversation.enforcement');
         return strtr($template, array(
-            '{{context}}' => $context,
             '{{topic_list}}' => $topicList,
         ));
     }
