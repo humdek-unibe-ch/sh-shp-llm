@@ -2,6 +2,18 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.9.1]
+
+### Fixed
+
+- **llmChat strict conversation mode sent the context twice:** the strict
+  guard (`assets/prompts/core/strict-conversation/enforcement.md`) put the
+  whole `conversation_context` into its own system message, next to the
+  context message that is always sent. The guard now refers to the context
+  and lists the key topics only, so each request carries the context once
+  (fewer tokens; a JSON-array context is no longer sent as raw JSON text).
+  The Prompt Lab uses the same guard.
+
 ## [1.9.0]
 
 ### Upgrade notes
