@@ -182,7 +182,7 @@ When strict conversation mode is enabled, the system automatically enhances your
 
 #### How Context Works in Strict Mode
 
-1. **Context Enhancement**: Your configured context is automatically prepended with enforcement instructions
+1. **Context Enhancement**: An enforcement system message is placed before your configured context. It refers to the context and does not repeat it, so the context is sent only once (since v1.9.1)
 2. **Topic Extraction**: Key topics are analyzed from your context to provide specific redirection examples
 3. **Enforcement Layer**: An additional system message is added that instructs the AI to:
    - Only respond to questions related to your defined topics
@@ -202,21 +202,11 @@ Key topics:
 - Professional help resources
 ```
 
-**What the AI Receives (Enhanced):**
+**What the AI Receives (Enhanced)** - this system message first, then your context as its own system message:
 ```markdown
 ## STRICT CONVERSATION MODE ENABLED
 
-You are operating in strict conversation mode. You must ONLY discuss topics directly related to the following context:
-
----
-You are an AI assistant helping users learn about anxiety management.
-
-Key topics:
-- Anxiety symptoms and triggers
-- Breathing techniques
-- Cognitive behavioral strategies
-- Professional help resources
----
+You are operating in strict conversation mode. You must ONLY discuss topics directly related to the conversation context given in the system instructions that follow.
 
 Key Topics: anxiety, breathing techniques, cognitive behavioral strategies, professional help
 

@@ -110,8 +110,11 @@ refuse off-topic questions and gently redirect the user.
 
 | Placeholder | Source |
 |---|---|
-| `{{context}}` | Author-supplied conversation context (`conversation_context` field). |
 | `{{topic_list}}` | Comma-separated list of allowed topic labels. |
+
+The guard refers to the conversation context instead of repeating it: the
+context is already sent as its own system message (since v1.9.1; before, the
+`{{context}}` placeholder sent it a second time).
 
 **Used by:** `LlmContextService::buildStrictConversationGuard()`.
 
