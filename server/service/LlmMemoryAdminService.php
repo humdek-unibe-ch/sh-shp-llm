@@ -8,6 +8,7 @@ require_once __DIR__ . '/LlmMemoryConfigService.php';
 require_once __DIR__ . '/LlmMemoryStorageService.php';
 require_once __DIR__ . '/LlmMemoryUpdateService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
+require_once __DIR__ . '/LlmCmsLinkHelper.php';
 
 /**
  * Admin-facing operations for the Memory tab in the LLM admin console.
@@ -799,7 +800,7 @@ class LlmMemoryAdminService extends BaseLlmService
                 'target_label' => trim((string)$row['section_name']) !== '' ? $row['section_name'] : ('Section #' . $section_id),
                 'target_secondary' => $row['style_name'] . ' | ' . ($page ? $page['page_url'] : 'not placed on a page'),
                 'target_id' => $section_id,
-                'target_url' => $page ? $this->buildCmsSectionUrl($page['page_id'], $page['root_section_id'], $section_id) : null,
+                'target_url' => $page ? LlmCmsLinkHelper::sectionUrl($this->services, $page['page_id'], $page['root_section_id'], $section_id) : null,
                 'details' => array(
                     'section_id' => $section_id,
                     'style_name' => $row['style_name'],
@@ -861,41 +862,6 @@ class LlmMemoryAdminService extends BaseLlmService
         }
 
         return $pages;
-    }
-
-    /**
-     * Generate the CMS admin URL that opens a section, in the CMS UI the current admin uses
-     * (same routing as BaseModel::get_cms_item_url).
-     *
-     * @param int $page_id         Page the section is shown on.
-     * @param int $root_section_id Section attached to the page (the section itself when it is not nested).
-     * @param int $section_id      Section to open.
-     * @return string|null Router-generated URL, or null if routing fails.
-     */
-    private function buildCmsSectionUrl($page_id, $root_section_id, $section_id)
-    {
-        $selected_section_id = (int)$section_id === (int)$root_section_id ? null : (int)$section_id;
-
-        try {
-            $router = $this->services->get_router();
-            if ($this->services->get_user_input()->is_new_ui_enabled()) {
-                return $router->generate('cmsUpdate', array(
-                    'pid' => (int)$page_id,
-                    'sid' => (int)$root_section_id,
-                    'ssid' => $selected_section_id,
-                    'mode' => UPDATE,
-                    'type' => 'prop',
-                ));
-            }
-
-            return $router->generate('cmsSelect', array(
-                'pid' => (int)$page_id,
-                'sid' => (int)$root_section_id,
-                'ssid' => $selected_section_id,
-            ));
-        } catch (Exception $e) {
-            return null;
-        }
     }
 
     /**
