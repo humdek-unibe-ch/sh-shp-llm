@@ -96,6 +96,16 @@ function writeControlValue(el: Control, value: unknown): void {
     return;
   }
   const text = value === null || value === undefined ? '' : String(value);
+  // Core date picker (flatpickr): set through the widget so the shown
+  // (display format) input follows; a plain .value write would leave it
+  // stale and be read back in the wrong format.
+  const picker = (el as any)._flatpickr;
+  if (picker) {
+    if (document.activeElement === picker.altInput || el.value === text) return;
+    if (text === '') picker.clear(false);
+    else picker.setDate(text, false);
+    return;
+  }
   if (el.value !== text) el.value = text;
   const jq = (window as any).jQuery || (window as any).$;
   try {
@@ -105,6 +115,19 @@ function writeControlValue(el: Control, value: unknown): void {
 
 /** Initialize core widgets only on freshly inserted/replaced markup. */
 function initWidgets(root: HTMLElement): void {
+  // Core date pickers (input.js): its init functions scan the document and
+  // only pick up inputs that are not initialized yet (flatpickr changes
+  // their type), so run them once the fragment is attached.
+  const w = window as any;
+  if (root.querySelector('.selfhelp-input-date')) {
+    setTimeout(() => {
+      ['init_date_inputs', 'init_datetime_inputs', 'init_time_inputs'].forEach((fn) => {
+        try {
+          if (typeof w[fn] === 'function') w[fn]();
+        } catch { /* core input script not loaded */ }
+      });
+    }, 0);
+  }
   const jq = (window as any).jQuery || (window as any).$;
   if (!jq || !jq.fn || !jq.fn.selectpicker) return;
   root.querySelectorAll('select').forEach((el) => {

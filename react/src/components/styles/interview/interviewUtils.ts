@@ -83,9 +83,54 @@ export function choicesOf(
   return rows.length > 0 && rows.length <= max ? rows : [];
 }
 
+/**
+ * A stored date/datetime/time value (`YYYY-MM-DD`, `YYYY-MM-DD HH:mm`,
+ * `HH:mm`) in the display format of the field (core `date_format` tokens,
+ * month names in the participant's language). Other values unchanged.
+ */
+export function dateText(def: InterviewFieldDef | undefined, text: string): string {
+  const type = def?.input_type;
+  if (type !== 'date' && type !== 'datetime' && type !== 'time') return text;
+  const m = text.match(/^(?:(\d{4})-(\d{2})-(\d{2}))?(?:[ T]?(\d{2}):(\d{2}))?$/);
+  if (!m || text === '') return text;
+  const [, y, mo, d, h, mi] = m;
+  const c = def?.constraints ?? {};
+  const datePart = typeof c.date_format === 'string' && c.date_format !== '' ? c.date_format : 'Y-m-d';
+  const format = type === 'time' ? 'H:i' : type === 'datetime' ? `${datePart} H:i` : datePart;
+  const locale = typeof c.locale === 'string' && c.locale !== '' ? c.locale : undefined;
+  const monthName = (style: 'long' | 'short') => {
+    try {
+      return new Intl.DateTimeFormat(locale, { month: style, timeZone: 'UTC' }).format(
+        new Date(Date.UTC(Number(y), Number(mo) - 1, 1))
+      );
+    } catch {
+      return mo;
+    }
+  };
+  const parts: Record<string, () => string | undefined> = {
+    Y: () => y,
+    m: () => mo,
+    n: () => (mo ? String(Number(mo)) : undefined),
+    d: () => d,
+    j: () => (d ? String(Number(d)) : undefined),
+    F: () => (mo ? monthName('long') : undefined),
+    M: () => (mo ? monthName('short') : undefined),
+    H: () => h,
+    i: () => mi,
+  };
+  let out = '';
+  for (const ch of format) {
+    const part = parts[ch] ? parts[ch]() : ch;
+    if (part === undefined) return text;
+    out += part;
+  }
+  return out;
+}
+
 /** Readable text of a draft value; '' when the answer is empty. */
 export function valueText(def: InterviewFieldDef | undefined, raw: unknown): string {
-  return raw === undefined || raw === null || raw === '' ? '' : optionLabel(def, raw);
+  if (raw === undefined || raw === null || raw === '') return '';
+  return typeof raw === 'string' ? dateText(def, optionLabel(def, raw)) : optionLabel(def, raw);
 }
 
 /** Names whose draft value differs between two projections (compared by value). */
