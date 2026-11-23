@@ -1084,7 +1084,8 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Add moduleLlmScriptMode to sensible pages list.
+     * Add the pages that edit prompts (scripts, memory, prompts hub) to the sensible pages list:
+     * the core warns an editor when someone else opened the same page lately.
      * Hook on Router::get_sensible_pages.
      */
     public function get_sensible_pages($args)
@@ -1092,6 +1093,7 @@ class LlmHooks extends BaseHooks
         $res = $this->execute_private_method($args);
         $res[] = LLM_SCRIPTS_PAGE_KEYWORD;
         $res[] = LLM_MEMORY_PAGE_KEYWORD;
+        $res[] = LLM_PROMPTS_PAGE_KEYWORD;
         return $res;
     }
 

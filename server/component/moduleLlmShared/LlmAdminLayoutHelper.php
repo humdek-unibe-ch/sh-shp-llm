@@ -31,6 +31,11 @@ class LlmAdminLayoutHelper
             'icon' => 'fa-database',
             'fallbackLabel' => 'Memory',
         ],
+        [
+            'keyword' => 'moduleLlmPrompts',
+            'icon' => 'fa-file-alt',
+            'fallbackLabel' => 'Prompts',
+        ],
     ];
 
     /**

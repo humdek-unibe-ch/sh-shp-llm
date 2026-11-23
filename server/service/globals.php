@@ -124,6 +124,7 @@ define('ACTION_JOB_TYPE_LLM_SCRIPT', 'llm_script');
 define('LLM_TABLE_SCRIPTS', 'llm_scripts');
 define('LLM_SCRIPTS_PAGE_KEYWORD', 'moduleLlmScript');
 define('LLM_MEMORY_PAGE_KEYWORD', 'moduleLlmMemory');
+define('LLM_PROMPTS_PAGE_KEYWORD', 'moduleLlmPrompts');
 define('LLM_PROMPT_LAB_PAGE_KEYWORD', 'ajax_llm_prompt_lab');
 define('LLM_PROMPT_OWNER_STYLE_FIELD', 'style_field');
 define('LLM_PROMPT_OWNER_SCRIPT', 'llm_script');
