@@ -6,15 +6,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && vite build --config vite.admin.config.ts && vite build --config vite.scripts.config.ts && vite build --config vite.memory.config.ts && vite build --config vite.settings.config.ts && vite build --config vite.form.config.ts && vite build --config vite.apikeys.config.ts && vite build --config vite.prompt.config.ts && vite build --config vite.interview.config.ts && node move-css.cjs",
+    "build": "tsc && vite build && vite build --config vite.admin.config.ts && vite build --config vite.scripts.config.ts && vite build --config vite.memory.config.ts && vite build --config vite.settings.config.ts && vite build --config vite.form.config.ts && vite build --config vite.apikeys.config.ts && vite build --config vite.prompt.config.ts && vite build --config vite.interview.config.ts && vite build --config vite.prompts-hub.config.ts && node move-css.cjs",
     "build:interview": "vite build --config vite.interview.config.ts",
+    "build:prompts-hub": "vite build --config vite.prompts-hub.config.ts && node move-css.cjs",
     "preview": "vite preview",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit",
     "test:markdown": "node --test tests/markdownRenderer.test.mjs",
     "test:utils": "node --test tests/llmResponseUtils.test.mjs",
     "test:csrf": "node --test tests/csrfRequests.test.mjs",
-    "test:interview-dates": "node --test tests/interviewDateText.test.mjs"
+    "test:interview-dates": "node --test tests/interviewDateText.test.mjs",
+    "test:prompts-hub": "node --test tests/promptsHub.test.mjs"
   },
   "dependencies": {
     "@types/hast": "^3.0.4",

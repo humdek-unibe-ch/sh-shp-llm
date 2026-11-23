@@ -1,0 +1,153 @@
+/* Prompts hub (LLM admin > Prompts) */
+
+/* Filter bar: the card and grid of the LLM admin console (AdminConsole.css) */
+.llm-prompts-hub .llm-prompts-filters {
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.llm-prompts-hub .llm-prompts-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+@media (max-width: 1199.98px) {
+  .llm-prompts-hub .llm-prompts-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767.98px) {
+  .llm-prompts-hub .llm-prompts-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .llm-prompts-hub .llm-prompts-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.llm-prompts-hub .llm-prompts-page-size {
+  width: auto;
+}
+
+.llm-prompts-hub .llm-prompts-table {
+  font-size: 0.875rem;
+}
+
+.llm-prompts-hub .llm-prompts-table thead th {
+  background-color: #f8f9fa;
+}
+
+.llm-prompts-hub .llm-prompts-table thead th {
+  border-top: 0;
+  white-space: nowrap;
+}
+
+.llm-prompts-hub .llm-prompts-table tbody tr {
+  cursor: pointer;
+}
+
+.llm-prompts-hub .llm-prompts-row-selected,
+.llm-prompts-hub .llm-prompts-row-selected:hover {
+  background-color: #e8f4fd;
+}
+
+.llm-prompts-hub .llm-prompts-list-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.llm-prompts-hub .llm-prompts-title {
+  white-space: normal;
+  text-align: left;
+}
+
+/* Two lines of the text, so a long prompt does not stretch its row */
+.llm-prompts-hub .llm-prompts-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.llm-prompts-hub .llm-prompts-snippets li {
+  margin-top: 0.15rem;
+  word-break: break-word;
+}
+
+.llm-prompts-hub .llm-prompts-snippets mark {
+  padding: 0 0.1em;
+  border-radius: 2px;
+  background-color: #fff1a8;
+}
+
+/* The side panel stays in view while the list scrolls: header and footer fixed, the body scrolls,
+   like the prompt-modal-90 dialogs */
+.llm-prompts-hub .llm-prompts-side-panel {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.llm-prompts-hub .llm-prompts-side-panel .card-header,
+.llm-prompts-hub .llm-prompts-side-panel .card-footer {
+  flex: 0 0 auto;
+}
+
+.llm-prompts-hub .llm-prompts-side-panel .llm-prompts-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.llm-prompts-hub .llm-prompts-panel-footer > * {
+  margin: 0.25rem;
+}
+
+/* The detail also renders in a modal, outside .llm-prompts-hub: plain prefixed classes */
+.llm-prompts-detail-title {
+  word-break: break-word;
+}
+
+dl.llm-prompts-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+dl.llm-prompts-facts dt {
+  font-weight: normal;
+  color: #6c757d;
+}
+
+dl.llm-prompts-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+/* Language tabs of a CMS prompt field: small, on top of the language's text */
+.llm-prompts-lang-tabs .nav-link {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.llm-prompts-lang-tabs .nav-link:not(.active) {
+  color: #6c757d;
+}
+
+.llm-prompts-dirty-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: #ffc107;
+  vertical-align: middle;
+}
