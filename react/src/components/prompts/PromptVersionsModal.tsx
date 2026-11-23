@@ -11,26 +11,35 @@ import { Badge, Button, Modal, Table } from 'react-bootstrap';
 import { formatDateTime } from '../../utils/formatters';
 import type { PromptVersion } from './promptTypes';
 
-interface PromptVersionsModalProps {
+/** What the table shows of a version (the Prompt Lab passes full versions, the Prompts hub passes just these). */
+export type PromptVersionRow = Pick<PromptVersion, 'id' | 'version_no' | 'created_at' | 'created_user_name' | 'change_note'>;
+
+interface PromptVersionsModalProps<V extends PromptVersionRow> {
   show: boolean;
   onHide: () => void;
-  versions: PromptVersion[];
+  versions: V[];
   activeVersionId?: number | null;
   disabled?: boolean;
-  onUseVersion: (version: PromptVersion) => void;
-  onCompareVersion: (version: PromptVersion) => void;
+  /** Disables only the "use" button, e.g. where a version can be read but not restored */
+  useDisabled?: boolean;
+  /** Text of the "use" button */
+  useLabel?: string;
+  onUseVersion: (version: V) => void;
+  onCompareVersion: (version: V) => void;
 }
 
 /** Modal dialog for prompt versions modal. */
-export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
+export function PromptVersionsModal<V extends PromptVersionRow = PromptVersion>({
   show,
   onHide,
   versions,
   activeVersionId,
   disabled = false,
+  useDisabled = false,
+  useLabel = 'Use',
   onUseVersion,
   onCompareVersion,
-}) => {
+}: PromptVersionsModalProps<V>): React.ReactElement {
   return (
     <Modal show={show} onHide={onHide} centered dialogClassName="prompt-modal-90 prompt-versions-modal">
       <Modal.Header closeButton className="py-2">
@@ -82,10 +91,10 @@ export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
                       <Button
                         size="sm"
                         variant="primary"
-                        disabled={disabled}
+                        disabled={disabled || useDisabled}
                         onClick={() => onUseVersion(version)}
                       >
-                        Use
+                        {useLabel}
                       </Button>
                     </td>
                   </tr>
@@ -102,4 +111,4 @@ export const PromptVersionsModal: React.FC<PromptVersionsModalProps> = ({
       </Modal.Footer>
     </Modal>
   );
-};
+}

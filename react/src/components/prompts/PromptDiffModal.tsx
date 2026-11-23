@@ -9,14 +9,17 @@
 import React, { useEffect, useState } from 'react';
 import Select from 'react-select';
 import { Col, Form, Modal, Row } from 'react-bootstrap';
-import type { createPromptLabApi } from './promptApi';
 import type { PromptVersion } from './promptTypes';
 import { PromptDiffViewer } from './PromptDiffViewer';
+
+/** A version the modal can show; its text is fetched while `template_raw` is missing. */
+type DiffVersion = Pick<PromptVersion, 'id' | 'version_no' | 'created_at' | 'change_note'> & { template_raw?: string };
 
 interface PromptDiffModalProps {
   show: boolean;
   onHide: () => void;
-  api: ReturnType<typeof createPromptLabApi>;
+  /** All the modal needs of an API: the text of one version (the Prompt Lab's and the Prompts hub's both fit) */
+  api: { getVersion: (versionId: number, descriptor: PromptDiffModalProps['descriptor']) => Promise<unknown> };
   descriptor: {
     ownerType: 'style_field' | 'llm_script' | 'llm_memory_rule';
     ownerId: number;
@@ -25,7 +28,7 @@ interface PromptDiffModalProps {
     pageId?: number | null;
     title?: string | null;
   };
-  versions: PromptVersion[];
+  versions: DiffVersion[];
   draftContent: string;
   initialLeftKey?: string;
   initialRightKey?: string;
@@ -42,7 +45,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
   initialLeftKey = 'draft',
   initialRightKey = 'draft',
 }) => {
-  const [hydratedVersions, setHydratedVersions] = useState<Record<number, PromptVersion>>({});
+  const [hydratedVersions, setHydratedVersions] = useState<Record<number, DiffVersion>>({});
   const [leftKey, setLeftKey] = useState(initialLeftKey);
   const [rightKey, setRightKey] = useState(initialRightKey);
   useEffect(() => {
@@ -97,7 +100,7 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
       return;
     }
 
-    const initialMap: Record<number, PromptVersion> = {};
+    const initialMap: Record<number, DiffVersion> = {};
     versions.forEach((version) => {
       if (version.id) {
         initialMap[version.id] = version;
@@ -116,12 +119,14 @@ export const PromptDiffModal: React.FC<PromptDiffModalProps> = ({
         return;
       }
       const versionId = Number(key.replace('v:', ''));
-      if (!versionId || hydratedVersions[versionId]?.template_raw) {
+      // A version whose stored text is '' is loaded too: testing for a truthy text would fetch it again
+      // after every update of the state, forever
+      if (!versionId || typeof hydratedVersions[versionId]?.template_raw === 'string') {
         return;
       }
 
       try {
-        const loaded = await api.getVersion(versionId, descriptor) as PromptVersion;
+        const loaded = await api.getVersion(versionId, descriptor) as DiffVersion;
         setHydratedVersions((current) => ({
           ...current,
           [versionId]: loaded,
