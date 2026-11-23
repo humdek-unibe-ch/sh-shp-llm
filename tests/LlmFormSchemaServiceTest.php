@@ -741,6 +741,39 @@ $res = $svc->normalizePatch($limits, $exact, $llm);
 check('patch size: one entry more than the form has fields is oversized', isset($res['errors'][LlmFormSchemaService::ERRORS_KEY]) && !$res['values']);
 
 /* =========================================================================
+ * Date inputs: display format (core `date_format`), ISO storage
+ * ========================================================================= */
+
+$date_form = new FakeFormModel(array(
+    field('input', 'd_dmy', array('type_input' => 'date', 'date_format' => 'd.m.Y'), 41, array(), true, array('d_dmy' => '20.11.2026')),
+    field('input', 'd_month', array('type_input' => 'date', 'date_format' => 'j F Y'), 42),
+    field('input', 'dt', array('type_input' => 'datetime', 'date_format' => 'd.m.Y'), 43),
+    field('input', 't', array('type_input' => 'time'), 44),
+    field('input', 'd_plain', array('type_input' => 'date'), 45),
+), array(), true);
+$ds = $svc->build($date_form);
+check('date: datetime is an interview field', $ds['dt']['native_only'] === false && $ds['dt']['interview'] === true);
+check('date: display and storage patterns', $ds['d_dmy']['constraints']['display_format'] === 'DD.MM.YYYY'
+    && $ds['d_dmy']['constraints']['storage_format'] === 'YYYY-MM-DD'
+    && $ds['d_month']['constraints']['display_format'] === 'D MMMM YYYY'
+    && $ds['dt']['constraints']['display_format'] === 'DD.MM.YYYY HH:mm'
+    && $ds['dt']['constraints']['storage_format'] === 'YYYY-MM-DD HH:mm'
+    && $ds['t']['constraints']['display_format'] === 'HH:mm'
+    && $ds['d_plain']['constraints']['display_format'] === 'YYYY-MM-DD');
+check('date: display examples', $ds['d_dmy']['constraints']['display_example'] === '31.12.2026'
+    && $ds['d_month']['constraints']['display_example'] === '31 December 2026'
+    && $ds['dt']['constraints']['display_example'] === '31.12.2026 18:45'
+    && $ds['t']['constraints']['display_example'] === '18:45');
+check('date: saved display-format value read as ISO', $ds['d_dmy']['initial_value'] === '2026-11-20');
+$res = $svc->normalizePatch($ds, array('d_dmy' => '2026-12-12', 'd_month' => '12 Dezember 2026', 'dt' => '24.12.2026 18:45', 't' => '9:05'), LlmFormSchemaService::ORIGIN_LLM);
+check('date: ISO and display text stored as ISO', !$res['errors'] && $res['values'] === array(
+    'd_dmy' => '2026-12-12', 'd_month' => '2026-12-12', 'dt' => '2026-12-24 18:45', 't' => '09:05'));
+$res = $svc->normalizePatch($ds, array('d_dmy' => '24.12.2026'), LlmFormSchemaService::ORIGIN_MANUAL);
+check('date: manual display text stored as ISO', !$res['errors'] && $res['values'] === array('d_dmy' => '2026-12-24'));
+$res = $svc->normalizePatch($ds, array('d_dmy' => '31.02.2026', 'd_plain' => '12.12.2026', 't' => '25:00'), LlmFormSchemaService::ORIGIN_LLM);
+check('date: invalid or other-format values rejected', isset($res['errors']['d_dmy'], $res['errors']['d_plain'], $res['errors']['t']) && !$res['values']);
+
+/* =========================================================================
  * Summary
  * ========================================================================= */
 

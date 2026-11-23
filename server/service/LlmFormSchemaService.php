@@ -4,6 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 require_once __DIR__ . '/../../../../component/style/formField/FormFieldModel.php';
+require_once __DIR__ . '/../../../../component/style/input/InputDateFormat.php';
 
 /**
  * Server-side form schema for llmFormLogList interviews (v1.6.0).
@@ -59,7 +60,7 @@ class LlmFormSchemaService
 
     /** input type_input values supported as LLM-writable scalars. */
     private static $SUPPORTED_INPUT_TYPES = array(
-        'text', 'email', 'number', 'url', 'tel', 'date', 'time',
+        'text', 'email', 'number', 'url', 'tel', 'date', 'time', 'datetime',
         'datetime-local', 'month', 'week', 'hidden', 'checkbox'
     );
 
@@ -327,6 +328,21 @@ class LlmFormSchemaService
             $checked = $field_model->get_db_field('checkbox_value', '1');
             $constraints['checked_value'] = $checked === '' || $checked === null ? '1' : (string)$checked;
         }
+        if (InputDateFormat::is_date_type($input_type)) {
+            // Core date picker: stored as storage_format, shown as
+            // display_format (patterns like DD.MM.YYYY); date_format holds
+            // the core tokens used to read display text back.
+            $date_format = (string)$field_model->get_db_field('date_format', InputDateFormat::DEFAULT_DATE_FORMAT);
+            $constraints['date_format'] = InputDateFormat::display_format('date', $date_format);
+            $constraints['display_format'] = InputDateFormat::display_pattern($input_type, $date_format);
+            $constraints['storage_format'] = InputDateFormat::display_pattern($input_type, InputDateFormat::DEFAULT_DATE_FORMAT);
+            // Language of the month names in display_format (as InputView).
+            $constraints['locale'] = substr((string)($_SESSION['user_language_locale'] ?? ''), 0, 2);
+            // 31 Dec 2026 (18:45) as the participant sees it: models follow
+            // an example more reliably than a pattern.
+            $sample = $input_type === 'time' ? '18:45' : ($input_type === 'datetime' ? '2026-12-31 18:45' : '2026-12-31');
+            $constraints['display_example'] = InputDateFormat::to_display($input_type, $date_format, $sample, $constraints['locale']);
+        }
         return $constraints;
     }
 
@@ -343,11 +359,14 @@ class LlmFormSchemaService
         $entry = method_exists($field_model, 'get_form_field_value')
             ? $field_model->get_form_field_value()
             : null;
+        $date_format = InputDateFormat::is_date_type($input_type)
+            ? (string)$field_model->get_db_field('date_format', InputDateFormat::DEFAULT_DATE_FORMAT)
+            : null;
         if ($entry !== null) {
-            return $this->normalizeInitialValue($input_type, $entry);
+            return $this->normalizeInitialValue($input_type, $entry, $date_format);
         }
         if ($pinned_value !== null) {
-            return $this->normalizeInitialValue($input_type, $pinned_value);
+            return $this->normalizeInitialValue($input_type, $pinned_value, $date_format);
         }
         $full = method_exists($field_model, 'get_db_field_full')
             ? $field_model->get_db_field_full('value')
@@ -364,16 +383,21 @@ class LlmFormSchemaService
                 || $default === '1' || $default === 1 || $default === true)
                 ? $checked['checked_value'] : 0;
         }
-        return $this->normalizeInitialValue($input_type, $default);
+        return $this->normalizeInitialValue($input_type, $default, $date_format);
     }
 
     /**
      * Decode JSON-encoded multiple-select values (native storage format,
-     * html_entity_decode + json_decode like SelectView) into arrays; other
-     * values pass through unchanged.
+     * html_entity_decode + json_decode like SelectView) into arrays; date
+     * values saved in a display format (before core v7.14.0) become the
+     * storage format; other values pass through unchanged.
      */
-    private function normalizeInitialValue($input_type, $value)
+    private function normalizeInitialValue($input_type, $value, $date_format = null)
     {
+        if ($date_format !== null) {
+            $stored = InputDateFormat::to_storage($input_type, $date_format, $value);
+            return $stored === null ? $value : $stored;
+        }
         if ($input_type !== 'select-multiple' || is_array($value)) {
             return $value;
         }
@@ -791,18 +815,20 @@ class LlmFormSchemaService
             return array('value' => null, 'error' => 'Value is longer than the maximum length');
         }
 
+        if (InputDateFormat::is_date_type($type)) {
+            // Core date picker types: the storage format is required, but
+            // the display format (e.g. 12.12.2026 or 12 December 2026) is
+            // read back too.
+            $date_format = isset($constraints['date_format']) ? (string)$constraints['date_format'] : InputDateFormat::DEFAULT_DATE_FORMAT;
+            $stored = InputDateFormat::to_storage($type, $date_format, $str);
+            if ($stored === null) {
+                return array('value' => null, 'error' => 'Expected a '
+                    . InputDateFormat::display_pattern($type, InputDateFormat::DEFAULT_DATE_FORMAT) . ' value');
+            }
+            return array('value' => $stored, 'error' => null);
+        }
+
         switch ($type) {
-            case 'date':
-                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $str)
-                    || !checkdate((int)substr($str, 5, 2), (int)substr($str, 8, 2), (int)substr($str, 0, 4))) {
-                    return array('value' => null, 'error' => 'Expected a YYYY-MM-DD date');
-                }
-                break;
-            case 'time':
-                if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/', $str)) {
-                    return array('value' => null, 'error' => 'Expected an HH:MM time');
-                }
-                break;
             case 'datetime-local':
                 if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/', $str, $m)
                     || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) {
