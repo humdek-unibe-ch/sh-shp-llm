@@ -20,6 +20,9 @@ class LlmPromptLabAccessService
     /** Longest section chain walked up from a section to the pages that show it. */
     const MAX_HIERARCHY_DEPTH = 64;
 
+    /** Most sections in one IN (...) list. */
+    const IN_CHUNK = 500;
+
     /** @var object Database (core PageDb) */
     private $db;
 
@@ -45,54 +48,72 @@ class LlmPromptLabAccessService
     public function hostPagesForSection($section_id)
     {
         $section_id = (int)$section_id;
-        if ($section_id <= 0) {
-            return array();
-        }
+        $found = $this->hostPagesForSections(array($section_id));
 
+        return $found[$section_id] ?? array();
+    }
+
+    /**
+     * Pages that show each of many sections: the walk of hostPagesForSection(), done for all of
+     * them level by level, so the statements follow the depth of the section tree and not the
+     * number of sections.
+     *
+     * @param array $section_ids Anything that is not a positive integer is left out
+     * @return array<int, int[]> Section id => page ids, ascending (empty when no page shows it)
+     */
+    public function hostPagesForSections(array $section_ids)
+    {
+        // Per section asked for (the origin): the pages found and the sections already walked
         $pages = array();
         $seen = array();
-        $level = array($section_id);
-
-        for ($depth = 0; $depth < self::MAX_HIERARCHY_DEPTH && !empty($level); $depth++) {
-            $fresh = array();
-            foreach ($level as $id) {
-                if (!isset($seen[$id])) {
-                    $seen[$id] = true;
-                    $fresh[] = $id;
-                }
-            }
-            if (empty($fresh)) {
-                break;
-            }
-
-            list($in, $params) = $this->inList($fresh);
-
-            foreach ($this->rows(
-                "SELECT id_pages FROM pages_sections WHERE id_sections IN ({$in})",
-                $params
-            ) as $row) {
-                $pages[(int)$row['id_pages']] = true;
-            }
-            foreach ($this->rows(
-                "SELECT id_pages FROM sections_navigation WHERE child IN ({$in}) AND id_pages IS NOT NULL",
-                $params
-            ) as $row) {
-                $pages[(int)$row['id_pages']] = true;
-            }
-
-            $level = array();
-            foreach ($this->rows(
-                "SELECT parent FROM sections_hierarchy WHERE child IN ({$in})",
-                $params
-            ) as $row) {
-                $level[] = (int)$row['parent'];
+        // Sections of the current level => the origins that reached them
+        $level = array();
+        foreach ($section_ids as $id) {
+            $id = (int)$id;
+            if ($id > 0) {
+                $pages[$id] = array();
+                $seen[$id] = array($id => true);
+                $level[$id] = array($id => $id);
             }
         }
 
-        unset($pages[0]);
-        $ids = array_keys($pages);
-        sort($ids);
-        return $ids;
+        for ($depth = 0; $depth < self::MAX_HIERARCHY_DEPTH && !empty($level); $depth++) {
+            $next = array();
+            foreach (array_chunk(array_keys($level), self::IN_CHUNK) as $chunk) {
+                list($in, $params) = $this->inList($chunk);
+
+                $found = array_merge(
+                    $this->rows("SELECT id_sections AS node, id_pages FROM pages_sections WHERE id_sections IN ({$in})", $params),
+                    $this->rows("SELECT child AS node, id_pages FROM sections_navigation WHERE child IN ({$in}) AND id_pages IS NOT NULL", $params)
+                );
+                foreach ($found as $row) {
+                    foreach ($level[(int)$row['node']] as $origin) {
+                        $pages[$origin][(int)$row['id_pages']] = true;
+                    }
+                }
+
+                foreach ($this->rows("SELECT child AS node, parent FROM sections_hierarchy WHERE child IN ({$in})", $params) as $row) {
+                    $parent = (int)$row['parent'];
+                    foreach ($level[(int)$row['node']] as $origin) {
+                        // Every origin walks a section once, so cycles end
+                        if (!isset($seen[$origin][$parent])) {
+                            $seen[$origin][$parent] = true;
+                            $next[$parent][$origin] = $origin;
+                        }
+                    }
+                }
+            }
+            $level = $next;
+        }
+
+        $result = array();
+        foreach ($pages as $origin => $found) {
+            unset($found[0]);
+            $ids = array_keys($found);
+            sort($ids);
+            $result[$origin] = $ids;
+        }
+        return $result;
     }
 
     /**

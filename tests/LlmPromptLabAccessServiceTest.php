@@ -47,6 +47,8 @@ class SqliteDb
     public $pdo;
     /** @var bool Behave like the core helper after a PDOException */
     public $fail = false;
+    /** @var string[] Every statement sent */
+    public $log = array();
 
     public function __construct()
     {
@@ -71,6 +73,7 @@ class SqliteDb
 
     public function query_db($sql, $params = array())
     {
+        $this->log[] = $sql;
         if ($this->fail) {
             return false;
         }
@@ -193,6 +196,36 @@ $db->fail = true;
 check('a failed lookup reads as "no pages" (deny), not as a row', $service->hostPagesForSection(103) === array());
 $db->fail = false;
 check('the service works again after a failed lookup', $service->hostPagesForSection(103) === array(10));
+
+// --- Many sections in one walk --------------------------------------------------------------------
+
+check('hostPagesForSections answers what hostPagesForSection answers, for each section',
+    $service->hostPagesForSections(array(100, 103, 200, 301, 401, 402, 501, 600, 700, 701, 1063, 1064)) === array(
+        100 => array(10), 103 => array(10), 200 => array(20, 21), 301 => array(30, 31),
+        401 => array(40), 402 => array(40), 501 => array(), 600 => array(),
+        700 => array(70), 701 => array(70), 1063 => array(80), 1064 => array(),
+    ));
+check('ids that are not positive numbers are left out, a repeated id is answered once',
+    $service->hostPagesForSections(array(0, -3, 'abc', '103', 103)) === array(103 => array(10)));
+check('no sections, no pages', $service->hostPagesForSections(array()) === array());
+
+// The statements follow the depth of the tree, not the number of sections
+$shallow = array(100, 101, 102, 103, 200, 301, 401, 402, 501, 600, 700, 701);
+$db->log = array();
+$service->hostPagesForSections($shallow);
+$batch_statements = count($db->log);
+$deepest_single = 0;
+foreach ($shallow as $id) {
+    $db->log = array();
+    $service->hostPagesForSections(array($id));
+    $deepest_single = max($deepest_single, count($db->log));
+}
+check('a batch sends no more statements than its deepest section alone', $batch_statements > 0 && $batch_statements <= $deepest_single);
+
+$db->fail = true;
+check('a failed lookup reads as "no pages" for every section of a batch',
+    $service->hostPagesForSections(array(100, 103)) === array(100 => array(), 103 => array()));
+$db->fail = false;
 
 // --- Prompt versions ------------------------------------------------------------------------------
 
