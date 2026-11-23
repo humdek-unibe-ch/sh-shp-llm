@@ -288,6 +288,8 @@ class LlmFormInterviewContextBuilder
             'missing_required' => $missing,
             'writable_hidden_fields' => $writable_hidden,
             'read_only_fields' => $read_only,
+            // Resolves relative dates ("next Friday") of date/time fields.
+            'today' => date('Y-m-d') . ' (' . date('l') . ')',
         );
         if ($mode === 'edit') {
             // What the participant has changed so far, with the saved value
