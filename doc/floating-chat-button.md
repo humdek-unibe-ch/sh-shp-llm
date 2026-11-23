@@ -19,7 +19,11 @@ The Floating Chat Button feature transforms the LLM Chat interface into a floati
 |-------|------|---------|-------------|
 | `enable_floating_button` | checkbox | `false` | Enable floating chat button mode |
 | `floating_button_position` | select | `bottom-right` | Position of the floating button |
-| `floating_button_icon` | text | `fa-comments` | Font Awesome icon class |
+| `floating_button_icon` | text | `fa-comments` | Font Awesome icon class, or an image path/URL (`assets/chat.png`, `/assets/chat.svg`, `https://...`) |
+
+A value containing `/` or ending in `.png/.jpg/.jpeg/.gif/.svg/.webp` is treated as an image: the
+button and the panel header avatar show it as `<img>` (button image class: `llm-float-btn-img`).
+Relative paths such as `assets/chat.png` resolve against the SelfHelp base path.
 | `floating_button_label` | text | `Chat` | Label text (hidden on mobile) |
 | `floating_chat_title` | text | `AI Assistant` | Modal header title |
 

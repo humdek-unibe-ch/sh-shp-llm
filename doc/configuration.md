@@ -79,7 +79,7 @@ These settings override global defaults for specific chat instances.
 | `enable_progress_tracking` | checkbox | `false` | Enable progress tracking to show context coverage (see [Progress Tracking](#progress-tracking)) |
 | `enable_floating_button` | checkbox | `false` | Enable floating chat button mode - shows a floating button that opens chat in a modal |
 | `floating_button_position` | select | `bottom-right` | Position of floating button: bottom-right, bottom-left, top-right, top-left, bottom-center, top-center |
-| `floating_button_icon` | text | `fa-comments` | Font Awesome icon class for the floating button |
+| `floating_button_icon` | text | `fa-comments` | Font Awesome icon class or image path/URL (e.g. `assets/chat.png`) for the floating button |
 | `floating_button_label` | text | `Chat` | Label text shown on the floating button |
 | `floating_chat_title` | text | `AI Assistant` | Title shown in the floating chat modal header |
 

@@ -39,7 +39,7 @@ This plugin provides a general-purpose LLM integration layer for SelfHelp. It is
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| SelfHelp | v7.8.0+ | Core CMS framework; **v7.12.0+** required for `llmFormLogList` interviews |
+| SelfHelp | v7.14.0+ | Core CMS framework (v1.9.2: date display formats of the core `input` style) |
 | PHP | 8.2+ | With **cURL** and **GD** extensions |
 | PHP `exif` | optional* | Bundled PHP extension (`exif_read_data`); needed for LLM-script image EXIF (datetime, camera, GPS) as prompt text |
 | MySQL | 8.0+ | InnoDB, utf8mb4 |

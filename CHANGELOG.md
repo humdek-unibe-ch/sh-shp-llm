@@ -2,6 +2,48 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.9.2] Work in progress
+
+### Upgrade notes
+
+- Requires **SelfHelp core v7.14.0** (date display formats: field
+  `date_format`, `InputDateFormat`). Deploy the rebuilt
+  `js/ext/llm-form-interview.umd.js`, `js/ext/llm-chat.umd.js` and
+  `css/ext/llm-chat.css`. No plugin
+  database change.
+
+### Improvement
+
+- **Image icon for the floating chat button:** `floating_button_icon` also
+  accepts an image path or URL (`assets/chat.png`, `/assets/chat.svg`,
+  `https://...`) besides a Font Awesome class. The image is shown on the
+  button (class `llm-float-btn-img`) and as the panel header avatar; relative
+  paths resolve against the SelfHelp base path.
+
+### Fixed
+
+- **Date fields in the form interview:** the interview only accepted
+  `YYYY-MM-DD`, but never told the model so, and a date field with a display
+  format sent values like `20.11.2026` (manual edits, saved records), which
+  were rejected. Date, datetime and time fields now follow core v7.14.0:
+  - the stored value is always `YYYY-MM-DD`, `YYYY-MM-DD HH:mm` or `HH:mm`;
+    a value in the field's display format (e.g. `12.12.2026`,
+    `12 Dezember 2026`) from the model or a manual edit is converted to it,
+    any other value is rejected;
+  - the model gets `display_format`, `display_example` (31 December 2026
+    in that format) and `storage_format` for each field and today's date:
+    it understands answers like "12 December 2026" or "next Friday", writes
+    every date exactly like the example (not a written-out month when the
+    field shows numbers) and saves the stored format; it asks when a date is
+    ambiguous;
+  - the answers panel, the approval dialog and the list of saved records
+    (core v7.14.0) show dates in the display format (month names in the
+    participant's language);
+  - a value set by the model or a restart updates the visible date picker
+    (before, the picker kept the old text and could read the new value in
+    the wrong order);
+  - `datetime` inputs are interview fields (before: native-only).
+
 ## [1.9.1]
 
 ### Fixed
