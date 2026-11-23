@@ -39,7 +39,7 @@ This plugin provides a general-purpose LLM integration layer for SelfHelp. It is
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| SelfHelp | v7.14.0+ | Core CMS framework (v1.9.2: date display formats of the core `input` style) |
+| SelfHelp | v7.14.0+ | Core CMS framework (v1.10.0: date display formats of the core `input` style) |
 | PHP | 8.2+ | With **cURL** and **GD** extensions |
 | PHP `exif` | optional* | Bundled PHP extension (`exif_read_data`); needed for LLM-script image EXIF (datetime, camera, GPS) as prompt text |
 | MySQL | 8.0+ | InnoDB, utf8mb4 |
@@ -73,9 +73,10 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.6.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.7.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.8.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.9.0.sql
+mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.10.0.sql
 ```
 
-This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code), and the v1.8.0 memory source labels (memory sources of other plugins are registered as `llmMemorySourceType` lookups, see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md#register-a-memory-source-from-a-plugin)), and the v1.9.0 `show_model_info` field of `llmChat`. The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code), the v1.8.0 memory source labels (memory sources of other plugins are registered as `llmMemorySourceType` lookups, see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md#register-a-memory-source-from-a-plugin)), the v1.9.0 `show_model_info` field of `llmChat`, and the v1.10.0 admin page "LLM Prompts" ([doc/prompts-hub.md](doc/prompts-hub.md)). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
 It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached). The same core release provides `CORS_ALLOWED_ORIGINS`, the exact-match list of cross-origin clients that the chat and form endpoints trust without a CSRF token ([CSRF and cross-origin clients](#csrf-and-cross-origin-clients)).
 
 **Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.8.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It links `memory_rule_ids` to `surveyJS`; the save hook is registered by `v1.8.0` (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
@@ -504,6 +505,10 @@ Admin-only page for monitoring all LLM conversations across users and sections.
 
 Admin page for managing reusable LLM prompt scripts with CRUD operations, testing, and job scheduler integration.
 
+### moduleLlmPrompts (Module, v1.10.0+)
+
+Admin page "LLM Prompts": every LLM prompt of the site (CMS prompt fields, scripts, memory rule instructions, built-in system prompts, agentic chat personas) in one searchable list, with in-place editing, version history, compare and restore. Access needs the hub page ACL and the ACL of the page the prompt belongs to. See [doc/prompts-hub.md](doc/prompts-hub.md).
+
 ## LLM Scripts
 
 Scripts are reusable prompt templates that can be executed programmatically or via the job scheduler.
@@ -702,6 +707,7 @@ Detailed guides are available in the `doc/` folder:
 | [speech-to-text.md](doc/speech-to-text.md) | Whisper integration and configuration |
 | [file-naming-conventions.md](doc/file-naming-conventions.md) | Upload file naming and directory structure |
 | [message-validation-tracking.md](doc/message-validation-tracking.md) | Validation status and payload debugging |
+| [prompts-hub.md](doc/prompts-hub.md) | The "LLM Prompts" admin page: every prompt in one list, search, in-place edit, versions, restore, access rules |
 | [prompt-lab-user-guide.md](doc/prompt-lab-user-guide.md) | Prompt versions, playground, datasets, and evaluations for editors |
 | [prompt-datasets-user-guide.md](doc/prompt-datasets-user-guide.md) | How to build reusable benchmark datasets |
 | [prompt-dataset-ai-import-user-guide.md](doc/prompt-dataset-ai-import-user-guide.md) | How to bulk import dataset cases from pasted text using AI |

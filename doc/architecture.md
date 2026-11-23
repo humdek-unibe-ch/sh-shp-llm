@@ -42,6 +42,7 @@ server/plugins/sh-shp-llm/
 │   │   ├── LlmHooks.php          # Plugin hooks
 │   │   ├── moduleLlmAdminConsole/ # Admin console
 │   │   ├── moduleLlmScript/       # LLM Scripts (React + Controller)
+│   │   ├── moduleLlmPrompts/      # Prompts hub (React + Controller)
 │   │   └── style/                 # Style components
 │   │       ├── llmChat/           # Chat component
 │   │       └── llmResponse/       # LLM Response display style
@@ -140,6 +141,16 @@ Services follow a 3-tier pattern (see `BaseLlmService` docblock for authoritativ
 │  - insert_refresh_event() → core refresh_events table    │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### Prompts Hub Module
+
+`moduleLlmPrompts` (v1.10.0) lists every LLM prompt in one place and edits it in place.
+`ModuleLlmPromptsController` reads through `LlmPromptCatalogService` (CMS `llm_prompt` fields,
+scripts, memory rules, system prompts, personas; ACL per row) and writes through
+`LlmPromptHubSaveService`, which calls the same code as the owner's own editor (CMS field save,
+`LlmScriptService::update_script()`, `LlmMemoryRuleService::syncPromptForRule()`) inside one
+`LlmTransaction`, with an optimistic lock on version and text hash. See
+[prompts-hub.md](prompts-hub.md).
 
 ### Refresh Events (Core Integration)
 

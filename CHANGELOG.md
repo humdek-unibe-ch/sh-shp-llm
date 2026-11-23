@@ -2,23 +2,70 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
-## [1.9.2] Work in progress
+## [1.10.0] Work in progress
 
 ### Upgrade notes
 
 - Requires **SelfHelp core v7.14.0** (date display formats: field
-  `date_format`, `InputDateFormat`). Deploy the rebuilt
-  `js/ext/llm-form-interview.umd.js`, `js/ext/llm-chat.umd.js` and
-  `css/ext/llm-chat.css`. No plugin
-  database change.
+  `date_format`, `InputDateFormat`).
+- Run `server/db/v1.10.0.sql` after `v1.9.0.sql` (v1.9.1 has no SQL),
+  deploy the rebuilt bundles (`js/ext`, `css/ext`), then clear the SelfHelp cache
+  (**Admin > Cache > Clear all**): the migration adds a page and its ACL. It
+  adds no table, field, style or hook and can be run again.
+- The admin group gets the new page **LLM Prompts**. Other groups need ACL on
+  it (select to look, update to edit). On top of that the hub checks the ACL
+  of the page a prompt belongs to, so a group never reaches more than it does
+  in the CMS, on the Scripts page or on the Memory page.
 
-### Improvement
+### Added
 
+- **Prompts hub** (`moduleLlmPrompts`, `/admin/module_llm/prompts`, "LLM Prompts"
+  in the LLM admin menu): one list of every LLM prompt of the site - the
+  `llm_prompt` fields of CMS sections (per language, also sections never saved
+  since v1.1.0), LLM scripts, memory rule instructions, the built-in system
+  prompts (read-only) and the agentic chat personas (read-only, link only).
+  See [doc/prompts-hub.md](doc/prompts-hub.md).
+  - Search in the whole text with highlighted snippets; searchable filter
+    dropdowns by source, plugin, style, page and language; numbered pages
+    (25/50/100 rows); orphaned prompts (their section, script or rule is gone)
+    are hidden unless "Show orphaned" is on, and never editable.
+  - A CMS prompt field opens with all its CMS languages (also empty ones) in
+    small language tabs above the text; one Save saves every changed language
+    together (all or none).
+  - "Updated" is the date and author of the prompt's active version (the CMS
+    keeps no date for a field text); an info icon explains it.
+  - "Open in CMS / Scripts / Memory" goes to the owner of the prompt (both CMS
+    UIs).
+  - Edit in place with a version comment. A save is a new registry version and
+    is live at once (the hub clears the section cache itself); it ends up
+    exactly where the owner's editor would put it (CMS field and field history,
+    `LlmScriptService::update_script()`, `LlmMemoryRuleService::syncPromptForRule()`).
+  - Versions, compare and restore (a restore is a new version "Restored from
+    vN"; history is never rewritten).
+  - Nothing is overwritten silently: a save or restore is written only while
+    the active version and the text hash still are those the editor loaded;
+    otherwise the hub answers 409 and shows who saved what, with a diff, and
+    "Reload theirs" / "Keep editing".
+  - The core's "someone else is editing this page" warning covers the hub page,
+    like the Scripts and Memory pages.
+  - The list reads the text of the rows it shows only and looks up the pages of
+    all sections in one walk, so it stays cheap on a site with many prompts.
+  - New services `LlmPromptCatalogService` (read side) and
+    `LlmPromptHubSaveService` (write side), controller
+    `ModuleLlmPromptsController`.
 - **Image icon for the floating chat button:** `floating_button_icon` also
   accepts an image path or URL (`assets/chat.png`, `/assets/chat.svg`,
   `https://...`) besides a Font Awesome class. The image is shown on the
   button (class `llm-float-btn-img`) and as the panel header avatar; relative
   paths resolve against the SelfHelp base path.
+
+### Changed
+
+- The CMS link of a section (new or old CMS UI) is built by the new
+  `LlmCmsLinkHelper`; the Memory page uses it (moved, same URLs).
+- The Prompt Lab's version list and diff dialogs are generic, so the hub uses
+  them too. Fix: the diff dialog fetched a version again and again when its
+  text was empty. The memory, prompt-field and scripts bundles are rebuilt.
 
 ### Fixed
 
