@@ -420,8 +420,21 @@ class LlmChatModel extends StyleModel
     public function isFloatingButtonEnabled() { return $this->get_db_field('enable_floating_button', '0') === '1'; }
     /** @return string CSS position class (e.g. 'bottom-right', 'bottom-left'). */
     public function getFloatingButtonPosition() { return $this->get_db_field('floating_button_position', 'bottom-right'); }
-    /** @return string FontAwesome icon class for the floating button (e.g. 'fa-comments'). */
-    public function getFloatingButtonIcon() { return $this->get_db_field('floating_button_icon', 'fa-comments'); }
+    /**
+     * @return string FontAwesome icon class for the floating button (e.g. 'fa-comments'), or an image URL
+     *                when the field holds a path/URL (e.g. 'assets/chat.png', '/assets/chat.svg', 'https://...').
+     */
+    public function getFloatingButtonIcon()
+    {
+        $icon = trim($this->get_db_field('floating_button_icon', 'fa-comments'));
+        if (!preg_match('~/|\.(png|jpe?g|gif|svg|webp)$~i', $icon)) {
+            return $icon;
+        }
+        if (!preg_match('~^(https?:|data:|/)~i', $icon)) {
+            $icon = '/' . $icon;
+        }
+        return $this->normalizeIconUrl($icon);
+    }
     /** @return string Text label displayed on/beside the floating button. */
     public function getFloatingButtonLabel() { return $this->get_db_field('floating_button_label', ''); }
     /** @return string Title shown in the floating chat panel header. */

@@ -210,9 +210,13 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, handleClose]);
 
+  // The icon field holds either an image URL (resolved server-side) or a FontAwesome class
+  const iconImage = /\/|\.(png|jpe?g|gif|svg|webp)$/i.test(config.floatingButtonIcon)
+    ? config.floatingButtonIcon
+    : undefined;
   // Determine icon class - ensure it has 'fa' or 'fas' prefix
-  const iconClass = config.floatingButtonIcon.startsWith('fa-') 
-    ? `fas ${config.floatingButtonIcon}` 
+  const iconClass = config.floatingButtonIcon.startsWith('fa-')
+    ? `fas ${config.floatingButtonIcon}`
     : config.floatingButtonIcon;
 
   const buttonPositionClass = getButtonPositionClasses(config.floatingButtonPosition);
@@ -297,7 +301,11 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
           <i className="fas fa-times"></i>
         ) : (
           <>
-            <i className={iconClass}></i>
+            {iconImage ? (
+              <img src={iconImage} alt="" className="llm-float-btn-img" />
+            ) : (
+              <i className={iconClass}></i>
+            )}
             {config.floatingButtonLabel && config.floatingButtonLabel.trim() !== '' && (
               <span className="llm-float-btn-label ml-2 d-none d-md-inline">{config.floatingButtonLabel}</span>
             )}
@@ -341,6 +349,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
             title={config.floatingChatTitle}
             titleId={`${uniqueId}-title`}
             iconClass={iconClass}
+            iconImage={iconImage}
             status={config.showModelInfo ? config.configuredModel : undefined}
             statusIcon="fa-robot"
             actions={

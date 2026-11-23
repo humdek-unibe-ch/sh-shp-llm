@@ -55,6 +55,13 @@
   cursor: pointer;
 }
 
+/* Custom image icon (floating_button_icon set to an image path) */
+.llm-float-btn-img {
+  width: 1.6em;
+  height: 1.6em;
+  object-fit: contain;
+}
+
 /* Button with label - pill shape */
 .llm-float-btn.llm-float-btn-with-label {
   width: auto;
