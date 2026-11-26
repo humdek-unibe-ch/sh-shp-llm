@@ -49,6 +49,25 @@ if (!defined('PLUGIN_SERVER_PATH')) define('PLUGIN_SERVER_PATH', dirname(dirname
 require_once LLM_PATH . '/service/LlmFormInterviewService.php';
 require_once LLM_PATH . '/service/LlmFormSchemaService.php';
 
+// Real core interpolation (no copy): the core files end with stray newlines after their closing tags.
+ob_start();
+require_once dirname(LLM_PATH, 3) . '/service/PageDb.php';
+ob_end_clean();
+
+/** Core PageDb without its constructor (no MySQL, no APCu); user lookups stubbed. */
+class InterviewCoreDb extends PageDb
+{
+    public function __construct() {}
+    public function fetch_user_name() { return 'tester'; }
+    public function get_user_code() { return 'code'; }
+}
+
+/** Core StyleModel without its constructor, for get_entry_value(). */
+class InterviewCoreStyleModel extends StyleModel
+{
+    public function __construct() { $this->db = new InterviewCoreDb(); }
+}
+
 /* =========================================================================
  * Fake DB: llmConversations + llmMessages + users + snapshot transactions
  * ========================================================================= */
@@ -541,14 +560,13 @@ class IntFieldModel extends FormFieldModel
 {
     private $fake_style;
     private $fake_fields;
-    private $fake_entry;
     private $fake_children;
 
     public function __construct($style, array $fields, array $entry)
     {
         $this->fake_style = $style;
         $this->fake_fields = $fields;
-        $this->fake_entry = $entry;
+        $this->entry_record = $entry; // read by the real core get_entry_record() / get_form_field_value()
         $this->fake_children = array();
     }
 
@@ -566,14 +584,7 @@ class IntFieldModel extends FormFieldModel
     public function get_style_name() { return $this->fake_style; }
     public function get_condition_result() { return array('result' => true); }
     public function get_children() { return $this->fake_children; }
-    public function get_entry_record() { return $this->fake_entry; }
-    public function get_form_field_value()
-    {
-        $name = $this->get_db_field('name');
-        return ($name !== '' && array_key_exists($name, $this->fake_entry))
-            ? $this->fake_entry[$name] : null;
-    }
-    public function set_fake_entry(array $entry) { $this->fake_entry = $entry; }
+    public function set_fake_entry(array $entry) { $this->entry_record = $entry; }
 }
 
 class IntChildComponent
@@ -653,13 +664,13 @@ class InterviewFormModel
     {
         $this->set_entry_record(array_merge($this->context_entry, $entry));
     }
+    /** The real core StyleModel::get_entry_value() (escaping, addslashes, marks). */
     public function get_entry_value($entry, $value)
     {
-        $replace = array();
-        foreach ((array)$entry as $k => $v) {
-            $replace['{{' . $k . '}}'] = is_scalar($v) ? (string)$v : json_encode($v);
-        }
-        return strtr($value, $replace);
+        static $core = null;
+        $core = $core ?: new InterviewCoreStyleModel();
+        $_SESSION += array('project' => 'test');
+        return $core->get_entry_value((array)$entry, $value);
     }
     /** Mirrors LlmFormLogListModel: loop/page context is part of the template scope. */
     public function resolveInterviewTemplate($template, array $values)

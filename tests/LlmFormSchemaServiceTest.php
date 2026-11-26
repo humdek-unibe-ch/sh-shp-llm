@@ -33,7 +33,6 @@ class FakeFieldModel extends FormFieldModel
     private $fake_fields;
     private $fake_children;
     private $fake_condition;
-    private $fake_entry;
 
     public function __construct($style, array $fields = array(), array $children = array(), $condition = true, array $entry = array())
     {
@@ -41,7 +40,7 @@ class FakeFieldModel extends FormFieldModel
         $this->fake_fields = $fields;
         $this->fake_children = $children;
         $this->fake_condition = $condition;
-        $this->fake_entry = $entry;
+        $this->entry_record = $entry; // read by the real core get_entry_record() / get_form_field_value()
     }
 
     public function get_db_field($key, $default = "")
@@ -58,14 +57,6 @@ class FakeFieldModel extends FormFieldModel
     public function get_style_name() { return $this->fake_style; }
     public function get_condition_result() { return array('result' => $this->fake_condition); }
     public function get_children() { return $this->fake_children; }
-    public function get_entry_record() { return $this->fake_entry; }
-
-    public function get_form_field_value()
-    {
-        $name = $this->get_db_field('name');
-        return ($name !== '' && array_key_exists($name, $this->fake_entry))
-            ? $this->fake_entry[$name] : null;
-    }
 }
 
 /** Container (div/conditionalContainer/etc.) - deliberately not a FormFieldModel. */
