@@ -69,6 +69,11 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Fixed
 
+- **Request traces store long Global Values once again in markdown prompt fields:**
+  core v7.14.0 keeps real newlines when it interpolates `markdown` fields
+  (e.g. `conversation_context`), so a multi-line Global Value no longer matched
+  its shared (escaped) form and was stored in every user's trace text.
+  `LlmPromptVersionLinker::shareGlobalValues()` now shares both forms.
 - **Date fields in the form interview:** the interview only accepted
   `YYYY-MM-DD`, but never told the model so, and a date field with a display
   format sent values like `20.11.2026` (manual edits, saved records), which

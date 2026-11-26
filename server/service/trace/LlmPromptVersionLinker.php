@@ -38,8 +38,9 @@ class LlmPromptVersionLinker
      * once for all users and requests instead of inside the per-user text of
      * every request. Every language row is read, so the language the context
      * was built in does not matter. Core interpolation escapes a value
-     * (newlines, control characters, addslashes), so the shared form is the
-     * one core itself produces for the placeholder of the key.
+     * (newlines, control characters, addslashes), except in markdown fields
+     * where newlines stay real, so both forms core produces for the
+     * placeholder of the key are shared.
      *
      * @param object $db BaseDb / PageDb
      */
@@ -65,6 +66,8 @@ class LlmPromptVersionLinker
                         if (is_string($name) && $name !== '' && is_string($value)
                             && strlen($value) >= LLM_TRACE_SHARED_GLOBAL_VALUE_MIN_LENGTH) {
                             $texts[] = $db->replace_calced_values('{{' . $name . '}}', array($name => $value));
+                            // Markdown fields keep real newlines (no control escaping)
+                            $texts[] = $db->replace_calced_values('{{' . $name . '}}', array($name => $value), false);
                         }
                     }
                     $decoded[$key] = $texts;

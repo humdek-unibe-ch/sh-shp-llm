@@ -16,7 +16,8 @@
  *  - linking never breaks a trace (it is informational).
  *
  * No bootstrap, no MySQL: an in-memory SQLite database with the registry
- * tables behind a BaseDb-shaped stand-in.
+ * tables behind a BaseDb-shaped stand-in; interpolation is the real core
+ * PageDb::replace_calced_values().
  *
  * Run: php tests/LlmPromptVersionLinkerTest.php
  */
@@ -43,6 +44,17 @@ foreach (array('LLM_PROMPT_OWNER_SYSTEM' => 'system', 'LLM_PROMPT_OWNER_STYLE_FI
 }
 
 require_once dirname(__DIR__) . '/server/service/trace/LlmPromptVersionLinker.php';
+
+// Real core interpolation (no copy): the core files end with stray newlines after their closing tags.
+ob_start();
+require_once dirname(__DIR__, 4) . '/server/service/PageDb.php';
+ob_end_clean();
+
+/** Core PageDb without its constructor (no MySQL, no APCu). */
+class LinkerCoreDb extends PageDb
+{
+    public function __construct() {}
+}
 
 class LinkerFakeDb
 {
@@ -112,14 +124,11 @@ class LinkerFakeDb
         return (int)$this->pdo->query("SELECT COUNT(*) FROM $table")->fetchColumn();
     }
 
-    /** The value escaping of core PageDb::replace_calced_values() for string values. */
-    public function replace_calced_values($text, $values)
+    public function replace_calced_values($text, $values, $escape_controls = true)
     {
-        foreach ($values as $name => $value) {
-            $value = str_replace("\t", '\t', preg_replace('/\r|\n/', '\n', trim($value)));
-            $text = preg_replace('#\{\{' . preg_quote($name, '#') . '\}\}#s', addslashes($value), $text);
-        }
-        return $text;
+        static $core = null;
+        $core = $core ?: new LinkerCoreDb();
+        return $core->replace_calced_values($text, $values, $escape_controls);
     }
 }
 
@@ -229,10 +238,12 @@ $module = "# Module 1\n\n" . str_repeat('Module text about resilience. ', 20) . 
 $db->pdo->exec("INSERT INTO pages_fields_translation VALUES (3, 7, 2, " . $db->pdo->quote(json_encode(array(
     'woop_module_1_title' => 'Resilience', 'woop_module_1_context' => $module))) . ")");
 $interpolated = $db->replace_calced_values('{{woop_module_1_context}}', array('woop_module_1_context' => $module));
+$interpolated_md = $db->replace_calced_values('{{woop_module_1_context}}', array('woop_module_1_context' => $module), false);
 LlmTraceHints::reset();
 LlmPromptVersionLinker::shareGlobalValues($db);
-check('a long Global Value is declared shared in its interpolated (escaped) form, a short one is not',
-    LlmTraceHints::sharedTexts() === array($interpolated) && strpos($interpolated, "\n") === false);
+check('a long Global Value is declared shared in its escaped and its markdown (real newlines) form, a short one is not',
+    LlmTraceHints::sharedTexts() === array($interpolated, $interpolated_md)
+    && strpos($interpolated, "\n") === false && strpos($interpolated_md, "\n") !== false);
 LlmTraceHints::reset();
 
 /* ------------------------------------------------------------------------- */
