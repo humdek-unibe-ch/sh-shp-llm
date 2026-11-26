@@ -116,6 +116,7 @@ export function parseConfig(container: HTMLElement): LlmChatConfig {
     enableProgressTracking: bool(ds, 'enableProgressTracking', jsonConfig, 'enableProgressTracking'),
     enableSpeechToText: bool(ds, 'enableSpeechToText', jsonConfig, 'enableSpeechToText'),
     enableFloatingButton: bool(ds, 'enableFloatingButton', jsonConfig, 'enableFloatingButton'),
+    allowFloatingChatResize: bool(ds, 'allowFloatingChatResize', jsonConfig, 'allowFloatingChatResize'),
     progressShowTopics: bool(ds, 'progressShowTopics', jsonConfig, 'progressShowTopics'),
     isFloatingMode: false,
 

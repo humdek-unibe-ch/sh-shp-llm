@@ -345,6 +345,11 @@ export interface LlmChatConfig {
   // ===== Floating Button Configuration =====
   /** Whether floating button mode is enabled */
   enableFloatingButton: boolean;
+  /**
+   * Whether desktop users may resize and move the floating panel.
+   * CMS field `allow_floating_chat_resize` (default false).
+   */
+  allowFloatingChatResize?: boolean;
   /** Position of the floating button */
   floatingButtonPosition: FloatingButtonPosition;
   /** Font Awesome icon class for the floating button */
@@ -489,6 +494,7 @@ export const DEFAULT_CONFIG: Partial<LlmChatConfig> = {
   speechToTextModel: '',
   // Floating button defaults
   enableFloatingButton: false,
+  allowFloatingChatResize: false,
   floatingButtonPosition: 'bottom-right',
   floatingButtonIcon: 'fa-comments',
   floatingButtonLabel: '',

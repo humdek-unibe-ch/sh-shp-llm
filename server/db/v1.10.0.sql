@@ -1,5 +1,5 @@
 -- =====================================================
--- LLM Plugin v1.10.0 - Prompts hub
+-- LLM Plugin v1.10.0 - Prompts hub + floating resize
 -- =====================================================
 --
 -- Requires v1.9.0 (run server/db/v1.9.0.sql first; v1.9.1 has no SQL).
@@ -14,15 +14,15 @@
 --      access through the CMS page ACL like for the other LLM module pages;
 --      on top of the page ACL, the hub always checks the ACL of the page a
 --      prompt belongs to (CMS page of the section, Scripts page, Memory page).
---   3. Bumps the plugin version LAST so a failed statement can never mark
+--   3. Adds CMS checkbox `allow_floating_chat_resize` on llmChat (default off).
+--      When on (and floating button is enabled), desktop participants can
+--      resize and move the floating panel; size/position are stored in
+--      browser localStorage only (UI preference, no consent banner).
+--   4. Bumps the plugin version LAST so a failed statement can never mark
 --      v1.10.0 as installed. Every statement is idempotent (INSERT IGNORE):
 --      the migration can be run again safely.
 --
--- No new tables, fields, styles or hooks: the hub reads the existing prompt
--- registry (llm_prompt_*) and writes through the same services as the CMS,
--- the Scripts page and the Memory page.
---
--- NOTE: pages and their ACL are cached - clear the SelfHelp cache
+-- NOTE: pages, ACL, styles and fields are cached - clear the SelfHelp cache
 -- (Admin > Cache > clear all) after running this migration.
 -- =====================================================
 
@@ -44,6 +44,20 @@ INSERT IGNORE INTO `pages_fields_translation` (`id_pages`, `id_fields`, `id_lang
 -- Admin group: full access
 INSERT IGNORE INTO `acl_groups` (`id_groups`, `id_pages`, `acl_select`, `acl_insert`, `acl_update`, `acl_delete`)
 VALUES ('0000000001', @id_page_llm_prompts, '1', '1', '1', '1');
+
+-- =====================================================
+-- 2. allow_floating_chat_resize on llmChat
+-- =====================================================
+INSERT IGNORE INTO `fields` (`id`, `name`, `id_type`, `display`)
+VALUES (NULL, 'allow_floating_chat_resize', get_field_type_id('checkbox'), '0');
+
+INSERT IGNORE INTO `styles_fields` (`id_styles`, `id_fields`, `default_value`, `help`) VALUES
+(
+    get_style_id('llmChat'),
+    get_field_id('allow_floating_chat_resize'),
+    '0',
+    'Allow participants to resize and move the floating chat panel on desktop. Only applies when `enable_floating_button` is on. Mobile stays full-screen. The chosen size and position are remembered in the browser (`localStorage`) as a UI preference — no personal data and no cookie consent. Default: off.'
+);
 
 -- Version bump last.
 UPDATE `plugins` SET version = 'v1.10.0' WHERE `name` = 'llm';

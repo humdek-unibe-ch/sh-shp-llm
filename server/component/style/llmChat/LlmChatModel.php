@@ -418,6 +418,11 @@ class LlmChatModel extends StyleModel
 
     /** @return bool Whether the floating chat button is displayed on the page. */
     public function isFloatingButtonEnabled() { return $this->get_db_field('enable_floating_button', '0') === '1'; }
+    /**
+     * @return bool Whether desktop users may resize/move the floating panel.
+     *              CMS field `allow_floating_chat_resize` (default off).
+     */
+    public function isFloatingChatResizeAllowed() { return $this->get_db_field('allow_floating_chat_resize', '0') === '1'; }
     /** @return string CSS position class (e.g. 'bottom-right', 'bottom-left'). */
     public function getFloatingButtonPosition() { return $this->get_db_field('floating_button_position', 'bottom-right'); }
     /**
@@ -669,6 +674,7 @@ class LlmChatModel extends StyleModel
             'enableSpeechToText' => $this->isSpeechToTextEnabled(),
             'speechToTextModel' => $this->getSpeechToTextModel(),
             'enableFloatingButton' => $this->isFloatingButtonEnabled(),
+            'allowFloatingChatResize' => $this->isFloatingChatResizeAllowed(),
             'floatingButtonPosition' => $this->getFloatingButtonPosition(),
             'floatingButtonIcon' => $this->getFloatingButtonIcon(),
             'floatingButtonLabel' => $this->getFloatingButtonLabel(),
