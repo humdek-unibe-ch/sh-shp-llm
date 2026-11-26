@@ -7,13 +7,14 @@
  * Standalone test for LlmPromptHubSaveService (plugin v1.10.0), the write side of the prompts hub.
  *
  * What runs for real: the service itself, LlmPromptCatalogService (ACL, editable, content hash,
- * versions), LlmTransaction and the SQL of both, against in-memory SQLite tables shaped like the
- * MySQL ones. The SQLite handle behaves like the core's ExtendedPdo for transactions (savepoints
- * for nested ones, real rollbacks), so "nothing was written" means the rows are really back.
- * Stand-ins: the registry (it writes the same tables: entry, locale, version), the execution
- * profile, the script service (it nests its own LlmTransaction and answers false on failure, like
- * LlmScriptService::update_script), the memory rule service and the field history. The MySQL
- * dialect (FOR UPDATE, the real registry) is covered by the browser runs on a real instance.
+ * versions), LlmPromptRegistryService (entry, locale, version, hash and config snapshot; wrapped
+ * only to record calls and inject failures), LlmMemoryRuleService, LlmTransaction and their SQL,
+ * against in-memory SQLite tables shaped like the MySQL ones. The SQLite handle behaves like the
+ * core's ExtendedPdo for transactions (savepoints for nested ones, real rollbacks), so "nothing was
+ * written" means the rows are really back. Boundary fakes: the BaseDb methods (MySQL dialect), the
+ * transaction log, the hub's execution profile (CMS field reads), the script service's own row
+ * write and failure modes (it calls the real registry like LlmScriptService::update_script) and the
+ * field history. The MySQL dialect (FOR UPDATE, ON DUPLICATE KEY) is covered by browser runs.
  *
  * Run: php tests/LlmPromptHubSaveServiceTest.php
  */
@@ -21,7 +22,8 @@
 require_once __DIR__ . '/../server/service/globals.php';
 
 // Core constants the plugin code reads
-foreach (array('UPDATE' => 'update', 'RELATION_SECTION_FIELD' => 'section_field') as $const => $value) {
+foreach (array('UPDATE' => 'update', 'RELATION_SECTION_FIELD' => 'section_field', 'transactionTypes_insert' => 'insert',
+    'transactionTypes_update' => 'update', 'transactionBy_by_user' => 'by_user') as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
     }
@@ -36,6 +38,8 @@ register_shutdown_function(function () use ($error_log_file) {
 });
 
 require_once __DIR__ . '/../server/service/LlmPromptHubSaveService.php';
+require_once __DIR__ . '/../server/service/LlmPromptRegistryService.php';
+require_once __DIR__ . '/../server/service/LlmMemoryRuleService.php';
 
 // A warning is a failure here: a failed lookup (false) must not leak into a foreach or an array access
 set_error_handler(function ($severity, $message, $file, $line) {
@@ -165,11 +169,13 @@ class SaveDb
         'CREATE TABLE sections_fields_translation (id_sections INTEGER, id_fields INTEGER, id_languages INTEGER, id_genders INTEGER, content TEXT, meta TEXT)',
         'CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)',
         'CREATE TABLE lookups (id INTEGER PRIMARY KEY, type_code TEXT, lookup_code TEXT)',
-        'CREATE TABLE llm_prompt_entries (id INTEGER PRIMARY KEY, id_llm_prompt_owner_types INTEGER, owner_id INTEGER, prompt_slot TEXT, title TEXT)',
-        'CREATE TABLE llm_prompt_locales (id INTEGER PRIMARY KEY, id_llm_prompt_entries INTEGER, id_languages INTEGER, active_version_id INTEGER, active_version_no INTEGER DEFAULT 0)',
-        'CREATE TABLE llm_prompt_versions (id INTEGER PRIMARY KEY, id_llm_prompt_locales INTEGER, version_no INTEGER, template_raw TEXT, change_note TEXT, id_users_created INTEGER, created_at TEXT)',
-        'CREATE TABLE llm_scripts (id INTEGER PRIMARY KEY, name TEXT, script TEXT, test_variables TEXT, async INTEGER, data_config TEXT, model TEXT, temperature TEXT, max_tokens TEXT, refresh_sections TEXT, combine_images INTEGER, updated_at TEXT)',
-        'CREATE TABLE llm_memory_rules (id INTEGER PRIMARY KEY, label TEXT, enabled INTEGER, updated_at TEXT)',
+        'CREATE TABLE llm_prompt_entries (id INTEGER PRIMARY KEY, id_llm_prompt_owner_types INTEGER, owner_id INTEGER, prompt_slot TEXT, title TEXT, id_users_created INTEGER, id_users_updated INTEGER)',
+        'CREATE TABLE llm_prompt_locales (id INTEGER PRIMARY KEY, id_llm_prompt_entries INTEGER, id_languages INTEGER, active_version_id INTEGER, active_version_no INTEGER DEFAULT 0, id_users_created INTEGER, id_users_updated INTEGER, updated_at TEXT)',
+        'CREATE TABLE llm_prompt_versions (id INTEGER PRIMARY KEY, id_llm_prompt_locales INTEGER, version_no INTEGER, template_raw TEXT, template_hash TEXT, config_json TEXT, metadata_json TEXT, variables_schema_json TEXT, tags_json TEXT, change_note TEXT, based_on_version_id INTEGER, id_users_created INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)',
+        'CREATE TABLE llm_scripts (id INTEGER PRIMARY KEY, name TEXT, script TEXT, test_variables TEXT, async INTEGER, data_config TEXT, model TEXT, temperature TEXT, max_tokens TEXT, refresh_sections TEXT, combine_images INTEGER, updated_at TEXT, id_llm_prompt_entries INTEGER)',
+        'CREATE TABLE llm_memory_rules (id INTEGER PRIMARY KEY, label TEXT, enabled INTEGER, source_type TEXT, trigger_types_json TEXT, storage_mode_override TEXT, data_config_json TEXT, llm_model TEXT, llm_temperature TEXT, llm_max_tokens TEXT, refresh_sections_json TEXT, created_at TEXT, updated_at TEXT, id_users_created INTEGER, id_users_updated INTEGER)',
+        'CREATE TABLE llm_memory_keys (id INTEGER PRIMARY KEY, key_code TEXT)',
+        'CREATE TABLE llm_memory_rule_keys (id_llm_memory_rules INTEGER, id_llm_memory_keys INTEGER)',
         'CREATE TABLE plugins (id INTEGER PRIMARY KEY, name TEXT, version TEXT)',
         'CREATE TABLE pages_fields_translation (id_pages INTEGER, id_fields INTEGER, id_languages INTEGER, content TEXT)',
     );
@@ -232,10 +238,20 @@ class SaveDb
         return $row ? (int)$row['id'] : false;
     }
 
-    /** Core insert($table, $insert, $update): an upsert on the primary key of sections_fields_translation */
+    /**
+     * Core insert($table, $insert, $update): without $update a plain insert answering the new id;
+     * with $update an upsert on the primary key of sections_fields_translation (MySQL ON DUPLICATE KEY).
+     * insert_mode only affects the CMS field write, like before the registry was real.
+     */
     public function insert($table, $insert, $update = array())
     {
         $this->log[] = 'INSERT ' . $table;
+        if ($table !== 'sections_fields_translation') {
+            $columns = implode(', ', array_keys($insert));
+            $marks = implode(', ', array_fill(0, count($insert), '?'));
+            $this->pdo->prepare("INSERT INTO $table ($columns) VALUES ($marks)")->execute(array_values($insert));
+            return (int)$this->pdo->lastInsertId();
+        }
         if ($this->insert_mode === 'fail') {
             return false;
         }
@@ -265,6 +281,39 @@ class SaveDb
             $stmt->execute(array_values($insert));
         }
         return 1;
+    }
+
+    /** Core update_by_ids($table, $entries, $ids) */
+    public function update_by_ids($table, $entries, $ids)
+    {
+        $this->log[] = 'UPDATE ' . $table;
+        $sets = array();
+        $where = array();
+        $params = array();
+        foreach ($entries as $column => $value) {
+            $sets[] = "$column = :s_$column";
+            $params[":s_$column"] = $value;
+        }
+        foreach ($ids as $column => $value) {
+            $where[] = "$column = :w_$column";
+            $params[":w_$column"] = $value;
+        }
+        $stmt = $this->pdo->prepare("UPDATE $table SET " . implode(', ', $sets) . ' WHERE ' . implode(' AND ', $where));
+        $stmt->execute($params);
+        return $stmt->rowCount();
+    }
+
+    /** Core select_by_uid($table, $id) */
+    public function select_by_uid($table, $id)
+    {
+        return $this->query_db_first("SELECT * FROM $table WHERE id = :id", array(':id' => $id));
+    }
+
+    /** Core get_lookup_id_by_code($type, $code) */
+    public function get_lookup_id_by_code($type, $code)
+    {
+        $row = $this->query_db_first('SELECT id FROM lookups WHERE type_code = :type AND lookup_code = :code', array(':type' => $type, ':code' => $code));
+        return $row ? (int)$row['id'] : false;
     }
 
     public function begin_transaction()
@@ -393,6 +442,17 @@ class FakeServices
     public function get_router() { return $this->router; }
     public function get_user_input() { return $this->user_input; }
     public function get_field_versions() { return $this->field_versions; }
+    public function get_transaction() { return new FakeTransaction(); }
+}
+
+/** The core transaction log: an audit write, recorded only */
+class FakeTransaction
+{
+    public function add_transaction($type, $by, $user, $table, $id, $log_row = false, $verbal_log = '')
+    {
+        $GLOBALS['hub_audit'][] = array($table, $id, $verbal_log);
+        return true;
+    }
 }
 
 class StubAssetLoader
@@ -424,18 +484,15 @@ class VanishingCatalog extends LlmPromptCatalogService
  * Service stand-ins
  * ========================================================================= */
 
-/** The prompt registry: writes entry, locale and version rows like the real one */
-class StubRegistry
+/**
+ * The real prompt registry (entry, locale and version rows, hashing, config snapshot), with call
+ * recording and failure injection around syncFieldSave() only.
+ */
+class StubRegistry extends LlmPromptRegistryService
 {
     public $calls = array();
     /** @var string ok | throw_before | throw_after (the version row is written, then it fails) */
     public $mode = 'ok';
-    private $db;
-
-    public function __construct($db)
-    {
-        $this->db = $db;
-    }
 
     public function syncFieldSave($descriptor, $field_id, $content, $meta_json = null, $runtime_values = array())
     {
@@ -446,73 +503,11 @@ class StubRegistry
         if ($this->mode === 'throw_before') {
             throw new RuntimeException('registry down: the participant said hello');
         }
-        $sync = $this->snapshot($descriptor, $content, $meta_json);
+        $result = parent::syncFieldSave($descriptor, $field_id, $content, $meta_json, $runtime_values);
         if ($this->mode === 'throw_after') {
             throw new RuntimeException('registry died after writing the version');
         }
-
-        $meta = json_decode((string)$meta_json, true);
-        $meta = is_array($meta) ? $meta : array();
-        $prompt = isset($meta['prompt']) && is_array($meta['prompt']) ? $meta['prompt'] : array();
-        unset($prompt['pendingChangeNote']);
-        $prompt['entryId'] = (int)$sync['entry']['id'];
-        $prompt['localeId'] = (int)$sync['locale']['id'];
-        $prompt['activeVersionId'] = (int)$sync['locale']['active_version_id'];
-        $prompt['activeVersionNo'] = (int)$sync['locale']['active_version_no'];
-        $meta['prompt'] = $prompt;
-
-        return array('sync' => $sync, 'meta_json' => json_encode($meta));
-    }
-
-    /** What syncPromptSave() does: a new version unless the text is the active one */
-    public function snapshot(array $descriptor, $content, $meta_json)
-    {
-        $db = $this->db;
-        $type_id = $db->value(
-            "SELECT id FROM lookups WHERE type_code = 'llm_prompt_owner_types' AND lookup_code = ?",
-            array($descriptor['owner_type'])
-        );
-        $entry = $db->row(
-            'SELECT * FROM llm_prompt_entries WHERE id_llm_prompt_owner_types = ? AND owner_id = ? AND prompt_slot = ?',
-            array($type_id, $descriptor['owner_id'], $descriptor['prompt_slot'])
-        );
-        if (!$entry) {
-            $db->pdo->prepare('INSERT INTO llm_prompt_entries (id_llm_prompt_owner_types, owner_id, prompt_slot, title) VALUES (?, ?, ?, ?)')
-                ->execute(array($type_id, $descriptor['owner_id'], $descriptor['prompt_slot'], $descriptor['title']));
-            $entry = $db->row('SELECT * FROM llm_prompt_entries WHERE id = ?', array($db->pdo->lastInsertId()));
-        }
-        $locale = $db->row(
-            'SELECT * FROM llm_prompt_locales WHERE id_llm_prompt_entries = ? AND id_languages = ?',
-            array($entry['id'], $descriptor['id_languages'])
-        );
-        if (!$locale) {
-            $db->pdo->prepare('INSERT INTO llm_prompt_locales (id_llm_prompt_entries, id_languages, active_version_id, active_version_no) VALUES (?, ?, NULL, 0)')
-                ->execute(array($entry['id'], $descriptor['id_languages']));
-            $locale = $db->row('SELECT * FROM llm_prompt_locales WHERE id = ?', array($db->pdo->lastInsertId()));
-        }
-
-        $active = $locale['active_version_id']
-            ? $db->row('SELECT * FROM llm_prompt_versions WHERE id = ?', array($locale['active_version_id']))
-            : null;
-        if ($active && $active['template_raw'] === $content) {
-            return array('entry' => $entry, 'locale' => $locale, 'version' => $active, 'created' => false);
-        }
-
-        $meta = json_decode((string)$meta_json, true);
-        $note = is_array($meta) && isset($meta['prompt']['pendingChangeNote']) ? $meta['prompt']['pendingChangeNote'] : null;
-        $next = (int)$locale['active_version_no'] + 1;
-        $db->pdo->prepare('INSERT INTO llm_prompt_versions (id_llm_prompt_locales, version_no, template_raw, change_note, id_users_created, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-            ->execute(array($locale['id'], $next, $content, $note, isset($_SESSION['id_user']) ? $_SESSION['id_user'] : null, '2026-11-23 12:00:00'));
-        $version_id = $db->pdo->lastInsertId();
-        $db->pdo->prepare('UPDATE llm_prompt_locales SET active_version_id = ?, active_version_no = ? WHERE id = ?')
-            ->execute(array($version_id, $next, $locale['id']));
-
-        return array(
-            'entry' => $entry,
-            'locale' => $db->row('SELECT * FROM llm_prompt_locales WHERE id = ?', array($locale['id'])),
-            'version' => $db->row('SELECT * FROM llm_prompt_versions WHERE id = ?', array($version_id)),
-            'created' => true,
-        );
+        return $result;
     }
 }
 
@@ -586,13 +581,8 @@ class StubScripts
             LlmTransaction::begin($this->db);
             $this->db->pdo->prepare('UPDATE llm_scripts SET name = ?, script = ?, test_variables = ?, async = ?, data_config = ?, model = ?, temperature = ?, max_tokens = ?, refresh_sections = ?, combine_images = ? WHERE id = ?')
                 ->execute(array($name, $script, $test_variables, (int)$async, $data_config, $model, $temperature, $max_tokens, $refresh_sections, $combine_images, $sid));
-            $note = $prompt_change_note !== null && $prompt_change_note !== ''
-                ? json_encode(array('prompt' => array('pendingChangeNote' => $prompt_change_note))) : null;
-            $this->registry->snapshot(
-                array('owner_type' => 'llm_script', 'owner_id' => (int)$sid, 'prompt_slot' => 'script', 'id_languages' => 1, 'title' => $name),
-                $script,
-                $note
-            );
+            // What LlmScriptService::update_script() does after its row update: the real registry
+            $this->registry->syncScriptSave($this->fetch_script($sid), $prompt_change_note, $prompt_meta_json);
             if ($this->mode === 'false_after_write') {
                 throw new RuntimeException('script service failed after writing');
             }
@@ -605,35 +595,15 @@ class StubScripts
     }
 }
 
-/** LlmMemoryRuleService: the rule row and the prompt half of the rule save */
-class StubRules
+/** The real LlmMemoryRuleService (rule row, descriptor, change note, real registry), recording the prompt saves */
+class StubRules extends LlmMemoryRuleService
 {
     public $calls = array();
-    private $db;
-    private $registry;
-
-    public function __construct($db, $registry)
-    {
-        $this->db = $db;
-        $this->registry = $registry;
-    }
-
-    public function getRuleById($rule_id)
-    {
-        $row = $this->db->row('SELECT * FROM llm_memory_rules WHERE id = ?', array($rule_id));
-        return $row ?: null;
-    }
 
     public function syncPromptForRule($rule, $prompt_template, $prompt_meta_json = null, $prompt_change_note = null)
     {
         $this->calls[] = array($rule, $prompt_template, $prompt_meta_json, $prompt_change_note);
-        $note = $prompt_change_note !== null && $prompt_change_note !== ''
-            ? json_encode(array('prompt' => array('pendingChangeNote' => $prompt_change_note))) : null;
-        return $this->registry->snapshot(
-            array('owner_type' => 'llm_memory_rule', 'owner_id' => (int)$rule['id'], 'prompt_slot' => 'memory_rule', 'id_languages' => 1, 'title' => $rule['label']),
-            (string)$prompt_template,
-            $note
-        );
+        return parent::syncPromptForRule($rule, $prompt_template, $prompt_meta_json, $prompt_change_note);
     }
 }
 
@@ -764,15 +734,19 @@ function site(array $opts = array())
 {
     $db = new SaveDb();
     seedSite($db->pdo);
+    if (empty($opts['raw'])) {
+        stampActiveVersions($db->pdo);
+    }
     $acl = new FakeAcl(
         isset($opts['select']) ? $opts['select'] : array(1, 2, 3, 10),
         isset($opts['update']) ? $opts['update'] : array(1, 2, 3, 10)
     );
     $services = new FakeServices($db, $acl);
-    $registry = new StubRegistry($db);
+    $GLOBALS['hub_audit'] = array();
+    $registry = new StubRegistry($services);
     $profile = new StubProfile();
     $scripts = new StubScripts($db, $registry);
-    $rules = new StubRules($db, $registry);
+    $rules = new StubRules($services);
     $catalog = new LlmPromptCatalogService($services, null, new StubAssetLoader());
     $service = new LlmPromptHubSaveService($services, $catalog, $registry, $profile, $scripts, $rules);
 
@@ -780,6 +754,39 @@ function site(array $opts = array())
         'db' => $db, 'acl' => $acl, 'services' => $services, 'registry' => $registry, 'profile' => $profile,
         'scripts' => $scripts, 'rules' => $rules, 'catalog' => $catalog, 'service' => $service,
     );
+}
+
+/**
+ * Real rows carry the template_hash and config_json the registry wrote; the seeds only have the text.
+ * Once per run, on a throwaway site, the active text of every seeded stream is saved again through
+ * the real code: the version it writes holds the real hash and config snapshot of exactly that text
+ * and config, which are then stamped onto the seeded active version. Nothing of the registry's
+ * hashing or config building is copied here.
+ */
+function stampActiveVersions($pdo)
+{
+    static $stamps = null;
+    if ($stamps === null) {
+        $stamps = array();
+        $streams = array(
+            // locale id => key, active version id
+            1 => array(KEY_DE, 91), 5 => array(KEY_EN, 103), 2 => array(KEY_SUMMARY, 100),
+            4 => array(KEY_SCRIPT, 94), 6 => array(KEY_RULE, 96),
+        );
+        foreach ($streams as $locale_id => $stream) {
+            $probe = site(array('raw' => true));
+            $text = $probe['db']->value('SELECT template_raw FROM llm_prompt_versions WHERE id = ?', array($stream[1]));
+            $probe['service']->save($stream[0], $text, null, $stream[1], 7);
+            $stamps[$stream[1]] = $probe['db']->row(
+                'SELECT template_hash, config_json FROM llm_prompt_versions WHERE id_llm_prompt_locales = ? AND template_raw = ? AND template_hash IS NOT NULL',
+                array($locale_id, $text)
+            );
+        }
+    }
+    foreach ($stamps as $version_id => $stamp) {
+        $pdo->prepare('UPDATE llm_prompt_versions SET template_hash = ?, config_json = ? WHERE id = ?')
+            ->execute(array($stamp['template_hash'], $stamp['config_json'], $version_id));
+    }
 }
 
 /** Run a callable; the exception it throws, or null */
@@ -1387,7 +1394,7 @@ check('saveAll that finds a conflict opens one transaction and leaves it rolled 
 
 // A write that fails in the language saved last takes the one saved first with it
 $s = site();
-$flaky = new FlakyRegistry($s['db']);
+$flaky = new FlakyRegistry($s['services']);
 $flaky->fail_from = 2;
 $flaky_service = new LlmPromptHubSaveService($s['services'], $s['catalog'], $flaky, $s['profile'], $s['scripts'], $s['rules']);
 $e = thrown(function () use ($flaky_service, $both, $USER) { $flaky_service->saveAll($both, $USER); });
