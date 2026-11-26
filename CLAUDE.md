@@ -13,6 +13,9 @@ read the relevant one before changing a subsystem instead of guessing.
 - **Exceptions are logged through `LlmErrorReporter`**, never `error_log('...' . $e->getMessage())`
   (driver text can contain participant answers).
 - Check with `php tests/LlmConventionsTest.php`; other PHP tests in `tests/*Test.php` run the same way.
+- **Tests run the real code, never a copy of it**: load core classes with a bypassed constructor
+  (see `tests/LlmFormUrlParamsTest.php`) and fake only I/O boundaries. Full rule: the **Tests**
+  section of `../AGENTS.md`.
 
 ## Layout
 - `server/component/style/`: `llmChat` (component + controller, React), `llmResponse` (view of LLM output
