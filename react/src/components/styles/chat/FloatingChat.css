@@ -158,6 +158,216 @@
   animation: llm-float-panel-enter 0.2s ease-out;
 }
 
+/* Free layout mode (CMS allow_floating_chat_resize): left/top set inline */
+.llm-float-panel.llm-float-panel-free {
+  right: auto;
+  bottom: auto;
+  transform: none;
+}
+
+.llm-float-panel-header-draggable {
+  cursor: move;
+}
+
+.llm-float-panel-header-draggable .llm-float-panel-actions {
+  cursor: default;
+}
+
+/* While dragging a resize/move handle: no enter animation, crisp edges */
+.llm-float-panel.llm-float-panel-resizing {
+  animation: none;
+  transition: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.llm-float-panel.llm-float-panel-resizing * {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.llm-float-panel.llm-float-panel-resizing .llm-float-resize-handle {
+  pointer-events: auto;
+}
+
+/* ===== Resize handles (desktop only) ===== */
+.llm-float-resize-handle {
+  position: absolute;
+  z-index: 5;
+  background: transparent;
+  touch-action: none;
+}
+
+.llm-float-resize-handle::after {
+  content: '';
+  position: absolute;
+  background-color: #007bff;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.llm-float-panel:hover .llm-float-resize-handle::after,
+.llm-float-panel-resizing .llm-float-resize-handle::after {
+  opacity: 0;
+}
+
+.llm-float-resize-handle:hover::after,
+.llm-float-panel-resizing .llm-float-resize-handle:hover::after,
+.llm-float-panel-resizing .llm-float-resize-handle::after {
+  opacity: 0.55;
+}
+
+/* Edge hit targets */
+.llm-float-resize-handle-n,
+.llm-float-resize-handle-s {
+  left: 12px;
+  right: 12px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.llm-float-resize-handle-n {
+  top: 0;
+}
+
+.llm-float-resize-handle-s {
+  bottom: 0;
+}
+
+.llm-float-resize-handle-e,
+.llm-float-resize-handle-w {
+  top: 12px;
+  bottom: 12px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.llm-float-resize-handle-e {
+  right: 0;
+}
+
+.llm-float-resize-handle-w {
+  left: 0;
+}
+
+.llm-float-resize-handle-n::after,
+.llm-float-resize-handle-s::after {
+  left: 20%;
+  right: 20%;
+  height: 3px;
+}
+
+.llm-float-resize-handle-n::after {
+  top: 2px;
+}
+
+.llm-float-resize-handle-s::after {
+  bottom: 2px;
+}
+
+.llm-float-resize-handle-e::after,
+.llm-float-resize-handle-w::after {
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+}
+
+.llm-float-resize-handle-e::after {
+  right: 2px;
+}
+
+.llm-float-resize-handle-w::after {
+  left: 2px;
+}
+
+/* Corner hit targets */
+.llm-float-resize-handle-ne,
+.llm-float-resize-handle-nw,
+.llm-float-resize-handle-se,
+.llm-float-resize-handle-sw {
+  width: 14px;
+  height: 14px;
+  z-index: 6;
+}
+
+.llm-float-resize-handle-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.llm-float-resize-handle-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.llm-float-resize-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.llm-float-resize-handle-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.llm-float-resize-handle-ne::after,
+.llm-float-resize-handle-nw::after,
+.llm-float-resize-handle-se::after,
+.llm-float-resize-handle-sw::after {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  opacity: 0;
+  background: transparent;
+  border: 2px solid #007bff;
+}
+
+.llm-float-resize-handle-ne::after {
+  top: 3px;
+  right: 3px;
+  border-left: none;
+  border-bottom: none;
+}
+
+.llm-float-resize-handle-nw::after {
+  top: 3px;
+  left: 3px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.llm-float-resize-handle-se::after {
+  bottom: 3px;
+  right: 3px;
+  border-left: none;
+  border-top: none;
+}
+
+.llm-float-resize-handle-sw::after {
+  bottom: 3px;
+  left: 3px;
+  border-right: none;
+  border-top: none;
+}
+
+.llm-float-resize-handle-ne:hover::after,
+.llm-float-resize-handle-nw:hover::after,
+.llm-float-resize-handle-se:hover::after,
+.llm-float-resize-handle-sw:hover::after,
+.llm-float-panel-resizing .llm-float-resize-handle-ne::after,
+.llm-float-panel-resizing .llm-float-resize-handle-nw::after,
+.llm-float-panel-resizing .llm-float-resize-handle-se::after,
+.llm-float-panel-resizing .llm-float-resize-handle-sw::after {
+  opacity: 0.7;
+}
+
 @keyframes llm-float-panel-enter {
   from {
     opacity: 0;
@@ -625,18 +835,23 @@
     left: 16px;
   }
 
-  /* Full screen panel on mobile */
+  /* Full screen panel on mobile — no resize */
   .llm-float-panel {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    width: 100%;
-    height: 100%;
-    max-height: 100%;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    min-height: 0 !important;
     border-radius: 0;
     z-index: 1052;
+  }
+
+  .llm-float-resize-handle {
+    display: none !important;
   }
 
   .llm-float-panel-header {

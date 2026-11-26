@@ -43,6 +43,8 @@ export interface ChatPanelHeaderProps {
   /** Trailing controls - use <HeaderButton>. */
   actions?: React.ReactNode;
   className?: string;
+  /** Optional props on the header root (e.g. drag-to-move pointer handlers). */
+  headerProps?: React.HTMLAttributes<HTMLDivElement>;
 }
 
 export const ChatPanelHeader: React.FC<ChatPanelHeaderProps> = ({
@@ -56,9 +58,11 @@ export const ChatPanelHeader: React.FC<ChatPanelHeaderProps> = ({
   titleId,
   actions,
   className = '',
+  headerProps,
 }) => (
   <div
-    className={`llm-panel-header llm-float-panel-header card-header bg-primary text-white d-flex align-items-center justify-content-between py-2 px-3 ${className}`.trim()}
+    {...headerProps}
+    className={`llm-panel-header llm-float-panel-header card-header bg-primary text-white d-flex align-items-center justify-content-between py-2 px-3 ${className} ${headerProps?.className || ''}`.trim()}
   >
     <div className="d-flex align-items-center llm-panel-header-main">
       <div className="llm-float-panel-avatar mr-2">

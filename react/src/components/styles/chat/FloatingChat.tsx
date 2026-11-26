@@ -13,6 +13,10 @@
  * 
  * Supports multiple floating buttons on the same page by using unique IDs
  * based on section_id.
+ *
+ * When CMS `allow_floating_chat_resize` is on (desktop), the panel can be
+ * moved (drag header) and resized from any edge/corner; layout is stored
+ * in localStorage per section.
  * 
  * @module components/FloatingChat
  */
@@ -21,11 +25,18 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { LlmChat } from './LlmChat';
 import { ChatPanelHeader, HeaderButton } from '../shared/ChatPanelHeader';
 import type { LlmChatConfig, FloatingButtonPosition } from '../../../types';
+import {
+  useFloatingPanelSize,
+  applyResizeDelta,
+  applyMoveDelta,
+  type ResizeEdge,
+  type PanelLayout,
+} from '../../../hooks/useFloatingPanelSize';
 import './FloatingChat.css';
 
-/**
- * Props for FloatingChat component
- */
+/** Desktop breakpoint matching FloatingChat.css (full-screen panel below this). */
+const FLOAT_RESIZE_MIN_WIDTH = 577;
+
 /**
  * Shortcut request: open the panel and prefill the composer (user edits/sends).
  */
@@ -41,6 +52,8 @@ interface FloatingChatProps {
   /** Component configuration from PHP backend */
   config: LlmChatConfig;
 }
+
+type InteractMode = 'resize' | 'move';
 
 /**
  * Get z-index offset based on position to stack buttons properly
@@ -105,6 +118,25 @@ function getPanelPositionClasses(position: FloatingButtonPosition): string {
   }
 }
 
+function cursorForEdge(edge: ResizeEdge): string {
+  switch (edge) {
+    case 'n':
+    case 's':
+      return 'ns-resize';
+    case 'e':
+    case 'w':
+      return 'ew-resize';
+    case 'ne':
+    case 'sw':
+      return 'nesw-resize';
+    case 'nw':
+    case 'se':
+      return 'nwse-resize';
+    default:
+      return 'nwse-resize';
+  }
+}
+
 /**
  * Floating Chat Component
  * 
@@ -118,10 +150,20 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
   const [hasUnread, setHasUnread] = useState(false);
   const [showShortcutTray, setShowShortcutTray] = useState(false);
   const [pendingShortcutRequest, setPendingShortcutRequest] = useState<ShortcutRequest | null>(null);
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= FLOAT_RESIZE_MIN_WIDTH : true
+  );
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const shortcutTrayTimeoutRef = useRef<number | null>(null);
+  const interactSessionRef = useRef<{
+    mode: InteractMode;
+    edge?: ResizeEdge;
+    startX: number;
+    startY: number;
+    startLayout: PanelLayout;
+  } | null>(null);
 
   // Generate unique IDs based on section_id for multiple floating buttons
   const uniqueId = useMemo(() => `llm-float-${config.sectionId || 'default'}`, [config.sectionId]);
@@ -138,6 +180,30 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     () => getZIndexOffset(config.floatingButtonPosition, config.sectionId),
     [config.floatingButtonPosition, config.sectionId]
   );
+
+  const layoutControlsEnabled = Boolean(config.allowFloatingChatResize) && isDesktop;
+  const {
+    layout: panelLayout,
+    isCustomLayout,
+    isInteracting,
+    setLayoutFromDrag,
+    beginInteract,
+    endInteract,
+    restoreDefault,
+    edges: resizeEdges,
+  } = useFloatingPanelSize(
+    config.sectionId,
+    config.floatingButtonPosition,
+    layoutControlsEnabled
+  );
+
+  useEffect(() => {
+    const onViewportChange = () => {
+      setIsDesktop(window.innerWidth >= FLOAT_RESIZE_MIN_WIDTH);
+    };
+    window.addEventListener('resize', onViewportChange);
+    return () => window.removeEventListener('resize', onViewportChange);
+  }, []);
 
   // Toggle the chat panel
   const handleToggle = useCallback(() => {
@@ -171,17 +237,101 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     setShowShortcutTray(false);
   }, []);
 
+  const startInteract = useCallback(
+    (mode: InteractMode, event: React.PointerEvent, edge?: ResizeEdge) => {
+      if (!layoutControlsEnabled) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      interactSessionRef.current = {
+        mode,
+        edge,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLayout: { ...panelLayout },
+      };
+      document.body.style.cursor = mode === 'move' ? 'move' : cursorForEdge(edge || 'se');
+      document.body.style.userSelect = 'none';
+      beginInteract();
+      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    },
+    [layoutControlsEnabled, panelLayout, beginInteract]
+  );
+
+  const handleResizePointerDown = useCallback(
+    (edge: ResizeEdge, event: React.PointerEvent<HTMLDivElement>) => {
+      startInteract('resize', event, edge);
+    },
+    [startInteract]
+  );
+
+  const handleMovePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      // Ignore drags that start on header action buttons
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button, a, input, textarea, select')) {
+        return;
+      }
+      startInteract('move', event);
+    },
+    [startInteract]
+  );
+
+  useEffect(() => {
+    if (!isInteracting) {
+      return;
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      const session = interactSessionRef.current;
+      if (!session) {
+        return;
+      }
+      const dx = event.clientX - session.startX;
+      const dy = event.clientY - session.startY;
+      if (session.mode === 'move') {
+        setLayoutFromDrag(applyMoveDelta(session.startLayout, dx, dy));
+      } else if (session.edge) {
+        setLayoutFromDrag(applyResizeDelta(session.startLayout, session.edge, dx, dy));
+      }
+    };
+
+    const finishInteract = () => {
+      interactSessionRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      endInteract();
+    };
+
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', finishInteract);
+    document.addEventListener('pointercancel', finishInteract);
+    return () => {
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', finishInteract);
+      document.removeEventListener('pointercancel', finishInteract);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isInteracting, setLayoutFromDrag, endInteract]);
+
   // Handle escape key to close panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
+        if (isInteracting) {
+          interactSessionRef.current = null;
+          endInteract();
+          return;
+        }
         handleClose();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleClose]);
+  }, [isOpen, isInteracting, handleClose, endInteract]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -192,9 +342,12 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     };
   }, []);
 
-  // Handle click outside to close panel
+  // Handle click outside to close panel (skip while resizing/moving)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
+      if (isInteracting) {
+        return;
+      }
       if (
         isOpen &&
         panelRef.current &&
@@ -208,7 +361,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, handleClose]);
+  }, [isOpen, isInteracting, handleClose]);
 
   // The icon field holds either an image URL (resolved server-side) or a FontAwesome class
   const iconImage = /\/|\.(png|jpe?g|gif|svg|webp)$/i.test(config.floatingButtonIcon)
@@ -227,9 +380,23 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
     zIndex: 1050 + zIndexOffset
   }), [zIndexOffset]);
 
-  const panelStyle = useMemo(() => ({
-    zIndex: 1051 + zIndexOffset
-  }), [zIndexOffset]);
+  const panelStyle = useMemo(() => {
+    const style: React.CSSProperties = {
+      zIndex: 1051 + zIndexOffset,
+    };
+    if (layoutControlsEnabled) {
+      style.width = panelLayout.width;
+      style.height = panelLayout.height;
+      style.left = panelLayout.left;
+      style.top = panelLayout.top;
+      style.right = 'auto';
+      style.bottom = 'auto';
+      style.transform = 'none';
+      style.maxHeight = 'none';
+      style.minHeight = 0;
+    }
+    return style;
+  }, [zIndexOffset, layoutControlsEnabled, panelLayout]);
 
   // Memoize the config passed to LlmChat to ensure stability
   const llmChatConfig = useMemo(() => ({
@@ -339,7 +506,7 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
         <div 
           ref={panelRef}
           id={`${uniqueId}-panel`}
-          className={`llm-float-panel card shadow-lg ${panelPositionClass}`}
+          className={`llm-float-panel card shadow-lg ${layoutControlsEnabled ? 'llm-float-panel-free' : panelPositionClass}${isInteracting ? ' llm-float-panel-resizing' : ''}${isCustomLayout ? ' llm-float-panel-custom-size' : ''}`}
           role="dialog"
           aria-labelledby={`${uniqueId}-title`}
           style={panelStyle}
@@ -352,8 +519,25 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
             iconImage={iconImage}
             status={config.showModelInfo ? config.configuredModel : undefined}
             statusIcon="fa-robot"
+            className={layoutControlsEnabled ? 'llm-float-panel-header-draggable' : undefined}
+            headerProps={
+              layoutControlsEnabled
+                ? {
+                    onPointerDown: handleMovePointerDown,
+                    title: 'Drag to move',
+                  }
+                : undefined
+            }
             actions={
               <>
+                {layoutControlsEnabled && (
+                  <HeaderButton
+                    icon="fa-undo"
+                    label="Restore default size and position"
+                    onClick={restoreDefault}
+                    disabled={!isCustomLayout}
+                  />
+                )}
                 <HeaderButton icon="fa-minus" label="Minimize chat" onClick={handleClose} />
                 <HeaderButton icon="fa-times" label="Close chat" onClick={handleClose} />
               </>
@@ -368,6 +552,19 @@ export const FloatingChat: React.FC<FloatingChatProps> = ({ config }) => {
               onShortcutRequestConsumed={handleShortcutRequestConsumed}
             />
           </div>
+
+          {/* Desktop resize handles — all edges when CMS allows resize/move */}
+          {layoutControlsEnabled &&
+            resizeEdges.map((edge) => (
+              <div
+                key={edge}
+                className={`llm-float-resize-handle llm-float-resize-handle-${edge}`}
+                onPointerDown={(event) => handleResizePointerDown(edge, event)}
+                role="separator"
+                aria-orientation={edge === 'n' || edge === 's' ? 'horizontal' : 'vertical'}
+                aria-label={`Resize chat panel (${edge})`}
+              />
+            ))}
         </div>
       )}
 
