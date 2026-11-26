@@ -173,6 +173,7 @@ To make tracking work well, define trackable topics in `conversation_context`.
 
 Fields:
 - `enable_floating_button`
+- `allow_floating_chat_resize`
 - `floating_button_position`
 - `floating_button_icon`
 - `floating_button_label`

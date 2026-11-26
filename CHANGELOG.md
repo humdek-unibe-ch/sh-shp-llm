@@ -10,8 +10,9 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   `date_format`, `InputDateFormat`).
 - Run `server/db/v1.10.0.sql` after `v1.9.0.sql` (v1.9.1 has no SQL),
   deploy the rebuilt bundles (`js/ext`, `css/ext`), then clear the SelfHelp cache
-  (**Admin > Cache > Clear all**): the migration adds a page and its ACL. It
-  adds no table, field, style or hook and can be run again.
+  (**Admin > Cache > Clear all**): the migration adds the Prompts hub page/ACL
+  and the CMS field `allow_floating_chat_resize` on `llmChat`. It is
+  idempotent and can be run again.
 - The admin group gets the new page **LLM Prompts**. Other groups need ACL on
   it (select to look, update to edit). On top of that the hub checks the ACL
   of the page a prompt belongs to, so a group never reaches more than it does
@@ -19,6 +20,13 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
 ### Added
 
+- **CMS option to resize/move the floating chat (default off):** checkbox
+  `allow_floating_chat_resize` on `llmChat`. When enabled (desktop only),
+  participants can drag any edge/corner to resize and drag the header to move
+  the panel. A header control restores the default size and position. Layout is
+  remembered in `localStorage` per section (`llm-float-panel-layout-{sectionId}`)
+  as a UI preference only — no personal data and no cookie/GDPR consent.
+  Mobile stays full-screen. See [doc/floating-chat-button.md](doc/floating-chat-button.md).
 - **Prompts hub** (`moduleLlmPrompts`, `/admin/module_llm/prompts`, "LLM Prompts"
   in the LLM admin menu): one list of every LLM prompt of the site - the
   `llm_prompt` fields of CMS sections (per language, also sections never saved

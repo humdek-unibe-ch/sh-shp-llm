@@ -18,6 +18,7 @@ The Floating Chat Button feature transforms the LLM Chat interface into a floati
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enable_floating_button` | checkbox | `false` | Enable floating chat button mode |
+| `allow_floating_chat_resize` | checkbox | `false` | Allow desktop users to resize and move the floating panel (see below) |
 | `floating_button_position` | select | `bottom-right` | Position of the floating button |
 | `floating_button_icon` | text | `fa-comments` | Font Awesome icon class, or an image path/URL (`assets/chat.png`, `/assets/chat.svg`, `https://...`) |
 
@@ -165,10 +166,20 @@ Combine with other features for best results:
 - enable_conversations_list: false (simpler single-conversation mode)
 ```
 
-### 4. Mobile Considerations
+### 4. Resizing and moving the panel (desktop)
+
+Requires `allow_floating_chat_resize` (default **off**). On viewports ≥577px:
+
+- Drag any edge or corner to resize
+- Drag the panel header to move
+- Small **undo** button in the header restores the default size and position (disabled until the layout has been changed)
+
+Layout is stored in `localStorage` as `llm-float-panel-layout-{sectionId}` (UI preference only — no personal data, no cookie consent). Restore clears it and returns to the default placement for the configured button position. Mobile stays full-screen (no resize/move).
+
+### 5. Mobile Considerations
 
 - Button automatically adjusts size on mobile
-- Modal goes full-screen on small devices
+- Panel goes full-screen on small devices (resize handles hidden)
 - Test on various screen sizes
 
 ## Example Configurations
