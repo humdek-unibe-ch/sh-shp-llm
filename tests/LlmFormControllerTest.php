@@ -18,9 +18,10 @@
  *    silent fallback to the latest record of the user).
  *
  * No bootstrap, no database: the real controller file is copied into a
- * throw-away tree that mirrors its relative require_once targets, where small
- * stand-ins replace the core FormUserInputController, the JSON trait (which
- * exits), the prompt loader and LlmService.
+ * throw-away tree that mirrors its relative require_once targets. The core
+ * FormUserInputController there is the real one (it stores through the fake
+ * model); small stand-ins replace the JSON trait (which exits), the prompt
+ * loader and LlmService.
  *
  * Run: php tests/LlmFormControllerTest.php
  */
@@ -31,6 +32,7 @@ foreach (array(
     'DELETE_RECORD_ID' => 'delete_record_id',
     'TRANSACTION_BY_LLM_FORM' => 'by_llm_form',
     'GUEST_USER_ID' => 1,
+    'actionTriggerTypes_finished' => 'finished',
 ) as $const => $value) {
     if (!defined($const)) {
         define($const, $value);
@@ -89,36 +91,12 @@ sandbox_write(
     file_get_contents(dirname(__DIR__) . '/server/service/LlmErrorReporter.php')
 );
 
-// Core controller: the same early exits as FormUserInputController::execute()
-sandbox_write($root . '/server/component/style/formUserInput/FormUserInputController.php', <<<'PHP'
-<?php
-class FormUserInputController
-{
-    public $success = false;
-    public $fail = false;
-    public $error_msgs = array();
-    protected $model;
-
-    public function __construct($model)
-    {
-        $this->model = $model;
-        $GLOBALS['T']['events'][] = 'core_execute';
-        if (!isset($_POST['__form_name']) || $_POST['__form_name'] !== $model->get_db_field('name')) {
-            return;
-        }
-        unset($_POST['__form_name']);
-        $this->success = true;
-    }
-
-    protected function normalize_post_id($value)
-    {
-        if (is_array($value) && isset($value['value'])) {
-            return intval($value['value']);
-        }
-        return intval($value);
-    }
-}
-PHP
+// The real core controller (no copy): loaded from its own location, so its relative
+// requires (BaseController, GUMP + language files, InputDateFormat) resolve there.
+// It reaches storage only through the model (TModel below).
+sandbox_write(
+    $root . '/server/component/style/formUserInput/FormUserInputController.php',
+    '<?php require_once ' . var_export(dirname(__DIR__, 4) . '/server/component/style/formUserInput/FormUserInputController.php', true) . ';'
 );
 
 // JSON trait: the real one exits, this one throws what it would have sent
@@ -397,6 +375,28 @@ class TModel
     public function getLlmReasoningEffort() { return null; }
     public function getLlmResultFieldName() { return 'llm_result'; }
     public function getLlmResultMetaFieldName() { return 'llm_result_meta'; }
+
+    // Storage of the real core FormUserInputController (the form record, not the LLM result)
+    public function get_form_entry_record($record_id, $own_entries_only)
+    {
+        return $GLOBALS['T']['user_input']->get_data(5, 'AND record_id = ' . (int)$record_id, $own_entries_only, $_SESSION['id_user'] ?? null, true);
+    }
+    public function save_user_input($user_input)
+    {
+        $GLOBALS['T']['events'][] = 'core_save';
+        return 9;
+    }
+    public function update_user_input($user_input, $record_id)
+    {
+        $GLOBALS['T']['events'][] = 'core_update:' . $record_id;
+        return $record_id;
+    }
+    public function delete_user_input($record_id)
+    {
+        $GLOBALS['T']['events'][] = 'core_delete:' . $record_id;
+        return true;
+    }
+    public function reload_children() {}
 }
 
 /* =========================================================================
@@ -490,7 +490,7 @@ echo "== Section addressing ==\n";
 $r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '999', '__record_id' => '7'), 42);
 check('action for another section: no response sent', $r['json'] === null);
 check('action for another section: no LLM call, no rate-limit use', !had($r, 'llm_call') && !had($r, 'rate_check'));
-check('action for another section: handed on to the core controller', had($r, 'core_execute'));
+check('action for another section: left to the core controller, which saves nothing without __form_name', !had($r, 'core_save') && count($r['saved']) === 0);
 
 $r = run_controller(array('__llm_action' => 'regenerate', '__record_id' => '7'), 42);
 check('action without section_id: not answered', $r['json'] === null && !had($r, 'llm_call'));
@@ -500,7 +500,7 @@ check('submit of another form: no response sent', $r['json'] === null);
 check('submit of another form: no LLM call', !had($r, 'llm_call') && !had($r, 'rate_check'));
 
 $r = run_controller(array('__form_name' => 'my_form', 'name' => 'Eve'), 42);
-check('plain submit without __llm_form: left to the core controller', $r['json'] === null && had($r, 'core_execute') && !had($r, 'llm_call'));
+check('plain submit without __llm_form: saved by the core controller, no LLM', $r['json'] === null && had($r, 'core_save') && !had($r, 'llm_call'));
 
 /* =========================================================================
  * Guests
@@ -522,7 +522,7 @@ check('generate_feedback as guest: 401, no LLM call', $r['status'] === 401 && !h
 
 $r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve'), GUEST_USER_ID);
 check('submit as guest: 401', $r['status'] === 401 && $r['json']['success'] === false);
-check('submit as guest: the core controller never saved anything', !had($r, 'core_execute'));
+check('submit as guest: the core controller never saved anything', !had($r, 'core_save'));
 check('submit as guest: no LLM call', !had($r, 'llm_call') && !had($r, 'rate_check'));
 
 /* =========================================================================
@@ -642,10 +642,11 @@ check('provider failure: the meta carries the same generic text', $r['json']['ll
 echo "\n== Submit and manual feedback ==\n";
 
 $r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve'), 42);
-check('submit as user: the core controller saved the form first', had($r, 'core_execute'));
+check('submit as user: the core controller saved the form first', had($r, 'core_save'));
 check('submit as user: LLM answered and stored on the latest record', $r['status'] === 200 && $r['json']['success'] === true && $r['saved'][0]['based_on'] === array('record_id' => 9));
 
 $r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'selected_record_id' => '7', 'name' => 'Eve'), 42);
+check('submit editing record 7: the core controller updated record 7', had($r, 'core_update:7') && !had($r, 'core_save'));
 check('submit editing record 7: result stored on record 7', $r['saved'][0]['based_on'] === array('record_id' => 7));
 
 $r = run_controller(array('__llm_action' => 'generate_feedback', 'section_id' => '12', 'name' => 'Eve', 'selected_record_id' => array('value' => '7')), 42, array('manual' => true));
@@ -676,7 +677,7 @@ check('generate_feedback from another site: 403, no LLM call', $r['status'] === 
 
 $r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve'), 42, $evil);
 check('LLM submit from another site: 403', $r['status'] === 403 && $r['json']['success'] === false);
-check('LLM submit from another site: refused before the core controller saved anything', !had($r, 'core_execute') && count($r['saved']) === 0);
+check('LLM submit from another site: refused before the core controller saved anything', !had($r, 'core_save') && count($r['saved']) === 0);
 check('LLM submit from another site: no LLM call, no rate-limit use', !had($r, 'llm_call') && !had($r, 'rate_check'));
 
 $r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7', 'csrf_token' => 'wrong'), 42, $evil);
@@ -686,7 +687,7 @@ $r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', 
 check('regenerate from another site with the session token: allowed', $r['status'] === 200 && $r['json']['success'] === true && had($r, 'llm_call'));
 
 $r = run_controller(array('__llm_form' => '1', '__form_name' => 'my_form', 'name' => 'Eve', 'csrf_token' => 'tok'), 42, $evil);
-check('LLM submit with the session token: allowed', $r['status'] === 200 && $r['json']['success'] === true && had($r, 'core_execute'));
+check('LLM submit with the session token: allowed', $r['status'] === 200 && $r['json']['success'] === true && had($r, 'core_save'));
 
 $same = array('site' => 'same-origin', 'origin' => 'https://site.example', 'session_token' => 'tok');
 $r = run_controller(array('__llm_action' => 'regenerate', 'section_id' => '12', '__record_id' => '7'), 42, $same);
