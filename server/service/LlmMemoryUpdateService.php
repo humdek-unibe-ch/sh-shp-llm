@@ -7,12 +7,19 @@ require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmMemoryConfigService.php';
 require_once __DIR__ . '/LlmMemoryStorageService.php';
 require_once __DIR__ . '/LlmMemoryRuleService.php';
+require_once __DIR__ . '/LlmMemoryItems.php';
 require_once __DIR__ . '/LlmService.php';
 require_once __DIR__ . '/prompt/LlmPromptAssetLoader.php';
 
 /**
  * Orchestrates a single memory update: loads current memory,
  * builds prompt, calls LLM, validates result, and persists data.
+ *
+ * A memory is a list of items (LlmMemoryItems). The model does not rewrite it:
+ * it answers with operations (add / update / delete) on single items, which are
+ * applied here, in code, to what is stored at that moment. A memory that is
+ * still free text (written before items existed) is converted by the model
+ * with add operations on the first update.
  */
 class LlmMemoryUpdateService extends BaseLlmService
 {
@@ -106,8 +113,12 @@ class LlmMemoryUpdateService extends BaseLlmService
 
         $this->storage_service->initializeMemoryTables();
         $current_memory = $this->storage_service->getEffectiveMemory($user_id, $memory_key);
+        $memory = LlmMemoryItems::fromRow($current_memory);
+        $key_sections = $this->config_service->getKeySections($memory_key);
+        // free text written before items existed: the model converts it with add operations
+        $converting = $memory['kind'] === 'legacy';
 
-        $prompt = $this->buildPrompt($rule, $normalized_payload, $current_memory, $memory_key);
+        $prompt = $this->buildPrompt($rule, $normalized_payload, $current_memory, $memory_key, $memory, $key_sections);
         $model = $this->config_service->resolveRuleLlmModel($rule);
         $temperature = $this->config_service->resolveRuleLlmTemperature($rule);
         $max_tokens = $this->config_service->resolveRuleLlmMaxTokens($rule);
@@ -139,8 +150,8 @@ class LlmMemoryUpdateService extends BaseLlmService
             }
 
             $parse_error = '';
-            $memory_data = $this->parseMemoryOutput($response['content'], $parse_error);
-            if (!$memory_data) {
+            $llm_ops = $this->parseMemoryOutput($response['content'], $parse_error, $converting);
+            if (!$llm_ops) {
                 error_log("LLM Memory: parse failed (attempt 1), error=$parse_error, raw=" . mb_substr($response['content'], 0, 500));
 
                 $retry_tokens = min($max_tokens * 2, 8192);
@@ -156,15 +167,56 @@ class LlmMemoryUpdateService extends BaseLlmService
                     ]
                 );
                 if ($retry_response && isset($retry_response['content'])) {
-                    $memory_data = $this->parseMemoryOutput($retry_response['content'], $parse_error);
+                    $llm_ops = $this->parseMemoryOutput($retry_response['content'], $parse_error, $converting);
                 }
 
-                if (!$memory_data) {
+                if (!$llm_ops) {
                     $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key,
                         "Failed to parse LLM output after retry: $parse_error");
                     return false;
                 }
             }
+
+            // The memory can change while the model works (the user edits it in the editor, another
+            // update runs): the operations are applied to what is stored now, not to what the model was
+            // shown. Items an operation names that are gone meanwhile are skipped, all others stay as they are.
+            $this->cache->clear_cache($this->cache::CACHE_TYPE_USER_INPUT);
+            $latest = LlmMemoryItems::fromRow($this->storage_service->getEffectiveMemory($user_id, $memory_key));
+            if ($this->legacyMemoryChanged($memory, $latest)) {
+                $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key,
+                    'The free-text memory changed while it was being converted');
+                return false;
+            }
+
+            $ops = $llm_ops['ops'];
+            if (empty($key_sections)) {
+                // a key without sections: the model was asked for no section; one it names anyway is
+                // dropped, so the fact lands in the flat list instead of being skipped
+                foreach ($ops as $index => $op) {
+                    unset($ops[$index]['section']);
+                }
+            }
+            $applied = LlmMemoryItems::applyOps($latest['items'], $ops, $key_sections, LlmMemoryItems::SOURCE_LLM);
+            if ($converting && $applied['applied'] === 0) {
+                $this->handleFailedUpdate($user_id, $rule_id, $dedupe_key,
+                    'The free-text memory was not converted: no operation could be applied');
+                return false;
+            }
+            if (!empty($applied['skipped'])) {
+                $this->logWarning('Memory operations skipped', [
+                    'user_id'    => (int)$user_id,
+                    'memory_key' => $memory_key,
+                    'rule_id'    => $rule_id,
+                    'skipped'    => $applied['skipped'],
+                ]);
+            }
+
+            $memory_data = [
+                'memory_text'    => LlmMemoryItems::renderText($applied['items'], $key_sections),
+                'memory_object'  => LlmMemoryItems::toMemoryObject($applied['items']),
+                'flat_fields'    => [],
+                'change_summary' => $llm_ops['change_summary'],
+            ];
 
             $metadata = [
                 'rule_id'       => $rule_id,
@@ -208,23 +260,26 @@ class LlmMemoryUpdateService extends BaseLlmService
      * Build the LLM prompt messages array.
      *
      * Architecture:
-     *   system = smart built-in prompt (merge/append/replace rules, JSON schema, language)
-     *   user   = auto-assembled sections (current memory, submitted data, data_config, admin instructions)
+     *   system = smart built-in prompt (operations, preservation rules, JSON schema, language)
+     *   user   = auto-assembled sections (sections of the key, current memory items, submitted data,
+     *            data_config, admin instructions)
      *
      * @param array      $rule
      * @param array      $normalized_payload
-     * @param array|null $current_memory
+     * @param array|null $current_memory  The stored memory row
      * @param string     $memory_key
+     * @param array      $memory          LlmMemoryItems::fromRow() of $current_memory
+     * @param array      $key_sections    Sections of $memory_key
      * @return array API messages
      */
-    private function buildPrompt($rule, $normalized_payload, $current_memory, $memory_key)
+    private function buildPrompt($rule, $normalized_payload, $current_memory, $memory_key, $memory, $key_sections)
     {
         $variables = $this->buildInterpolationVariables($rule, $normalized_payload, $current_memory, $memory_key);
         $user_language = $normalized_payload['user_language'] ?? '';
 
         return [
-            ['role' => 'system', 'content' => $this->buildSystemMessage($user_language, $memory_key)],
-            ['role' => 'user',   'content' => $this->buildUserMessage($rule, $normalized_payload, $current_memory, $variables, $memory_key)],
+            ['role' => 'system', 'content' => $this->buildSystemMessage($user_language, $memory_key, $key_sections)],
+            ['role' => 'user',   'content' => $this->buildUserMessage($rule, $normalized_payload, $variables, $memory_key, $memory, $key_sections)],
         ];
     }
 
@@ -233,18 +288,53 @@ class LlmMemoryUpdateService extends BaseLlmService
      *
      * @param string $user_language  e.g. "Deutsch (Schweiz)" or ""
      * @param string $memory_key     The memory key being updated
+     * @param array  $key_sections   Sections of the key (their codes are the allowed `section` values)
      * @return string
      */
-    private function buildSystemMessage($user_language, $memory_key = '')
+    private function buildSystemMessage($user_language, $memory_key = '', $key_sections = [])
     {
         $loader = new LlmPromptAssetLoader();
+        $text_schema = ['type' => 'string', 'maxLength' => LlmMemoryItems::MAX_TEXT_LENGTH, 'description' => 'One short fact'];
+        // a key without sections is one flat list: its operations carry no section
+        $codes = array_column($key_sections, 'code');
+        $add_op = ['op' => ['const' => 'add'], 'section' => ['type' => 'string', 'enum' => $codes], 'text' => $text_schema];
+        $update_op = [
+            'op'      => ['const' => 'update'],
+            'id'      => ['type' => 'string', 'description' => 'Id of an item in Current Memory'],
+            'text'    => $text_schema,
+            'section' => ['type' => 'string', 'enum' => $codes, 'description' => 'Only to move the item to another section'],
+        ];
+        if (empty($codes)) {
+            unset($add_op['section'], $update_op['section']);
+        }
         $output_schema = json_encode([
             'type' => 'object',
-            'required' => ['memory_text', 'memory_object', 'flat_fields', 'change_summary'],
+            'required' => ['ops', 'change_summary'],
             'properties' => [
-                'memory_text'    => ['type' => 'string', 'description' => 'Human-readable summary of the user memory'],
-                'memory_object'  => ['type' => 'object', 'description' => 'Structured key-value memory data'],
-                'flat_fields'    => ['type' => 'object', 'description' => 'Flattened fields for dataTable storage'],
+                'ops' => [
+                    'type' => 'array',
+                    'description' => 'Operations on memory items, applied in order. Empty when nothing changes.',
+                    'items' => ['oneOf' => [
+                        [
+                            'type' => 'object',
+                            'required' => empty($codes) ? ['op', 'text'] : ['op', 'section', 'text'],
+                            'properties' => $add_op,
+                        ],
+                        [
+                            'type' => 'object',
+                            'required' => ['op', 'id', 'text'],
+                            'properties' => $update_op,
+                        ],
+                        [
+                            'type' => 'object',
+                            'required' => ['op', 'id'],
+                            'properties' => [
+                                'op' => ['const' => 'delete'],
+                                'id' => ['type' => 'string', 'description' => 'Id of an item in Current Memory'],
+                            ],
+                        ],
+                    ]],
+                ],
                 'change_summary' => ['type' => 'string', 'description' => 'Brief description of what changed'],
             ],
         ], JSON_UNESCAPED_SLASHES);
@@ -271,12 +361,13 @@ class LlmMemoryUpdateService extends BaseLlmService
      *
      * @param array      $rule
      * @param array      $normalized_payload
-     * @param array|null $current_memory
-     * @param array      $variables  Already-resolved interpolation variables
-     * @param string     $memory_key The memory key being updated
+     * @param array      $variables    Already-resolved interpolation variables
+     * @param string     $memory_key   The memory key being updated
+     * @param array      $memory       LlmMemoryItems::fromRow() of the stored memory
+     * @param array      $key_sections Sections of $memory_key
      * @return string
      */
-    private function buildUserMessage($rule, $normalized_payload, $current_memory, $variables, $memory_key = '')
+    private function buildUserMessage($rule, $normalized_payload, $variables, $memory_key, $memory, $key_sections)
     {
         $sections = [];
 
@@ -288,11 +379,29 @@ class LlmMemoryUpdateService extends BaseLlmService
         }
         $sections[] = "## Scope\n" . implode("\n", $scope_lines);
 
-        $mem_text = $current_memory['memory_text'] ?? '';
-        $mem_json = $current_memory['memory_json'] ?? '{}';
-        if ($mem_text !== '' || $mem_json !== '{}') {
-            $sections[] = "## Current Memory\n" . $mem_text
-                . "\n\n### Structured Data\n```json\n" . $mem_json . "\n```";
+        if (!empty($key_sections)) {
+            $section_lines = [];
+            foreach ($key_sections as $section) {
+                $section_lines[] = '- `' . $section['code'] . '` (' . $section['label'] . ')'
+                    . ($section['hint'] !== '' ? ': ' . $section['hint'] : '');
+            }
+            $sections[] = "## Sections\nEvery item belongs to exactly one of these sections. Use the code:\n" . implode("\n", $section_lines);
+        } else {
+            $sections[] = "## Sections\nThis memory has no sections: it is one list of items. Do not send a \"section\" in any operation.";
+        }
+
+        if ($memory['kind'] === 'items' && !empty($memory['items'])) {
+            $sections[] = "## Current Memory\n### Structured Data\n```json\n" . $this->formatItemsForPrompt($memory['items']) . "\n```";
+        } elseif ($memory['kind'] === 'items') {
+            $sections[] = "## Current Memory\nThe memory has no items yet.";
+        } elseif ($memory['kind'] === 'legacy') {
+            // not converted yet: the old text goes to the model as data to turn into items
+            $legacy = "## Legacy Memory (to convert)\n" . $memory['legacy_text'];
+            if ($memory['legacy_json'] !== '') {
+                $legacy .= "\n\n### Structured Data\n```json\n" . $memory['legacy_json'] . "\n```";
+            }
+            $sections[] = "## Current Memory\nThe memory has no items yet: it is still free text, see Legacy Memory (to convert).";
+            $sections[] = $legacy;
         } else {
             $sections[] = "## Current Memory\nNo existing memory for this user yet.";
         }
@@ -333,21 +442,63 @@ class LlmMemoryUpdateService extends BaseLlmService
         }
 
         $sections[] = "## Reminder\n"
-            . "Your response MUST be valid JSON with exactly these keys: "
-            . "memory_text, memory_object, flat_fields, change_summary.\n"
-            . "EVERY fact from the Current Memory section MUST appear in your output. "
-            . "Only ADD or UPDATE facts related to the Submitted Data and Instructions above. "
-            . "All other existing facts MUST be preserved exactly as they are — "
-            . "do not rephrase, reorganise, or summarise them differently.\n"
+            . "Your response MUST be valid JSON with exactly these keys: ops, change_summary.\n"
+            . "Every item you do not name in an operation stays exactly as it is. "
+            . "Use only ids from Current Memory" . (empty($key_sections) ? " and no section. " : " and only the section codes from Sections. ")
+            . "Only add, update or delete what the Submitted Data and Instructions above give a clear reason for.\n"
+            . ($memory['kind'] === 'legacy'
+                ? "The memory is still free text: convert EVERY fact of the Legacy Memory with add operations "
+                    . "(one fact per item" . (empty($key_sections) ? "" : ", in the right section") . ") and add what the Submitted Data brings. "
+                    . "ops MUST NOT be empty.\n"
+                : '')
             . ($deleted
-                ? "Only exception: facts that came only from the deleted entry may be "
-                    . "removed or marked as deleted if, and only if, the Instructions say so. "
-                    . "Every other existing fact MUST be kept."
-                : "The Instructions only tell you what to ADD or UPDATE — they can "
-                    . "NEVER authorise removing existing memory. If the instructions say "
-                    . "\"only retain X\", ignore that restriction and keep all existing facts.");
+                ? "Only exception: items that came only from the deleted entry may be "
+                    . "deleted if, and only if, the Instructions say so. "
+                    . "Every other item MUST be kept."
+                : "The Instructions tell you what to ADD or UPDATE — they can "
+                    . "NEVER authorise deleting items. Only an explicit request in the Submitted Data to remove "
+                    . "or forget something deletes the items it names, and no others. If the instructions say "
+                    . "\"only retain X\", ignore that restriction and keep all existing items.");
 
         return implode("\n\n", $sections);
+    }
+
+    /**
+     * The items as the model sees them: one JSON object per line with id, section and text.
+     *
+     * @param array $items
+     * @return string JSON array
+     */
+    private function formatItemsForPrompt(array $items)
+    {
+        $lines = [];
+        foreach ($items as $item) {
+            $lines[] = '  ' . json_encode(
+                ['id' => $item['id'], 'section' => $item['section'], 'text' => $item['text']],
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            );
+        }
+        return "[\n" . implode(",\n", $lines) . "\n]";
+    }
+
+    /**
+     * Did a free-text memory change between the moment the model was asked and the moment
+     * its operations are applied? Operations on items can be applied to a memory that changed
+     * meanwhile (ids that are gone are skipped); a conversion cannot: the model converted a text
+     * that is no longer the one stored, or added what another update already converted.
+     *
+     * @param array $prompted LlmMemoryItems::fromRow() of the memory the model was shown
+     * @param array $latest   LlmMemoryItems::fromRow() of the memory stored now
+     * @return bool
+     */
+    private function legacyMemoryChanged(array $prompted, array $latest)
+    {
+        if ($prompted['kind'] !== 'legacy' && $latest['kind'] !== 'legacy') {
+            return false;
+        }
+        return $prompted['kind'] !== $latest['kind']
+            || $prompted['legacy_text'] !== $latest['legacy_text']
+            || $prompted['legacy_json'] !== $latest['legacy_json'];
     }
 
     /**
@@ -678,12 +829,19 @@ class LlmMemoryUpdateService extends BaseLlmService
     }
 
     /**
-     * Parse the LLM response content into the required memory output structure.
+     * Parse the LLM response content into the operations to apply.
      *
-     * @param string $content Raw LLM response content
-     * @return array|null Parsed memory data or null on failure
+     * The shape of every operation is checked here (a model that answers with
+     * something else gets one more try); whether an operation fits the memory (an id that
+     * exists, a section of the key) is decided when it is applied, by LlmMemoryItems.
+     * Empty `ops` is a valid answer: nothing changes.
+     *
+     * @param string $content    Raw LLM response content
+     * @param string $error      Set to the reason when the content is not valid
+     * @param bool   $converting The memory is free text and must be converted: needs add operations
+     * @return array|null ['ops' => array, 'change_summary' => string], or null on failure
      */
-    private function parseMemoryOutput($content, &$error = '')
+    private function parseMemoryOutput($content, &$error = '', $converting = false)
     {
         $content = trim($content);
 
@@ -698,7 +856,7 @@ class LlmMemoryUpdateService extends BaseLlmService
             return null;
         }
 
-        $required = ['memory_text', 'memory_object', 'flat_fields', 'change_summary'];
+        $required = ['ops', 'change_summary'];
         $missing = array_diff($required, array_keys($parsed));
         if (!empty($missing)) {
             $error = 'Missing required keys: ' . implode(', ', $missing)
@@ -706,19 +864,43 @@ class LlmMemoryUpdateService extends BaseLlmService
             return null;
         }
 
-        if (!is_array($parsed['memory_object'])) {
-            $error = 'memory_object is not an array/object';
+        if (!is_array($parsed['ops']) || ($parsed['ops'] !== [] && !array_is_list($parsed['ops']))) {
+            $error = 'ops is not a list';
             return null;
         }
-        if (!is_array($parsed['flat_fields'])) {
-            $error = 'flat_fields is not an array/object';
+        if (!is_scalar($parsed['change_summary']) && $parsed['change_summary'] !== null) {
+            $error = 'change_summary is not text';
+            return null;
+        }
+
+        $adds = 0;
+        foreach ($parsed['ops'] as $position => $op) {
+            $name = is_array($op) && isset($op['op']) && is_string($op['op']) ? $op['op'] : '';
+            if ($name === 'add') {
+                // section: required by the key's sections, checked when the op is applied (a key without sections has none)
+                $valid = isset($op['text']) && is_string($op['text']) && (!isset($op['section']) || is_string($op['section']));
+                $adds++;
+            } elseif ($name === 'update') {
+                $valid = isset($op['id']) && is_string($op['id'])
+                    && ((isset($op['text']) && is_string($op['text'])) || (isset($op['section']) && is_string($op['section'])));
+            } elseif ($name === 'delete') {
+                $valid = isset($op['id']) && is_string($op['id']);
+            } else {
+                $error = 'ops[' . $position . '] is not an add, update or delete operation';
+                return null;
+            }
+            if (!$valid) {
+                $error = 'ops[' . $position . '] (' . $name . ') lacks its string fields';
+                return null;
+            }
+        }
+        if ($converting && $adds === 0) {
+            $error = 'The free-text memory must be converted with add operations, ops has none';
             return null;
         }
 
         return [
-            'memory_text'    => (string)($parsed['memory_text'] ?? ''),
-            'memory_object'  => $parsed['memory_object'],
-            'flat_fields'    => $parsed['flat_fields'],
+            'ops'            => $parsed['ops'],
             'change_summary' => (string)($parsed['change_summary'] ?? ''),
         ];
     }

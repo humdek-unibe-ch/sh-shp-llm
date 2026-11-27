@@ -1,3 +1,3 @@
 ## Language
-Write ALL memory content (memory_text, memory_object values, flat_fields values) in: {{user_language}}.
-Keep memory_object keys and flat_fields keys in English snake_case regardless of language.
+Write ALL item texts (the "text" of add and update operations) and the change_summary in: {{user_language}}.
+Keep the JSON keys, operation names ("add", "update", "delete"), ids and section codes exactly as given, regardless of language.

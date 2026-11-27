@@ -370,15 +370,18 @@ class LlmEvaluationScoringService extends BaseLlmService
             // Tell the judge that the memory runtime enforces a fixed JSON envelope. Otherwise
             // admin instructions that say "return a paragraph, no JSON" will make the judge
             // penalise outputs for format compliance — when in reality the envelope is
-            // non-negotiable and the instructions only guide the *content* of memory_text.
+            // non-negotiable and the instructions only guide the *content* of the operations.
             $lean['output_format_contract'] = 'The memory runtime always returns JSON with exactly these keys: '
-                . 'memory_text (human-readable narrative), memory_object (structured data), '
-                . 'flat_fields (flat snake_case key/values), change_summary (one-sentence change note). '
+                . 'ops (a list of add / update / delete operations on single memory items, each with the '
+                . 'section code or item id it concerns; empty when nothing changes) and '
+                . 'change_summary (one-sentence change note). Items that no operation names stay as they are. '
                 . 'This JSON envelope is MANDATORY and non-negotiable — admin instructions cannot remove it. '
-                . 'Judge the output against the instructions by inspecting the CONTENT of memory_text '
-                . '(and change_summary / memory_object as relevant). Do NOT penalise the response for '
-                . 'being JSON, for including structured fields, or for "not being a paragraph" — the '
-                . 'envelope is fixed by the system, not by the admin prompt.';
+                . 'Judge the output against the instructions by inspecting the CONTENT of the operations: '
+                . 'the right facts added, updated or deleted, in the right sections, as short single-fact texts, '
+                . 'and nothing deleted without an explicit request in the submitted data. '
+                . 'Do NOT penalise the response for being JSON, for returning operations instead of a '
+                . 'rewritten memory, for an empty ops list when nothing needed to change, or for "not being '
+                . 'a paragraph" — the envelope is fixed by the system, not by the admin prompt.';
             return $lean;
         }
         if (!empty($input_payload['trigger_message'])) {
