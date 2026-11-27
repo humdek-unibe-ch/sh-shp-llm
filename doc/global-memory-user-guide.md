@@ -10,12 +10,55 @@ It is:
 - global per user
 - shared across LLM pages and flows
 - updated from configured triggers such as forms, surveys, chat submissions, login, or profile name changes
+- a list of short facts (items) in sections, so a single fact can be changed or deleted (since v1.10.0, see [Items And Sections](#items-and-sections))
 - available later through explicit `data_config` loading
 
 It is not:
 - tied to only one `llmChat` section
 
 Note: When a memory rule runs, the current memory, submitted data, and user language are automatically injected into the LLM call. You do not need to include them in your rule prompt.
+
+## Items And Sections
+
+A memory is a list of short facts (items). A memory key can have sections; then every item belongs to one of them. Without sections the memory is just a list:
+
+```markdown
+- Name: Stefan Kodzhabashev, prefers to be addressed as Baseff
+- Wants to run 5 km
+```
+
+With the sections Person and Goals:
+
+```markdown
+### Person
+- Name: Stefan Kodzhabashev, prefers to be addressed as Baseff
+
+### Goals
+- Wants to run 5 km
+```
+
+- The LLM does not rewrite the memory. It answers **operations** on single items (add, update, delete) and the plugin applies them to the memory as it is stored at that moment. Items the model is not asked about stay exactly as they are, and a change a participant made while the model was working is not lost.
+- `memory_text` is built by the plugin from the items after every change: one `- <fact>` line per item; with sections a `### <section label>` heading per section, in the configured order, empty sections left out. `{{memory_text}}`, `data_config` and the LLM context work as before.
+- `memory_json` holds the items: `{"format": "items/v1", "items": [{"id", "section", "text", "source", "updated_at"}]}` (`section` is `""` for a key without sections). The id is made by the plugin, `source` says who wrote the item last (`llm` or `user`).
+- A participant can change their own items directly, without an LLM call, with the `llmMemoryEditor` style (see [Let Participants Edit Their Memory](#let-participants-edit-their-memory)).
+- Deleting an item removes it from the **current** memory only. The history keeps the snapshots of earlier states; there is no purge feature.
+- A memory written before v1.10.0 is free text. It is converted to items on its **next update**: the model splits the old text into items (one LLM call). Until then the editor shows it read-only. Nothing is converted up front.
+
+### Define The Sections Of A Memory Key (optional)
+
+Sections are optional and belong to one memory key. Open the `LLM Memory` page, tab **Keys**, and click **Edit** on the key. Add a row per section, for example:
+
+| code | label | hint |
+|---|---|---|
+| `person` | Person | Current personal facts only, no history of changes |
+| `context` | Context | Situations, observations, working hypotheses |
+| `goals` | Goals | Things the user wants to achieve |
+
+- A key without sections is one list of facts. That is the default for every key.
+- `code`: 1 to 40 letters, digits, `_` or `-`, unique within the key. It is filled from the label while you type it and is stored with every item, so it is locked once saved. Removing a section keeps its items: they are still shown (after the other sections) and can be edited or deleted, but nothing new can be added there. Items that were added while the key had no sections are shown first, without a heading.
+- `label`: the default heading for participants and the heading in `memory_text` (default: the code). Translate it for participants with the field `memory_labels` of the editor (see [Let Participants Edit Their Memory](#let-participants-edit-their-memory)).
+- `hint`: tells the model what belongs in the section (default: none).
+- The order of the rows is the order of the sections (arrows to move them). A mistake is shown when you save and nothing is stored.
 
 ## Where To Manage It
 
@@ -47,13 +90,14 @@ Open the `LLM Memory` page and go to the `Rules` tab.
 A rule defines:
 - when memory should update
 - which source event it listens to
-- the LLM prompt that controls how submitted data is merged into existing memory
+- the LLM prompt that controls which facts are added to, updated in or deleted from the memory
 - which memory key it writes to
 
 ### Writing The Prompt
 
 You only need to write the **instructions** for the LLM. The system automatically injects:
-- the user's current memory state
+- the sections of the memory key (code, label, hint)
+- the user's current memory items, each with its id
 - the submitted form data (all field values)
 - any extra Data Config results you configured
 - the user's language (memory content is written in that language)
@@ -64,7 +108,7 @@ Example prompt:
 Extract the user's hobbies and preferences from the submitted form data.
 ```
 
-The system wraps your instructions with a smart system prompt that handles merge/append/replace logic and the correct JSON output format. You do not need to include `{{event_payload_json}}` or `{{memory_text}}` -- they are injected automatically.
+The system wraps your instructions with a smart system prompt: the model answers with operations (add, update or delete single items) in a fixed JSON format and the plugin applies them. Write what should be remembered, not how to merge it. You do not need to include `{{event_payload_json}}` or `{{memory_text}}` -- they are injected automatically.
 
 You can still reference interpolation variables if you want fine-grained control:
 - `{{user_language}}` -- the user's language name (e.g. "Deutsch (Schweiz)")
@@ -74,7 +118,9 @@ You can still reference interpolation variables if you want fine-grained control
 
 ### Memory Key Scoping
 
-When multiple rules write to the same memory key, each rule's LLM call sees the full memory for that key. The system prompt instructs the LLM to only modify facts related to the current submission and preserve all other existing facts unchanged. This keeps memory consistent even when different rules contribute different topics to the same key.
+When multiple rules write to the same memory key, each rule's LLM call sees the full memory for that key. The system prompt instructs the LLM to only modify facts related to the current submission and preserve all other existing facts unchanged. On top of that the plugin applies only the operations the model returns: an item that no operation names stays exactly as it is. This keeps memory consistent even when different rules contribute different topics to the same key.
+
+The model is told to delete only the items that a request in the submitted data names explicitly (for example "forget my workplace"); the rule's instructions alone do not authorise deleting items. The deleted items leave the current memory, the history keeps its snapshots.
 
 ## Step 3: Connect A Trigger
 
@@ -212,6 +258,7 @@ Example (the memory of the key `reflection`):
   replaces the placeholder while the participant has no memory yet.
 - `map_fields` only applies to `"retrieve": "JSON"`; with `first` / `last` /
   `all` use `fields`.
+- `memory_text` is the markdown list the plugin renders from the items (`### Person`, `- Name: ...`), in markdown fields it shows as headings and bullets. `memory_json` is the items JSON (`items/v1`). Use `memory_text` to show or send a memory.
 
 Then use the values in prompts or content:
 
@@ -222,6 +269,52 @@ Preferred tone: {{preferred_tone}}
 
 This keeps memory usage explicit and predictable.
 
+## Let Participants Edit Their Memory
+
+The style `llmMemoryEditor` (style group Form, v1.10.0) shows the memory of the **logged-in participant** with a row per item (one block per section when the key has sections). The participant can edit, delete and add items **without an LLM call**.
+
+1. In the CMS add a section with the style `llmMemoryEditor` to a page.
+2. Pick the memory keys to show in `memory_keys` (for example `global`); empty uses the default memory key of the module. With several keys each key is shown with its heading, one below the other, and saved on its own.
+3. To show the headings in the participant's language, fill the translatable field `memory_labels` per language, for example `{"global": "Mein Gedächtnis", "global.goals": "Meine Ziele", "person": "Über mich"}`: `"<key>"` is the heading of a key (only shown with several keys), `"<key>.<section code>"` the heading of a section of that key, `"<section code>"` the heading of that section in every key. What is not listed uses the label of the Keys tab. Like every translatable field, a language whose value is empty shows the value of the default language: to show the Keys-tab labels in a language, enter `{}` there.
+4. Untick `allow_add`, `allow_edit` or `allow_delete` to take a function away. Set `confirm_delete_text`, `empty_text`, `read_only_text` and the `label_*` texts if the defaults (English) do not fit.
+5. Pick the layout in `display_mode` (see [Layout And Look](#layout-and-look)); the default is `sections`.
+6. Save and clear the SelfHelp cache once after the migration.
+
+What the editor does:
+
+- It always acts on the memory of the logged-in user. It never takes a user id from the request; a guest (not logged in) sees nothing and can change nothing.
+- **Edit** opens an inline input (Enter saves, Esc cancels), **delete** asks for confirmation, **add** (under each section) opens an inline input. A text is plain text of at most 500 characters.
+- Every change is saved at once and written to the history like any update: source `user_edit`, no rule, with a summary such as `Participant edited an item in "Goals"` (`... in the memory` for a key without sections) (the Activity tab shows it as "Item edited"). The current row and the history row are saved together or not at all.
+- Nothing is overwritten silently: the page knows which version of the memory it shows. When the memory changed in the meantime (another tab, a memory rule), the change is refused, the block reloads with the current items and says so.
+- A participant's change never cancels a rule update: an update that was still waiting in the queue, or is already running, adds its changes to the participant's version of the memory (an operation on an item the participant deleted is skipped).
+- A memory that is still free text (written before v1.10.0 and not converted yet) is shown read-only with a note. It becomes editable after its first update by a rule.
+
+### Layout And Look
+
+The field `display_mode` decides how the sections of the memory are laid out. A key without sections is always one list, whatever the layout. The items, buttons and everything the editor does are the same in every layout.
+
+| `display_mode` | What the participant sees |
+|---|---|
+| `sections` (default) | A heading and a list for each section, one below the other |
+| `accordion` | One collapsible panel per section with the number of items; the first section that has items is open; opening another closes it |
+| `tabs` | One tab per section with the number of items; the first section that has items is selected |
+| `cards` | One card per section: heading with the number of items on top, the items and "add" inside |
+| `flat` | One list of all items without headings. "Add" is only there when the memory key has no sections or exactly one (with several sections it would be unclear where the item goes); edit and delete work as usual |
+
+After a change the participant stays where they were: the accordion panel or tab they worked in is still open.
+
+The colours, corners and spacing are not set in the CMS. Without anything extra the editor looks like plain Bootstrap. To use the built-in theme, write `lme-theme-forest` into the field `css` of the section (deep teal on sand, rounded, little chrome). To give a website its own look, a developer defines a class with the `--lme-*` CSS variables in the site's CSS and the CMS editor writes that class into `css`; the list of variables and an example are in the plugin README (section *Look and themes*).
+
+### Free-Text Change Requests
+
+A participant can also ask in their own words ("remove my old workplace"). That stays a normal form plus a memory rule, as in the sections above:
+
+1. A `formUserInput` with a textarea (for example `memory_change_request`) on the same page, with the memory rule selected in `memory_rule_ids`.
+2. A rule whose instructions say that the textarea holds the participant's request to change the memory.
+3. In the rule (card **Advanced**) pick the `llmMemoryEditor` section, and a markdown section that shows `{{memory_text}}`, in **Refresh Sections**, so they reload when the worker has finished.
+
+The model then answers operations for the items it is asked about only; the other items stay as they are.
+
 ## How The Main Tabs Help
 
 On the `LLM Memory` page:
@@ -230,8 +323,8 @@ On the `LLM Memory` page:
 - `Keys`: list the memory keys with their rule count and the number of current / history rows
 - `Rules`: create and manage update rules
 - `Sources`: inspect which source events can write to memory (sections of any style with selected rules, form actions with a memory-update job, login / profile hooks)
-- `Users`: browse the current memory and history for users
-- `Activity`: event log of every memory update with participant (name, email, code), rule, memory key, what triggered it (form / survey submit, llmChat form, login, profile change, admin action) and the result; filter by participant, rule, key, trigger, status and date
+- `Users`: browse the current memory and history for users. An admin edit there writes `memory_text` and `memory_json` as typed. The items of a memory are in `memory_json`: change them there. A changed `memory_text` alone is replaced by the text rendered from the items at the next update.
+- `Activity`: event log of every memory update with participant (name, email, code), rule, memory key, what triggered it (form / survey submit, llmChat form, login, profile change, admin action, participant edit in the editor) and the result; filter by participant, rule, key, trigger, status and date
 
 ## Storage Modes
 
@@ -314,7 +407,18 @@ If memory is not visible in prompts, check:
 - the mapped field names
 - the prompt content actually references `{{memory_text}}`, `{{memory_json}}`, or mapped values
 
+If the `llmMemoryEditor` shows nothing or does not work, check:
+- the participant is logged in (a guest sees nothing) and the section is on a page the participant can open
+- the SelfHelp cache was cleared after the migration (the style and its fields are cached)
+- `memory_keys` lists the key the rules write to (empty = the default memory key of the module)
+- the memory is not still free text (the editor shows it read-only until the next rule update converts it)
+- a change that is refused with "memory changed" is not an error: the memory was changed by another tab or a rule in the meantime; the block has reloaded, change the item again
+- the browser console for a failed request (the editor posts to the page URL, so the page must accept POST requests)
+
+If the sections do not look as configured, check in **LLM Memory > Keys** that the key of the rule or of the editor has the sections (a key without sections is one list). If a heading is not translated, check the key names in `memory_labels` (`"<key>.<section code>"` or `"<section code>"`; upper or lower case does not matter).
+
 ## Related Technical Docs
 
 For deeper implementation details, see:
 - `README.md` section `Global User Memory`
+- [doc/structured-memory-design.md](structured-memory-design.md): the design of items, sections, operations and the editor

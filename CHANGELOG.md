@@ -10,13 +10,32 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   `date_format`, `InputDateFormat`).
 - Run `server/db/v1.10.0.sql` after `v1.9.0.sql` (v1.9.1 has no SQL),
   deploy the rebuilt bundles (`js/ext`, `css/ext`), then clear the SelfHelp cache
-  (**Admin > Cache > Clear all**): the migration adds the Prompts hub page/ACL
-  and the CMS field `allow_floating_chat_resize` on `llmChat`. It is
-  idempotent and can be run again.
+  (**Admin > Cache > Clear all**): the migration adds the Prompts hub page/ACL,
+  the CMS field `allow_floating_chat_resize` on `llmChat`, the column
+  `llm_memory_keys.sections_json`, the memory source type `user_edit` and the
+  style `llmMemoryEditor` (with the selects `memory_keys` and `display_mode` and
+  the translatable `memory_labels`). It is idempotent and can be run again.
 - The admin group gets the new page **LLM Prompts**. Other groups need ACL on
   it (select to look, update to edit). On top of that the hub checks the ACL
   of the page a prompt belongs to, so a group never reaches more than it does
   in the CMS, on the Scripts page or on the Memory page.
+- **Structured memory** (see "Added"): the migration converts no data. A
+  memory written before this version is free text. It keeps working
+  everywhere (`memory_text`, `{{memory_text}}`, `data_config`, the LLM
+  context) and the memory worker converts it to items on its **next update**
+  (one LLM call that splits the old text into items; when that fails the
+  update is logged as failed and the old text stays untouched). Until then
+  `llmMemoryEditor` shows it read-only. If a key should have sections, set them
+  first (**LLM Memory > Keys > Edit**): an old text is split along them;
+  without sections it becomes one list of facts.
+- Deleting an item (in `llmMemoryEditor` or with a "remove X" change request)
+  removes it from the *current* memory only. History rows keep their
+  snapshots; there is no purge feature.
+- The prompts of the memory worker changed (`core.memory.system`,
+  `core.memory.language_suffix`): the model answers operations, not a
+  rewritten memory. The instructions of a memory rule are used as before.
+  Memory cases that were imported into datasets or the Prompt Lab before this
+  version carry the old prompt and output format: import them again.
 
 ### Added
 
@@ -66,14 +85,105 @@ All notable changes to the **sh-shp-llm** plugin are documented in this file.
   `https://...`) besides a Font Awesome class. The image is shown on the
   button (class `llm-float-btn-img`) and as the panel header avatar; relative
   paths resolve against the SelfHelp base path.
+- **Structured memory** ([doc/structured-memory-design.md](doc/structured-memory-design.md)):
+  a memory is a list of short facts (items) grouped in sections instead of
+  free text, so a single fact can be changed or deleted.
+  - `memory_json` is now `{"format": "items/v1", "items": [...]}`; an item has
+    `id` (`m_` + 6 hex, made by code, never by the model), `section`, `text`
+    (plain text, one fact, at most 500 characters), `source` (`llm` or `user`,
+    who wrote it last) and `updated_at`. `LlmMemoryItems` reads, changes and
+    renders items.
+  - Storage is unchanged: one `llm_memory` row per participant and key,
+    updated in place, one history row per change, same tables and columns.
+    `memory_text` is still filled on every save, now **rendered by code**
+    (one `- <fact>` line per item; with sections a `### <label>` heading per
+    section, in the order of the key, empty sections left out). So the `data_config`
+    retrieval of `memory_text`, `{{memory_text}}` in markdown sections, the
+    LLM context and the admin memory browser work as before.
+  - **Sections are optional and set per memory key:** **LLM Memory > Keys >
+    Edit** gives a key its sections, each with `code` (stored with every fact,
+    locked once saved), `label` (the default heading) and `hint` (tells the
+    model what belongs there), in the order shown. A key without sections is
+    one flat list of facts. Removing a section keeps its facts; they are shown
+    after the other sections. For developers: stored in
+    `llm_memory_keys.sections_json`, read by
+    `LlmMemoryConfigService::getKeySections()`, saved through the
+    `memory_key_update` action of the Memory page (validated by
+    `LlmSettingsValidator::parseKeySections()`).
+  - **The memory worker answers operations** (`add` with text and, for a key
+    with sections, a section,
+    `update` with id and text and/or section, `delete` with id) instead of a
+    rewritten memory. It is shown the sections and the current items with
+    their ids. Code applies the operations to the memory **as stored at that
+    moment**: an item the model was not asked about cannot change, and an
+    edit made while the worker runs survives (an operation on an item that is
+    gone is skipped and logged). Empty `ops` means "nothing to change".
+  - **Lazy conversion:** a free-text memory is treated as zero items, its text
+    goes to the model as "Legacy Memory (to convert)" and the model splits it
+    with `add` operations (plus what the current event changes). A conversion
+    that yields no applicable `add` fails and leaves the old text untouched.
+- **`llmMemoryEditor` style** (style group Form): the logged-in participant
+  sees their own memory as one row per item (grouped by section when the key
+  has sections) and edits it **without an LLM call**: edit (inline input),
+  delete (confirmation dialog) and add (inline input under each section).
+  Fields: `memory_keys`, `memory_labels`, `display_mode`, `allow_add`,
+  `allow_edit`, `allow_delete`, `confirm_delete_text`, `empty_text`,
+  `read_only_text`, `label_add`, `label_edit`, `label_save`, `label_cancel`,
+  `label_delete`.
+  - **Memory keys:** `memory_keys` is a multi select of the keys of the Keys
+    tab (empty = the default key of the module). Several keys are shown one
+    below the other, each with its heading, and each is saved on its own (own
+    version check). A request names its key and is refused for a key the
+    section does not show.
+  - **Translated headings:** `memory_labels` (JSON, translatable per language)
+    maps `"<key>"` to the heading of a key, `"<key>.<section code>"` or
+    `"<section code>"` to the heading of a section; not found = the label of
+    the Keys tab. `memory_text` keeps the labels of the Keys tab.
+  - **Layout:** the select `display_mode` picks how the sections are laid out:
+    `sections` (default: a heading and a list per section), `accordion`
+    (collapsible panels with the number of items; the first section that has
+    items is open), `tabs`, `cards` or `flat` (one list without headings; the
+    add button is only shown when the memory key has no sections or exactly
+    one). A key without sections is always one list. The
+    open panel or tab stays open after an edit, add or delete. A value that is
+    no layout falls back to `sections`; the mobile output carries it too.
+  - **Look:** colours, corners and spacing are CSS variables (`--lme-*`); the
+    default is the plain Bootstrap 4 look. The class `lme-theme-forest` in the
+    section's `css` field is a built-in theme; a website adds its own with the
+    same variables in its own CSS (no change to the plugin, see the README).
+  - It always acts on the memory of the logged-in user (never a user id from
+    the request), checks the CSRF token and validates the item id, the
+    section and the text (not empty, at most 500 characters). The item text is
+    escaped on output.
+  - The page sends the `memory_version` it shows. When the memory changed in
+    the meantime (another tab, a memory rule), the edit is refused, the block
+    reloads and says so: nothing is overwritten silently.
+  - One change is one transaction: the current row and the history row (source
+    type `user_edit`, rule 0, change summary like `Participant edited an item
+    in "Goals"`, or `... in the memory` for a key without sections) are saved
+    together or not at all.
+  - A free-text memory that is not converted yet is shown read-only with a
+    note. Free-text change requests stay a `formUserInput` plus a memory rule;
+    set the rule's `refresh_sections` to the editor section so it reloads
+    when the worker finishes.
+- **Memory source type `user_edit`** ("User edit"): the history rows of
+  participant edits. The Activity tab shows them as "Item added / edited /
+  deleted"; no memory rule can listen to it.
 
 ### Changed
 
+- The built-in memory prompts (`core.memory.system`, `core.memory.language_suffix`)
+  and the output schema describe operations (`ops`, `change_summary`) instead
+  of `memory_text` / `memory_object` / `flat_fields`; the judge of memory
+  cases in the Prompt Lab expects the same envelope.
+- `memory_json` of a memory that is updated from now on is the items JSON, so
+  `{{memory_json}}` in prompts and `memory_json` in `data_config` yield
+  `items/v1`. Use `memory_text` for a readable list.
 - The CMS link of a section (new or old CMS UI) is built by the new
   `LlmCmsLinkHelper`; the Memory page uses it (moved, same URLs).
 - The Prompt Lab's version list and diff dialogs are generic, so the hub uses
   them too. Fix: the diff dialog fetched a version again and again when its
-  text was empty. The memory, prompt-field and scripts bundles are rebuilt.
+  text was empty.
 
 ### Fixed
 

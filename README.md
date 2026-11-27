@@ -76,7 +76,7 @@ mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.9.0.sql
 mysql -u <user> -p <database> < server/plugins/sh-shp-llm/server/db/v1.10.0.sql
 ```
 
-This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code), the v1.8.0 memory source labels (memory sources of other plugins are registered as `llmMemorySourceType` lookups, see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md#register-a-memory-source-from-a-plugin)), the v1.9.0 `show_model_info` field of `llmChat`, and the v1.10.0 admin page "LLM Prompts" ([doc/prompts-hub.md](doc/prompts-hub.md)). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
+This creates core plugin tables and applies v1.1.0 prompt-lab extensions (prompt registry, datasets, and evaluations), the v1.2.0 memory-key registry for multi-key memory rules, and the v1.6.0 interview additions (`llmFormLogList` style registration, `form_interview` conversation source, and the `llmConversations` columns `id_dataRows`, `completed_at`, `context_key`, `state`), the v1.7.0 request traces ([doc/request-traces.md](doc/request-traces.md); run it before deploying the v1.7.0 code), the v1.8.0 memory source labels (memory sources of other plugins are registered as `llmMemorySourceType` lookups, see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md#register-a-memory-source-from-a-plugin)), the v1.9.0 `show_model_info` field of `llmChat`, and the v1.10.0 admin page "LLM Prompts" ([doc/prompts-hub.md](doc/prompts-hub.md)), the structured memory setting `llm_memory_keys_config`, the memory source type `user_edit` and the `llmMemoryEditor` style ([doc/structured-memory-design.md](doc/structured-memory-design.md)). The migrations are rerunnable (`INSERT IGNORE` / `CREATE TABLE IF NOT EXISTS` pattern).
 It also re-applies critical prompt-lab indexes and unique keys through the shared migration helper procedures so interrupted runs can be safely replayed. `v1.6.0.sql` requires SelfHelp core **v7.12.0** (the plugin style inherits the core `formUserInputLogList` seams added in that release; the `llmFormLogList` style itself is registered by this migration). Run plugin migrations in order. After running migrations, clear the SelfHelp cache (styles, fields, hooks, lookups are cached). The same core release provides `CORS_ALLOWED_ORIGINS`, the exact-match list of cross-origin clients that the chat and form endpoints trust without a CSRF token ([CSRF and cross-origin clients](#csrf-and-cross-origin-clients)).
 
 **Optional (SurveyJS):** if the SurveyJS plugin (`sh-shp-survey_js`) is installed after the LLM plugin `v1.8.0` migration, also run `server/plugins/sh-shp-llm/server/db/optional/enable_surveyjs_llm_memory_rules.sql` once and clear the SelfHelp cache. It links `memory_rule_ids` to `surveyJS`; the save hook is registered by `v1.8.0` (see [doc/global-memory-user-guide.md](doc/global-memory-user-guide.md)). The file is idempotent.
@@ -255,6 +255,7 @@ For a user-facing setup guide, see [doc/global-memory-user-guide.md](doc/global-
 Memory is:
 - global per user, not per `llmChat` section
 - updated from forms, surveys, `llmChat` fallback submissions, login, and profile-name changes
+- a list of short facts (items) in configurable sections (v1.10.0, see [Structured memory](#structured-memory-v1100))
 - stored in standard SelfHelp `dataTables`
 - consumed explicitly through `data_config`
 
@@ -265,6 +266,18 @@ Configure these defaults on the `sh_module_llm` page:
 - `llm_memory_storage_mode`
 
 Manage memory rules, write sources, and user memory operations on the dedicated `moduleLlmMemory` admin page.
+
+#### Structured memory (v1.10.0)
+
+A memory is a list of items (optionally grouped in the sections of its key) instead of free text ([design](doc/structured-memory-design.md)). Storage is unchanged: one `llm_memory` row per user and key, updated in place, and one history row per change.
+
+- `memory_json` = `{"format": "items/v1", "items": [{"id": "m_8f3a2c", "section": "person", "text": "...", "source": "llm", "updated_at": "..."}]}`. Ids are made by code, `source` is `llm` or `user`, a text is plain text of at most 500 characters. `LlmMemoryItems` reads, changes and renders items.
+- `memory_text` is **rendered by code** from the items after every change (`- <text>` lines; with sections a `### <section label>` heading per section, in configured order, empty sections left out), so `data_config` retrieval of `memory_text`, `{{memory_text}}` in markdown and LLM context keep working.
+- Sections are optional and set per memory key in the key registry (**LLM Memory > Keys > Edit**; column `llm_memory_keys.sections_json` = `[{"code": "person", "label": "Person", "hint": "..."}]`, saved by the `memory_key_update` action, validated by `LlmSettingsValidator::parseKeySections()`, read by `LlmMemoryConfigService::getKeySections()`). A key without sections is one flat list (items with `section` `""`, no section in the output schema). The hint is given to the model.
+- The memory worker (`LlmMemoryUpdateService`) shows the model the sections and the current items with ids; the model answers `{"ops": [...], "change_summary": "..."}` with `add` (`text`, plus `section` for a key with sections), `update` (`id`, `text` and/or `section`) and `delete` (`id`). Code applies the operations to the memory **as stored at that moment** (`LlmMemoryItems::applyOps()`): an operation on an unknown id, an unknown section or an empty / too long text is skipped and logged, items no operation names stay as they are, and an edit made while the model worked survives.
+- A free-text memory (written before v1.10.0) is converted lazily: its text goes to the model as "Legacy Memory (to convert)" and the model splits it with `add` operations on the next update. If it cannot, the update fails and the old text stays.
+- A participant edits their own items with the [`llmMemoryEditor`](#llmmemoryeditor-style-v1100) style; every such change is a history row with the source type `user_edit` and rule 0.
+- Delete removes an item from the current memory only; history rows keep their snapshots (no purge feature).
 
 #### Storage modes
 
@@ -297,13 +310,14 @@ Prompt Lab ownership is derived from the rule row itself:
 #### Auto-injected context
 
 The system automatically injects the following into the LLM call:
-- **Current memory** -- the user's existing memory_text and memory_json
+- **Sections** -- the sections of the memory key (code, label, hint)
+- **Current memory** -- the user's current items with their ids (a free-text memory goes in as "Legacy Memory (to convert)")
 - **Submitted data** -- all form field values or event payload
 - **Data Config results** -- any extra data sources configured on the rule
 - **User language** -- detected from the session; the LLM writes memory in the user's language
 - **Memory key scope** -- the LLM is told which key is being updated and instructed to only modify facts related to the current submission
 
-The admin prompt (from Prompt Lab or the default) only needs to contain instructions, e.g. "Extract the user's hobbies from the form data." The system prompt handles merge/append/replace logic and JSON output format.
+The admin prompt (from Prompt Lab or the default) only needs to contain instructions, e.g. "Extract the user's hobbies from the form data." The system prompt handles the operations (add / update / delete of single items) and the JSON output format.
 
 #### Ordering and dedupe behavior
 
@@ -496,6 +510,79 @@ its fields (filter, texts, button URLs), partition the unsaved drafts and pin
 a form field of the same name - module filters are plain `button` sections
 whose URL carries the parameters. See
 [doc/llm-form-interview.md](doc/llm-form-interview.md).
+
+### llmMemoryEditor (Style, v1.10.0+)
+
+Component style (group Form) in `server/component/style/llmMemoryEditor/` (`LlmMemoryEditorComponent` / `Model` / `View` / `Controller`, templates `tpl_llmMemoryEditor*.php`, `js/ext/llm-memory-editor.js`, `css/ext/llm-memory-editor.css`; plain jQuery, no React). It shows the **logged-in participant's** memory of one or more keys (one body per key; a block per section when the key has sections) with a row per item, and lets them edit, delete and add items without an LLM call. Free-text change requests stay a separate `formUserInput` plus a memory rule whose `refresh_sections` points at the editor section.
+
+| Field | Type | Purpose |
+|---|---|---|
+| `memory_keys` | multi select (`select-llm-memory-keys`) | Memory keys to show and edit, options = the key registry (empty = the module's default key); stored comma-separated |
+| `memory_labels` | json, translatable | Headings per language: `"<key>"` (key heading, shown with several keys), `"<key>.<code>"` / `"<code>"` (section heading); not found = the label of the Keys tab |
+| `display_mode` | select | Layout of the sections: `sections` (default), `accordion`, `tabs`, `cards`, `flat` (see [Layouts](#layouts-display_mode)); a value that is no layout is `sections` |
+| `allow_add` / `allow_edit` / `allow_delete` | checkbox | Show "add" per section / "edit" / "delete" per item (all on by default) |
+| `confirm_delete_text` | text | Text of the delete confirmation |
+| `empty_text` | text | Shown when there is no memory (plain text, escaped) |
+| `read_only_text` | text | Note under a free-text memory that is not converted to items yet (plain text, escaped) |
+| `label_add` / `label_edit` / `label_save` / `label_cancel` / `label_delete` | text | Button labels |
+| `css`, `css_mobile`, `condition`, `data_config`, `debug` | standard | As on every style |
+
+- Actions `add_item`, `edit_item`, `delete_item` are POSTs to the page URL, addressed by `section_id` (a page with several editors is fine) and `memory_key` (must be one of the section's `memory_keys`, else `forbidden`); the controller answers JSON (`status`: `ok`, `unchanged`, `forbidden`, `not_found`, `conflict`, `read_only`, `invalid`, `failed`) and the body of that key is replaced by the returned HTML.
+- Security: the memory is always the session user's (a user id in the request is ignored; guests are refused), the CSRF token of `LlmCsrfService` is required, item id, section and text are validated, item text is escaped (`htmlspecialchars`) on output.
+- Concurrency: the page sends the `memory_version` it shows; if the stored one differs the edit is refused (`conflict`) and the block reloads with a note.
+- One change = one `LlmTransaction`: `saveMemoryUpdate()` writes the current row and the history row (source type `user_edit`, rule 0, `source_ref` `{action, section_id, item_id}`, summary `Participant edited an item in "<label>"` / `... in the memory`); a failure rolls both back and is logged through `LlmErrorReporter`.
+- A free-text memory that is not converted yet is shown read-only with a note (`read_only`).
+- Mobile output is read-only data: layout and `memories` (per key: key, label, legacy text, sections with items).
+- The page that holds the editor must accept POST requests.
+
+#### Layouts (`display_mode`)
+
+| Value | Shows |
+|---|---|
+| `sections` (default) | A heading and a list for each section, one below the other |
+| `accordion` | One collapsible panel per section (title and number of items); the first section that has items is open, opening another closes it |
+| `tabs` | One tab per section (title and number of items); the first section that has items is selected |
+| `cards` | One Bootstrap card per section: a header with the title and the number of items, a body with the items and the add button |
+| `flat` | One list of all items, no headings. "Add" is only shown when the memory key has exactly one section (otherwise it is unclear which section to add to); edit and delete work as usual |
+
+All layouts use the same item rows and buttons; only the frame around the sections differs. After an edit, add or delete the whole block is replaced, and `llm-memory-editor.js` keeps the open accordion panel or the selected tab (by the section code). Collapse and tab ids contain the CMS section id and the section code, so several editors on one page do not clash. An empty memory, a section without items and a free-text memory (read-only) are shown in every layout.
+
+#### Look and themes
+
+`css/ext/llm-memory-editor.css` is split into four blocks: tokens, structure, layouts, themes. Colours, corner radius and spacing are CSS variables on `.llm-memory-editor`, and no rule has a fixed colour, so a site changes the look with variables alone. Without a theme class the editor is plain Bootstrap 4.6: the variables follow Bootstrap's `--primary`, `--secondary` and `--danger`.
+
+| Variable | Default | Used for |
+|---|---|---|
+| `--lme-accent` | `var(--primary)` | edit link, solid save button, outline add button, focus rings |
+| `--lme-accent-hover` | 70% `--lme-accent` + black (`#0056b3` without `color-mix()`) | fill of save / add while hovered |
+| `--lme-accent-text` | `#fff` | text on an accent fill |
+| `--lme-accent-hover-text` | `#fff` | text on a hover fill (use a dark colour when the hover colour is light) |
+| `--lme-muted` | `var(--secondary)` | secondary text, item counts, cancel |
+| `--lme-danger` | `var(--danger)` | delete |
+| `--lme-border` | `rgba(0,0,0,.125)` | frames of cards, accordion panels and tabs |
+| `--lme-row-border` | `rgba(0,0,0,.08)` | the line between two items |
+| `--lme-section-bg` | `transparent` | background of a section, card, panel and of the tab content |
+| `--lme-header-bg` | `rgba(0,0,0,.03)` | header of a card and of an accordion panel |
+| `--lme-surface` | `#fff` | the selected tab (it covers the line below it): the colour behind the editor |
+| `--lme-radius` | `.25rem` | corners |
+| `--lme-row-gap` | `.375rem` | vertical padding of an item row |
+| `--lme-section-gap` | `1.25rem` | space below a section, a card, the accordion and the tabs |
+| `--lme-section-pad` | `0` | padding of a section (sections layout) and of the flat list; any `padding` value |
+| `--lme-pad` | `1rem` | padding inside a card, an accordion panel and the tab content; one length |
+| `--lme-font-size-btn` | `.875rem` | button text |
+
+A theme is an opt-in class: put it into the CMS field `css` of the section. Built in: `lme-theme-forest` (deep teal on sand, 8px corners, little chrome). Without a class the default look applies.
+
+**Add a theme for a website** (no change to the plugin): in the site's own CSS set the variables on a class of your choice, then put that class into the `css` field of the editor sections.
+
+```css
+.llm-memory-editor.lme-theme-mysite {
+    --lme-accent: #7a2e8a;
+    --lme-radius: 12px;
+}
+```
+
+A variable you leave out keeps its Bootstrap value; `--lme-accent-hover` defaults to a darker `--lme-accent` (`color-mix()`, `#0056b3` in older browsers), so setting `--lme-accent` alone is enough. Keep the text on a fill readable (`--lme-accent-text`, `--lme-accent-hover-text`); focus rings use `--lme-accent`, so they stay visible. The rules a theme needs beyond variables (like a dashed add button) are ordinary CSS under the same class, see `lme-theme-forest` at the end of the plugin CSS.
 
 ### moduleLlmAdminConsole (Module)
 
@@ -721,6 +808,8 @@ Detailed guides are available in the `doc/` folder:
 | [progress-tracking-system.md](doc/progress-tracking-system.md) | Topic coverage and progress tracking |
 | [floating-chat-button.md](doc/floating-chat-button.md) | Floating chat button setup |
 | [media-rendering.md](doc/media-rendering.md) | Media content in responses |
+| [global-memory-user-guide.md](doc/global-memory-user-guide.md) | Global memory for admins and CMS editors: rules, triggers, sections, `llmMemoryEditor` |
+| [structured-memory-design.md](doc/structured-memory-design.md) | Structured memory (v1.10.0): items, sections, operations, lazy conversion, the `llmMemoryEditor` style |
 | [user-guide-for-cms-editors.md](doc/user-guide-for-cms-editors.md) | CMS editor guide for non-developers |
 
 ## License

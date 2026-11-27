@@ -285,15 +285,17 @@ desktop.
 #### `core.memory.system`
 **Path:** `core/memory/system.md`
 
-System prompt for the **memory update flow**. The "INVIOLABLE RULE" section
-is critical — without it, the model frequently drops existing memory rows
-when it thinks the new submission supersedes them. Do not weaken this
-without thorough evaluation.
+System prompt for the **memory update flow**. A memory is a list of items;
+the model answers with operations (`add` / `update` / `delete`) on single
+items and code applies them, so items the model is not asked about cannot
+drift. The "INVIOLABLE RULE" section is critical — without it, the model
+deletes existing items when it thinks the new submission supersedes them. Do
+not weaken this without thorough evaluation.
 
 | Placeholder | Source |
 |---|---|
 | `{{memory_key}}` | The memory key being updated (e.g. `user_profile`). |
-| `{{output_schema}}` | JSON schema for `memory_text`/`memory_object`/`flat_fields`/`change_summary`. |
+| `{{output_schema}}` | JSON schema for `ops` (add / update / delete, with the section codes of the key as the allowed `section` values) and `change_summary`. |
 
 **Used by:** `LlmMemoryUpdateService`.
 
@@ -302,9 +304,9 @@ without thorough evaluation.
 #### `core.memory.language_suffix`
 **Path:** `core/memory/language-suffix.md`
 
-Appended when the user has a non-default language. Forces the prose
-(`memory_text`, values) into the user's language while keeping the keys in
-English snake_case (because they are queried by code).
+Appended when the user has a non-default language. Forces the item texts and
+the change summary into the user's language while keeping the JSON keys,
+operation names, ids and section codes as given (because code reads them).
 
 | Placeholder | Source |
 |---|---|

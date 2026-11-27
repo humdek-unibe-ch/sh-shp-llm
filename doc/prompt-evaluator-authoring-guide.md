@@ -81,11 +81,12 @@ dataset `input_payload` to the judge LLM. Instead it builds a compact
   `parsed_response`).
 - For `memory_runtime` cases the payload also includes an
   `output_format_contract` field telling the judge that the memory envelope
-  (`memory_text`, `memory_object`, `flat_fields`, `change_summary`) is
-  enforced by the system. This prevents the judge from penalising outputs
-  for "returning JSON" when the admin's instructions would otherwise request
-  a narrative paragraph — the envelope is fixed, and the judge is told to
-  score the *content* of `memory_text` (and related fields) against the
+  (`ops` — add / update / delete operations on single memory items — and
+  `change_summary`) is enforced by the system. This prevents the judge from
+  penalising outputs for "returning JSON" when the admin's instructions would
+  otherwise request a narrative paragraph — the envelope is fixed, and the
+  judge is told to score the *content* of the operations (the right facts
+  added, updated or deleted, in the right sections) against the
   instructions.
 
 #### Judge-system prompt
