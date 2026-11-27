@@ -13,6 +13,120 @@
     'use strict';
 
     var BODY = '.llm-memory-editor-body';
+    var EDITOR = '.llm-memory-editor';
+
+    /* Search (CMS field show_search): the box above the memory filters the items of every key in the
+     * browser. A query is split into words; an item is shown when each word is found (case-insensitive)
+     * in its text, the title of its section or the heading of its key - so a section or key name lists
+     * all of its items. The matched words in the item text are marked. Sections, tabs and keys without
+     * a match are hidden, the counts show the matches, accordion panels with a match are open and a
+     * selected tab without a match gives way to the first tab with one. Clearing the box (or Escape)
+     * shows everything again. */
+
+    /** Put the text into the element again, with every range where a word matches wrapped in <mark>. */
+    function markWords($text, text, words) {
+        var lower = text.toLowerCase();
+        var hits = [];
+        // a lower-cased text of another length (rare Unicode case folding) would mark the wrong letters
+        if (lower.length === text.length) {
+            $.each(words, function (i, word) {
+                for (var at = lower.indexOf(word); at !== -1; at = lower.indexOf(word, at + word.length)) {
+                    hits.push([at, at + word.length]);
+                }
+            });
+        }
+        if (!hits.length) {
+            if ($text.children('mark').length) {
+                $text.text(text);
+            }
+            return;
+        }
+        // overlapping or touching ranges become one mark
+        hits.sort(function (a, b) { return a[0] - b[0]; });
+        var ranges = [hits[0]];
+        $.each(hits.slice(1), function (i, hit) {
+            var last = ranges[ranges.length - 1];
+            if (hit[0] <= last[1]) {
+                last[1] = Math.max(last[1], hit[1]);
+            } else {
+                ranges.push(hit);
+            }
+        });
+        $text.empty();
+        var pos = 0;
+        $.each(ranges, function (i, range) {
+            if (range[0] > pos) {
+                $text.append(document.createTextNode(text.slice(pos, range[0])));
+            }
+            $text.append($('<mark class="lme-mark"></mark>').text(text.slice(range[0], range[1])));
+            pos = range[1];
+        });
+        if (pos < text.length) {
+            $text.append(document.createTextNode(text.slice(pos)));
+        }
+    }
+
+    /** Set the number on a count badge: the matches while searching, the number of items otherwise. */
+    function setCount($count, matches, searching) {
+        if (!$count.length) {
+            return;
+        }
+        if ($count.attr('data-total') === undefined) {
+            $count.attr('data-total', $count.text());
+        }
+        $count.text(searching ? matches : $count.attr('data-total'));
+    }
+
+    /** Filter every body of the editor by the query in its search box. */
+    function applySearch($editor) {
+        var $input = $editor.find('.lme-search-input');
+        if (!$input.length) {
+            return;
+        }
+        var words = $.trim($input.val()).toLowerCase().split(/\s+/).filter(Boolean);
+        var searching = words.length > 0;
+        var total = 0;
+        $editor.find(BODY).each(function () {
+            var $body = $(this);
+            var keyTitle = $body.find('.lme-key-title').text();
+            var bodyMatches = 0;
+            var firstTab = null;
+            $body.toggleClass('lme-searching', searching);
+            $body.find('.lme-section, .lme-flat').each(function () {
+                var $section = $(this);
+                var code = $section.attr('data-section');
+                // tabs: title and count are on the tab, not in the pane
+                var $tab = $body.find('.lme-tab').filter(function () {
+                    return code !== undefined && $(this).attr('data-section') === code;
+                });
+                var $head = $tab.length ? $tab : $section;
+                var context = (keyTitle + ' ' + $head.find('.lme-section-title').first().text()).toLowerCase();
+                var matches = 0;
+                $section.find('.lme-item').each(function () {
+                    var $item = $(this);
+                    var $text = $item.find('.lme-text');
+                    var text = $text.text();
+                    var haystack = context + ' ' + text.toLowerCase();
+                    var hit = $.grep(words, function (word) { return haystack.indexOf(word) === -1; }).length === 0;
+                    $item.toggleClass('lme-filtered', !hit);
+                    markWords($text, text, hit ? words : []);
+                    matches += hit ? 1 : 0;
+                });
+                $section.add($tab).toggleClass('lme-filtered', searching && matches === 0);
+                setCount($head.find('.lme-count'), matches, searching);
+                if ($tab.length && matches > 0 && firstTab === null) {
+                    firstTab = code;
+                }
+                bodyMatches += matches;
+            });
+            if (searching && firstTab !== null && $body.find('.lme-tab.active').hasClass('lme-filtered')) {
+                showSection($body, firstTab);
+            }
+            $body.toggleClass('lme-filtered', searching && bodyMatches === 0);
+            total += bodyMatches;
+        });
+        $editor.find('.lme-search-empty').prop('hidden', !searching || total > 0);
+    }
 
     /** The code of the section the accordion panel / tab that is open on the body shows: '' when every accordion
      *  panel is closed, undefined in the other layouts. */
@@ -122,6 +236,8 @@
             var $new = $($.parseHTML($.trim(response.html)));
             showSection($new, openSection($body));
             $body.replaceWith($new);
+            // the new body comes unfiltered: apply the query that is still in the search box
+            applySearch($new.closest(EDITOR));
             return;
         }
         $body.removeClass('lme-busy').removeAttr('aria-busy');
@@ -188,6 +304,18 @@
             case 'cancel':
                 closeForms($body);
                 break;
+        }
+    });
+
+    $(document).on('input', EDITOR + ' .lme-search-input', function () {
+        applySearch($(this).closest(EDITOR));
+    });
+
+    $(document).on('keydown', EDITOR + ' .lme-search-input', function (event) {
+        if (event.which === 27 && $(this).val() !== '') {
+            event.preventDefault();
+            $(this).val('');
+            applySearch($(this).closest(EDITOR));
         }
     });
 

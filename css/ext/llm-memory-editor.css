@@ -4,11 +4,11 @@
    This file has four blocks:
      1. Tokens     CSS custom properties on .llm-memory-editor - the only place with colours, radius and spacing
      2. Structure  item rows, inline form, buttons, messages - the same in every layout
-     3. Layouts    one block per CMS field display_mode: sections, accordion, tabs, cards, flat
-     4. Themes     opt-in classes that set the tokens (and a few rules): lme-theme-forest
+     3. Search     the search box above the memory and the filtered state while a query is typed
+     4. Layouts    one block per CMS field display_mode: sections, accordion, tabs, cards, flat
 
-   Without a theme class the editor looks like plain Bootstrap 4.6: the tokens follow --primary,
-   --secondary and --danger of the site's Bootstrap.
+   The editor looks like plain Bootstrap 4.6: the tokens follow --primary, --secondary and --danger
+   of the site's Bootstrap. The plugin ships no theme; a project styles the editor in its own CSS.
 
    How a website adds its own theme (no change to this file):
      1. In the site's own CSS set the tokens of block 1 on a class of your choice:
@@ -34,6 +34,7 @@
     --lme-section-bg: transparent;           /* background of a section block, card, panel or tab content */
     --lme-header-bg: rgba(0, 0, 0, .03);     /* background of a card or accordion header */
     --lme-surface: #fff;                     /* solid colour of the selected tab: use the colour it sits on */
+    --lme-mark-bg: rgba(255, 193, 7, .4);    /* background of the matched words while searching */
 
     /* shape and spacing */
     --lme-radius: .25rem;
@@ -44,7 +45,7 @@
     --lme-font-size-btn: .875rem;
 }
 
-/* The hover fill follows the accent (also a site's own --primary or a theme's --lme-accent): 70% of it mixed with black,
+/* The hover fill follows the accent (also a site's own --primary or --lme-accent): 70% of it mixed with black,
    which gives #0056b3 for Bootstrap's #007bff. A browser without color-mix() keeps #0056b3. A theme that sets
    --lme-accent-hover itself wins (its selector is more specific). */
 @supports (color: color-mix(in srgb, red, blue)) {
@@ -215,7 +216,92 @@
 
 
 /* ==========================================================================
-   3. Layouts (CMS field display_mode)
+   3. Search - CMS field show_search; the filtering is done by llm-memory-editor.js
+   ========================================================================== */
+
+.llm-memory-editor .lme-search {
+    position: relative;
+    margin-bottom: var(--lme-section-gap);
+}
+
+/* the magnifier: a ring and a handle, drawn in the muted colour */
+.llm-memory-editor .lme-search::before,
+.llm-memory-editor .lme-search::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+}
+
+.llm-memory-editor .lme-search::before {
+    top: 50%;
+    left: .75rem;
+    width: .8rem;
+    height: .8rem;
+    margin-top: -.5rem;
+    border: 2px solid var(--lme-muted);
+    border-radius: 50%;
+}
+
+.llm-memory-editor .lme-search::after {
+    top: 50%;
+    left: 1.35rem;
+    width: 2px;
+    height: .4rem;
+    margin-top: .1rem;
+    background: var(--lme-muted);
+    transform: rotate(-45deg);
+}
+
+.llm-memory-editor .lme-search-input {
+    padding-left: 2.25rem;
+    border-radius: var(--lme-radius);
+}
+
+.llm-memory-editor .lme-search-input:focus {
+    border-color: var(--lme-accent);
+    box-shadow: none;
+    outline: 2px solid var(--lme-accent);
+    outline-offset: 0;
+}
+
+.llm-memory-editor .lme-search-empty {
+    margin: 0 0 .5rem;
+    color: var(--lme-muted);
+    font-family: inherit;
+}
+
+.llm-memory-editor .lme-mark {
+    padding: 0 .1em;
+    border-radius: 2px;
+    background: var(--lme-mark-bg);
+    color: inherit;
+}
+
+/* An item, section, tab or memory key without a match is hidden while a query is typed
+   (!important: Bootstrap gives cards and the active tab pane their own display). */
+.llm-memory-editor .lme-filtered {
+    display: none !important;
+}
+
+/* While searching there is nothing to add or to report as empty, and every accordion panel with a
+   match is open (its chevron points down). */
+.llm-memory-editor .lme-searching .lme-add,
+.llm-memory-editor .lme-searching .lme-empty {
+    display: none;
+}
+
+.llm-memory-editor .lme-searching .lme-section-panel.collapse {
+    display: block;
+}
+
+.llm-memory-editor .lme-searching .lme-section-toggle.collapsed::after {
+    margin-bottom: .25rem;
+    transform: rotate(45deg);
+}
+
+
+/* ==========================================================================
+   4. Layouts (CMS field display_mode)
    ========================================================================== */
 
 /* --- 3a. sections (default): a heading and a list for each section ------- */
@@ -441,109 +527,4 @@
     .llm-memory-editor .lme-section-toggle::after {
         transition: none;
     }
-}
-
-
-/* ==========================================================================
-   4. Themes - opt-in: put the class in the CMS field "css" of the section
-   ========================================================================== */
-
-/* --- lme-theme-forest: deep teal on sand, rounded, little chrome ------------ */
-
-.llm-memory-editor.lme-theme-forest {
-    --lme-accent: #0b5e76;
-    --lme-accent-hover: #79b0ae;
-    --lme-accent-text: #fff;
-    --lme-accent-hover-text: #06323f;  /* white on #79b0ae is only 2.4:1, this is 5.7:1 */
-    --lme-muted: #5a6b70;
-    --lme-danger: #b04a45;
-    --lme-border: rgba(11, 94, 118, .22);
-    --lme-row-border: rgba(11, 94, 118, .12);
-    --lme-section-bg: #f6f1e7;
-    --lme-header-bg: transparent;
-    --lme-surface: #f6f1e7;
-    --lme-radius: 8px;
-    --lme-row-gap: .3rem;
-    --lme-section-gap: 1rem;
-    --lme-section-pad: 1rem 1.25rem;
-    --lme-pad: 1.1rem;
-}
-
-@media (max-width: 575.98px) {
-    .llm-memory-editor.lme-theme-forest {
-        --lme-section-pad: .75rem;
-        --lme-pad: .75rem;
-    }
-}
-
-/* less chrome: no line after the last item, a quiet input */
-.llm-memory-editor.lme-theme-forest .lme-item:last-child {
-    border-bottom-color: transparent;
-}
-
-.llm-memory-editor.lme-theme-forest .lme-edit-form .lme-input {
-    border-color: var(--lme-border);
-    border-radius: var(--lme-radius);
-}
-
-.llm-memory-editor.lme-theme-forest .lme-layout-sections .lme-section-title,
-.llm-memory-editor.lme-theme-forest .lme-layout-cards .lme-section-title {
-    color: var(--lme-accent);
-}
-
-/* buttons: cancel is plain muted text, add has a dashed outline */
-.llm-memory-editor.lme-theme-forest .lme-cancel,
-.llm-memory-editor.lme-theme-forest .lme-cancel:hover {
-    border-color: transparent;
-    background: transparent;
-    color: var(--lme-muted);
-}
-
-.llm-memory-editor.lme-theme-forest .lme-cancel:hover {
-    text-decoration: underline;
-}
-
-.llm-memory-editor.lme-theme-forest .lme-add-btn {
-    border-style: dashed;
-}
-
-.llm-memory-editor.lme-theme-forest .lme-add-btn:hover {
-    border-style: solid;
-}
-
-/* accordion: separate rounded blocks instead of one framed list */
-.llm-memory-editor.lme-theme-forest .lme-layout-accordion .lme-section {
-    margin-bottom: .5rem;
-    border-width: 0;
-    border-radius: var(--lme-radius);
-}
-
-.llm-memory-editor.lme-theme-forest .lme-layout-accordion .lme-section-body {
-    border-top-color: var(--lme-row-border);
-}
-
-/* tabs: a teal bar on top of the selected tab, the content joins it without side frames */
-.llm-memory-editor.lme-theme-forest .lme-layout-tabs .lme-tabs .lme-tab {
-    border-top-width: 3px;
-}
-
-.llm-memory-editor.lme-theme-forest .lme-layout-tabs .lme-tabs .lme-tab.active {
-    border-top-color: var(--lme-accent);
-    color: var(--lme-accent);
-}
-
-.llm-memory-editor.lme-theme-forest .lme-layout-tabs .tab-content {
-    border-width: 0;
-    box-shadow: inset 0 -1px 0 var(--lme-border);
-}
-
-/* cards: soft shadow instead of a frame, no rule below the header */
-.llm-memory-editor.lme-theme-forest .lme-layout-cards .lme-section {
-    border-width: 0;
-    box-shadow: 0 1px 3px rgba(11, 94, 118, .18);
-}
-
-.llm-memory-editor.lme-theme-forest .lme-layout-cards .lme-section-header {
-    border-bottom-width: 0;
-    padding-bottom: 0;
 }

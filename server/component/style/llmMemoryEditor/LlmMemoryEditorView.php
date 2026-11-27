@@ -55,6 +55,13 @@ class LlmMemoryEditorView extends StyleView
     /** @var string DB field read_only_text: the note under a free-text memory that is not converted to items yet */
     private $read_only_text;
 
+    /** @var bool DB field show_search (default on): a search box above the memory that filters the items */
+    private $show_search;
+
+    /** @var string DB fields search_placeholder / search_empty_text */
+    private $search_placeholder;
+    private $search_empty_text;
+
     /* Constructors ***********************************************************/
 
     /**
@@ -77,6 +84,9 @@ class LlmMemoryEditorView extends StyleView
         $this->confirm_delete_text = $this->textField('confirm_delete_text', 'Delete this item from your memory?');
         $this->empty_text = $this->textField('empty_text', 'Nothing saved yet.');
         $this->read_only_text = $this->textField('read_only_text', LlmMemoryEditorModel::MSG_READ_ONLY . ' It becomes an editable list the next time it is updated.');
+        $this->show_search = (int)$model->get_db_field('show_search', '1') !== 0;
+        $this->search_placeholder = $this->textField('search_placeholder', 'Search your memory');
+        $this->search_empty_text = $this->textField('search_empty_text', 'Nothing in your memory matches your search.');
     }
 
     /* Public Methods *********************************************************/

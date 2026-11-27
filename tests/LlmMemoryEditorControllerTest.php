@@ -1104,6 +1104,31 @@ check('select: the migration links display_mode to the style with the default of
 check('select: the hooks render display_mode on the lookup type the migration registers', preg_match("/'display_mode'\\s*=>\\s*array\\('select-llm-memory-display-mode',\\s*LLM_LOOKUP_MEMORY_DISPLAY_MODE\\)/", (string)file_get_contents($server . '/component/LlmHooks.php')) === 1
     && preg_match("/define\\('LLM_LOOKUP_MEMORY_DISPLAY_MODE',\\s*'llmMemoryDisplayMode'\\)/", (string)file_get_contents($server . '/service/globals.php')) === 1);
 
+echo "\n-- search --\n";
+login();
+$w = world();
+seed_items($w, forest_items());
+$render_page = function (array $fields) use ($w) {
+    ob_start();
+    (new LlmMemoryEditorView(model($w, $fields)))->output_content();
+    return ob_get_clean();
+};
+$page = $render_page(array());
+check('search: the box is shown by default, above the bodies, with the default placeholder', substr_count($page, 'class="form-control lme-search-input"') === 1
+    && strpos($page, 'lme-search-input') < strpos($page, 'llm-memory-editor-body') && attr($page, 'placeholder') === 'Search your memory' && attr($page, 'aria-label') === 'Search your memory');
+check('search: the no-match text is there, hidden until the script needs it', strpos($page, '<p class="lme-search-empty" role="status" hidden>Nothing in your memory matches your search.</p>') !== false);
+$page = $render_page(array('search_placeholder' => 'Find "<b>', 'search_empty_text' => 'None <i>'));
+check('search: the CMS texts are used and escaped', attr($page, 'placeholder') === 'Find "<b>' && strpos($page, 'Find &quot;&lt;b&gt;') !== false && strpos($page, 'None &lt;i&gt;</p>') !== false && strpos($page, '<b>') === false);
+$page = $render_page(array('show_search' => '0'));
+check('search: with show_search off there is no box and no text', strpos($page, 'lme-search') === false && strpos($page, 'llm-memory-editor-body') !== false);
+check('search: the body of an action carries no search box (the box stays on the page)', strpos(body($w), 'lme-search') === false);
+$sql = (string)file_get_contents(dirname(__DIR__) . '/server/db/v1.11.0.sql');
+check('search: the migration links the fields to the style with the defaults of the view', preg_match("/get_field_id\\('show_search'\\),\\s*'1'/", $sql) === 1
+    && preg_match("/get_field_id\\('search_placeholder'\\),\\s*'Search your memory'/", $sql) === 1
+    && preg_match("/get_field_id\\('search_empty_text'\\),\\s*'Nothing in your memory matches your search\\.'/", $sql) === 1
+    && preg_match("/UPDATE `plugins` SET version = 'v1\\.11\\.0'[^;]*;\\s*COMMIT;\\s*$/", $sql) === 1);
+check('search: the plugin CSS ships no theme any more', strpos((string)file_get_contents(dirname(__DIR__) . '/css/ext/llm-memory-editor.css'), 'lme-theme-forest') === false);
+
 echo "\n-- mobile --\n";
 login();
 $w = world();
