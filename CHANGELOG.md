@@ -2,6 +2,30 @@
 
 All notable changes to the **sh-shp-llm** plugin are documented in this file.
 
+## [1.11.0]
+
+### Upgrade notes
+
+- Run `server/db/v1.11.0.sql` after `v1.10.0.sql`, deploy `js/ext/llm-memory-editor.js` and
+  `css/ext/llm-memory-editor.css`, then clear the SelfHelp cache (**Admin > Cache > Clear all**).
+- The built-in theme `lme-theme-forest` is removed from the plugin CSS. A section that has it in
+  its `css` field falls back to the plain Bootstrap look; a project that wants that look sets the
+  `--lme-*` variables on its own class in its own CSS (see the README, *Look*).
+
+### Added
+
+- **Search in `llmMemoryEditor`:** a search box above the memory (CMS checkbox `show_search`,
+  default on; texts `search_placeholder` and `search_empty_text`). It filters the items of every
+  key in the browser: an item is shown when each word of the query is in its text, its section
+  title or its key heading. Matches are highlighted, sections / tabs / keys without a match are
+  hidden, the count badges show the matches and accordion panels with a match open. Escape or an
+  empty box restores the editor; after an edit, add or delete the query is applied again.
+
+### Removed
+
+- The `lme-theme-forest` theme block of `css/ext/llm-memory-editor.css`; the help of
+  `display_mode` no longer mentions it.
+
 ## [1.10.0]
 
 ### Upgrade notes

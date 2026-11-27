@@ -525,6 +525,8 @@ Component style (group Form) in `server/component/style/llmMemoryEditor/` (`LlmM
 | `empty_text` | text | Shown when there is no memory (plain text, escaped) |
 | `read_only_text` | text | Note under a free-text memory that is not converted to items yet (plain text, escaped) |
 | `label_add` / `label_edit` / `label_save` / `label_cancel` / `label_delete` | text | Button labels |
+| `show_search` (v1.11.0) | checkbox | Search box above the memory (default on), see [Search](#search-v1110) |
+| `search_placeholder` / `search_empty_text` (v1.11.0) | text | Placeholder of the search box / text when nothing matches |
 | `css`, `css_mobile`, `condition`, `data_config`, `debug` | standard | As on every style |
 
 - Actions `add_item`, `edit_item`, `delete_item` are POSTs to the page URL, addressed by `section_id` (a page with several editors is fine) and `memory_key` (must be one of the section's `memory_keys`, else `forbidden`); the controller answers JSON (`status`: `ok`, `unchanged`, `forbidden`, `not_found`, `conflict`, `read_only`, `invalid`, `failed`) and the body of that key is replaced by the returned HTML.
@@ -547,9 +549,13 @@ Component style (group Form) in `server/component/style/llmMemoryEditor/` (`LlmM
 
 All layouts use the same item rows and buttons; only the frame around the sections differs. After an edit, add or delete the whole block is replaced, and `llm-memory-editor.js` keeps the open accordion panel or the selected tab (by the section code). Collapse and tab ids contain the CMS section id and the section code, so several editors on one page do not clash. An empty memory, a section without items and a free-text memory (read-only) are shown in every layout.
 
-#### Look and themes
+#### Search (v1.11.0)
 
-`css/ext/llm-memory-editor.css` is split into four blocks: tokens, structure, layouts, themes. Colours, corner radius and spacing are CSS variables on `.llm-memory-editor`, and no rule has a fixed colour, so a site changes the look with variables alone. Without a theme class the editor is plain Bootstrap 4.6: the variables follow Bootstrap's `--primary`, `--secondary` and `--danger`.
+With `show_search` on (default) a search box sits above the memory and filters every key of the editor in the browser (no request). The query is split into words; an item stays visible when each word is found, case-insensitive, in its text, its section title or its key heading, so typing a section name lists that section. Matched words in the item text are wrapped in `<mark class="lme-mark">`. While a query is typed: items, sections, tabs and keys without a match are hidden, the count badges show the matches, "add" and the empty texts are hidden, all accordion panels with a match are open and a selected tab without a match gives way to the first tab with one. When nothing matches, `search_empty_text` is shown. Escape or clearing the box restores the editor. After an edit, add or delete the new body is filtered by the query that is still in the box.
+
+#### Look
+
+`css/ext/llm-memory-editor.css` is split into four blocks: tokens, structure, search, layouts. Colours, corner radius and spacing are CSS variables on `.llm-memory-editor`, and no rule has a fixed colour, so a site changes the look with variables alone. The plugin ships no theme: the editor is plain Bootstrap 4.6 and the variables follow Bootstrap's `--primary`, `--secondary` and `--danger`.
 
 | Variable | Default | Used for |
 |---|---|---|
@@ -564,6 +570,7 @@ All layouts use the same item rows and buttons; only the frame around the sectio
 | `--lme-section-bg` | `transparent` | background of a section, card, panel and of the tab content |
 | `--lme-header-bg` | `rgba(0,0,0,.03)` | header of a card and of an accordion panel |
 | `--lme-surface` | `#fff` | the selected tab (it covers the line below it): the colour behind the editor |
+| `--lme-mark-bg` | `rgba(255,193,7,.4)` | background of the matched words while searching |
 | `--lme-radius` | `.25rem` | corners |
 | `--lme-row-gap` | `.375rem` | vertical padding of an item row |
 | `--lme-section-gap` | `1.25rem` | space below a section, a card, the accordion and the tabs |
@@ -571,9 +578,7 @@ All layouts use the same item rows and buttons; only the frame around the sectio
 | `--lme-pad` | `1rem` | padding inside a card, an accordion panel and the tab content; one length |
 | `--lme-font-size-btn` | `.875rem` | button text |
 
-A theme is an opt-in class: put it into the CMS field `css` of the section. Built in: `lme-theme-forest` (deep teal on sand, 8px corners, little chrome). Without a class the default look applies.
-
-**Add a theme for a website** (no change to the plugin): in the site's own CSS set the variables on a class of your choice, then put that class into the `css` field of the editor sections.
+**Style the editor for a project** (no change to the plugin): in the project's own CSS set the variables on a class of your choice, then put that class into the `css` field of the editor sections.
 
 ```css
 .llm-memory-editor.lme-theme-mysite {
@@ -582,7 +587,7 @@ A theme is an opt-in class: put it into the CMS field `css` of the section. Buil
 }
 ```
 
-A variable you leave out keeps its Bootstrap value; `--lme-accent-hover` defaults to a darker `--lme-accent` (`color-mix()`, `#0056b3` in older browsers), so setting `--lme-accent` alone is enough. Keep the text on a fill readable (`--lme-accent-text`, `--lme-accent-hover-text`); focus rings use `--lme-accent`, so they stay visible. The rules a theme needs beyond variables (like a dashed add button) are ordinary CSS under the same class, see `lme-theme-forest` at the end of the plugin CSS.
+A variable you leave out keeps its Bootstrap value; `--lme-accent-hover` defaults to a darker `--lme-accent` (`color-mix()`, `#0056b3` in older browsers), so setting `--lme-accent` alone is enough. Keep the text on a fill readable (`--lme-accent-text`, `--lme-accent-hover-text`); focus rings use `--lme-accent`, so they stay visible. Rules a project needs beyond variables (like a dashed add button) are ordinary CSS under the same class in the project's CSS.
 
 ### moduleLlmAdminConsole (Module)
 

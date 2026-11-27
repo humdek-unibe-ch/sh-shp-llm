@@ -214,7 +214,11 @@ when the worker finishes. Built-in textarea in the style is a possible later add
   panel / tab is Bootstrap 4 markup; since the body is replaced after each action, the script
   notes the open panel / tab by section code and sets it again on the new body.
 - Look: CSS custom properties (`--lme-*`) on `.llm-memory-editor`, plain Bootstrap 4 by
-  default; theme classes (`lme-theme-forest`) in the section's `css` field. No DB field.
+  default; a project sets them on its own class in its own CSS and puts the class in the section's
+  `css` field. The plugin ships no theme. No DB field.
+- Search (v1.11.0, `show_search`): a box above the bodies filters the items of every key in the
+  browser (each word of the query in the item text, section title or key heading), marks the
+  matches and re-applies the query to a body the server replaced after an action.
 
 ### Controller actions
 

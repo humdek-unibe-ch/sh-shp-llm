@@ -303,7 +303,9 @@ The field `display_mode` decides how the sections of the memory are laid out. A 
 
 After a change the participant stays where they were: the accordion panel or tab they worked in is still open.
 
-The colours, corners and spacing are not set in the CMS. Without anything extra the editor looks like plain Bootstrap. To use the built-in theme, write `lme-theme-forest` into the field `css` of the section (deep teal on sand, rounded, little chrome). To give a website its own look, a developer defines a class with the `--lme-*` CSS variables in the site's CSS and the CMS editor writes that class into `css`; the list of variables and an example are in the plugin README (section *Look and themes*).
+Above the memory there is a search box (field `show_search`, on by default; texts `search_placeholder` and `search_empty_text`). While the participant types, only the items are shown that contain every word of the query in their text, their section title or the key heading, so typing a section name shows that section. Matched words are highlighted, sections and tabs without a match are hidden and the numbers show the matches. Escape or clearing the box shows everything again. The search runs in the browser only.
+
+The colours, corners and spacing are not set in the CMS. The editor looks like plain Bootstrap and follows the site's Bootstrap colours; the plugin ships no theme. To give a project its own look, a developer defines a class with the `--lme-*` CSS variables in the project's CSS and the CMS editor writes that class into `css`; the list of variables and an example are in the plugin README (section *Look*).
 
 ### Free-Text Change Requests
 
