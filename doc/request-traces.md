@@ -2,7 +2,7 @@
 
 Every LLM call stores a **request trace** next to the logged assistant reply.
 A trace proves what was sent to the model without storing the same large text
-again on every message. Design: `docs/superpowers/specs/2026-10-30-llm-request-traces-design.md`.
+again on every message.
 
 ## What is stored
 
