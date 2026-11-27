@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/base/BaseLlmService.php';
 require_once __DIR__ . '/LlmPromptRegistryService.php';
+require_once __DIR__ . '/LlmSettingsValidator.php';
 
 /**
  * CRUD and prompt-registry integration for normalized memory rules.
@@ -536,11 +537,12 @@ class LlmMemoryRuleService extends BaseLlmService
                 'label' => 'Global',
                 'description' => 'Default shared memory space.',
                 'enabled' => true,
+                'sections' => array(),
             ));
         }
 
         $rows = $this->db->query_db(
-            "SELECT key_code, label, description, enabled
+            "SELECT key_code, label, description, sections_json, enabled
              FROM llm_memory_keys
              ORDER BY sort_order ASC, label ASC, key_code ASC"
         );
@@ -557,6 +559,9 @@ class LlmMemoryRuleService extends BaseLlmService
                 'label' => trim((string)($row['label'] ?? '')) ?: $this->humanizeMemoryKeyLabel($code),
                 'description' => (string)($row['description'] ?? ''),
                 'enabled' => !isset($row['enabled']) || (string)$row['enabled'] !== '0',
+                // structured memory: the optional sections of the key ([] = one flat list of items);
+                // a stored value that cannot be read counts as no sections (writes are validated)
+                'sections' => LlmSettingsValidator::parseKeySections($row['sections_json'] ?? '')['sections'],
             );
         }
 
@@ -566,6 +571,7 @@ class LlmMemoryRuleService extends BaseLlmService
                 'label' => 'Global',
                 'description' => 'Default shared memory space.',
                 'enabled' => true,
+                'sections' => array(),
             );
         }
 
@@ -602,6 +608,60 @@ class LlmMemoryRuleService extends BaseLlmService
                     && (int)($key_usage['history_rows'] ?? 0) === 0,
             ));
         }, $keys);
+    }
+
+    /**
+     * Change the label, description and sections of a memory key of the registry (Keys tab).
+     *
+     * The code of a key never changes (rules and stored memories reference it). The sections are
+     * the structure of a structured memory (LlmSettingsValidator::parseKeySections()); an empty list
+     * makes the memory one flat list of items. Items of a section that is removed stay in the
+     * memory: the editor and memory_text show them after the configured sections.
+     *
+     * @param string $key_code Memory key code
+     * @param string $label Shown in the admin and as default heading (blank: built from the code)
+     * @param string $description Admin note
+     * @param mixed  $sections JSON text or decoded list of ['code', 'label', 'hint']
+     * @return array The key as listMemoryKeys() returns it
+     * @throws Exception If the key does not exist or the sections are not valid
+     */
+    public function updateMemoryKey($key_code, $label, $description, $sections)
+    {
+        $key_code = $this->normalizeMemoryKeyCode($key_code);
+        if ($key_code === '' || !$this->hasMemoryKeyRegistry()) {
+            throw new Exception('Invalid memory key');
+        }
+        $parsed = LlmSettingsValidator::parseKeySections($sections);
+        if ($parsed['error'] !== '') {
+            throw new Exception($parsed['error']);
+        }
+        $exists = $this->db->query_db_first(
+            "SELECT id FROM llm_memory_keys WHERE key_code = :code",
+            array(':code' => $key_code)
+        );
+        if (empty($exists)) {
+            throw new Exception('Unknown memory key');
+        }
+
+        $label = trim(preg_replace('/\s+/u', ' ', (string)$label));
+        $this->db->execute_update_db(
+            "UPDATE llm_memory_keys
+             SET label = :label, description = :description, sections_json = :sections
+             WHERE key_code = :code",
+            array(
+                ':label' => mb_substr($label !== '' ? $label : $this->humanizeMemoryKeyLabel($key_code), 0, 255, 'UTF-8'),
+                ':description' => trim((string)$description),
+                ':sections' => empty($parsed['sections']) ? null : json_encode($parsed['sections'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ':code' => $key_code,
+            )
+        );
+
+        foreach ($this->listMemoryKeys() as $key) {
+            if ($key['code'] === $key_code) {
+                return $key;
+            }
+        }
+        throw new Exception('Unknown memory key');
     }
 
     /**
@@ -681,8 +741,9 @@ class LlmMemoryRuleService extends BaseLlmService
         $llm_config = $this->getLlmConfig();
         $source_type_options = array();
         foreach ($this->getSourceTypeLabels() as $code => $label) {
-            // admin_manual is written by admin actions; no rule can listen to it
-            if ($code !== LLM_MEMORY_SOURCE_ADMIN_MANUAL) {
+            // admin_manual is written by admin actions and user_edit by the participant's memory
+            // editor; no rule can listen to them
+            if ($code !== LLM_MEMORY_SOURCE_ADMIN_MANUAL && $code !== LLM_MEMORY_SOURCE_USER_EDIT) {
                 $source_type_options[] = array('value' => $code, 'label' => $label);
             }
         }

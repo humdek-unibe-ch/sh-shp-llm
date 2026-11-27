@@ -359,9 +359,14 @@ define('LLM_MEMORY_SOURCE_LLM_CHAT_FORM', 'llm_chat_form_submit');
 define('LLM_MEMORY_SOURCE_LOGIN', 'login');
 define('LLM_MEMORY_SOURCE_PROFILE_NAME', 'profile_name_change');
 define('LLM_MEMORY_SOURCE_ADMIN_MANUAL', 'admin_manual');
+// a participant edits their own memory in the llmMemoryEditor style (no rule, no LLM call)
+define('LLM_MEMORY_SOURCE_USER_EDIT', 'user_edit');
 // Memory source types are lookups (lookup_code = source type, lookup_value = label). A plugin
 // registers its own source with one lookup row; it labels what triggered a memory update.
 define('LLM_LOOKUP_MEMORY_SOURCE_TYPE', 'llmMemorySourceType');
+// Options of the CMS select `display_mode` of the llmMemoryEditor style (v1.10.0): the layout of
+// the sections - sections (default), accordion, tabs, cards, flat. lookup_code = stored value.
+define('LLM_LOOKUP_MEMORY_DISPLAY_MODE', 'llmMemoryDisplayMode');
 // CMS field on every style that runs memory rules (forms, SurveyJS, LogList, llmChat, plugin
 // styles): comma-separated memory rule ids; any rule can be picked; empty = off
 define('LLM_MEMORY_FIELD_RULE_IDS', 'memory_rule_ids');

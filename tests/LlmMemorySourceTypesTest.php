@@ -48,7 +48,7 @@ register_shutdown_function(function () use ($root) {
     sandbox_remove($root);
 });
 
-foreach (array('service/LlmMemoryRuleService.php', 'service/globals.php', 'service/LlmModelCapabilities.php') as $file) {
+foreach (array('service/LlmMemoryRuleService.php', 'service/LlmSettingsValidator.php', 'service/globals.php', 'service/LlmModelCapabilities.php') as $file) {
     sandbox_write($root . '/server/plugins/sh-shp-llm/server/' . $file, file_get_contents($real_server . '/' . $file));
 }
 sandbox_write($service_dir . '/base/BaseLlmService.php', <<<'PHP'
@@ -87,6 +87,7 @@ class SourceTypesFakeDb
             array('lookup_code' => 'profile_name_change', 'lookup_value' => 'Profile name change'),
             array('lookup_code' => 'admin_manual', 'lookup_value' => 'Admin action'),
             array('lookup_code' => 'agentic_chat_end', 'lookup_value' => 'Agentic chat end'),
+            array('lookup_code' => 'user_edit', 'lookup_value' => 'User edit'),
         );
     }
 }
@@ -120,22 +121,34 @@ $service = new LlmMemoryRuleService(new SourceTypesFakeServices());
 $labels = $service->getSourceTypeLabels();
 check('labels come from lookup_value, keyed by lookup_code', ($labels['form_action_submit'] ?? '') === 'Form / survey submit'
     && ($labels['agentic_chat_end'] ?? '') === 'Agentic chat end');
-check('ordered by insert (id): the sources of this plugin first', array_keys($labels) === array('form_action_submit', 'llm_chat_form_submit', 'login', 'profile_name_change', 'admin_manual', 'agentic_chat_end'));
+check('ordered by insert (id): the sources of this plugin first', array_keys($labels) === array('form_action_submit', 'llm_chat_form_submit', 'login', 'profile_name_change', 'admin_manual', 'agentic_chat_end', 'user_edit'));
+check('user_edit (v1.10.0, the participant edits their memory) is a source type with a label', LLM_MEMORY_SOURCE_USER_EDIT === 'user_edit' && ($labels['user_edit'] ?? '') === 'User edit');
 
 check('the one rule field of every style is memory_rule_ids', LLM_MEMORY_FIELD_RULE_IDS === 'memory_rule_ids');
 check('the lookups are read once per service (Activity calls this per row)', SourceTypesFakeDb::$queries === 1);
 
-// static: every source type this plugin inserts gets a label in v1.8.0.sql
-$installed = array();
+// static: every source type this plugin registers has a label. v1.2.0 inserted its types with the
+// code as label and v1.8.0 labels them; a migration after v1.8.0 registers its type with a label.
+$v180 = (string)@file_get_contents($real_server . '/db/v1.8.0.sql');
+$registered = array();
 foreach (glob($real_server . '/db/v*.sql') as $file) {
-    if (preg_match_all("/\\(\\s*'llmMemorySourceType'\\s*,\\s*'([^']+)'/", file_get_contents($file), $m)) {
-        $installed = array_merge($installed, $m[1]);
+    $version = substr(basename($file), 1, -4);
+    if (!preg_match_all("/\\(\\s*'llmMemorySourceType'\\s*,\\s*'([^']+)'\\s*,\\s*'([^']*)'/", file_get_contents($file), $inserts, PREG_SET_ORDER)) {
+        continue;
+    }
+    foreach ($inserts as $insert) {
+        list(, $code, $label) = $insert;
+        if (version_compare($version, '1.8.0', '<=')) {
+            if (!isset($registered[$code])) {
+                check("v1.8.0.sql labels $code", preg_match("/`?lookup_code`?\\s*=\\s*'" . preg_quote($code, '/') . "'/", $v180) === 1);
+            }
+        } else {
+            check("v$version.sql registers $code with a label", $label !== '' && $label !== $code);
+        }
+        $registered[$code] = true;
     }
 }
-$v180 = (string)@file_get_contents($real_server . '/db/v1.8.0.sql');
-foreach (array_unique($installed) as $code) {
-    check("v1.8.0.sql labels $code", preg_match("/`?lookup_code`?\\s*=\\s*'" . preg_quote($code, '/') . "'/", $v180) === 1);
-}
+check('v1.10.0.sql registers user_edit', isset($registered['user_edit']));
 
 // static: llm_memory_rule_ids moves into memory_rule_ids, then the field is deleted
 $sql_flat = preg_replace('/\s+/', ' ', str_replace("''", "'", $v180));

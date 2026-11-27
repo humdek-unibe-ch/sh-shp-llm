@@ -598,7 +598,8 @@ class LlmMemoryAdminService extends BaseLlmService
 
     /**
      * Describe what triggered a history entry and who caused it.
-     * Participants cause every source except admin_manual, where source_ref carries the acting admin.
+     * Participants cause every source except admin_manual, where source_ref carries the acting admin
+     * (user_edit is the participant editing their own memory).
      * Sources without their own description (llmChat, plugin sources) show the section and
      * conversation of their source_ref.
      *
@@ -621,6 +622,10 @@ class LlmMemoryAdminService extends BaseLlmService
             }
             $record_id = (int)($source_ref['record_id'] ?? 0);
             $detail = $form . ($record_id > 0 ? ' (record #' . $record_id . ')' : '');
+        } elseif ($source_type === LLM_MEMORY_SOURCE_USER_EDIT) {
+            $actions = array('add_item' => 'Item added', 'edit_item' => 'Item edited', 'delete_item' => 'Item deleted');
+            $detail = ($actions[$source_ref['action'] ?? ''] ?? 'Memory edited')
+                . (!empty($source_ref['section_id']) ? ' (section #' . (int)$source_ref['section_id'] . ')' : '');
         } elseif ($source_type === LLM_MEMORY_SOURCE_ADMIN_MANUAL) {
             $actions = array(
                 'admin_rerun' => 'Rule re-run',

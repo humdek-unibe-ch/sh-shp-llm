@@ -126,6 +126,10 @@ class ModuleLlmMemoryController extends BaseController
                 $this->requireMutation('delete');
                 $this->handleMemoryKeyDelete();
                 break;
+            case 'memory_key_update':
+                $this->requireMutation('update');
+                $this->handleMemoryKeyUpdate();
+                break;
             case 'memory_users':
                 $this->requireAccess('select');
                 $this->handleMemoryUsers();
@@ -506,6 +510,32 @@ class ModuleLlmMemoryController extends BaseController
             $this->sendJsonResponse(['deleted' => $deleted]);
         } catch (Exception $e) {
             $this->sendJsonResponse(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Save the label, description and sections of a memory key by POST key_code, label, description
+     * and sections (JSON list of {code, label, hint}; empty = no sections). Invalid sections are
+     * refused with 400 and the reason.
+     */
+    private function handleMemoryKeyUpdate()
+    {
+        $key_code = (string)($_POST['key_code'] ?? '');
+        if (trim($key_code) === '') {
+            $this->sendJsonResponse(['error' => 'key_code required'], 400);
+            return;
+        }
+
+        try {
+            $key = $this->getRuleService()->updateMemoryKey(
+                $key_code,
+                (string)($_POST['label'] ?? ''),
+                (string)($_POST['description'] ?? ''),
+                (string)($_POST['sections'] ?? '')
+            );
+            $this->sendJsonResponse(['key' => $key]);
+        } catch (Exception $e) {
+            $this->sendJsonResponse(['error' => $e->getMessage()], 400);
         }
     }
 

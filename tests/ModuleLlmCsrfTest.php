@@ -317,6 +317,7 @@ $modules = array(
             'rule_duplicate' => 'insert',
             'memory_config_save' => 'update',
             'memory_key_delete' => 'delete',
+            'memory_key_update' => 'update',
             'memory_rerun_rule' => 'update',
             'memory_rebuild' => 'update',
             'memory_edit' => 'update',

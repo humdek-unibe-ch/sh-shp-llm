@@ -49,7 +49,7 @@ register_shutdown_function(function () use ($root) {
     sandbox_remove($root);
 });
 
-foreach (array('service/LlmMemoryRuleService.php', 'service/globals.php', 'service/LlmModelCapabilities.php') as $file) {
+foreach (array('service/LlmMemoryRuleService.php', 'service/LlmSettingsValidator.php', 'service/globals.php', 'service/LlmModelCapabilities.php') as $file) {
     sandbox_write($root . '/server/plugins/sh-shp-llm/server/' . $file, file_get_contents($real_server . '/' . $file));
 }
 sandbox_write($service_dir . '/base/BaseLlmService.php', <<<'PHP'
