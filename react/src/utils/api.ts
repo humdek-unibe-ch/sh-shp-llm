@@ -692,11 +692,20 @@ interface MemoryRuleEditorOption {
   label: string;
 }
 
+/** A section of a structured memory key: `code` is stored with every item, `hint` goes to the memory model. */
+export interface MemoryKeySection {
+  code: string;
+  label: string;
+  hint: string;
+}
+
 interface MemoryKeyRecord {
   code: string;
   label: string;
   description?: string;
   enabled: boolean;
+  /** Sections of the key; empty = the memory is one flat list of items. */
+  sections?: MemoryKeySection[];
   is_default?: boolean;
   rules_count?: number;
   current_rows?: number;
@@ -983,6 +992,16 @@ export const memoryApi = {
     formData.append('action', 'memory_key_delete');
     formData.append('key_code', keyCode);
     return apiPost<{ deleted?: boolean; error?: string }>(formData);
+  },
+
+  async updateMemoryKey(keyCode: string, label: string, description: string, sections: MemoryKeySection[]): Promise<{ key?: MemoryKeyRecord; error?: string }> {
+    const formData = new FormData();
+    formData.append('action', 'memory_key_update');
+    formData.append('key_code', keyCode);
+    formData.append('label', label);
+    formData.append('description', description);
+    formData.append('sections', sections.length > 0 ? JSON.stringify(sections) : '');
+    return apiPost<{ key?: MemoryKeyRecord; error?: string }>(formData);
   },
 
   async getMemoryActivity(params: MemoryActivityFilters & { page?: number; per_page?: number } = {}): Promise<MemoryActivityResponse> {

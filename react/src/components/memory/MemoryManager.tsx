@@ -15,7 +15,8 @@ import { Alert, Badge, Button, Card, Col, Nav, Row, Spinner, Tab } from 'react-b
 import { MemoryActivityPanel } from './MemoryActivityPanel';
 import { MemoryAdminPanel } from './MemoryAdminPanel';
 import { MemoryRulesEditorApp } from './MemoryRulesEditorApp';
-import { memoryApi } from '../../utils/api';
+import { memoryApi, type MemoryKeySection } from '../../utils/api';
+import { MemoryKeyEditor } from './MemoryKeyEditor';
 import { MemoryConfigSection, type FieldDef } from '../settings/MemoryConfigSection';
 
 /** Type definition for memory page config. */
@@ -39,6 +40,7 @@ interface MemoryKeyRecord {
   label: string;
   description?: string;
   enabled: boolean;
+  sections?: MemoryKeySection[];
   is_default?: boolean;
   rules_count?: number;
   current_rows?: number;
@@ -127,6 +129,8 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
   const [loadingKeys, setLoadingKeys] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState(false);
   const [loadingSources, setLoadingSources] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -250,6 +254,25 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
       throw new Error(response.error);
     }
     setMemoryKeys(response.keys || []);
+  };
+
+  const saveMemoryKey = async (code: string, label: string, description: string, sections: MemoryKeySection[]) => {
+    setSavingKey(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await memoryApi.updateMemoryKey(code, label, description, sections);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      await reloadMemoryKeys();
+      setEditingKey(null);
+      setSuccess(`Saved memory key "${code}".`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save memory key');
+    } finally {
+      setSavingKey(false);
+    }
   };
 
   const confirmDeleteMemoryKey = (key: MemoryKeyRecord) => {
@@ -424,11 +447,22 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                     <Card.Header>Memory Keys</Card.Header>
                     <Card.Body>
                       <div className="small text-muted mb-3">
-                        Keys are created directly from the rule editor dropdown. Delete is only available when a key is unused and has no saved memory data.
+                        Keys are created directly from the rule editor dropdown. Edit a key to give it sections (optional: without sections its memory is one list of facts). Delete is only available when a key is unused and has no saved memory data.
                       </div>
                       {memoryKeys.length === 0 ? (
                         <div className="text-muted small">No memory keys found.</div>
-                      ) : memoryKeys.map((key) => (
+                      ) : memoryKeys.map((key) => editingKey === key.code ? (
+                        <MemoryKeyEditor
+                          key={key.code}
+                          code={key.code}
+                          label={key.label}
+                          description={key.description || ''}
+                          sections={key.sections || []}
+                          saving={savingKey}
+                          onSave={(label, description, sections) => { void saveMemoryKey(key.code, label, description, sections); }}
+                          onCancel={() => setEditingKey(null)}
+                        />
+                      ) : (
                         <div key={key.code} className="d-flex justify-content-between align-items-start flex-wrap border rounded p-2 mb-2">
                           <div className="pr-3">
                             <div className="font-weight-bold">
@@ -438,10 +472,24 @@ export const MemoryManager: React.FC<{ config: MemoryPageConfig }> = ({ config }
                             <div className="small text-muted"><code>{key.code}</code></div>
                             {key.description ? <div className="small text-muted mt-1">{key.description}</div> : null}
                             <div className="small text-muted mt-1">
+                              Sections: {key.sections && key.sections.length > 0
+                                ? key.sections.map((section) => section.label).join(', ')
+                                : 'none (one list of facts)'}
+                            </div>
+                            <div className="small text-muted mt-1">
                               {Number(key.rules_count || 0)} rules, {Number(key.current_rows || 0)} current rows, {Number(key.history_rows || 0)} history rows
                             </div>
                           </div>
                           <div className="mt-1">
+                            <Button
+                              size="sm"
+                              variant="outline-primary"
+                              className="mr-2"
+                              onClick={() => setEditingKey(key.code)}
+                              disabled={editingKey !== null}
+                            >
+                              Edit
+                            </Button>
                             {key.can_delete ? (
                               <Button
                                 size="sm"
