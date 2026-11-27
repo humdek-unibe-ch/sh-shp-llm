@@ -1,0 +1,549 @@
+/* llmMemoryEditor: the participant's memory as an editable list.
+   Plain CSS on top of Bootstrap 4.6; hand-written (not part of a Vite build).
+
+   This file has four blocks:
+     1. Tokens     CSS custom properties on .llm-memory-editor - the only place with colours, radius and spacing
+     2. Structure  item rows, inline form, buttons, messages - the same in every layout
+     3. Layouts    one block per CMS field display_mode: sections, accordion, tabs, cards, flat
+     4. Themes     opt-in classes that set the tokens (and a few rules): lme-theme-forest
+
+   Without a theme class the editor looks like plain Bootstrap 4.6: the tokens follow --primary,
+   --secondary and --danger of the site's Bootstrap.
+
+   How a website adds its own theme (no change to this file):
+     1. In the site's own CSS set the tokens of block 1 on a class of your choice:
+            .llm-memory-editor.lme-theme-mysite { --lme-accent: #7a2e8a; --lme-radius: 12px; }
+     2. Put that class (lme-theme-mysite) into the CMS field "css" of the llmMemoryEditor section.
+   A token you leave out keeps its Bootstrap value; --lme-accent-hover defaults to a darker --lme-accent. */
+
+
+/* ==========================================================================
+   1. Tokens
+   ========================================================================== */
+
+.llm-memory-editor {
+    /* colours */
+    --lme-accent: var(--primary, #007bff);   /* links, the solid save button, the outline add button, focus rings */
+    --lme-accent-hover: #0056b3;             /* fill of a solid or outline button while hovered (a darker --lme-accent, see below) */
+    --lme-accent-text: #fff;                 /* text on an --lme-accent fill */
+    --lme-accent-hover-text: #fff;           /* text on an --lme-accent-hover fill (must stay readable on it) */
+    --lme-muted: var(--secondary, #6c757d);  /* secondary text, item counts, the cancel button */
+    --lme-danger: var(--danger, #dc3545);    /* the delete button */
+    --lme-border: rgba(0, 0, 0, .125);       /* frames of cards, accordion panels and tabs */
+    --lme-row-border: rgba(0, 0, 0, .08);    /* the line between two items */
+    --lme-section-bg: transparent;           /* background of a section block, card, panel or tab content */
+    --lme-header-bg: rgba(0, 0, 0, .03);     /* background of a card or accordion header */
+    --lme-surface: #fff;                     /* solid colour of the selected tab: use the colour it sits on */
+
+    /* shape and spacing */
+    --lme-radius: .25rem;
+    --lme-row-gap: .375rem;                  /* vertical padding of an item row */
+    --lme-section-gap: 1.25rem;              /* space below a section (sections layout), a card, the accordion and the tabs */
+    --lme-section-pad: 0;                    /* padding of a section in the sections layout and of the flat list (any padding value) */
+    --lme-pad: 1rem;                         /* padding inside a card, an accordion panel and the tab content (one length) */
+    --lme-font-size-btn: .875rem;
+}
+
+/* The hover fill follows the accent (also a site's own --primary or a theme's --lme-accent): 70% of it mixed with black,
+   which gives #0056b3 for Bootstrap's #007bff. A browser without color-mix() keeps #0056b3. A theme that sets
+   --lme-accent-hover itself wins (its selector is more specific). */
+@supports (color: color-mix(in srgb, red, blue)) {
+    .llm-memory-editor {
+        --lme-accent-hover: color-mix(in srgb, var(--lme-accent) 70%, #000);
+    }
+}
+
+
+/* ==========================================================================
+   2. Structure - the same in every layout
+   ========================================================================== */
+
+/* items */
+.llm-memory-editor .lme-items {
+    margin: 0 0 .5rem;
+    padding: 0;
+}
+
+.llm-memory-editor .lme-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .25rem .75rem;
+    padding: var(--lme-row-gap) 0;
+    border-bottom: 1px solid var(--lme-row-border);
+}
+
+.llm-memory-editor .lme-text {
+    flex: 1 1 14rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.llm-memory-editor .lme-actions {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.llm-memory-editor .lme-add {
+    margin: 0;
+}
+
+/* A site theme often sets its own font for <p>; the editor texts keep the typeface of the rows. */
+.llm-memory-editor .lme-empty {
+    margin: 0 0 .5rem;
+    color: var(--lme-muted);
+    font-family: inherit;
+}
+
+.llm-memory-editor .lme-note {
+    color: var(--lme-muted);
+    font-family: inherit;
+}
+
+/* the inline form of edit and add */
+.llm-memory-editor .lme-edit-form {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+.llm-memory-editor .lme-edit-form .lme-input {
+    flex: 1 1 12rem;
+    width: auto;
+    min-width: 0;
+}
+
+.llm-memory-editor .lme-edit-form .lme-input:focus {
+    border-color: var(--lme-accent);
+    box-shadow: none;
+    outline: 2px solid var(--lme-accent);
+    outline-offset: 0;
+}
+
+/* buttons: edit and delete look like links, save is solid, cancel and add are outlines */
+.llm-memory-editor .lme-btn {
+    padding: .125rem .5rem;
+    border: 1px solid transparent;
+    border-radius: var(--lme-radius);
+    background: transparent;
+    color: var(--lme-accent);
+    font-size: var(--lme-font-size-btn);
+    line-height: 1.5;
+    cursor: pointer;
+}
+
+.llm-memory-editor .lme-btn:hover {
+    text-decoration: underline;
+}
+
+.llm-memory-editor .lme-btn:focus:not(:focus-visible) {
+    outline: 0;
+}
+
+.llm-memory-editor .lme-btn:focus-visible {
+    outline: 2px solid var(--lme-accent);
+    outline-offset: 2px;
+}
+
+.llm-memory-editor .lme-delete {
+    color: var(--lme-danger);
+}
+
+.llm-memory-editor .lme-save {
+    border-color: var(--lme-accent);
+    background: var(--lme-accent);
+    color: var(--lme-accent-text);
+}
+
+.llm-memory-editor .lme-cancel {
+    border-color: var(--lme-muted);
+    color: var(--lme-muted);
+}
+
+.llm-memory-editor .lme-add-btn {
+    border-color: var(--lme-accent);
+}
+
+.llm-memory-editor .lme-save:hover,
+.llm-memory-editor .lme-add-btn:hover {
+    border-color: var(--lme-accent-hover);
+    background: var(--lme-accent-hover);
+    color: var(--lme-accent-hover-text);
+    text-decoration: none;
+}
+
+.llm-memory-editor .lme-cancel:hover {
+    background: var(--lme-muted);
+    color: var(--lme-accent-text);
+    text-decoration: none;
+}
+
+/* the count of items in a section header */
+.llm-memory-editor .lme-count {
+    flex: 0 0 auto;
+    min-width: 1.75em;
+    padding: .2em .6em;
+    border: 1px solid currentColor;
+    border-radius: 10rem;
+    background: transparent;
+    color: var(--lme-muted);
+    font-size: .75rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.llm-memory-editor .lme-section-title {
+    font-weight: 600;
+}
+
+/* Several memory keys in one section: one body per key, one below the other, each with its heading. */
+.llm-memory-editor .llm-memory-editor-body + .llm-memory-editor-body {
+    margin-top: calc(var(--lme-section-gap) * 1.5);
+}
+
+.llm-memory-editor .lme-key-title {
+    margin: 0 0 .75rem;
+    font-weight: 600;
+}
+
+.llm-memory-editor .lme-busy {
+    opacity: .6;
+    pointer-events: none;
+}
+
+
+/* ==========================================================================
+   3. Layouts (CMS field display_mode)
+   ========================================================================== */
+
+/* --- 3a. sections (default): a heading and a list for each section ------- */
+
+.llm-memory-editor .lme-layout-sections .lme-section {
+    margin-bottom: var(--lme-section-gap);
+}
+
+.llm-memory-editor .lme-layout-sections .lme-section,
+.llm-memory-editor .lme-flat {
+    padding: var(--lme-section-pad);
+    border-radius: var(--lme-radius);
+    background: var(--lme-section-bg);
+}
+
+.llm-memory-editor .lme-layout-sections .lme-section-title {
+    margin: 0 0 .5rem;
+}
+
+/* --- 3b. accordion: one collapsible panel per section -------------------- */
+
+.llm-memory-editor .lme-layout-accordion .lme-sections {
+    margin-bottom: var(--lme-section-gap);
+}
+
+.llm-memory-editor .lme-layout-accordion .lme-section {
+    overflow: hidden;
+    border: 1px solid var(--lme-border);
+    background: var(--lme-section-bg);
+}
+
+.llm-memory-editor .lme-layout-accordion .lme-section + .lme-section {
+    border-top-width: 0;
+}
+
+.llm-memory-editor .lme-layout-accordion .lme-section:first-child {
+    border-top-left-radius: var(--lme-radius);
+    border-top-right-radius: var(--lme-radius);
+}
+
+.llm-memory-editor .lme-layout-accordion .lme-section:last-child {
+    border-bottom-left-radius: var(--lme-radius);
+    border-bottom-right-radius: var(--lme-radius);
+}
+
+.llm-memory-editor .lme-layout-accordion .lme-section-header {
+    margin: 0;
+    background: var(--lme-header-bg);
+    font-size: 1rem;
+}
+
+.llm-memory-editor .lme-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    width: 100%;
+    padding: .625rem var(--lme-pad);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.llm-memory-editor .lme-section-toggle .lme-section-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.llm-memory-editor .lme-section-toggle:not(.collapsed) {
+    color: var(--lme-accent);
+}
+
+/* the chevron: points down while the panel is open, right while it is closed */
+.llm-memory-editor .lme-section-toggle::after {
+    content: "";
+    flex: 0 0 auto;
+    width: .5rem;
+    height: .5rem;
+    margin: 0 .25rem .25rem 0;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform .15s ease;
+}
+
+.llm-memory-editor .lme-section-toggle.collapsed::after {
+    margin-bottom: 0;
+    transform: rotate(-45deg);
+}
+
+.llm-memory-editor .lme-section-toggle:focus:not(:focus-visible) {
+    outline: 0;
+}
+
+.llm-memory-editor .lme-section-toggle:focus-visible {
+    outline: 2px solid var(--lme-accent);
+    outline-offset: -2px;
+}
+
+.llm-memory-editor .lme-layout-accordion .lme-section-body {
+    padding: var(--lme-pad);
+    border-top: 1px solid var(--lme-border);
+}
+
+/* --- 3c. tabs: one tab per section ---------------------------------------- */
+
+/* the line below the tabs is an inset shadow, so the selected tab can cover it and the tabs can scroll sideways */
+.llm-memory-editor .lme-layout-tabs .lme-tabs {
+    border-bottom: 0;
+    box-shadow: inset 0 -1px 0 var(--lme-border);
+}
+
+.llm-memory-editor .lme-layout-tabs .lme-tabs .lme-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: 0;
+    padding: .5rem 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--lme-radius) var(--lme-radius) 0 0;
+    background: transparent;
+    color: var(--lme-accent);
+    font: inherit;
+    cursor: pointer;
+}
+
+.llm-memory-editor .lme-layout-tabs .lme-tabs .lme-tab:hover {
+    border-color: var(--lme-row-border) var(--lme-row-border) transparent;
+}
+
+.llm-memory-editor .lme-layout-tabs .lme-tabs .lme-tab.active {
+    border-color: var(--lme-border) var(--lme-border) var(--lme-surface);
+    background: var(--lme-surface);
+    color: inherit;
+}
+
+.llm-memory-editor .lme-layout-tabs .lme-tabs .lme-tab:focus:not(:focus-visible) {
+    outline: 0;
+}
+
+.llm-memory-editor .lme-layout-tabs .lme-tabs .lme-tab:focus-visible {
+    outline: 2px solid var(--lme-accent);
+    outline-offset: -2px;
+}
+
+.llm-memory-editor .lme-layout-tabs .tab-content {
+    margin-bottom: var(--lme-section-gap);
+    padding: var(--lme-pad);
+    border: 1px solid var(--lme-border);
+    border-top-width: 0;
+    border-radius: 0 0 var(--lme-radius) var(--lme-radius);
+    background: var(--lme-section-bg);
+}
+
+/* --- 3d. cards: one Bootstrap card per section ----------------------------- */
+
+/* The card has its own header and body (not .card-header / .card-body: a site theme often restyles those, sometimes with
+   !important). Header and body carry the padding, so the padding and margin that a site gives every .card are reset. */
+.llm-memory-editor .lme-layout-cards .lme-section {
+    margin: 0 0 var(--lme-section-gap);
+    padding: 0;
+    border: 1px solid var(--lme-border);
+    border-radius: var(--lme-radius);
+    background: var(--lme-section-bg);
+}
+
+.llm-memory-editor .lme-layout-cards .lme-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .625rem var(--lme-pad);
+    border-bottom: 1px solid var(--lme-border);
+    border-radius: calc(var(--lme-radius) - 1px) calc(var(--lme-radius) - 1px) 0 0;
+    background: var(--lme-header-bg);
+}
+
+.llm-memory-editor .lme-layout-cards .lme-section-title {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.llm-memory-editor .lme-layout-cards .lme-section-body {
+    padding: var(--lme-pad);
+}
+
+/* --- 3e. flat: one list, no headings (styled with the sections layout above) --- */
+
+/* --- padded blocks: the content ends at the padding, not at an extra margin ------ */
+
+.llm-memory-editor .lme-layout-accordion .lme-section-body > :last-child,
+.llm-memory-editor .lme-layout-tabs .lme-section-body > :last-child,
+.llm-memory-editor .lme-layout-cards .lme-section-body > :last-child {
+    margin-bottom: 0;
+}
+
+
+/* --- narrow screens -------------------------------------------------------- */
+
+@media (max-width: 575.98px) {
+    .llm-memory-editor {
+        --lme-pad: .75rem;
+    }
+
+    /* the tabs scroll sideways instead of wrapping into several rows */
+    .llm-memory-editor .lme-layout-tabs .lme-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
+    .llm-memory-editor .lme-layout-tabs .lme-tabs .lme-tab {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .llm-memory-editor .lme-section-toggle::after {
+        transition: none;
+    }
+}
+
+
+/* ==========================================================================
+   4. Themes - opt-in: put the class in the CMS field "css" of the section
+   ========================================================================== */
+
+/* --- lme-theme-forest: deep teal on sand, rounded, little chrome ------------ */
+
+.llm-memory-editor.lme-theme-forest {
+    --lme-accent: #0b5e76;
+    --lme-accent-hover: #79b0ae;
+    --lme-accent-text: #fff;
+    --lme-accent-hover-text: #06323f;  /* white on #79b0ae is only 2.4:1, this is 5.7:1 */
+    --lme-muted: #5a6b70;
+    --lme-danger: #b04a45;
+    --lme-border: rgba(11, 94, 118, .22);
+    --lme-row-border: rgba(11, 94, 118, .12);
+    --lme-section-bg: #f6f1e7;
+    --lme-header-bg: transparent;
+    --lme-surface: #f6f1e7;
+    --lme-radius: 8px;
+    --lme-row-gap: .3rem;
+    --lme-section-gap: 1rem;
+    --lme-section-pad: 1rem 1.25rem;
+    --lme-pad: 1.1rem;
+}
+
+@media (max-width: 575.98px) {
+    .llm-memory-editor.lme-theme-forest {
+        --lme-section-pad: .75rem;
+        --lme-pad: .75rem;
+    }
+}
+
+/* less chrome: no line after the last item, a quiet input */
+.llm-memory-editor.lme-theme-forest .lme-item:last-child {
+    border-bottom-color: transparent;
+}
+
+.llm-memory-editor.lme-theme-forest .lme-edit-form .lme-input {
+    border-color: var(--lme-border);
+    border-radius: var(--lme-radius);
+}
+
+.llm-memory-editor.lme-theme-forest .lme-layout-sections .lme-section-title,
+.llm-memory-editor.lme-theme-forest .lme-layout-cards .lme-section-title {
+    color: var(--lme-accent);
+}
+
+/* buttons: cancel is plain muted text, add has a dashed outline */
+.llm-memory-editor.lme-theme-forest .lme-cancel,
+.llm-memory-editor.lme-theme-forest .lme-cancel:hover {
+    border-color: transparent;
+    background: transparent;
+    color: var(--lme-muted);
+}
+
+.llm-memory-editor.lme-theme-forest .lme-cancel:hover {
+    text-decoration: underline;
+}
+
+.llm-memory-editor.lme-theme-forest .lme-add-btn {
+    border-style: dashed;
+}
+
+.llm-memory-editor.lme-theme-forest .lme-add-btn:hover {
+    border-style: solid;
+}
+
+/* accordion: separate rounded blocks instead of one framed list */
+.llm-memory-editor.lme-theme-forest .lme-layout-accordion .lme-section {
+    margin-bottom: .5rem;
+    border-width: 0;
+    border-radius: var(--lme-radius);
+}
+
+.llm-memory-editor.lme-theme-forest .lme-layout-accordion .lme-section-body {
+    border-top-color: var(--lme-row-border);
+}
+
+/* tabs: a teal bar on top of the selected tab, the content joins it without side frames */
+.llm-memory-editor.lme-theme-forest .lme-layout-tabs .lme-tabs .lme-tab {
+    border-top-width: 3px;
+}
+
+.llm-memory-editor.lme-theme-forest .lme-layout-tabs .lme-tabs .lme-tab.active {
+    border-top-color: var(--lme-accent);
+    color: var(--lme-accent);
+}
+
+.llm-memory-editor.lme-theme-forest .lme-layout-tabs .tab-content {
+    border-width: 0;
+    box-shadow: inset 0 -1px 0 var(--lme-border);
+}
+
+/* cards: soft shadow instead of a frame, no rule below the header */
+.llm-memory-editor.lme-theme-forest .lme-layout-cards .lme-section {
+    border-width: 0;
+    box-shadow: 0 1px 3px rgba(11, 94, 118, .18);
+}
+
+.llm-memory-editor.lme-theme-forest .lme-layout-cards .lme-section-header {
+    border-bottom-width: 0;
+    padding-bottom: 0;
+}

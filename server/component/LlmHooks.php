@@ -333,10 +333,12 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * Build the multi select of memory rules for the shared select-llm-memory-rules CMS widget
-     * (field memory_rule_ids on every style). It lists every rule as "Label (Source)": a picked
-     * rule runs on the section's own trigger whatever its source type.
-     * Disabled rules stay visible so saved ids are not lost.
+     * Build a memory multi select of the CMS, stored as a comma-separated list:
+     * - select-llm-memory-rules (field memory_rule_ids on every style): every rule as
+     *   "Label (Source)"; a picked rule runs on the section's own trigger whatever its source type.
+     *   Disabled rules stay visible so saved ids are not lost.
+     * - select-llm-memory-keys (field memory_keys of llmMemoryEditor): every key of the memory key
+     *   registry as "Label (code)". A saved key that is no longer in the registry stays listed.
      *
      * @param object $args
      * @param int $disabled
@@ -347,18 +349,33 @@ class LlmHooks extends BaseHooks
         $field = $this->get_param_by_name($args, 'field');
         $res = $this->execute_private_method($args);
 
-        if (($field['type'] ?? '') !== 'select-llm-memory-rules') {
+        $type = (string)($field['type'] ?? '');
+        if ($type !== 'select-llm-memory-rules' && $type !== 'select-llm-memory-keys') {
             return $res;
         }
+        // an empty value must stay [''] (not []): the select view only defines "selected" inside its value loop
+        $value = array_map('trim', explode(',', (string)($field['content'] ?? '')));
         $items = array();
-        foreach ($this->getMemoryRuleOptions() as $option) {
-            $items[] = array("value" => $option['value'], "text" => $option['text']);
+        if ($type === 'select-llm-memory-rules') {
+            foreach ($this->getMemoryRuleOptions() as $option) {
+                $items[] = array("value" => $option['value'], "text" => $option['text']);
+            }
+        } else {
+            $listed = array();
+            foreach ((new LlmMemoryRuleService($this->services))->listMemoryKeys() as $key) {
+                $items[] = array("value" => $key['code'], "text" => $key['label'] . ' (' . $key['code'] . ')');
+                $listed[$key['code']] = true;
+            }
+            foreach ($value as $code) {
+                if ($code !== '' && !isset($listed[$code])) {
+                    $items[] = array("value" => $code, "text" => $code . ' (not in the key registry)');
+                }
+            }
         }
 
         $field_name_prefix = "fields[" . $field['name'] . "][" . $field['id_language'] . "]" . "[" . $field['id_gender'] . "]";
         $selectField = new BaseStyleComponent("select", array(
-            // an empty value must stay [''] (not []): the select view only defines "selected" inside its value loop
-            "value" => array_map('trim', explode(',', (string)($field['content'] ?? ''))),
+            "value" => $value,
             "name" => $field_name_prefix . "[content]",
             "max" => 10,
             "live_search" => 1,
@@ -452,9 +469,10 @@ class LlmHooks extends BaseHooks
 
     /**
      * Build a lookup-backed select for one of the `llm_interview_*` option
-     * fields (`llmFormLogList` style). One hook pair serves all four
-     * fields: the lookup family is chosen by field name and any other
-     * field falls through to the default renderer.
+     * fields (`llmFormLogList` style) or for `display_mode` (`llmMemoryEditor`
+     * style). One hook pair serves all five fields: the lookup family is
+     * chosen by field name and any other field falls through to the default
+     * renderer.
      *
      * @param object $args
      * @param int $disabled
@@ -472,6 +490,7 @@ class LlmHooks extends BaseHooks
             'llm_interview_chat_retention'  => array('select-llm-interview-retention', LLM_LOOKUP_INTERVIEW_RETENTION),
             'llm_interview_chat_position'   => array('select-llm-interview-chat-position', LLM_LOOKUP_INTERVIEW_CHAT_POSITION),
             'llm_interview_confirm'         => array('select-llm-interview-confirm', LLM_LOOKUP_INTERVIEW_CONFIRM),
+            'display_mode'                  => array('select-llm-memory-display-mode', LLM_LOOKUP_MEMORY_DISPLAY_MODE),
         );
         $field_name = $field['name'] ?? '';
         $spec = $field_map[$field_name] ?? null;
@@ -580,7 +599,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for memory_rule_ids (edit).
+     * CMS multi select of memory rules (memory_rule_ids) and memory keys (memory_keys) (edit).
      *
      * @param object $args
      * @return object
@@ -591,7 +610,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS multi select of memory rules for memory_rule_ids (view).
+     * CMS multi select of memory rules (memory_rule_ids) and memory keys (memory_keys) (view).
      *
      * @param object $args
      * @return object
@@ -602,7 +621,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS select for the llm_interview_* option fields (edit).
+     * CMS select for the llm_interview_* option fields and the display_mode of llmMemoryEditor (edit).
      *
      * @param object $args
      * @return object
@@ -613,7 +632,7 @@ class LlmHooks extends BaseHooks
     }
 
     /**
-     * CMS select for the llm_interview_* option fields (view).
+     * CMS select for the llm_interview_* option fields and the display_mode of llmMemoryEditor (view).
      *
      * @param object $args
      * @return object
