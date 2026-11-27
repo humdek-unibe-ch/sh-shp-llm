@@ -31,6 +31,10 @@ class LlmSettingsValidator
     const MODEL_ID_MAX_LENGTH = 255;
     const BASE_URL_MAX_LENGTH = 500;
 
+    /** The sections of one memory key (llm_memory_keys.sections_json, a TEXT column). */
+    const KEY_SECTIONS_MAX_LENGTH = 20000;
+    const KEY_SECTIONS_MAX_COUNT = 30;
+
     /** Names the plain http scheme is accepted for. */
     const LOOPBACK_HOSTS = array('localhost', '127.0.0.1', '::1');
 
@@ -139,6 +143,79 @@ class LlmSettingsValidator
         }
 
         return self::ok(rtrim($url, '/'));
+    }
+
+    /**
+     * Parse the sections of one memory key (column llm_memory_keys.sections_json): the optional
+     * groups a structured memory is divided into.
+     *
+     *   [{"code": "person", "label": "Person", "hint": "..."}, ...]
+     *
+     * `code` (letters, digits, `_`, `-`; unique within the key) is stored with every item.
+     * `label` is the default heading (default: the code; participants see it translated through
+     * the editor's `memory_labels`), `hint` is given to the memory model (default: none).
+     * Blank, `null` or `[]` means "no sections": the memory is one flat list of items.
+     *
+     * @param mixed $raw The JSON text, or the already decoded list
+     * @return array{sections:array,error:string} sections: list of ['code', 'label', 'hint'];
+     *   error: '' when valid (then sections is what to store), else why (sections is empty)
+     */
+    public static function parseKeySections($raw)
+    {
+        $result = array('sections' => array(), 'error' => '');
+        if (is_string($raw)) {
+            $raw = trim($raw);
+            if ($raw === '' || $raw === 'null') {
+                return $result;
+            }
+            if (strlen($raw) > self::KEY_SECTIONS_MAX_LENGTH) {
+                $result['error'] = 'The sections must be at most ' . self::KEY_SECTIONS_MAX_LENGTH . ' characters of JSON.';
+                return $result;
+            }
+            $raw = json_decode($raw, true, 8);
+            if ($raw === null) {
+                // `null` was handled above: this is text that is no JSON
+                $result['error'] = 'The sections must be a JSON list like [{"code": "person", "label": "Person", "hint": "..."}].';
+                return $result;
+            }
+        }
+        if ($raw === null || $raw === array()) {
+            return $result;
+        }
+        if (!is_array($raw) || !array_is_list($raw)) {
+            $result['error'] = 'The sections must be a JSON list like [{"code": "person", "label": "Person", "hint": "..."}].';
+            return $result;
+        }
+        if (count($raw) > self::KEY_SECTIONS_MAX_COUNT) {
+            $result['error'] = 'A memory key can have at most ' . self::KEY_SECTIONS_MAX_COUNT . ' sections.';
+            return $result;
+        }
+
+        $codes = array();
+        foreach ($raw as $position => $section) {
+            $number = $position + 1;
+            $code = is_array($section) && isset($section['code']) && is_string($section['code']) ? trim($section['code']) : '';
+            if (preg_match('/^[A-Za-z0-9_-]{1,40}$/', $code) !== 1) {
+                $result['error'] = 'Section ' . $number . ' needs a code of 1 to 40 letters, digits, "_" or "-".';
+                return array('sections' => array(), 'error' => $result['error']);
+            }
+            if (isset($codes[$code])) {
+                return array('sections' => array(), 'error' => 'The section code "' . $code . '" is used twice.');
+            }
+            foreach (array('label', 'hint') as $text_field) {
+                if (isset($section[$text_field]) && !is_string($section[$text_field])) {
+                    return array('sections' => array(), 'error' => 'The ' . $text_field . ' of section "' . $code . '" must be text.');
+                }
+            }
+            $codes[$code] = true;
+            $label = trim((string)preg_replace('/\s+/u', ' ', (string)($section['label'] ?? '')));
+            $result['sections'][] = array(
+                'code' => $code,
+                'label' => $label !== '' ? $label : $code,
+                'hint' => trim((string)($section['hint'] ?? '')),
+            );
+        }
+        return $result;
     }
 
     /**

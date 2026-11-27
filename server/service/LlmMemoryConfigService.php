@@ -18,6 +18,9 @@ class LlmMemoryConfigService extends BaseLlmService
     /** @var array|null */
     private $rules = null;
 
+    /** @var array|null memory key => the key as LlmMemoryRuleService::listMemoryKeys() returns it */
+    private $memory_keys = null;
+
     /** @var LlmMemoryRuleService */
     private $rule_service;
 
@@ -73,6 +76,38 @@ class LlmMemoryConfigService extends BaseLlmService
     public function getDefaultMemoryKey()
     {
         return $this->getMemoryConfig()['memory_key'];
+    }
+
+    /**
+     * The memory keys of the registry (Keys tab of the LLM Memory page), by code.
+     *
+     * @return array<string, array> code => ['code', 'label', 'description', 'enabled', 'sections']
+     */
+    public function getMemoryKeys()
+    {
+        if ($this->memory_keys === null) {
+            $this->memory_keys = array();
+            foreach ($this->rule_service->listMemoryKeys() as $key) {
+                $this->memory_keys[$key['code']] = $key;
+            }
+        }
+        return $this->memory_keys;
+    }
+
+    /**
+     * Sections a memory key is divided into (column llm_memory_keys.sections_json).
+     *
+     * A key without sections - or one the registry does not know - has none: its memory is one
+     * flat list of items (stored with section ''). Memory keys do not differ by case: the rules
+     * store them in lower case and the data tables compare them without regard to case.
+     *
+     * @param string $memory_key
+     * @return array List of ['code' => string, 'label' => string, 'hint' => string]; [] = no sections
+     */
+    public function getKeySections($memory_key)
+    {
+        $memory_key = strtolower(trim((string)$memory_key));
+        return $this->getMemoryKeys()[$memory_key]['sections'] ?? array();
     }
 
     /**
@@ -347,6 +382,7 @@ class LlmMemoryConfigService extends BaseLlmService
     {
         $this->config = null;
         $this->rules = null;
+        $this->memory_keys = null;
     }
 }
 ?>
